@@ -197,6 +197,25 @@ class SandboxConfig(BaseModel):
                 raise ValueError(f"sandbox.extra_write_paths must not contain '..': {p!r}")
         return v
 
+    extra_device_paths: StrTuple = Field(
+        default=(),
+        description=(
+            "Device nodes under /dev the jail exposes read-write (GPU compute: /dev/nvidiactl, "
+            "/dev/nvidia0, /dev/nvidia-uvm). Empty (the default) keeps the device wall: strict's "
+            "/dev holds only null/zero/urandom/random/full. Each path must be an existing "
+            "character or block device at run start, or the run refuses. Widens the sandbox: a "
+            "device node is direct hardware access."
+        ),
+    )
+
+    @field_validator("extra_device_paths")
+    @classmethod
+    def _check_extra_device_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        for p in v:
+            if not p.startswith("/dev/") or "/.." in p:
+                raise ValueError(f"sandbox.extra_device_paths must live under /dev: {p!r}")
+        return v
+
     # Absolute paths hidden from jailed commands even when a broader grant
     # covers them (a dir masks as an empty tmpfs, a file reads empty). agent6's
     # own private dirs (config + state) are ALWAYS hidden -- secrets never

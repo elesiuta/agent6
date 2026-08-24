@@ -205,6 +205,10 @@ class JailPolicy:
     network: NetworkMode = "none"
     extra_ro_paths: tuple[Path, ...] = ()
     extra_rw_paths: tuple[Path, ...] = ()
+    # Device nodes under /dev the launcher binds into the jail's /dev without
+    # the nodev floor ([sandbox].extra_device_paths); each must be a char or
+    # block device on the host or the launcher refuses loudly.
+    extra_device_paths: tuple[Path, ...] = ()
     # Paths inside `cwd` that the launcher must make read-only from the
     # child's view. Strict re-binds them RO on top of the workspace mount;
     # hardened switches its Landlock rules from "RW on cwd" to "R on cwd

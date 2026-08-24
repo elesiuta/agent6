@@ -360,6 +360,11 @@ def _grant_lines(ws: Workspace) -> list[str]:
     return out
 
 
+def _device_lines(cfg: Config) -> list[str]:
+    """Operator device-node grants: jail-only (no in-process tool reads them)."""
+    return [f"    dev {p}  (sandbox.extra_device_paths)" for p in cfg.sandbox.extra_device_paths]
+
+
 def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -> None:
     # The resolved fact, not the knob's value: "no" WITHHOLDS the command tools
     # from the model rather than prompting for them, and the paths below are
@@ -393,6 +398,8 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
             " targets (`agent6 check sandbox` lists each)"
         )
     for line in _grant_lines(ws):
+        print(line)
+    for line in _device_lines(cfg):
         print(line)
     masked = {*private_dirs(), *(Path(p) for p in cfg.sandbox.hide_paths)}
     verb = "masked out of the jail's view" if selected == "strict" else "denied by Landlock"

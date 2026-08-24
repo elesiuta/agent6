@@ -937,6 +937,19 @@ def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:
         )
 
 
+def test_extra_device_paths_must_live_under_dev() -> None:
+    """A device grant is /dev-only: anywhere else is a file grant wearing a
+    device hat (extra_read/write_paths own those), and traversal is refused."""
+    from agent6.config import SandboxConfig
+
+    ok = SandboxConfig(extra_device_paths=("/dev/nvidia0", "/dev/nvidiactl"))
+    assert ok.extra_device_paths == ("/dev/nvidia0", "/dev/nvidiactl")
+    assert SandboxConfig().extra_device_paths == ()
+    for bad in ("/etc/passwd", "dev/null", "/dev/../etc"):
+        with pytest.raises(ValueError, match="must live under /dev"):
+            SandboxConfig(extra_device_paths=(bad,))
+
+
 def test_model_git_control_requires_git_writes(tmp_path: Path) -> None:
     """git.control = "model" hands git to the model; protect_git = true
     contradicts it and refuses naming both keys."""

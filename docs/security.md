@@ -108,6 +108,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - a grant at or inside a private dir is refused at config load
     - `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
 - `/dev` (`strict`): `null`, `zero`, `urandom`, `random`, `full`, a private `shm`; no `/dev/tty`
+    - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute); each must be a char/block device on the host or the launch refuses, and on `hardened` the same grant is a Landlock read+write rule on the node
 - `/proc` (`strict`): fresh and private, empty if that fails
     - the launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`
 - seccomp: deny-list returning `EPERM` for `ptrace`, `pidfd_getfd`, `process_vm_readv`, `process_vm_writev`, `kcmp`, `io_uring_setup`, `userfaultfd`, `mount`, `setns`, `unshare`, `kexec`, `bpf`, `perf`, `keyctl`, module loading, `reboot`, clock-set; everything else allowed

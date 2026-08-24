@@ -20,7 +20,7 @@ use std::ffi::{CString, OsStr};
 use std::fs::{self, File};
 use std::io::{self, BufRead, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -68,6 +68,14 @@ struct Policy {
     extra_ro_paths: Vec<PathBuf>,
     #[serde(default)]
     extra_rw_paths: Vec<PathBuf>,
+    /// Operator-granted device nodes under /dev ([sandbox].extra_device_paths),
+    /// bound into the jail's /dev like the builtin five (plain bind, no nodev
+    /// floor -- the floor would make the grant dead). Each must be a character
+    /// or block device on the host; anything else refuses loudly. Landlock
+    /// grants read+write on the node; ioctl on the opened fd is outside
+    /// Landlock's file scope.
+    #[serde(default)]
+    extra_device_paths: Vec<PathBuf>,
     /// Real-location RO+exec bind mounts for operator-installed tools (uv, node,
     /// ...) that live outside the system dirs -- ~/.local/bin, ~/.cargo/bin, or the
     /// /opt target a /usr/local/bin symlink resolves to. Real paths mean PATH
@@ -940,6 +948,38 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         )
         .map_err(io_err)?;
     }
+    // Operator-granted device nodes ([sandbox].extra_device_paths): bound
+    // exactly like the builtin five above (plain bind, no nodev floor -- the
+    // floor exists to stop a node smuggled through a PATH grant; these ARE
+    // the operator's explicit node grant). The node must be a character or
+    // block device on the host: anything else refuses loudly rather than
+    // widening by surprise.
+    for src in &policy.extra_device_paths {
+        let meta = fs::symlink_metadata(src).map_err(|e| {
+            io::Error::other(format!(
+                "extra_device path {} is not present on the host: {e}",
+                src.display()
+            ))
+        })?;
+        let ft = meta.file_type();
+        if !(ft.is_char_device() || ft.is_block_device()) {
+            return Err(io::Error::other(format!(
+                "extra_device path {} is not a character or block device",
+                src.display()
+            )));
+        }
+        let dst = new_root.join(src.strip_prefix("/").unwrap_or(src));
+        fs::create_dir_all(dst.parent().unwrap_or(Path::new("/")))?;
+        fs::File::create(&dst)?;
+        mount(
+            Some(src.as_path()),
+            &dst,
+            Some(""),
+            MsFlags::MS_BIND,
+            Some(""),
+        )
+        .map_err(io_err)?;
+    }
     // /dev/shm: a private tmpfs, like /tmp. POSIX shared memory is ordinary
     // for real toolchains -- a headless chromium aborts outright without it --
     // and it exposes nothing, being this mount namespace's own.
@@ -1397,6 +1437,16 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
                 .map_err(|e| io::Error::other(format!("rule {p}: {e}")))?;
         }
     }
+    // Operator-granted device nodes: read+write on the node itself, so an
+    // open(O_RDWR) succeeds; WriteFile on a device inode grants no
+    // create/unlink and ioctl is outside Landlock's file scope.
+    for dev in &policy.extra_device_paths {
+        if let Ok(fd) = PathFd::new(dev) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_read | AccessFs::WriteFile))
+                .map_err(|e| io::Error::other(format!("rule dev {}: {e}", dev.display())))?;
+        }
+    }
     // Extra paths are bind-mounted by setup_rootfs at their REAL locations.
     // Without a matching Landlock rule the child would get EACCES on them
     // despite the mount, so grant the access here too. Paths that didn't
@@ -1593,6 +1643,30 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     let mut rw_paths: Vec<PathBuf> = vec![PathBuf::from("/tmp")];
     for p in &policy.extra_rw_paths {
         rw_paths.push(p.clone());
+    }
+    // Operator-granted device nodes: hardened has no mount namespace, so the
+    // grant IS this Landlock rule -- read+write on the host node (open O_RDWR;
+    // ioctl on the opened fd is outside Landlock's file scope). The same
+    // char/block check strict's rootfs applies: anything else refuses loudly.
+    for dev in &policy.extra_device_paths {
+        let meta = fs::symlink_metadata(dev).map_err(|e| {
+            io::Error::other(format!(
+                "extra_device path {} is not present on the host: {e}",
+                dev.display()
+            ))
+        })?;
+        let ft = meta.file_type();
+        if !(ft.is_char_device() || ft.is_block_device()) {
+            return Err(io::Error::other(format!(
+                "extra_device path {} is not a character or block device",
+                dev.display()
+            )));
+        }
+        if let Ok(fd) = PathFd::new(dev) {
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_read | AccessFs::WriteFile))
+                .map_err(|e| io::Error::other(format!("rule dev {}: {e}", dev.display())))?;
+        }
     }
     for p in &rw_paths {
         // Skip any rw_path that would shadow a protect_path: Landlock combines
