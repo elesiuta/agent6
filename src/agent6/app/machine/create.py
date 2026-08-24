@@ -263,6 +263,18 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     f" result.{SCRIPTS_PAYLOAD_KEY} (a map of the path to its complete source)."
                 )
                 problems = [*problems, hint]
+            if candidate_scripts:
+                # The scripts exist whether or not the TOML parsed: lint them
+                # now, so one attempt reveals every problem class instead of
+                # schema-then-lint costing an attempt each.
+                problems = [
+                    *problems,
+                    *lint_and_typecheck(
+                        scratch / "scripts",
+                        fix=True,
+                        ruff_config_from=output.parent if output is not None else cwd,
+                    ),
+                ]
         else:
             # Structurally valid. Now make it production-ready: lint + type-check
             # the scripts, run their offline `*_test.py` mocks in a jail, and

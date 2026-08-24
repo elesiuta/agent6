@@ -1126,3 +1126,40 @@ def test_create_runs_the_shared_isolation_preflight(
     assert main(["machine", "create", "a nightly loop"]) == 2
     err = capsys.readouterr().err
     assert "REFUSING" in err and "private directory" in err
+
+
+def test_a_structural_failure_still_reports_the_scripts_lint_problems(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One attempt reveals every problem class: a draft whose TOML fails
+    validation AND whose script fails lint gets both in the same retry
+    diagnostics, instead of schema-then-lint costing an attempt each (the
+    serial reveal burned sol's whole budget on a simple machine)."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    bad_toml = 'machine = "x"\nversion = 1\ninitial = "missing_state"\n'
+    bad_script = "import subprocess\nsubprocess.run(['ls'])\n"  # PLW1510: no check=
+    seen_prompts: list[str] = []
+
+    def fake_build(
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+            seen_prompts.append(request.prompt)
+            return AgentExecResult(
+                reason="finish_session",
+                payload={
+                    TOML_PAYLOAD_KEY: bad_toml,
+                    SCRIPTS_PAYLOAD_KEY: {"scripts/helper.py": bad_script},
+                },
+                usd=0.0,
+            )
+
+        return run
+
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    code = main(["machine", "create", "--max-attempts", "2", "Doomed draft"])
+    assert code == 1
+    retry_prompt = seen_prompts[1]
+    assert "initial" in retry_prompt  # the schema problem
+    assert "PLW1510" in retry_prompt  # the lint problem, in the same attempt's diagnostics
