@@ -737,6 +737,9 @@ Every empty is the agent's own wall timeout (11 of 30: 9 hard, 2
 controls; run.log markers). The old timeout ids mostly consume the
 doubled wall reading without converging, and two controls that resolved
 at 1200s wandered to a DNF at 2400s: run-to-run variance in both
-directions, zero net movement. Doubling wall and tripling the cap does
-not close the gap; the remaining suspects are loop shape and the
-zero-F2P contract class, not budget.
+directions, zero net movement. The DNF profile is model-side, not a
+tool loop: the scikit-learn control made 6 model calls in 2400s (~7 min
+of reasoning per call, 9 tool calls total, no re-read spiral) and timed
+out mid-analysis. Doubling wall and tripling the cap does not close the
+gap; the remaining suspects are the reasoning-latency variance and the
+zero-F2P contract class, not budget and not the loop.
