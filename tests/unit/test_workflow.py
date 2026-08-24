@@ -151,7 +151,7 @@ def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
     # end as "answered", not the failure-sounding "silent_finish".
     wf = _wf(mode="ask")
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
-        "The answer is 42.", Conversation(), _state(), iteration=2
+        "The answer is 42.", Conversation(), _state(), _turn(iteration=2)
     )
     assert result is not None
     assert result.reason == "answered"
@@ -167,7 +167,7 @@ def test_run_silent_finish_stays_silent_finish() -> None:
         "Done.",
         Conversation(),
         _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)),
-        iteration=5,
+        _turn(iteration=5),
     )
     assert result is not None
     assert result.reason == "silent_finish"
@@ -203,7 +203,7 @@ def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
         "I tried, but the tests still fail.",
         Conversation(),
         _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True, last_ok=False)),
-        iteration=5,
+        _turn(iteration=5),
     )
     assert result is not None and result.reason == "silent_finish"
     ends = [e for e in ev.events if e["type"] == "session.end"]
@@ -221,7 +221,7 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
             ever_edited=True,
             verify=VerifyVerdict(ever_passed=True, last_ok=True, edited_since=False),
         ),
-        iteration=5,
+        _turn(iteration=5),
     )
     ends = [e for e in ev.events if e["type"] == "session.end"]
     assert ends and ends[-1]["all_passed"] is True
@@ -239,7 +239,7 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
         "READY",
         Conversation(),
         _state(ever_edited=True),
-        iteration=5,
+        _turn(iteration=5),
     )
     assert result is not None and result.reason == "silent_finish"
     ends = [e for e in ev.events if e["type"] == "session.end"]
@@ -6268,21 +6268,21 @@ def test_standing_default_never_self_quits_and_escalates() -> None:
     wf = _wf(mode="run", curator=curator, budget=None)
     conv = Conversation()
     state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
-    first = wf._handle_silent_finish("Done.", conv, state, iteration=3)  # pyright: ignore[reportPrivateUsage]
+    first = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=3))  # pyright: ignore[reportPrivateUsage]
     assert first is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
     # Quiet again with no executed call: still absorbed, nudge escalates.
     state.tool_calls += 1  # a REFUSED call is not work
-    second = wf._handle_silent_finish("Done.", conv, state, iteration=4)  # pyright: ignore[reportPrivateUsage]
+    second = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=4))  # pyright: ignore[reportPrivateUsage]
     assert second is None
     text = conv.to_wire()[-1]["content"][0]["text"]
     assert "different approach" in text and "fruitless round 1" in text
-    third = wf._handle_silent_finish("Done.", conv, state, iteration=5)  # pyright: ignore[reportPrivateUsage]
+    third = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=5))  # pyright: ignore[reportPrivateUsage]
     assert third is None
     assert "fruitless round 2" in conv.to_wire()[-1]["content"][0]["text"]
     # Work landing resets the streak: the next absorb is the plain nudge.
     state.ok_tool_calls += 1
-    fourth = wf._handle_silent_finish("Done.", conv, state, iteration=6)  # pyright: ignore[reportPrivateUsage]
+    fourth = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=6))  # pyright: ignore[reportPrivateUsage]
     assert fourth is None
     assert "fruitless" not in conv.to_wire()[-1]["content"][0]["text"]
     assert state.standing_fruitless == 0
@@ -6297,16 +6297,16 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
     wf.config.workflow.standing_patience = 1
     conv = Conversation()
     state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
-    assert wf._handle_silent_finish("Done.", conv, state, iteration=3) is None  # pyright: ignore[reportPrivateUsage]
-    assert wf._handle_silent_finish("Done.", conv, state, iteration=4) is None  # pyright: ignore[reportPrivateUsage]
-    ended = wf._handle_silent_finish("Done.", conv, state, iteration=5)  # pyright: ignore[reportPrivateUsage]
+    assert wf._handle_silent_finish("Done.", conv, state, _turn(iteration=3)) is None  # pyright: ignore[reportPrivateUsage]
+    assert wf._handle_silent_finish("Done.", conv, state, _turn(iteration=4)) is None  # pyright: ignore[reportPrivateUsage]
+    ended = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=5))  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
 
     wf0 = _wf(mode="run", curator=curator, budget=None)
     wf0.config.workflow.standing_patience = 0
     state0 = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
-    assert wf0._handle_silent_finish("Done.", Conversation(), state0, iteration=3) is None  # pyright: ignore[reportPrivateUsage]
-    ended0 = wf0._handle_silent_finish("Done.", Conversation(), state0, iteration=4)  # pyright: ignore[reportPrivateUsage]
+    assert wf0._handle_silent_finish("Done.", Conversation(), state0, _turn(iteration=3)) is None  # pyright: ignore[reportPrivateUsage]
+    ended0 = wf0._handle_silent_finish("Done.", Conversation(), state0, _turn(iteration=4))  # pyright: ignore[reportPrivateUsage]
     assert ended0 is not None and ended0.reason == "silent_finish"
 
 
@@ -6402,7 +6402,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
     )
     conv = Conversation()
     state = _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True))
-    parked = wf._handle_silent_finish("Done.", conv, state, iteration=4)  # pyright: ignore[reportPrivateUsage]
+    parked = wf._handle_silent_finish("Done.", conv, state, _turn(iteration=4))  # pyright: ignore[reportPrivateUsage]
     assert parked is None  # steered onward, same conversation
     wire = conv.to_wire()
     assert "keep going: also cover sub()" in wire[-1]["content"][0]["text"]
@@ -6418,7 +6418,7 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
         "Done.",
         Conversation(),
         _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)),
-        iteration=4,
+        _turn(iteration=4),
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "steer_abort"
 
@@ -6430,7 +6430,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
         "Done.",
         Conversation(),
         _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)),
-        iteration=4,
+        _turn(iteration=4),
     )  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
     # A standing goal outranks the park: autonomy first, the absorb nudge (not
@@ -6440,7 +6440,10 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
     wf2 = _wf(mode="run", interactive=True, curator=curator, budget=None)
     conv = Conversation()
     out = wf2._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
-        "Done.", conv, _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)), iteration=4
+        "Done.",
+        conv,
+        _state(ever_edited=True, verify=VerifyVerdict(ever_passed=True)),
+        _turn(iteration=4),
     )  # pyright: ignore[reportPrivateUsage]
     assert out is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]

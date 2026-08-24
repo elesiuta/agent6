@@ -487,6 +487,9 @@ class _TurnState:
     # may revoke it (set back to None) before the stop checks honour it.
     finish_signal: str | None = None
     finish_payload: dict[str, Any] | None = None
+    # An end the harness or the model declared without finish_session (a
+    # settled stop, a silent finish) that a gate handed back this turn.
+    end_returned: bool = False
     # A finish that declared the configured gate stale, with the replacement it
     # proposes. Recorded and surfaced; the gate itself never moves.
     finish_stale_gate: str = ""
@@ -1084,7 +1087,9 @@ class Workflow:
             # IDs (and thinking blocks) round-trip cleanly.
             assistant = conversation.assistant(got.raw.get("content") or [])
             if not assistant.tool_uses:
-                result = self._handle_no_tool_use(got, conversation, state, iteration=iteration)
+                result = self._handle_no_tool_use(
+                    got, assistant, conversation, state, iteration=iteration
+                )
                 if result is not None:
                     return result
                 # A completed prose turn is snapshotted like a tool turn, so an
@@ -1964,6 +1969,11 @@ class Workflow:
                 )
                 if ending == "finish_session"
                 else (
+                    "The review panel rejected your silent finish (no tool_use, just"
+                    " text). Address the issues below and continue the task.\n\n"
+                )
+                if ending == "silent_finish"
+                else (
                     "The review panel rejected the settled end. Address the issues"
                     " below; the run ends when it settles again or finish_session"
                     " passes.\n\n"
@@ -2268,13 +2278,16 @@ class Workflow:
                 budget_remaining=budget_remaining,
             )
 
-    def _settled_end_gates(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
-        """An end the harness declares passes the gates a finish_session
-        would: the verify certification (`verify_when`) and the before-finish
-        review panel. A red gate with returns left, or a rejected panel,
-        hands the run back to the model with the output and restarts the
-        idle count; the unexecutable-command abort ends the run as it does
-        on the tool path."""
+    def _end_gates(
+        self, state: _LoopState, turn: _TurnState, *, ending: str
+    ) -> SessionResult | None:
+        """An end declared without finish_session (`settled`: the harness's
+        idle stop; `silent_finish`: a prose turn with no tool call) passes the
+        gates a finish_session would: the verify certification (`verify_when`)
+        and the before-finish review panel. A red gate with returns left, or a
+        rejected panel, hands the end back (`turn.end_returned`) with the
+        output; the unexecutable-command abort ends the run as it does on the
+        tool path."""
         aborted = self._turn_harness_verify(state, turn, ending=True)
         if aborted is not None:
             return aborted
@@ -2300,10 +2313,7 @@ class Workflow:
                 iteration=turn.iteration,
                 nudges_used=state.verify_finish_retries_used,
             )
-        if red_returned or self._end_is_reviewed(state, turn, ending="settled"):
-            turn.verify_settled_stop = False
-            state.verify_settled_idle = 0
-            state.verify_settled_nudged = False
+        turn.end_returned = red_returned or self._end_is_reviewed(state, turn, ending=ending)
         return None
 
     def _turn_verify_settled(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
@@ -2344,9 +2354,13 @@ class Workflow:
             and state.verify_settled_idle >= VERIFY_SETTLED_STOP_AFTER
         )
         if turn.verify_settled_stop:
-            aborted = self._settled_end_gates(state, turn)
+            aborted = self._end_gates(state, turn, ending="settled")
             if aborted is not None:
                 return aborted
+            if turn.end_returned:
+                turn.verify_settled_stop = False
+                state.verify_settled_idle = 0
+                state.verify_settled_nudged = False
         if (
             non_metric_run
             and turn.finish_signal is None
@@ -2941,6 +2955,7 @@ class Workflow:
     def _handle_no_tool_use(
         self,
         resp: ProviderResponse,
+        assistant: AssistantTurn,
         conversation: Conversation,
         state: _LoopState,
         *,
@@ -2965,16 +2980,32 @@ class Workflow:
             # run as went_quiet although no streak reached the cap -- and the
             # starvation output-cap backoff stayed stuck reduced.
             state.went_quiet_nudges_used = 0
-            return self._handle_silent_finish(text, conversation, state, iteration=iteration)
+            turn = _TurnState(iteration=iteration, resp=resp, assistant=assistant)
+            return self._handle_silent_finish(text, conversation, state, turn)
         return self._handle_went_quiet(resp, conversation, state, iteration=iteration)
 
+    def _silent_end_gates(
+        self, state: _LoopState, turn: _TurnState, conversation: Conversation
+    ) -> SessionResult | None:
+        """The verify certification and the before_finish panel over a silent
+        finish, as for an explicit finish_session; a prose turn has no tool
+        results, so the gates' notices go to the conversation directly."""
+        aborted = self._end_gates(state, turn, ending="silent_finish")
+        for item in turn.tool_results:
+            if isinstance(item, Notice):
+                conversation.notice(item.text)
+        if turn.review_text:
+            conversation.notice(f"[review]\n{turn.review_text}")
+        return aborted
+
     def _handle_silent_finish(  # noqa: PLR0911 - a gate chain of early bounces
-        self, text: str, conversation: Conversation, state: _LoopState, *, iteration: int
+        self, text: str, conversation: Conversation, state: _LoopState, turn: _TurnState
     ) -> SessionResult | None:
         """A no-tool_use turn WITH text: treat it as an implicit finish and run
         it through the same gates as an explicit finish_session. Returns None (with
         a nudge appended to the conversation) when a gate sends the worker back to
         work; the silent_finish SessionResult once every gate lets it through."""
+        iteration = turn.iteration
         # An EARLY prose turn on an untouched tree is a stall, not an
         # implicit finish (observed: kimi answering a SWE-bench problem in
         # prose at iteration 2, ending the run patchless). Bounded to the
@@ -2999,16 +3030,9 @@ class Workflow:
                 nudges_used=state.silent_no_work_nudges_used,
             )
             return None
-        # Same before_finish review gate as an explicit finish_session tool_use.
-        # Without this, an agent that stops emitting tool calls bypasses
-        # review entirely. The rejection cap is shared with the
-        # tool_use path so a stubborn worker can't bounce the loop forever.
-        if (
-            self.review_trigger == "before_finish"
-            and self._has_reviewer()
-            and self._silent_finish_review_rejects(state, conversation, iteration=iteration)
-        ):
-            return None
+        aborted = self._silent_end_gates(state, turn, conversation)
+        if aborted is not None or turn.end_returned:
+            return aborted
         # metric-run early-finish guard, mirroring the finish_session path: a
         # silent finish on an optimisation run with budget to spare should be
         # nudged to keep optimising rather than accepted. Without this,
@@ -3109,46 +3133,6 @@ class Workflow:
             iterations=iteration,
             tool_calls=state.tool_calls,
         )
-
-    def _silent_finish_review_rejects(
-        self, state: _LoopState, conversation: Conversation, *, iteration: int
-    ) -> bool:
-        """Run the before_finish panel against a silent finish. True = the
-        finish was rejected (findings appended to the conversation; the loop
-        continues). A cap-reached rejection or an approval resets the
-        rejection counter and lets the finish proceed."""
-        critique = self._run_review_panel(state, trigger="before_finish", iteration=iteration)
-        cap = self.max_consecutive_review_rejections
-        cap_reached = cap > 0 and state.consecutive_review_rejections >= cap
-        if critique is not None and not critique.satisfied and not cap_reached:
-            self._log(f"  review rejected silent_finish at iter {iteration}")
-            self._emit(
-                "loop.review.rejected_silent_finish",
-                iteration=iteration,
-            )
-            state.consecutive_review_rejections += 1
-            conversation.notice(
-                "[review]\nThe review panel rejected your silent finish (no"
-                " tool_use, just text). Address the issues below and continue"
-                " the task.\n\n" + critique.text
-            )
-            return True
-        if critique is not None and not critique.satisfied and cap_reached:
-            self._log(
-                f"  review rejected silent_finish at"
-                f" iter {iteration} but rejection cap"
-                f" ({cap}) reached - accepting finish"
-            )
-            self._emit(
-                "loop.review.rejection_cap_reached",
-                iteration=iteration,
-                rejections=state.consecutive_review_rejections,
-            )
-            state.consecutive_review_rejections = 0
-        elif critique is not None:
-            self._log("  review approved silent_finish")
-            state.consecutive_review_rejections = 0
-        return False
 
     def _handle_went_quiet(
         self,

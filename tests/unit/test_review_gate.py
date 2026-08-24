@@ -487,3 +487,42 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     turn = _idle_turn()
     wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
     assert turn.verify_settled_stop is True and state.verify.green_and_untouched
+
+
+def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
+    """A prose turn with no tool call is an end too: under `verify_when =
+    "finish"` the harness runs the gate first (red returns the worker to work
+    with the output, in the conversation since there are no tool results),
+    then the before-finish panel judges it."""
+    from agent6.config import Config
+    from agent6.workflows.loop import _LoopState, _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    cfg = Config.model_validate(
+        {"workflow": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
+    )
+    dispatcher = MagicMock()
+    dispatcher.command_policy.return_value = "yes"
+    dispatcher.run_verify.return_value = ExecResult(
+        returncode=1, stdout="2 failed", stderr="", duration_s=1.0, exec_failed=False
+    )
+    panel = _PanelScript([CritiqueResult(text="* fine", satisfied=True)])
+    wf = _wf(config=cfg, dispatcher=dispatcher, review_trigger="before_finish")
+    wf.mode = "run"
+    state = _LoopState(original_task="t", tool_calls=0)
+    state.ever_edited = True
+    state.verify.note_pass()
+    state.verify.note_edit()  # green once, edited since: stale
+    conv = Conversation()
+    with patch.object(Workflow, "_run_review_panel", panel):
+        turn = _TurnState(iteration=5, resp=_resp("Done."), assistant=MagicMock())
+        assert wf._handle_silent_finish("Done.", conv, state, turn) is None  # pyright: ignore[reportPrivateUsage]
+        texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
+        assert any("[harness verify] finish: verify_command exit 1" in t for t in texts)
+        assert any("the next red finish ends the run" in t for t in texts)
+        assert panel.calls == 0  # a red gate returns the end before the panel sits
+        # The return is spent: the next silent finish stands, the panel sits and approves.
+        turn = _TurnState(iteration=6, resp=_resp("Done."), assistant=MagicMock())
+        ended = wf._handle_silent_finish("Done.", conv, state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert ended is not None and ended.reason == "silent_finish"
+    assert ended.verified == "failed"
+    assert panel.calls == 1
