@@ -28,21 +28,24 @@ Stop it with Ctrl-C.
 
 Every page docks its text entry at the bottom, like a chat: type, Enter sends, Shift+Enter inserts a newline.
 
-- **Sessions page**: every session (mode, status, last activity, cost); the docked composer starts new work (run / plan / ask, under a chosen config preset); prune merged run branches, clear saved asks.
-- **Machines page**: machine instances and `machine create` drafts, cards that run an authored machine file, and a docked composer that creates a new one.
+- **Sessions page**: every session (mode, status, last activity, cost)
+    - the docked composer starts new work: run / plan / ask, under a chosen preset
+    - prune merged run branches; clear saved asks
+- **Machines page**: instances, `machine create` drafts, cards that run an authored machine file
+    - the docked composer creates a new one
 - **Session view** (live over SSE): the conversation is the page, the same folded transcript the CLI and TUI render, with the in-progress turn streaming underneath.
     - A detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click.
     - The run's context (status, task graph, budget, tool calls, latest commit diff, event log) lives in a resizable details drawer.
     - The docked composer steers a live run or resumes an ended one; `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages.
     - Stop now / stop after step, compact, merge, delete history, run a finished plan (`run --from-plan`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline.
       "Allow session" appears only where it would grant something beyond the one call it is clicked on.
-- **Machine view**: the state overview, the path taken, and the current agent state's conversation.
-  Approve and answer the current agent state's prompts inline (same controls as a run).
-  The docked entry submits as one of the two machine verbs, mirroring the TUI machine watch: **Steer** (into the current agent state; disabled when none is active or the machine ended) or **Message** (a `poke` payload a waiting machine's next tool reads).
-  `machine.notify`/end show as ephemeral banners and OS notifications.
-- **Config page**: every setting with its value and source, filterable, click a row to set it.
-  Enum settings offer their choices; `models.*` fields autocomplete the configured providers and the provider's model ids (the same completion the TUI and CLI have).
-  Secrets are never shown.
+- **Machine view**: the state overview, the path taken, the current agent state's conversation
+    - approve and answer the current state's prompts inline (same controls as a run)
+    - the docked entry submits as **Steer** (into the current agent state) or **Message** (a `poke` payload a waiting machine's next tool reads)
+    - `machine.notify`/end: ephemeral banners and OS notifications
+- **Config page**: every setting with value and source, filterable; click a row to set it
+    - enum settings offer their choices; `models.*` autocompletes providers and model ids (the TUI/CLI completion)
+    - secrets never shown
 
 Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
 
@@ -53,17 +56,19 @@ Start a machine on the Machines page and watch the current state stream, answeri
 ## Layout
 
 The layout reflows.
-On a desktop, the nav rail collapses to an icon strip and the run view is a fixed pane whose drawer and conversation scroll internally.
-On a phone, a fixed top bar holds the theme toggle, a bottom tab bar navigates, the composer docks above it, and the page is the only scroller.
-The run view shows one widget at a time (conversation by default), and the menu in the top bar switches to the status overview, task graph, budget, tool calls, latest commit, or event log.
+
+- desktop: the nav rail collapses to icons; the run view is a fixed pane, drawer and conversation scrolling internally
+- phone: fixed top bar (theme toggle), bottom tab nav, composer docked above it, the page as the only scroller
+- phone run view: one widget at a time (conversation by default); the top-bar menu switches to status, task graph, budget, tool calls, latest commit, or event log
 
 ## Notifications and installing (PWA)
 
-The page installs as an app (a phone home-screen icon or a desktop window).
-Click **🔔 Notifications** on a machine view to grant permission.
-A `machine.notify` message or a machine finishing then pops an OS notification: foreground on any device, backgrounded on desktop, and never on a backgrounded phone.
-A notification never clears or blocks the send and answer inputs, so one arriving mid-type keeps your text and focus.
-To reach a phone that is not open on the page, point the operator notify hook [`[machine.notify].on_event`](config.md#machinenotify-optional) at a push service.
+The page installs as an app (phone home-screen icon or desktop window).
+
+- **🔔 Notifications** on a machine view grants permission
+- `machine.notify` and machine-end pop OS notifications: foreground anywhere, backgrounded on desktop, never on a backgrounded phone
+- a notification never clears or blocks the inputs; mid-type text and focus survive
+- a phone not open on the page: point [`[machine.notify].on_event`](config.md#machinenotify-optional) at a push service
 
 ## The HTTP API
 
@@ -78,10 +83,11 @@ curl -s localhost:7658/api/config                    # effective config
 curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per change
 ```
 
-`curl /api/session/<id>` returns what `agent6 attach <id> --json` prints, plus the manifest's branch and compare facts.
-Writes are small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,resume,run_plan,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`) that only ever drive the typed spawn / answer-file contracts, never arbitrary execution.
-A machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (with an optional `message`/`data` payload) on the instance.
-The machine name and every answer id are validated to a single path component, so a request cannot traverse out of the instance dir.
+- `curl /api/session/<id>`: what `agent6 attach <id> --json` prints, plus the manifest's branch and compare facts
+- writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,resume,run_plan,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`)
+- every write drives the typed spawn / answer-file contracts, never arbitrary execution
+- a machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (optional `message`/`data`) on the instance
+- machine names and answer ids validate to a single path component: no traversal out of the instance dir
 
 ## Remote access (Tailscale)
 
@@ -93,9 +99,8 @@ agent6 web                # keep it on 127.0.0.1:7658
 tailscale serve --bg 7658 # HTTPS + WireGuard, reachable on your tailnet
 ```
 
-The tailnet (WireGuard) identity is the access control: only devices on your tailnet reach it, over an encrypted tunnel, and `tailscale serve` terminates HTTPS.
-agent6 itself handles no tokens or passwords.
-
-Binding a non-loopback address exposes the write surface, spawning runs and answering prompts, to anyone who can reach the port.
-It is refused unless you opt in, whether the host comes from [`[web].host`](config.md#web) (needs `[web].allow_non_loopback = true`) or `--host` (needs `--allow-non-loopback`).
-Prefer `tailscale serve` in front of a loopback bind over a raw non-loopback bind.
+- the tailnet (WireGuard) identity is the access control; `tailscale serve` terminates HTTPS
+- agent6 handles no tokens or passwords
+- a non-loopback bind exposes the write surface (spawn runs, answer prompts) to anyone reaching the port
+- it refuses without the opt-in: `[web].allow_non_loopback = true` for [`[web].host`](config.md#web), `--allow-non-loopback` for `--host`
+- prefer `tailscale serve` over a raw non-loopback bind
