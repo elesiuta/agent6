@@ -35,7 +35,9 @@ def cmd_ps() -> int:
             if not sessions.is_dir():
                 continue
             root = repo_root_of_id(repo_dir.name)
-            where = _home_contracted(root) if root is not None else repo_dir.name
+            # An elided-hash id is not reversible to a path: the cell says so
+            # instead of offering a state-dir name the cd line cannot use.
+            where = _home_contracted(root) if root is not None else f"? ({repo_dir.name})"
             for bucket in SESSION_BUCKETS:
                 bucket_path = sessions / bucket
                 if not bucket_path.is_dir():
@@ -63,5 +65,8 @@ def cmd_ps() -> int:
     print("  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)).rstrip())
     for r in rows:
         print("  ".join(c.ljust(widths[i]) for i, c in enumerate(r)).rstrip())
-    print("\nattach with: cd <directory> && agent6 attach <id>")
+    print(
+        "\nattach with: cd <directory> && agent6 attach <id>"
+        "  (? = directory not recoverable from the id)"
+    )
     return 0

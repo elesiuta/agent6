@@ -431,6 +431,21 @@ def test_cmd_ps_lists_live_sessions_with_decoded_directory(
     assert "dead-oak-BBBBBB" not in out
     assert "agent6 attach" in out
 
+    # An elided-hash id (a path past the byte budget) is not reversible: the
+    # directory cell says so instead of offering a state-dir name to cd into.
+    long_repo = tmp_path / ("q" * 200)
+    long_repo.mkdir()
+    elided = base / repo_id(long_repo) / "sessions" / "runs" / "long-elm-EEEEEE"
+    elided.mkdir(parents=True)
+    (elided / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    (elided / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    assert ps_cmd.cmd_ps() == 0
+    out = capsys.readouterr().out
+    assert "? (" in out and "directory not recoverable" in out
+
     monkeypatch.setattr(ps_cmd, "state_base", lambda: tmp_path / "empty")
     assert ps_cmd.cmd_ps() == 0
     assert "no live agent6 sessions." in capsys.readouterr().out
