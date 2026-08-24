@@ -1016,7 +1016,7 @@ def test_toggle_and_log_viewer_keys(tmp_path: Path) -> None:
     # Ctrl+D flips conversation <-> dashboard even with a composer bar focused
     # (the default focus on both); the log viewer opens from the View menu (the
     # run views have no bare letters) and closes with its own keys.
-    from agent6.ui.tui.app import DashboardScreen
+    from agent6.ui.tui.dashboard import DashboardScreen
     from agent6.ui.tui.logview import LogScreen
 
     (tmp_path / "logs.jsonl").write_text(
@@ -1157,8 +1157,8 @@ def test_conversation_is_the_primary_view(tmp_path: Path) -> None:
     """The app opens on the run's conversation; Ctrl+D toggles the dashboard and
     back with the SAME conversation instance (state persists); Esc on the primary
     view leaves for the hub (exit 0)."""
-    from agent6.ui.tui.app import DashboardScreen
     from agent6.ui.tui.conversation import ConversationScreen
+    from agent6.ui.tui.dashboard import DashboardScreen
 
     (tmp_path / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "x"}) + "\n", encoding="utf-8"

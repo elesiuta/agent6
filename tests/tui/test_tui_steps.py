@@ -12,7 +12,8 @@ from pathlib import Path
 import pytest
 from textual.widgets import Static, Tree
 
-from agent6.ui.tui.app import Agent6TUI, DashboardScreen
+from agent6.ui.tui.app import Agent6TUI
+from agent6.ui.tui.dashboard import DashboardScreen
 
 
 def _mk(d: Path) -> None:

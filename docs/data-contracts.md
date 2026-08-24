@@ -54,7 +54,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 | `compare` | `CompareStamp | None` | `None` |
 
 - **Written by:** app/manifest
-- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_merge, sessions_show}, ui/tui/app, ui/web/{actions, model}, viewmodel/{format, listing, policy, snapshot, state}
+- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_merge, sessions_show}, ui/tui/{app, dashboard}, ui/web/{actions, model}, viewmodel/{format, listing, policy, snapshot, state}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (12 test files exercise it)
 
 ## SessionSnapshot
@@ -196,5 +196,5 @@ Pure event-fold: list[event_dict] -> SessionState.
 **session_state_as_dict** &mdash; The JSON-able wire form of a SessionState, stable field names: what `agent6 attach --json` and a web client serialize.
 
 - **Written by:** viewmodel/{machine_state, state}
-- **Read by:** ui/cli/{_repl, _steer_menu}, ui/tui/{app, conversation, logview, modals, prompts}, viewmodel/{__init__, snapshot}
+- **Read by:** ui/cli/{_repl, _steer_menu}, ui/tui/{app, conversation, dashboard, logview, modals, prompts}, viewmodel/{__init__, snapshot}
 - **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)

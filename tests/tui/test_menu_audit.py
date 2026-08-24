@@ -19,8 +19,9 @@ from typing import cast
 from rich.text import Text
 from textual.app import App
 
-from agent6.ui.tui.app import Agent6TUI, DashboardScreen
+from agent6.ui.tui.app import Agent6TUI
 from agent6.ui.tui.config_page import ConfigScreen
+from agent6.ui.tui.dashboard import DashboardScreen
 from agent6.ui.tui.home import Agent6HomeApp
 from agent6.ui.tui.menubar import Menu, _Dropdown
 
