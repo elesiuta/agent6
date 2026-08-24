@@ -304,3 +304,32 @@ def test_unlimited_credits_do_not_refuse() -> None:
     t = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
     _record_plan(t, _plan_with_credits(100.0, unlimited=True))
     t.check()
+
+
+def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
+    """fraction_remaining consulted only the USD and fallback-token ledgers,
+    so a plan-metered run reported ~1.0 remaining until the max_percent hard
+    stop: none of the graceful near-budget behaviour (wind-down nudges,
+    review gating, metric decisions) ever engaged. The plan ledger
+    contributes used = plan_consumed / max_percent like the others."""
+    from agent6.budget import BudgetTracker, PlanUsage
+
+    t = BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_percent=5.0)
+    t.record(
+        model="gpt-5.6-sol",
+        input_tokens=10,
+        output_tokens=10,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        plan_usage=PlanUsage(used_percent=40.0, window_minutes=300, resets_at=0.0),
+    )
+    t.record(
+        model="gpt-5.6-sol",
+        input_tokens=10,
+        output_tokens=10,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        plan_usage=PlanUsage(used_percent=42.5, window_minutes=300, resets_at=0.0),
+    )
+    # The run consumed ~2.5 points of its 5-point cap.
+    assert 0.4 <= t.fraction_remaining() <= 0.6

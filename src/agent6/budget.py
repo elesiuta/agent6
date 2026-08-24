@@ -380,7 +380,8 @@ class BudgetTracker:
         (verify + finish_session) before the hard stop.
 
         Each ledger contributes its own used-fraction (spent/cap for the USD
-        meter, unmetered-tokens/cap for the fallback); an unlimited (-1) or
+        meter, unmetered-tokens/cap for the fallback, consumed-points/cap for
+        the plan percent); an unlimited (-1) or
         refuse (0) cap contributes nothing -- 0 either never engaged (nothing
         recorded in that ledger) or already tripped `_exceeded_reason`.
         """
@@ -393,6 +394,8 @@ class BudgetTracker:
                 used = max(used, usd_spent / self.max_usd)
             if self.max_tokens_fallback > 0:
                 used = max(used, self._unmetered_tokens / self.max_tokens_fallback)
+            if self.max_percent > 0.0:
+                used = max(used, self._plan_consumed / self.max_percent)
         return max(0.0, 1.0 - used)
 
     def snapshot(self) -> BudgetSnapshot:
