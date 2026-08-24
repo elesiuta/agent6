@@ -543,7 +543,9 @@ def test_run_refuses_rerun_of_ended_instance(
     write_worker_pid(root, sentinel)
     code = main(["machine", "run", str(f)])
     assert code == 2  # a refusal
-    assert "already ended" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "already ended" in err
+    assert str(root) in err  # the archive remedy names the instance dir
     # worker.pid was NOT re-stamped with the (live) rerun process pid.
     assert read_worker_pid(root) == sentinel
     # The journal still reads terminal, unchanged.

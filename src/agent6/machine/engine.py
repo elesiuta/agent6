@@ -884,7 +884,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
             raise EngineError(
                 f"journal references state {state!r}, which the loaded machine no"
                 " longer declares (the file was edited since this instance started);"
-                " archive the instance directory to start fresh."
+                f" archive the instance directory to start fresh: {eng.journal.root}"
             )
         if event.state != state:
             raise EngineError(
@@ -951,7 +951,7 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
             raise EngineError(
                 f"journal resumes at state {state!r}, which the loaded machine no"
                 " longer declares (the file was edited since this instance started);"
-                " archive the instance directory to start fresh."
+                f" archive the instance directory to start fresh: {journal.root}"
             )
         # Emit a state's `notify` on entry (§4.3), before executing it. At-least-
         # once across a crash: a resume re-enters the current state and re-emits.
@@ -1118,7 +1118,7 @@ def drive(
             f"this journal was started by machine {begin.machine!r} v{begin.version},"
             f" but the file declares {spec.machine!r} v{spec.version}. A different"
             " machine reused the id, or the file changed since this instance began;"
-            " archive the instance directory to start fresh."
+            f" archive the instance directory to start fresh: {journal.root}"
         )
 
     if not events and live:

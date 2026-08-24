@@ -393,7 +393,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     f"{spec.machine} already ended in {end.state!r}"
                     f" ({end.status}: {end.reason})."
                     " Replay it with `agent6 machine replay`, or archive the"
-                    " instance directory to start fresh."
+                    f" instance directory to start fresh: {journal.root}"
                 )
                 return 2
             if journal.exists():
@@ -405,7 +405,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     reporter.refuse(
                         f"{drift}. A live instance runs the bundle it"
                         " recorded; archive the instance directory to start"
-                        " fresh with the edited machine."
+                        f" fresh with the edited machine: {journal.root}"
                     )
                     return 2
             data_dir.mkdir(parents=True, exist_ok=True)
