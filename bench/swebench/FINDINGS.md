@@ -676,3 +676,23 @@ pypsa-1653, rapid-mlx-227, ultraplot-696, mtplx-21. Lost: beever-atlas-102,
 loguru-1451, pygeoapi-2338, fusesoc-776, click-3239, pandas-64816,
 pgmpy-3137, build-1027, sqlglot-7187. The knob and its bench plumbing
 were removed.
+
+### Preset smoke: ultra and paranoid on the ChatGPT provider (2026-08-23)
+
+The two review-panel presets (`ultra`: a three-seat panel vetoing the
+finish; `paranoid`: five explore-tier seats) on gpt-5.6-sol, the first 5
+ids of the hard-30 sample, gateless, official scorer; a smoke that the
+panels run on this provider, not an A/B (n=5).
+
+| arm | resolved | ends reviewed by the panel |
+|---|---|---|
+| ultra, 0.0.28 wheel | 2/5 | 3 of 5 (2 ended "settled", no panel) |
+| paranoid, 0.0.28 wheel | 3/5 | 4 of 5 (1 ended "settled", no panel) |
+| ultra, fixed tree | 1/5 | 5 of 5 |
+| paranoid, fixed tree | 3/5 | 5 of 5 |
+
+A run that commits and goes idle ends "settled" without calling
+`finish_session`; on the 0.0.28 wheel that end bypassed the before-finish
+panel. The fix routes the settled stop (and a silent finish) through the
+same gates a `finish_session` passes: every end in the rerun carries a
+panel verdict (6 at `finish_session`, 4 at the settled stop).
