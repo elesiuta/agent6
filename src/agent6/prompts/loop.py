@@ -296,8 +296,8 @@ This run's verify_command (call via `run_verify_command`):
 
 Returncode 0 passes. Non-zero means the change broke something: fix or
 revert before proceeding.
-- Quick targeted tests via `run_command` are fine while iterating;
-  `run_verify_command` runs this gate and is what certifies the work.
+- `run_verify_command` runs the operator's gate; a passing run
+  auto-commits the step.
 - If the gate no longer matches the task (it pins behaviour this run
   deliberately changed, or cannot run), finish with stale_gate set to
   the command you believe is right; it records a proposal for the
