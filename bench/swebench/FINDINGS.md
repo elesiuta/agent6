@@ -657,3 +657,22 @@ guard's message blames a Docker Hub 429 it did not see. `docker image
 prune -af` between chains; the redo (run_sweep skips ids with a pred)
 ran beside the verify-on arm, 6+6 containers per batch of 12, images
 pruned after both scorers.
+
+### The contract-examples step: a measured null (2026-08-23)
+
+One extra worker call before the first edit derives input -> output
+examples of the expected behaviour from the task text and shows them to
+the model (`[prompt].contract_examples`, off by default). Paired against
+the gateless SWE-rebench 2026_03 baseline on the same 110 ids, same
+wheel, seeds and caps, official scorer:
+
+| without -> with the step | SWE-rebench 2026_03, 110 ids |
+|---|---|
+| resolved | 48/110 -> 46/110 (7 gained, 9 lost) |
+| model calls, total | 1457 -> 1821 (+25%) |
+
+Gained: azure-search-openai-demo-3025, montepy-933, marshmallow-2925,
+pypsa-1653, rapid-mlx-227, ultraplot-696, mtplx-21. Lost: beever-atlas-102,
+loguru-1451, pygeoapi-2338, fusesoc-776, click-3239, pandas-64816,
+pgmpy-3137, build-1027, sqlglot-7187. The knob and its bench plumbing
+were removed.
