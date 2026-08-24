@@ -397,28 +397,28 @@ def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def _modal_ready(app: Agent6TUI) -> bool:
+def _approval_ready(app: Agent6TUI) -> bool:
     # The conversation screen renders an approval inline: the item plus its key
     # row, mounted and focused (a modal only on the other screens).
     rows = app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
     return app.screen is app._conv and bool(rows) and app.focused is rows.first()  # pyright: ignore[reportPrivateUsage]
 
 
-def test_live_run_still_pops_the_approval_modal(tmp_path: Path) -> None:
-    # The converse: gating on liveness must not cost the live run its modal.
+def test_live_run_still_gets_the_inline_approval(tmp_path: Path) -> None:
+    # The converse: gating on liveness must not cost the live run its approval row.
     d = tmp_path / "blocked1"
     _mk_blocked(d, alive=True)
 
     async def scenario() -> None:
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _wait_for(pilot, lambda: _modal_ready(app), "the modal")
+            await _wait_for(pilot, lambda: _approval_ready(app), "the approval row")
 
     asyncio.run(scenario())
 
 
 def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
-    """The worker dies while the modal is open: the answer reaches nothing, so
+    """The worker dies while the approval row is open: the answer reaches nothing, so
     say so instead of silently writing a file the next resume drops."""
     d = tmp_path / "dies-mid-modal"
     _mk_blocked(d, alive=True)
@@ -426,7 +426,7 @@ def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _wait_for(pilot, lambda: _modal_ready(app), "the modal")
+            await _wait_for(pilot, lambda: _approval_ready(app), "the approval row")
             (d / "worker.pid").write_text("999999999", encoding="utf-8")
             app._heartbeat_at = 0.0
             app._tick()
@@ -557,9 +557,9 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            # Dismiss the prompt modal (Esc = deny writes only the bridge file;
+            # Deny the inline approval (d writes only the bridge file;
             # no answer EVENT lands, so the fold keeps the run "waiting").
-            await _wait_for(pilot, lambda: _modal_ready(app), "the modal")
+            await _wait_for(pilot, lambda: _approval_ready(app), "the approval row")
             await pilot.press("d")
             await _open_dash(app, pilot)
             await _wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")

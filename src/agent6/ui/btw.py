@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The CLI's `/btw` runner: spawn the side question, deliver the answer.
+"""The `/btw` runner every composer shares (CLI menu, TUI, web): spawn the
+side question, deliver the answer.
 
 The menu owns the grammar and `app.btw` owns the session; this owns the two
-things only the front-end can do -- spawning through whatever escape the run
-has from its namespace, and handing the finished answer to the console view,
-which prints it whole at the next turn boundary.
+things only a front-end can do -- spawning through whatever escape the run
+has from its namespace, and landing the finished answer in the run's journal,
+which each surface renders at its next turn boundary.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from threading import Thread
 from agent6.app.btw import BtwLaunch, BtwSession, btw_answer, render_btw, start_btw
 from agent6.events import EventSink
 from agent6.sandbox.jail import keep_out_of_the_sweep
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
 from agent6.ui.spawn import agent6_exe
 
 # How often the watcher looks for the answer. A btw is a short question, and
@@ -106,7 +107,7 @@ def asks_dir(session_dir: Path) -> Path:
     Derived from the running session's dir rather than re-resolving the state
     base: the two must agree even when `[agent6].state_dir` is overridden.
     """
-    return session_dir.parent.parent / "asks"
+    return bucket_dir(layout_of(session_dir).state_dir, "asks")
 
 
 def open_btw(session_dir: Path, question: str) -> str:

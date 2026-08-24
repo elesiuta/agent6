@@ -222,7 +222,7 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .prompt-box .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--surface); border: 1px solid var(--surface2); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; white-space: pre; overflow-x: auto; }
 .prompt-box .cmd .tok-str { color: var(--warn); }
 .prompt-box .cmd .tok-flag { color: var(--accent); }
-.prompt-box .cmd .tok-op { font-weight: 700; }  /* a question keeps its lines (an option list, a file listing) */
+.prompt-box .cmd .tok-op { font-weight: 700; }
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
   bottom: calc(120px + env(safe-area-inset-bottom)); max-width: 90vw; /* clears the docked composer */

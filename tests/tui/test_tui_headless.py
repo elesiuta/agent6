@@ -592,7 +592,7 @@ def test_dead_peer_claim_does_not_mask_the_live_dashboard(tmp_path: Path) -> Non
     asyncio.run(scenario())
 
 
-def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
+def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: Path) -> None:
     """`agent6 resume` appends a new session whose prompt ids restart at
     approval-1; a dashboard held across the resume must pop the new session's
     modal, not swallow it as already seen."""
