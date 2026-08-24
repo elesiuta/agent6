@@ -595,7 +595,7 @@ Sizing for long-running machines:
 | `agent6 machine` (`machine list`)         | this repo's machines: each instance's status and current state joined with the authored `.asm.toml` that declares it, then the authored files no instance has run (spec validity per file). Read-only. |
 | `agent6 attach <id>`                       | follow a running instance live (the unified watcher; the same command follows a run): state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. |
 | `agent6 machine poke <id> [--data <json>\|--message <text>]` | signal a waiting instance to wake on its next check; an optional payload reaches the next `tool` at `$AGENT6_MACHINE_DATA_DIR/poke.json` (journaled, replay-safe). |
-| `agent6 machine stop <id>`                | park a running machine at its next transition boundary (a durable marker rather than a kill; it also wakes a sleeping `wait`, leaving it armed). No `MachineEnd` is journaled, so the instance resumes with `machine run`. An ended or not-running machine is refused. Also on the web machine page and the TUI machine screen (`x`). |
+| `agent6 machine stop <id>`                | park at the next transition boundary: a durable marker, not a kill; wakes a sleeping `wait`, leaving it armed; no `MachineEnd` journaled (resumes with `machine run`); ended/not-running refused; also on the web machine page and the TUI machine screen (`x`) |
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
 
 `machine check` is the human-editability payoff: precise, fail-loud diagnostics (`state "act": branch is not total (no else); add { else = true, goto = ... }`).
@@ -606,12 +606,13 @@ Describe a loop in plain language and get a first-cut bundle back.
 It is an ordinary jailed agent6 loop handed this document's grammar; the model returns the whole bundle through `finish_session` (`result.toml` = the `.asm.toml`, `result.scripts` = every referenced script plus a mock test per script with an external seam).
 No new tool, no file-writing capability.
 
-- Every draft is gated: `machine check`, ruff (under the destination's ruff config), ty, and the mock tests in a no-network jail.
-  Failures loop back with the failing source, up to `--max-attempts` (default 3); retries carry the prior draft so the model patches, not regenerates.
-- The result is a draft: `-o <file>` overwrites freely, else `<name>.asm.toml` in the cwd, never clobbered (a collision prints to stdout and exits non-zero).
-  Scripts land in `scripts/`.
-- Each attempt is watchable: a draft dir under the state dir carries the prompt, candidate, transcript, and a `logs.jsonl` the TUI/web follow live. The CLI streams the draft in the foreground; the TUI and web start it detached and follow that dir.
-- [Security considerations](#9-security-considerations)'s invariant holds: `create` only drafts into the working tree; the operator reviews and commits; `machine run` refuses an uncommitted bundle (the `.asm.toml` and its `scripts/`).
+- every draft is gated: `machine check`, ruff (the destination's ruff config), ty, mock tests in a no-network jail
+    - failures loop back with the failing source, up to `--max-attempts` (default 3); retries carry the prior draft (patch, not regenerate)
+- the result is a draft: `-o <file>` overwrites freely, else `<name>.asm.toml` in the cwd, never clobbered (a collision prints to stdout, exits non-zero)
+    - scripts land in `scripts/`
+- each attempt is watchable: a draft dir under the state dir carries prompt, candidate, transcript, and a `logs.jsonl` the TUI/web follow live
+    - the CLI streams in the foreground; the TUI and web start detached and follow the dir
+- the [Security considerations](#9-security-considerations) invariant holds: `create` drafts into the working tree only; the operator reviews and commits; `machine run` refuses an uncommitted bundle
 
 ---
 
@@ -776,13 +777,12 @@ stateDiagram-v2
 
 ## 11. Resolved decisions
 
-- **`wait` runtime**: the format journals an absolute next-wake instant; the v1 runtime is plain in-process blocking ([State kinds](#43-state-kinds), [Reliability](#6-reliability-for-247-operation)).
-  A persisted-wake/systemd driver can run the identical file later.
-  A zero-timer `wait` parks until a `signal` poke; the poke's optional payload is journaled and materialized to `poke.json` for the next tool.
+- **`wait` runtime**: an absolute next-wake instant is journaled; v1 blocks in-process ([State kinds](#43-state-kinds), [Reliability](#6-reliability-for-247-operation))
+    - a persisted-wake/systemd driver runs the identical file later
+    - a zero-timer `wait` parks until a `signal` poke; the payload journals and materializes to `poke.json`
 - **Schema language**: inline `[schemas.*]` TOML ([Record schemas](#46-record-schemas-schemas)), not JSON Schema; no new dependency, human-editable, one mechanism for both `output_schema` validation and navigable record vars.
 - **`agent` writes**: exactly one validated `finish_session` payload per `agent` state is the LLM's only write channel ([The blackboard](#42-the-blackboard-three-owners)); multiple outputs are fields of one record.
-- **Concurrency**: strictly sequential (one active state, no fork/join); compose by running independent machines.
-  `fork`/`join` may come later.
+- **Concurrency**: strictly sequential, one active state; compose by running independent machines (`fork`/`join` may come later)
 - **`json` navigability**: opaque `json` is wholesale-only; anything navigated with `.field` must be a declared record type ([Record schemas](#46-record-schemas-schemas)), so every path is statically checkable.
 - **List → argv**: no `join` filter; a lone `"{{ listvar }}"` argv element is spliced to one element per item ([Templating and list-splicing](#44-templating-and-list-splicing)).
 - **Naming**: subcommand `machine`; suffix `.asm.toml` ([The format](#4-the-format)).
