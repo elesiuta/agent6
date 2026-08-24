@@ -585,3 +585,24 @@ contract that exists only in tests not yet written (96%), so a search
 over the existing suite cannot surface it. What is left is deriving
 the exact expected behaviour from the issue text, and the 14
 broke-P2P regressions a gate catches (this split ran gateless).
+
+### The world-state recast of all run-mode text (2026-08-22)
+
+Fourth paired hard-30 arm: every run-mode model-facing string recast to
+facts (base prompt, DAG rules, verify block, git-protect rule, first
+message, tool descriptions; nudges separately), compared against the
+old best on the same sample per the no-regression rule (no fresh
+baseline arm):
+
+| arm | resolved | self-tests | gate runs |
+|---|---|---|---|
+| never-rule | 17/30 | 103 | 65 |
+| targeted-fine | 19/30 | 206 | 40 |
+| world-state fact | 19/30 | 177 | 39 |
+| world-state recast | 19/30 | 207 | 35 |
+
+Against the fact arm: gained django-13344, lost sympy-13974; zero
+empties. Wall is not comparable: the arm was interrupted by a machine
+change at 15/30 and finished at --conc 4 on 16 cores. SHIPPED with the
+follow-up recast of plan/ask/agent/machine text and the nudges, which
+SWE-bench does not exercise; those went out on paired live smokes.
