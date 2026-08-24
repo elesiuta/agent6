@@ -131,6 +131,7 @@ from agent6.viewmodel.state import (
     apply_event,
     context_fill,
     fold_session,
+    fold_until_commit,
     initial_state,
     status_facts,
 )
@@ -298,6 +299,20 @@ class DashboardScreen(ScreenChrome, Screen[None]):
                     return diff_range(Path.cwd(), base, sha) or "(no diff)"
         return commit_diff(Path.cwd(), sha) or "(no diff)"
 
+    def _details_state(self, s: SessionState) -> tuple[SessionState, str]:
+        """The state the task tree and the cost line show: live, or as of the
+        selected step (folded once per selection from the log)."""
+        sha = self._step_sel
+        if not sha:
+            return s, ""
+        if self._step_state is None or self._step_state[0] != sha:
+            at = fold_until_commit(tail_events(self._tui.logs_path, follow=False), sha)
+            if at is None:
+                return s, ""
+            self._step_state = (sha, at)
+        at = self._step_state[1]
+        return at, f" · as of iter {at.steps[-1].iteration}"
+
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "diff-step":
             self._step_sel = str(event.value or "")
@@ -322,12 +337,13 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # untouched fields identical, so `is` says "nothing to redo"). Rebuilding
         # the tree/table/diff on every structural event would be most of a
         # burst's cost.
-        self._rendered_tree: tuple[object, object] | None = None
+        self._rendered_tree: tuple[object, ...] | None = None
         self._rendered_tools: tuple[object, object] | None = None
         self._rendered_diff: tuple[object, ...] | None = None
         self._step_sel = ""  # a selected step's sha ("" = latest)
         self._cumulative = False
         self._nav_steps = -1  # how many steps the selector lists
+        self._step_state: tuple[str, SessionState] | None = None  # the fold as of _step_sel
         self._compare_line: str | None = None  # cached fan-out compare header (terminal state)
         self._branch_line: str | None = None  # cached branch header (fixed for the leg)
         self._lineage_line: str | None = None  # cached fork lineage (never changes)
@@ -604,25 +620,26 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
         finished = self._end_label()
-        cost = f"[b]{format_cost(s.budget.usd_total, partial=s.budget.usd_partial)}[/]"
+        ds, as_of = self._details_state(s)
+        cost = f"[b]{format_cost(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
         # Consumption of the binding ledger: THIS leg's metered spend vs its
         # usd_cap (resume re-arms the cap while usd_total stays cumulative),
         # plus the unmetered-token fraction when that ledger has traffic.
         budget = ""
-        if s.budget.usd_cap > 0:
-            leg_usd = s.budget.usd_total - s.budget.usd_prior_legs
-            budget = f"   budget: {min(leg_usd / s.budget.usd_cap, 1.0):.0%}"
-        if s.budget.tokens_unmetered and s.budget.tokens_fallback_cap > 0:
-            unmet = min(s.budget.tokens_unmetered / s.budget.tokens_fallback_cap, 1.0)
+        if ds.budget.usd_cap > 0:
+            leg_usd = ds.budget.usd_total - ds.budget.usd_prior_legs
+            budget = f"   budget: {min(leg_usd / ds.budget.usd_cap, 1.0):.0%}"
+        if ds.budget.tokens_unmetered and ds.budget.tokens_fallback_cap > 0:
+            unmet = min(ds.budget.tokens_unmetered / ds.budget.tokens_fallback_cap, 1.0)
             budget += f"   unmetered: {unmet:.0%}"
-        if s.budget.plan_used_percent > 0:
-            budget += f"   plan: {s.budget.plan_used_percent:g}%"
-            if s.budget.plan_cap > 0:
-                budget += f" (run {s.budget.plan_consumed:g}/{s.budget.plan_cap:g}pt)"
+        if ds.budget.plan_used_percent > 0:
+            budget += f"   plan: {ds.budget.plan_used_percent:g}%"
+            if ds.budget.plan_cap > 0:
+                budget += f" (run {ds.budget.plan_consumed:g}/{ds.budget.plan_cap:g}pt)"
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
         self.query_one("#top", Static).update(
-            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{ctx}"
+            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{as_of}{budget}{ctx}"
             f"   {finished}\n"
             f"task: {escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))}"
             f"{escape(self._lineage_top())}{escape(self._branch_top())}"
@@ -707,13 +724,17 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # Task DAG: the worker's live add_task/update_task breakdown (graph.update
         # snapshots), indented by depth, cursor marked. Rebuilt only when the
         # tasks tuple (or the selection highlight) actually changed.
+        ds, as_of = self._details_state(s)
         if self._rendered_tree is None or not (
-            self._rendered_tree[0] is s.tasks and self._rendered_tree[1] == sel
+            self._rendered_tree[0] is ds.tasks
+            and self._rendered_tree[1] == sel
+            and self._rendered_tree[2] == as_of
         ):
-            self._rendered_tree = (s.tasks, sel)
+            self._rendered_tree = (ds.tasks, sel, as_of)
             tree = self.query_one("#plan", Tree)
             tree.clear()
-            for tv in s.tasks:
+            tree.border_title = f"tasks{as_of}" if as_of else ""
+            for tv in ds.tasks:
                 icon = _TASK_ICONS.get(tv.status, "·")
                 indent = "  " * tv.depth
                 marker = "▸ " if tv.is_cursor else ""

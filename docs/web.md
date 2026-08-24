@@ -37,7 +37,7 @@ Every page docks its text entry at the bottom, like a chat: type, Enter sends, S
     - A detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click.
     - The run's context (status, task graph, budget, tool calls, background shells, latest commit diff, event log) lives in a resizable details drawer.
     - The docked composer steers a live run or resumes an ended one; `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages.
-    - the Latest commit widget selects any per-step commit (cumulative toggle); a model-controlled run has no chain and says so
+    - the Latest commit widget selects any per-step commit (cumulative toggle); the Budget and Task graph widgets then show that step's state; a model-controlled run has no chain and says so
     - Stop now / stop after step, compact, merge, delete history, run a finished plan (`run --from-plan`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline.
       "Allow session" appears only where it would grant something beyond the one call it is clicked on.
 - **Machine view**: the state overview, the path taken, the current agent state's conversation

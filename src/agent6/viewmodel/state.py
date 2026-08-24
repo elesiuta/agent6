@@ -806,6 +806,18 @@ def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
     return state
 
 
+def fold_until_commit(events: Iterable[dict[str, Any]], sha: str) -> SessionState | None:
+    """The state as of one of the run's commits: every event up to and
+    including its loop.auto_commit folded, later ones dropped (the details a
+    step selector time-travels to). None when no commit has that sha."""
+    state = initial_state()
+    for event in events:
+        state = apply_event(state, event)
+        if state.steps and state.steps[-1].sha == sha:
+            return state
+    return None
+
+
 def session_status_label(state: SessionState) -> str:
     """The status label for a stream with genuinely NO run dir (the
     `attach --json` wire form). It distinguishes a stop from a finish from an

@@ -16,6 +16,7 @@ from agent6.viewmodel.state import (
     TaskNodeView,
     apply_event,
     fold_session,
+    fold_until_commit,
     format_log_line,
     initial_state,
     session_state_as_dict,
@@ -841,3 +842,17 @@ def test_auto_commits_fold_into_the_step_list() -> None:
         (3, "a", "fix parser"),
         (5, "b", "add test"),
     ]
+
+
+def test_fold_until_commit_stops_at_that_step() -> None:
+    """The details a step selector time-travels to: the fold up to and including
+    the step's auto_commit, nothing after; None for a sha the run never made."""
+    events = [
+        {"type": "session.start", "session_id": "s", "mode": "run", "user_task": "t"},
+        {"type": "loop.auto_commit", "iteration": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "loop.auto_commit", "iteration": 2, "sha": "b" * 40, "subject": "two"},
+    ]
+    at = fold_until_commit(events, "a" * 40)
+    assert at is not None and [s.iteration for s in at.steps] == [1]
+    assert [s.iteration for s in fold_session(events).steps] == [1, 2]
+    assert fold_until_commit(events, "c" * 40) is None

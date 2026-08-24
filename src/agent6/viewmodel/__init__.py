@@ -70,6 +70,7 @@ from agent6.viewmodel.machine_state import (
 )
 from agent6.viewmodel.policy import SessionPolicy, session_policy
 from agent6.viewmodel.snapshot import (
+    UnknownStepError,
     machine_snapshot,
     manifest_branches,
     manifest_header,
@@ -132,6 +133,7 @@ __all__ = [
     "TranscriptFold",
     "TranscriptItem",
     "TransitionView",
+    "UnknownStepError",
     "VerifyView",
     "apply_event",
     "approval_parts",

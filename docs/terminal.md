@@ -30,7 +30,7 @@ An approval shows inline at the conversation's tail (the command, fixed-width) w
 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
 
-- the diff pane opens on the latest commit; its selector walks the run's per-step commits (newest first), `cumulative` shows the chain up to that step; a run whose model owns git has no chain and the pane says so
+- the diff pane opens on the latest commit; its selector walks the run's per-step commits (newest first), `cumulative` shows the chain up to that step; the task tree and the cost line follow the selected step; a run whose model owns git has no chain and the pane says so
 - the composer bar runs along the foot: type to steer, or to resume a finished run
 - `/` completes the steer directives; Ctrl-R searches the session's past messages
 - `/shells` lists the run's background commands and how they ended; `/restate` replays the conversation since your last message

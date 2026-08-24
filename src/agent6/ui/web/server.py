@@ -51,6 +51,7 @@ from agent6.ui.web.page import (
     SERVICE_WORKER_JS,
 )
 from agent6.viewmodel import (
+    UnknownStepError,
     apply_event,
     died_without_end,
     initial_state,
@@ -579,7 +580,11 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"no session {session_id!r}"}, status=404)
             return
         if sub == "":
-            self._send_json(session_snapshot(session_dir, repo=self.cwd))
+            step = (parse_qs(urlsplit(self.path).query).get("step") or [""])[0]
+            try:
+                self._send_json(session_snapshot(session_dir, repo=self.cwd, step=step))
+            except UnknownStepError as e:
+                self._send_json({"error": str(e)}, status=422)
         elif sub == "conversation":
             self._send_json(model.conversation_payload(session_dir))
         elif sub == "restate":

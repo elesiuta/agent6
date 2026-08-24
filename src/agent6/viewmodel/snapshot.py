@@ -18,7 +18,7 @@ from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel.format import format_branch, format_lineage
 from agent6.viewmodel.listing import session_compare
 from agent6.viewmodel.machine_state import fold_machine, machine_state_as_dict
-from agent6.viewmodel.state import fold_session, session_state_as_dict
+from agent6.viewmodel.state import fold_session, fold_until_commit, session_state_as_dict
 from agent6.viewmodel.tail import tail_events
 
 
@@ -73,14 +73,31 @@ def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str,
     return header
 
 
-def session_snapshot(session_dir: Path, *, repo: Path | None = None) -> dict[str, Any]:
+class UnknownStepError(ValueError):
+    """A step sha that is none of the run's commits."""
+
+
+def session_snapshot(
+    session_dir: Path, *, repo: Path | None = None, step: str = ""
+) -> dict[str, Any]:
     """A session's folded state as the wire dict, with the dir-aware status
     (parked / stale / waiting, not the fold's blanket "running"), the
     dir-backed identity fill, and the manifest header. A session with no log
     yet (a parked submission, a `fork --no-run`) folds nothing and lets the
-    dir supply the word."""
-    state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
+    dir supply the word. *step* (a commit sha of the run) folds only up to
+    that commit and stamps `as_of`."""
+    events = tail_events(session_dir / LOGS_NAME, follow=False)
+    as_of: dict[str, Any] | None = None
+    if step:
+        at = fold_until_commit(events, step)
+        if at is None:
+            raise UnknownStepError(f"no commit {step} in this run")
+        state = at
+        as_of = {"iteration": at.steps[-1].iteration, "sha": at.steps[-1].sha}
+    else:
+        state = fold_session(events)
     snap = session_state_as_dict(state, session_dir)
+    snap["as_of"] = as_of
     snap.update(manifest_header(session_dir, repo=repo))
     snap["shells"] = roster_from_dir(session_dir / SHELLS_DIR)
     return snap

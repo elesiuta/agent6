@@ -1419,3 +1419,29 @@ def test_step_diff_serves_one_step_or_the_cumulative_chain(
     )
     status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c1}")
     assert status == 422 and "owns git" in str(json.loads(raw)["error"])
+
+
+def test_session_snapshot_as_of_a_step(server: tuple[WebServer, int], tmp_path: Path) -> None:
+    """`?step=<sha>` folds the log up to that commit (the Budget and Task graph
+    widgets follow the step picked in the Latest commit card) and stamps
+    `as_of`; a sha the run never made is refused."""
+    _srv, port = server
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "asof-run"
+    session_dir.mkdir(parents=True)
+    events = [
+        {"type": "session.start", "session_id": "asof-run", "mode": "run", "user_task": "t"},
+        {"type": "loop.auto_commit", "iteration": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "loop.auto_commit", "iteration": 2, "sha": "b" * 40, "subject": "two"},
+    ]
+    (session_dir / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+    )
+    status, raw, _ = _get(port, f"/api/session/asof-run?step={'a' * 40}")
+    snap = json.loads(raw)
+    assert status == 200 and snap["as_of"] == {"iteration": 1, "sha": "a" * 40}
+    assert [st["iteration"] for st in snap["steps"]] == [1]
+    status, raw, _ = _get(port, "/api/session/asof-run")
+    snap = json.loads(raw)
+    assert status == 200 and snap["as_of"] is None and len(snap["steps"]) == 2
+    status, _raw, _ = _get(port, f"/api/session/asof-run?step={'c' * 40}")
+    assert status == 422

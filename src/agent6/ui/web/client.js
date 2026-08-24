@@ -1177,6 +1177,65 @@ function paintPrompts(cards, s) {
   }
 }
 
+// Budget and task graph: the live state, or the state as of the step picked
+// in the Latest commit card (the server folds the log up to that commit).
+function paintDetails(cards, s, asOf) {
+  // budget
+  const b = s.budget || {};
+  cards.budget.innerHTML = '';
+  const barRow = (label, frac, text) => {
+    const w = el('div'); w.appendChild(el('div', 'sub muted', `${label}: ${text}`));
+    const bar = el('div', 'bar' + (frac > 0.85 ? ' warn' : '')); const sp = el('span'); sp.style.width = (frac*100)+'%'; bar.appendChild(sp); w.appendChild(bar); return w;
+  };
+  // Metered spend vs max_usd (-1 = unlimited); unmetered tokens vs the fallback
+  // cap only when that ledger has traffic. The cap re-arms each resume leg, so
+  // the bar meters THIS leg's spend (usd_total - usd_prior_legs) while the cost
+  // figure stays cumulative -- mirrors ui/tui/app.py render_heartbeat; keep in sync.
+  const usdCap = b.usd_cap || 0;
+  const legUsd = Math.max(0, (b.usd_total || 0) - (b.usd_prior_legs || 0));
+  const usdFrac = usdCap > 0 ? Math.min(1, legUsd / usdCap) : 0;
+  const usdText = fmtUsd(b.usd_total, b.usd_partial)
+    + (usdCap > 0 ? ((b.usd_prior_legs || 0) > 0 ? ' · leg ' + fmtUsd(legUsd, false) + ' / ' + fmtUsd(usdCap, false) : ' / ' + fmtUsd(usdCap, false))
+                  : (usdCap === -1 ? ' (unlimited)' : ''));
+  cards.budget.appendChild(barRow('cost', usdFrac, usdText));
+  if (b.tokens_unmetered) {
+    const fbCap = b.tokens_fallback_cap || 0;
+    const fbFrac = fbCap > 0 ? Math.min(1, b.tokens_unmetered / fbCap) : 0;
+    const fbText = `${b.tokens_unmetered}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
+    cards.budget.appendChild(barRow('unmetered', fbFrac, fbText));
+  }
+  if (b.plan_used_percent > 0) {
+    // Subscription plan usage: the account's window fill; the bar meters this
+    // run's consumed points against max_percent when one is set, else the
+    // account percent itself. Mirrors ui/tui/app.py render_heartbeat.
+    const planCap = b.plan_cap || 0;
+    const planFrac = planCap > 0 ? Math.min(1, (b.plan_consumed || 0) / planCap)
+                                 : Math.min(1, b.plan_used_percent / 100);
+    const planText = `${b.plan_used_percent}%`
+      + (planCap > 0 ? ` · run ${(b.plan_consumed || 0).toFixed(1)} / ${planCap} pt` : '');
+    cards.budget.appendChild(barRow('plan', planFrac, planText));
+  }
+  // The context-window fill at the last model call (the TUI's `ctx: N%`, the
+  // pause menu's readout): the fold's one rule, served as context_pct.
+  const ctxPct = typeof s.context_pct === 'number' ? ` · context ${s.context_pct}%` : '';
+  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${b.input_total||0} · out ${b.output_total||0}${ctxPct}`));
+
+  // task tree
+  cards.tasks.innerHTML = '';
+  const tree = el('div', 'tree');
+  if (!(s.tasks||[]).length) tree.appendChild(el('div', 'muted', 'no task graph yet'));
+  for (const t of s.tasks || []) {
+    const line = el('div', 'node' + (t.is_cursor ? ' cursor' : ''));
+    // Mirrors viewmodel/format.py TASK_STATUS_GLYPH (JS can't import it); keep in sync.
+    const glyph = { passed:'✓', failed:'✗', in_progress:'▸', pending:'·', skipped:'–', obsolete:'×' }[t.status] || '·';
+    line.appendChild(el('span', 'st-' + t.status, '  '.repeat(t.depth) + glyph + ' '));
+    line.appendChild(document.createTextNode(t.title));
+    tree.appendChild(line);
+  }
+  cards.tasks.appendChild(tree);
+  if (asOf) for (const c of [cards.budget, cards.tasks]) c.prepend(el('div', 'sub muted', `as of iter ${asOf.iteration} · ${String(asOf.sha).slice(0, 7)}`));
+}
+
 function paintRun(cards, s) {
   // Stop/compact/answers only mean something on a live run; a finished run
   // ignores the bridge markers. The composer flips to resume mode instead of
@@ -1242,59 +1301,8 @@ function paintRun(cards, s) {
     cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${r.in_flight ? ' …' : ''}`));
   }
 
-  // budget
-  const b = s.budget || {};
-  cards.budget.innerHTML = '';
-  const barRow = (label, frac, text) => {
-    const w = el('div'); w.appendChild(el('div', 'sub muted', `${label}: ${text}`));
-    const bar = el('div', 'bar' + (frac > 0.85 ? ' warn' : '')); const sp = el('span'); sp.style.width = (frac*100)+'%'; bar.appendChild(sp); w.appendChild(bar); return w;
-  };
-  // Metered spend vs max_usd (-1 = unlimited); unmetered tokens vs the fallback
-  // cap only when that ledger has traffic. The cap re-arms each resume leg, so
-  // the bar meters THIS leg's spend (usd_total - usd_prior_legs) while the cost
-  // figure stays cumulative -- mirrors ui/tui/app.py render_heartbeat; keep in sync.
-  const usdCap = b.usd_cap || 0;
-  const legUsd = Math.max(0, (b.usd_total || 0) - (b.usd_prior_legs || 0));
-  const usdFrac = usdCap > 0 ? Math.min(1, legUsd / usdCap) : 0;
-  const usdText = fmtUsd(b.usd_total, b.usd_partial)
-    + (usdCap > 0 ? ((b.usd_prior_legs || 0) > 0 ? ' · leg ' + fmtUsd(legUsd, false) + ' / ' + fmtUsd(usdCap, false) : ' / ' + fmtUsd(usdCap, false))
-                  : (usdCap === -1 ? ' (unlimited)' : ''));
-  cards.budget.appendChild(barRow('cost', usdFrac, usdText));
-  if (b.tokens_unmetered) {
-    const fbCap = b.tokens_fallback_cap || 0;
-    const fbFrac = fbCap > 0 ? Math.min(1, b.tokens_unmetered / fbCap) : 0;
-    const fbText = `${b.tokens_unmetered}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
-    cards.budget.appendChild(barRow('unmetered', fbFrac, fbText));
-  }
-  if (b.plan_used_percent > 0) {
-    // Subscription plan usage: the account's window fill; the bar meters this
-    // run's consumed points against max_percent when one is set, else the
-    // account percent itself. Mirrors ui/tui/app.py render_heartbeat.
-    const planCap = b.plan_cap || 0;
-    const planFrac = planCap > 0 ? Math.min(1, (b.plan_consumed || 0) / planCap)
-                                 : Math.min(1, b.plan_used_percent / 100);
-    const planText = `${b.plan_used_percent}%`
-      + (planCap > 0 ? ` · run ${(b.plan_consumed || 0).toFixed(1)} / ${planCap} pt` : '');
-    cards.budget.appendChild(barRow('plan', planFrac, planText));
-  }
-  // The context-window fill at the last model call (the TUI's `ctx: N%`, the
-  // pause menu's readout): the fold's one rule, served as context_pct.
-  const ctxPct = typeof s.context_pct === 'number' ? ` · context ${s.context_pct}%` : '';
-  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${b.input_total||0} · out ${b.output_total||0}${ctxPct}`));
-
-  // task tree
-  cards.tasks.innerHTML = '';
-  const tree = el('div', 'tree');
-  if (!(s.tasks||[]).length) tree.appendChild(el('div', 'muted', 'no task graph yet'));
-  for (const t of s.tasks || []) {
-    const line = el('div', 'node' + (t.is_cursor ? ' cursor' : ''));
-    // Mirrors viewmodel/format.py TASK_STATUS_GLYPH (JS can't import it); keep in sync.
-    const glyph = { passed:'✓', failed:'✗', in_progress:'▸', pending:'·', skipped:'–', obsolete:'×' }[t.status] || '·';
-    line.appendChild(el('span', 'st-' + t.status, '  '.repeat(t.depth) + glyph + ' '));
-    line.appendChild(document.createTextNode(t.title));
-    tree.appendChild(line);
-  }
-  cards.tasks.appendChild(tree);
+  const stepState = (cards._diffPick && cards._diffPick.sha && cards._stepState) ? cards._stepState : null;
+  paintDetails(cards, stepState || s, stepState ? stepState.as_of : null);
 
   // conversation: the live in-progress turn paints from this frame at once (a
   // heartbeat ticks via hbTick() on a live-but-silent run so it reads as alive,
@@ -1384,10 +1392,12 @@ function paintRun(cards, s) {
     const show = async () => {
       cards._diffPick = { sha: sel.value, cumulative: cum.checked };
       body.innerHTML = '';
-      if (!sel.value) { body.appendChild(renderDiff(s.latest_diff || '')); return; }
+      if (!sel.value) { cards._stepState = null; paintDetails(cards, s, null); body.appendChild(renderDiff(s.latest_diff || '')); return; }
       try {
         const d = await getJSON('/api/session/' + encodeURIComponent(id) + '/diff?sha=' + encodeURIComponent(sel.value) + '&cumulative=' + (cum.checked ? '1' : '0'));
         body.appendChild(renderDiff(d.patch));
+        const st = await getJSON('/api/session/' + encodeURIComponent(id) + '?step=' + encodeURIComponent(sel.value));
+        cards._stepState = st; paintDetails(cards, st, st.as_of);
       } catch (e) { body.appendChild(el('div', 'muted', e.message)); }
     };
     sel.onchange = show; cum.onchange = show;
