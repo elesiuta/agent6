@@ -143,11 +143,9 @@ Every state has a `kind`.
 | `branch`   | pure predicate over the blackboard → next state           | (chooses a `goto` directly)          |
 | `terminal` | ends the machine                                          | (none; absorbing)                    |
 
-The outcome labels are a fixed enum per kind, produced by the state executor deterministically.
-A non-terminal, non-branch state must declare an `on = { ... }` table mapping *every* label its kind can emit to a target state name.
-Omitting a label is a load error.
-
-The edge taken is a pure function of a small, closed set of executor-produced labels, never of free-form LLM text.
+- outcome labels are a fixed enum per kind, produced deterministically by the state executor
+- a non-terminal, non-branch state declares `on = { ... }` mapping *every* label its kind can emit to a target; an omitted label is a load error
+- the edge taken is a pure function of the closed label set, never of free-form LLM text
 
 #### `agent`
 
@@ -173,27 +171,42 @@ on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt
 # max_tokens_fallback = 100000     # ...and its unmetered-token cap (-1/0/>0)
 ```
 
-An `agent` state spins up a normal agent6 `run` with its own snapshot dir, transcript, budget slice, and jail.
-The *only* control-flow signal it returns is the outcome label; its structured product is whatever `finish_session` emitted, validated against `output_schema`, captured into the blackboard.
-The LLM cannot pick the next state; it can only populate variables that a downstream `branch` reads.
+An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript, budget slice, jail.
+
+- its only control-flow signal is the outcome label
+- its structured product is the `finish_session` payload, validated against `output_schema`, captured into the blackboard
+- the LLM cannot pick the next state; it populates variables a downstream `branch` reads
 
 `mode` chooses the tool surface.
-The default `"agent"` is a read-only, structured-output loop: the dispatcher refuses edit, `run_command`, and `run_verify`, so the state can only read and call `finish_session`.
-Set `mode = "run"` for a state that must do real coding work (edit + verify + commit tools), exactly like `agent6 run`, including where the work lands: each run state executes in a fresh clone (the `--parallel` lane mechanism, under the same `[parallel].workdir` cache) checked out at the machine chain's tip, and its commits land back per state on the visible `agent6/machine-<id>` branch.
-Your checkout is never touched; merge the branch when you want the work, and `sessions prune` sweeps landed clones.
-A machine with run states works its own tree everywhere: each `tool` state and read-only agent state also runs in a fresh clone at the chain tip, so an edit-then-check loop sees the committed work with no plumbing.
-A `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR` (a run state's clone never contained another state's uncommitted writes anyway).
-A machine with no run states runs its tool states in your checkout, unchanged.
-States are sequential continuations of that branch (each starts from the previous state's tree), where lanes are parallel alternatives cut at base.
-A `mode = "run"` state still returns only its outcome label and `finish_session` payload as control-flow signals; `machine run` resolves a git commit identity up front (from `[git.commit]` or the repo's git config) so the confined agent's commits succeed.
-In any agent state `run_command` is gated by `sandbox.run_commands`: under the default `ask` an unattended machine auto-denies every call (`machine run` warns up front when a `mode = "run"` state would hit this); a machine spawned from the web or TUI hub instead parks each approval and question for the front-end (the spawn carries the same `wait` away-mode a detached run gets), so the answer never depends on when the viewer attached.
-Grant it per invocation with `agent6 machine run <file> --auto-approve` (the same operator flag `run` carries; ask upgrades to yes, a withheld `no` stays no), or set `sandbox.run_commands = "yes"` in the repo config.
-A machine `[config]` overlay cannot grant it (sandbox policy is operator-only).
-Edits, verify, and the auto-commit need no approval, so prefer `tool` states or the verify slot over shelling out where you can.
 
-The optional per-state knobs above tune *how* that loop runs: `provider` / `effort` / `temperature` select and tune the model, and the `max_usd` / `max_tokens_fallback` caps bound this one agent slice.
-Each falls back through the effective config (machine `[config]` overlay, then repo, then global, then the built-in default; see [Machine config overlay](#47-machine-config-overlay-config)) when omitted.
-Connection secrets are never expressed here, only a `provider` *name* that must already exist in the effective config.
+- `"agent"` (default): a read-only, structured-output loop; the dispatcher refuses edit, `run_command`, and `run_verify`, so the state can only read and call `finish_session`
+- `"run"`: real coding work (edit + verify + commit tools), exactly like `agent6 run`
+
+Where a run state's work lands:
+
+- each run state executes in a fresh clone (the `--parallel` lane mechanism, `[parallel].workdir` cache) checked out at the machine chain's tip
+- its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
+- merge the branch when you want the work; `sessions prune` sweeps landed clones
+- a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip, so an edit-then-check loop sees the committed work with no plumbing
+- a `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR`
+- a machine with no run states runs its tool states in your checkout, unchanged
+- states are sequential continuations of the branch (each starts from the previous state's tree); lanes are parallel alternatives cut at base
+- a `mode = "run"` state still returns only its outcome label and `finish_session` payload
+- `machine run` resolves a git commit identity up front (`[git.commit]` or the repo's git config) so the confined agent's commits succeed
+
+`run_command` in any agent state is gated by `sandbox.run_commands`:
+
+- under the default `ask`, an unattended machine auto-denies every call (`machine run` warns up front when a `mode = "run"` state would hit this)
+- a machine spawned from the web or TUI hub parks each approval and question for the front-end (the spawn carries the detached `wait` away-mode), so the answer never depends on when the viewer attached
+- grant per invocation with `--auto-approve` (ask upgrades to yes; a withheld `no` stays no), or set `sandbox.run_commands = "yes"` in the repo config
+- a machine `[config]` overlay cannot grant it (sandbox policy is operator-only)
+- edits, verify, and the auto-commit need no approval: prefer `tool` states or the verify slot over shelling out
+
+The optional per-state knobs tune how that loop runs.
+
+- `provider` / `effort` / `temperature` select and tune the model; `max_usd` / `max_tokens_fallback` bound this one agent slice
+- each falls back through the effective config when omitted ([Machine config overlay](#47-machine-config-overlay-config))
+- secrets are never expressed here, only a `provider` name that must exist in the effective config
 
 #### `tool`
 
