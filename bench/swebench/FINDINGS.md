@@ -743,3 +743,29 @@ of reasoning per call, 9 tool calls total, no re-read spiral) and timed
 out mid-analysis. Doubling wall and tripling the cap does not close the
 gap; the remaining suspects are the reasoning-latency variance and the
 zero-F2P contract class, not budget and not the loop.
+
+### The shipped finish gate on SWE-rebench 2026_03: gateless -> gate-on +5 (2026-08-24)
+
+One run per side, same 110 fresh instances, same wheel/config apart from
+the gate: baseline `verify_when = never` (the previous behaviour), arm
+`verify_when = finish` with `verify_retries = 2` (the shipped default).
+$1 / 1200s per instance, medium effort, conc 4, official scorer.
+
+| metric (gateless -> gate-on) | gateless | gate-on | better |
+|---|---|---|---|
+| resolved | 48/110 | 53/110 | gate-on (+5) |
+| empty patches | 7 | 12 | gateless (-5) |
+| harness/pull errors | 0 | 0 | tie |
+
+Instance-level: gate-on newly resolves 10, loses 5 (3 wrong-patch, 2
+timed-out-to-empty). Of the 12 gate-on empties, 11 are container-wall
+timeouts at 1200s mid-work (the model-side reasoning-latency DNF profile
+the compute-shape arm autopsied; 6 of them were already empty gateless)
+and 1 is a clean 124s finish that reported the gate pre-red and declined
+to patch. The gate's cost is wall time on marginal instances; its gain is
+catching wrong patches before finish.
+
+Read: the shipped default is worth +5 resolved on this split (43.6% ->
+48.2%). Against the leaderboard's 58-62 (mean of 5, 128K context) the
+single-run gap narrows from 14-19 to 10-14 points. Caveats: n=1 per side;
+the board reports 5-run means.
