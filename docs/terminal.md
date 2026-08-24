@@ -11,7 +11,10 @@ Every image is from a recorded run; click to enlarge.
 ## Hub
 
 `agent6 tui` lists every run for the repository with its mode, status, last activity, and cost.
-Enter opens a run; `n` opens an empty conversation to start a run, plan, or ask (the mode and the config preset are picked above the composer, and a start the run refuses is shown there with the text kept); `c` opens the config page; `?` lists the keys.
+
+- Enter opens a run
+- `n`: an empty conversation to start a run, plan, or ask (mode and preset picked above the composer; a refusal shows there with the text kept)
+- `c`: the config page; `?`: the keys
 
 ![The hub](screenshots/out/01-hub.png)
 
@@ -24,8 +27,11 @@ A live run keeps a steer bar at the bottom.
 
 ## Run dashboard
 
-`Ctrl+D` toggles the dashboard: the task graph beside the model's live reasoning, then the tool calls with their results, and the event log and latest commit diff side by side.
-The composer bar runs along the foot (type to steer, or to resume a finished run with a follow-up; `/` completes the steer directives, Ctrl-R searches the session's past messages), and the View menu maximizes the focused pane to full screen.
+`Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
+
+- the composer bar runs along the foot: type to steer, or to resume a finished run
+- `/` completes the steer directives; Ctrl-R searches the session's past messages
+- the View menu maximizes the focused pane
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
@@ -50,9 +56,12 @@ The config page shows every setting, its effective value, and where that value c
 
 ## Without the TUI
 
-`agent6 run` executes in the foreground: steer it with Ctrl-C, no TUI required (the pause menu Tab-completes its commands; Up recalls and Ctrl-R searches the session's past messages).
-Ctrl-Z in a view, or `/detach` in the pause menu, hands the run to the background after its current step (`agent6 attach` reattaches); a viewer opened with `agent6 attach --tui` just closes.
-Runs started from the TUI or web hub are detached instead, and `agent6 attach` attaches to either kind: the run's conversation by default, `--raw` for a no-deps line tail, `--tui` for the full-screen TUI, `--json` for a one-shot snapshot of the same state.
+`agent6 run` executes in the foreground: steer it with Ctrl-C, no TUI required.
+
+- the pause menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages
+- Ctrl-Z in a view, or `/detach` in the menu, hands the run to the background after its current step (`agent6 attach` reattaches)
+- a viewer opened with `agent6 attach --tui` just closes
+- TUI/web-hub runs start detached; `agent6 attach` covers both kinds: conversation by default, `--raw` line tail, `--tui` full screen, `--json` one-shot snapshot
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/temps-demo.webm" type="video/webm">
