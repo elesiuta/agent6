@@ -99,7 +99,7 @@ def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: Path) -> 
     """DECISIONS.md sits inside the memory grant (the model may read it) but
     is harness-owned: an in-process write refuses, loudly."""
     from agent6.config import Config
-    from agent6.tools import ToolError
+    from agent6.tools.errors import ToolError
     from agent6.tools.policy import workspace_for
 
     mem = tmp_path / "state" / "memory"
