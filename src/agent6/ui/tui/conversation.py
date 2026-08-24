@@ -31,7 +31,7 @@ from rich.markup import escape
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.geometry import Offset
@@ -41,7 +41,7 @@ from textual.timer import Timer
 from textual.widgets import Footer, Select, Static, TextArea
 
 from agent6.directive import STEER_COMMANDS
-from agent6.sessions.ipc import submit_steer
+from agent6.sessions.ipc import submit_steer, write_answer
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import (
@@ -51,12 +51,14 @@ from agent6.ui.tui.menubar import (
     menu_bindings,
 )
 from agent6.ui.tui.modals import HistorySearchModal, RestateModal
+from agent6.ui.tui.prompts import PromptDispatcher
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
-from agent6.viewmodel import restate
+from agent6.viewmodel import approval_parts, restate
 from agent6.viewmodel.events import SESSION_START_EVENTS
 from agent6.viewmodel.format import spinner_frame
 from agent6.viewmodel.policy import session_policy
+from agent6.viewmodel.state import SessionState
 from agent6.viewmodel.tail import LogTail, tail_events
 from agent6.viewmodel.transcript import (
     TranscriptFold,
@@ -413,6 +415,46 @@ def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path)
     screen.app.push_screen(HistorySearchModal(entries), fill)
 
 
+class ApprovalRow(Horizontal, can_focus=True):
+    """The answer row docked above the composer while an approval is open:
+    one key per answer, the same vocabulary the CLI prompt and the modal
+    speak ("yes" / "no" / "session" / "session-deny")."""
+
+    DEFAULT_CSS = """
+    ApprovalRow { height: auto; padding: 0 1; background: $surface; }
+    ApprovalRow:focus { border-left: thick $warning; }
+    ApprovalRow Static { width: auto; padding: 0 2 0 0; }
+    """
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("a", "answer('yes')", "allow", show=True),
+        Binding("s", "answer('session')", "allow all (session)", show=True),
+        Binding("d", "answer('no')", "deny", show=True),
+        Binding("x", "answer('session-deny')", "deny all", show=True),
+    ]
+
+    class Answered(Message):
+        def __init__(self, answer: str) -> None:
+            super().__init__()
+            self.answer = answer
+
+    def __init__(self, *, standing: bool) -> None:
+        super().__init__()  # no fixed id: a superseded row may still be unmounting
+        self._standing = standing
+
+    def compose(self) -> ComposeResult:
+        yield Static(Text("[a] allow", style="bold green"))
+        if self._standing:
+            yield Static(Text("[s] allow all (session)", style="green"))
+        yield Static(Text("[d] deny", style="bold red"))
+        if self._standing:
+            yield Static(Text("[x] deny all", style="red"))
+
+    def action_answer(self, answer: str) -> None:
+        if answer in ("session", "session-deny") and not self._standing:
+            return
+        self.post_message(self.Answered(answer))
+
+
 class ConversationScreen(ScreenChrome, Screen[None]):
     """Scrollable, live-following, selectable LLM conversation for a single run."""
 
@@ -502,13 +544,17 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         title: Callable[[str], str],
         primary: bool = False,
         presets: list[str] | None = None,
+        prompts: PromptDispatcher | None = None,
     ) -> None:
         """*primary* marks the run app's main screen (Esc leaves the app, Ctrl+D
         toggles the dashboard); pushed read-only viewers (the hub, the dashboard)
         leave it False, where Esc just dismisses. *presets* are the config
-        presets a resume may continue under (the primary view's picker)."""
+        presets a resume may continue under (the primary view's picker).
+        *prompts* is the host's dispatcher, the one record of which prompts a
+        surface already took (a modal on another screen, this screen's row)."""
         super().__init__()
         self._logs_path = logs_path
+        self._prompts = prompts
         self._title = title
         self._primary = primary
         self._presets = presets if presets is not None else []
@@ -538,6 +584,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         # live appends re-render (see _CHUNK_LINES).
         self._tail_text = Text()
         self._tail_lines = 0
+        self._approval: tuple[str, str, bool] | None = None  # (id, prompt, standing)
+        self._approval_done: str | None = None
+        self._row: ApprovalRow | None = None
+        self._row_id = ""
         self._live_think: list[str] = []
         self._live_text: list[str] = []
         # A session-start event (session.start OR loop.resume.start) seen and no
@@ -555,6 +605,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                 # selectable; only the tail is ever re-rendered).
                 yield Static(id="conv-tail", classes="conv-chunk")
             yield _ChromeStatic("", id="conv-live")  # chrome: not part of a selection
+        yield Static(id="conv-approval", classes="conv-chunk")  # the open approval, inline
         yield SteerSuggest(id="conv-suggest")  # command hints while typing `/…`
         yield ResumePreset(self._presets, id="conv-preset")  # shown while the composer resumes
         yield SteerInput(id="conv-input")  # steer bar (hidden unless the run is live)
@@ -645,15 +696,114 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self._live = True
         elif etype == "session.end":
             self._live = False
+        if etype == "approval.prompt":
+            self._approval = (
+                str(event.get("id", "")),
+                str(event.get("prompt", "")),
+                bool(event.get("standing", True)),
+            )
+            self._approval_done = None
+        elif etype == "approval.answer":
+            if self._approval is not None and self._approval[0] == str(event.get("id", "")):
+                self._note_answered(bool(event.get("approved")))
         if etype in ("role.call", "role.result"):
             self._live_think.clear()
             self._live_text.clear()
+            self._approval_done = None
         elif etype == "role.thinking_delta":
             self._live_think.append(str(event.get("text", "")))
         elif etype == "role.text_delta":
             self._live_text.append(str(event.get("text", "")))
 
+    def _open_approval(self) -> tuple[str, str, bool] | None:
+        """The approval awaiting an answer: the host's folded state when this
+        screen runs under the Agent6TUI host (one fold, whatever fed it), else
+        what this screen's own tail saw."""
+        state = getattr(self.app, "state", None)
+        if isinstance(state, SessionState):
+            if self._approval is not None:
+                aid = self._approval[0]
+                answered = next((a for a in state.pending_approvals if a.id == aid), None)
+                if answered is not None and answered.answered:
+                    self._note_answered(bool(answered.approved))
+            open_ones = [
+                ap for ap in state.pending_approvals if not ap.answered and not self._taken(ap.id)
+            ]
+            if open_ones:
+                ap = open_ones[-1]  # the newest: a resumed leg reuses prompt ids
+                return ap.id, ap.prompt, ap.standing
+        return self._approval
+
+    def _taken(self, aid: str) -> bool:
+        if self._prompts is None:
+            return False
+        return self._prompts.seen(self._logs_path.parent, aid)
+
+    def _note_answered(self, approved: bool) -> None:
+        if self._approval is None:
+            return
+        head, payload = approval_parts(self._approval[1])
+        verdict = "allowed" if approved else "denied"
+        self._approval_done = f"{verdict} · {(payload or head).splitlines()[0][:60]}"
+        self._approval = None
+
+    def _render_approval(self) -> None:
+        """The open approval as a conversation-tail item (the command under
+        judgment, fixed-width) with the answer row docked above the composer;
+        after the answer the item collapses to one dim line until the next
+        model turn."""
+        item = self.query_one("#conv-approval", Static)
+        current = self._open_approval()
+        if current is not None:
+            self._approval = current
+            aid, prompt, standing = current
+            head, payload = approval_parts(prompt)
+            body = Text()
+            body.append("? ", style="bold yellow")
+            body.append(f"{head}: approval needed", style="bold")
+            if payload:
+                body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
+            item.update(body)
+            item.display = True
+            if self._row is None or self._row_id != aid:
+                # One row per approval: a resumed leg reuses prompt ids, so a
+                # new prompt always gets a fresh row (the old one may still be
+                # unmounting).
+                if self._row is not None:
+                    self._row.remove()
+                self._row = ApprovalRow(standing=standing)
+                self._row_id = aid
+                self.mount(self._row, before=self.query_one("#conv-suggest"))
+                self.call_after_refresh(self._row.focus)
+            return
+        if self._row is not None:
+            self._row.remove()
+            self._row = None
+            self._row_id = ""
+        if self._approval_done:
+            item.update(Text(f"? {self._approval_done}", style="dim"))
+            item.display = True
+        else:
+            item.display = False
+
+    def on_approval_row_answered(self, message: ApprovalRow.Answered) -> None:
+        if self._approval is None:
+            return
+        aid = self._approval[0]
+        if not self._host_live():
+            self.notify("the run is gone: the answer reached nothing", severity="warning")
+            return
+        write_answer(self._logs_path.parent, aid, message.answer)
+        if self._prompts is not None:
+            self._prompts.claim(self._logs_path.parent, aid)
+        self._note_answered(message.answer in ("yes", "session"))
+        self._render_approval()
+        self.notify(f"answered: {message.answer}")
+        with contextlib.suppress(NoMatches):
+            self.query_one("#conv-input", SteerInput).focus()
+
     def _render_live(self) -> None:
+        self._render_approval()
         live = self.query_one("#conv-live", Static)
         if not self._host_live():
             # The deltas of the turn a killed worker never finished sit in the
@@ -746,6 +896,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         """Append newly-completed turns (sticking to the bottom unless scrolled
         up) and refresh the live in-progress pane."""
         self._spin += 1
+        self._render_approval()
         new_events = self._tail.read()
         if not new_events:
             # No data this tick, but a live run's pane must keep moving: the

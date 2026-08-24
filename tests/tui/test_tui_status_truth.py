@@ -23,7 +23,7 @@ from typing import Any
 from textual.widgets import Static
 
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.conversation import SteerInput
+from agent6.ui.tui.conversation import ApprovalRow, SteerInput
 from agent6.ui.tui.modals import ApprovalModal
 from agent6.viewmodel.state import apply_event
 
@@ -398,9 +398,10 @@ def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
 
 
 def _modal_ready(app: Agent6TUI) -> bool:
-    # app.screen flips to the modal synchronously at push; wait for its buttons
-    # to MOUNT too, or run_test teardown races the modal's own mount lifecycle.
-    return isinstance(app.screen, ApprovalModal) and bool(app.screen.query("#yes"))
+    # The conversation screen renders an approval inline: the item plus its key
+    # row, mounted and focused (a modal only on the other screens).
+    rows = app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+    return app.screen is app._conv and bool(rows) and app.focused is rows.first()  # pyright: ignore[reportPrivateUsage]
 
 
 def test_live_run_still_pops_the_approval_modal(tmp_path: Path) -> None:
@@ -430,7 +431,7 @@ def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
             app._heartbeat_at = 0.0
             app._tick()
             await _wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
-            await pilot.press("y")
+            await pilot.press("a")
             await pilot.pause()
             assert not (d / "approvals" / "ap1.answer").exists()
             notes = [str(n.message) for n in app._notifications]
@@ -559,7 +560,7 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: Path) -> None:
             # Dismiss the prompt modal (Esc = deny writes only the bridge file;
             # no answer EVENT lands, so the fold keeps the run "waiting").
             await _wait_for(pilot, lambda: _modal_ready(app), "the modal")
-            await pilot.press("escape")
+            await pilot.press("d")
             await _open_dash(app, pilot)
             await _wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")
             app._tick()

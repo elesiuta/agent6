@@ -135,6 +135,17 @@ class RoleCall:
     streamed_thinking: str = ""
 
 
+def approval_parts(prompt: str) -> tuple[str, str]:
+    """An approval prompt's two parts: the head (`Allow run_command`, the
+    question) and the payload (the command under judgment, possibly several
+    lines). Every dispatch prompt is "Allow <tool>: <payload>"; one without a
+    payload is all head. The CLI, TUI and web render exactly these two."""
+    head, sep, payload = prompt.partition(": ")
+    if sep and payload.strip():
+        return head, payload
+    return prompt, ""
+
+
 @dataclass(frozen=True, slots=True)
 class ApprovalPrompt:
     id: str
@@ -144,6 +155,14 @@ class ApprovalPrompt:
     answered: bool = False
     approved: bool | None = None
     asked_ep: float | None = None  # for the waiting status's age
+
+    @property
+    def head(self) -> str:
+        return approval_parts(self.prompt)[0]
+
+    @property
+    def payload(self) -> str:
+        return approval_parts(self.prompt)[1]
 
 
 @dataclass(frozen=True, slots=True)
@@ -840,6 +859,8 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     snapshot)."""
     d = asdict(state)
     d["context_pct"] = context_fill(state)
+    for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
+        row["head"], row["payload"] = ap.head, ap.payload
     if session_dir is not None:
         word, reason = status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in LIVE_STATUS_WORDS

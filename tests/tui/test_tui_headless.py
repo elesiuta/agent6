@@ -22,6 +22,7 @@ from textual.app import App
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
 from agent6.ui.tui.app import Agent6TUI
+from agent6.ui.tui.conversation import ApprovalRow
 from agent6.ui.tui.modals import (
     ApprovalModal,
     QuestionModal,
@@ -606,9 +607,10 @@ def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
             app._handle_event(_ev(type="session.start", user_task="session one", mode="run"))
             app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="first?"))
             app._tick()
+            app._conv._poll()
             await pilot.pause()
-            assert isinstance(app.screen, ApprovalModal)
-            await pilot.press("y")
+            assert app._conv.query(ApprovalRow)
+            await pilot.press("a")
             await pilot.pause()
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
             # The resume: a real resumed leg emits ONLY loop.resume.start (never
@@ -619,9 +621,10 @@ def test_resume_reopens_modal_for_reused_prompt_id(tmp_path: Path) -> None:
             app._handle_event(_ev(type="loop.resume.start", iteration=2, messages=4))
             app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="again?"))
             app._tick()
+            app._conv._poll()
             await pilot.pause()
-            assert isinstance(app.screen, ApprovalModal)  # re-popped, not swallowed
-            await pilot.press("n")
+            assert app._conv.query(ApprovalRow)  # re-shown, not swallowed
+            await pilot.press("d")
             await pilot.pause()
             answer = (tmp_path / "approvals" / "approval-1.answer").read_text(encoding="utf-8")
             assert answer == "no"

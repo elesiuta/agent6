@@ -336,6 +336,8 @@ def test_approval_prompt_then_answer() -> None:
     )
     assert len(s.pending_approvals) == 1
     assert s.pending_approvals[0] == ApprovalPrompt(id="a001", prompt="Allow run_command?")
+    assert s.pending_approvals[0].head == "Allow run_command?"
+    assert s.pending_approvals[0].payload == ""
     s = apply_event(s, {"type": "approval.answer", "id": "a001", "approved": True})
     assert s.pending_approvals[0].answered is True
     assert s.pending_approvals[0].approved is True
@@ -802,3 +804,20 @@ def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: Path) -> None:
         port = srv.getsockname()[1]
         write_session_netns_pid(d, os.getpid())  # this process stands in for the holder
         assert port in session_state_as_dict(fold_session([]), d)["ports"]
+
+
+def test_approval_parts_is_the_one_shape_every_surface_renders() -> None:
+    """A dispatch prompt is "Allow <tool>: <payload>"; the head is the question
+    and the payload the command (possibly several lines). A prompt with no
+    payload is all head, and the web JSON carries both parts."""
+    from agent6.viewmodel import approval_parts
+
+    assert approval_parts("Allow run_command: pytest -q tests") == (
+        "Allow run_command",
+        "pytest -q tests",
+    )
+    assert approval_parts("Allow run_command: sh -c 'a\nb'") == (
+        "Allow run_command",
+        "sh -c 'a\nb'",
+    )
+    assert approval_parts("Allow fetch?") == ("Allow fetch?", "")

@@ -803,7 +803,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.logs_path = session_dir / LOGS_NAME
         self.state: SessionState = initial_state()
         self._prompts = PromptDispatcher(
-            self, answerable=self.session_controllable, lost=_ANSWER_LOST
+            self,
+            answerable=self.session_controllable,
+            lost=_ANSWER_LOST,
+            inline_approvals=lambda: isinstance(self.screen, ConversationScreen),
         )
         self._seen_steer = 0
         self._dirty = False  # a structural event arrived; _tick coalesces the repaint
@@ -855,7 +858,11 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         presets = available_preset_names(Path.cwd(), config_path)
         self._dash = DashboardScreen(presets=presets)
         self._conv = ConversationScreen(
-            self.logs_path, title=self.screen_title, primary=True, presets=presets
+            self.logs_path,
+            title=self.screen_title,
+            primary=True,
+            presets=presets,
+            prompts=self._prompts,
         )
 
     def _task_lead(self) -> str:

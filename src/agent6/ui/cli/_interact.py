@@ -33,6 +33,7 @@ from agent6.ui.cli._steer import (
     tty_prompt,
 )
 from agent6.ui.steer import SteerState
+from agent6.viewmodel import approval_parts
 
 if TYPE_CHECKING:
     from agent6.tools.dispatch import Approver
@@ -78,8 +79,8 @@ def default_stdin_approver(prompt: str, *, standing: bool = True) -> str:
     the sibling of the `->` call line that follows an allow."""
     suffix = "[y/N/a/d]  (a = allow all, d = deny all, this session): " if standing else "[y/N]: "
     bold, dim, yellow, reset = "\033[1m", "\033[2m", "\033[33m", "\033[0m"
-    head, sep, payload = prompt.partition(": ")
-    if sep and payload.strip():
+    head, payload = approval_parts(prompt)
+    if payload:
         body = "\n".join(f"    {ln}" for ln in payload.splitlines())
         rendered = (
             f"{bold}{yellow}?{reset} {bold}{head}:{reset}\n\n{body}\n\n  {dim}{suffix}{reset}"

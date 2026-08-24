@@ -592,6 +592,22 @@ function fillAsEdit(ta, text) {
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
+// A lightweight lexical highlighter for an approval's command: quoted strings,
+// flags, and shell operators get classes; everything else is escaped text.
+function highlightCmd(text) {
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const re = /("(?:[^"\\]|\\.)*"|'[^']*')|(\s--?[A-Za-z][\w-]*)|(\|\||&&|\||;|>>|2>|>|<)/g;
+  let out = '', last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    out += esc(text.slice(last, m.index));
+    if (m[1]) out += '<span class="tok-str">' + esc(m[1]) + '</span>';
+    else if (m[2]) out += '<span class="tok-flag">' + esc(m[2]) + '</span>';
+    else out += '<span class="tok-op">' + esc(m[3]) + '</span>';
+    last = m.index + m[0].length;
+  }
+  return out + esc(text.slice(last));
+}
+
 // The steer directives a session composer can complete, with one-line help:
 // a verbatim mirror of agent6.directive.STEER_COMMANDS (drift-pinned by
 // tests/web/test_steer_completion.py). /compact only acts on a live session,
@@ -1078,7 +1094,15 @@ function paintPrompts(cards, s) {
     if (ap.answered) continue;
     build[pfx + 'ap:' + ap.id] = () => {
       const box = el('div', 'prompt-box');
-      box.appendChild(el('div', 'q', ap.prompt || 'Approve this action?'));
+      const head = ap.head || ap.prompt || 'Approve this action?';
+      box.appendChild(el('div', 'q', '? ' + head + (ap.payload ? ':' : '')));
+      if (ap.payload) {
+        // The command under judgment: fixed width, lexically marked (strings,
+        // flags, pipes/redirects); no language detection, just a scanning aid.
+        const pre = el('pre', 'cmd');
+        pre.innerHTML = highlightCmd(ap.payload);
+        box.appendChild(pre);
+      }
       const row = el('div', 'form-row');
       const yes = el('button', 'primary', 'Allow');
       const no = el('button', 'danger', 'Deny');

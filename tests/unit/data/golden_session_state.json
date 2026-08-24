@@ -90,7 +90,9 @@
       "standing": true,
       "answered": true,
       "approved": true,
-      "asked_ep": 1784023209.0
+      "asked_ep": 1784023209.0,
+      "head": "Allow run_command",
+      "payload": "rm -rf build"
     }
   ],
   "pending_questions": [

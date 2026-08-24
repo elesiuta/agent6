@@ -24,10 +24,20 @@ class PromptDispatcher:
     false (the worker died mid-modal) is dropped with the *lost* warning
     instead of written to a file nobody polls."""
 
-    def __init__(self, app: App[Any], *, answerable: Callable[[], bool], lost: str) -> None:
+    def __init__(
+        self,
+        app: App[Any],
+        *,
+        answerable: Callable[[], bool],
+        lost: str,
+        inline_approvals: Callable[[], bool] = lambda: False,
+    ) -> None:
         self._app = app
         self._answerable = answerable
         self._lost = lost
+        # True while the active screen renders approvals itself (the
+        # conversation's inline item + key row), so no modal is pushed.
+        self._inline_approvals = inline_approvals
         self._seen: set[str] = set()
 
     def reset(self) -> None:
@@ -35,24 +45,32 @@ class PromptDispatcher:
 
     def dispatch(self, session_dir: Path, state: SessionState) -> None:
         for ap in state.pending_approvals:
-            if not ap.answered and self._first(session_dir, ap.id):
+            if ap.answered or self._inline_approvals():
+                continue
+            if self.claim(session_dir, ap.id):
                 self._app.push_screen(
                     ApprovalModal(ap.id, ap.prompt, standing=ap.standing),
                     self._on_approval(session_dir, ap.id),
                 )
         for qp in state.pending_questions:
-            if not qp.answered and self._first(session_dir, qp.id):
+            if not qp.answered and self.claim(session_dir, qp.id):
                 self._app.push_screen(
                     QuestionModal(qp.id, qp.questions, from_harness=qp.from_harness),
                     self._on_question(session_dir, qp.id),
                 )
 
-    def _first(self, session_dir: Path, prompt_id: str) -> bool:
+    def claim(self, session_dir: Path, prompt_id: str) -> bool:
+        """True the first time a surface takes a prompt (a modal pushed, an
+        inline answer given); every surface asks here, so a prompt answered on
+        one screen never reopens on another before its answer event folds."""
         key = f"{session_dir}|{prompt_id}"
         if key in self._seen:
             return False
         self._seen.add(key)
         return True
+
+    def seen(self, session_dir: Path, prompt_id: str) -> bool:
+        return f"{session_dir}|{prompt_id}" in self._seen
 
     def _on_approval(self, session_dir: Path, prompt_id: str) -> Callable[[str | None], None]:
         def cb(answer: str | None) -> None:
