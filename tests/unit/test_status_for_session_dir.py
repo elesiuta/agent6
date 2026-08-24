@@ -149,7 +149,11 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
 ]
 
 
-@pytest.mark.parametrize(("name", "events", "parked", "pid", "word", "reason"), MATRIX)
+@pytest.mark.parametrize(
+    ("name", "events", "parked", "pid", "word", "reason"),
+    MATRIX,
+    ids=[row[0] for row in MATRIX],  # LIVE is this process's pid: never in an id
+)
 def test_both_fact_producers_and_the_listing_agree(
     tmp_path: Path,
     name: str,
