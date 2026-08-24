@@ -361,7 +361,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   A server with a sandbox policy spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); a server the operator opted out is a plain subprocess.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
 - `sessions/ipc.py`: `ps -p <pid> -o lstart=` on hosts without `/proc` (macOS), for the `worker.pid` start-time identity, over a pid agent6 recorded.
-- `ui/cli/_btw.py`: spawns `agent6 ask` detached for `/btw`, so the side question keeps provider egress while the run is confined.
+- `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer), so the side question keeps provider egress while the run is confined.
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
 - `ui/spawn.py`: the shared front-end spawn helper.
   Spawns the agent6 CLI detached for run and machine launches, and captures `sessions merge` / `prune` / `config set`.

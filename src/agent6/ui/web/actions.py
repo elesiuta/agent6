@@ -21,7 +21,7 @@ from typing import Any
 from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import resolved_state_dir
-from agent6.directive import parse_compact
+from agent6.directive import parse_btw, parse_compact
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -39,6 +39,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import bucket_dir, is_safe_session_id, machines_root
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.ui.btw import open_btw
 from agent6.ui.spawn import (
     DETACHED_RUN_ENV,
     agent6_argv,
@@ -138,6 +139,12 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
         # steer; nothing would ever read the marker (and the next resume
         # deletes it), so refuse like the stop/compact siblings.
         return False, "the session is not live"
+    question = parse_btw(text)
+    if question is not None:
+        # `/btw <question>` opens a side ask beside the run (the answer lands
+        # on the run's journal); never steer text.
+        line = open_btw(session_dir, question)
+        return ("opened" in line), line.removeprefix("[agent6] ")
     focus = parse_compact(text)
     if focus is not None:
         # `/compact [focus]` is an out-of-band request, not steer text the

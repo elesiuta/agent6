@@ -58,7 +58,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6.app.fork import create_fork, undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import available_preset_names
-from agent6.directive import parse_compact
+from agent6.directive import parse_btw, parse_compact
 from agent6.sessions.ipc import (
     listening_ports,
     register_frontend,
@@ -69,6 +69,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.ui.btw import open_btw
 from agent6.ui.spawn import (
     DETACHED_RUN_ENV,
     agent6_argv,
@@ -1078,6 +1079,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self.push_screen(RestateModal(restate(list(tail_events(self.logs_path, follow=False)))))
             return
         if self.session_controllable():
+            question = parse_btw(text)
+            if question is not None:
+                self.notify(open_btw(self.session_dir, question))
+                return
             focus = parse_compact(text)
             if focus is not None:
                 # `/compact [focus]` is an out-of-band request, not steer text;

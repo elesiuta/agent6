@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from agent6.events import EventSink
-from agent6.ui.cli._btw import make_btw_runner
+from agent6.ui.btw import make_btw_runner
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._steer_menu import (
     MENU_COMMANDS,
@@ -177,3 +177,31 @@ def test_btw_is_not_offered_where_nothing_can_spawn_it(
 
     _run_info_command("/help", tmp_path, lambda _q, _d: "")
     assert "/btw" in capsys.readouterr().out
+
+
+def test_open_btw_serves_every_composer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`/btw` from the TUI or web composer opens the same side ask the CLI
+    menu does, with the run's own journal as the answer channel; a bare
+    `/btw` is told what to type."""
+    import agent6.ui.btw as btw_mod
+
+    session_dir = tmp_path / "sessions" / "runs" / "parent-BBBBBB"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+
+    def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+        _answered_ask(tmp_path / "sessions" / "asks", "quiet-fox-CCCCCC", "yes")
+        return ""
+
+    monkeypatch.setattr(btw_mod, "direct_launch", launch)
+    assert "ask something" in btw_mod.open_btw(session_dir, "")
+    line = btw_mod.open_btw(session_dir, "is it safe?")
+    assert "quiet-fox-CCCCCC opened" in line
+    deadline = time.monotonic() + 5
+    log = ""
+    while time.monotonic() < deadline:
+        log = (session_dir / "logs.jsonl").read_text(encoding="utf-8")
+        if "btw.answered" in log:
+            break
+        time.sleep(0.05)
+    assert '"btw.opened"' in log and '"btw.answered"' in log and "yes" in log

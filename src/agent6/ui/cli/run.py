@@ -31,15 +31,14 @@ from agent6.models.validate import (
     warning_message,
 )
 from agent6.paths import data_dir
-from agent6.sessions.layout import bucket_dir, layout_of
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.types import ResumableMode, session_kind
+from agent6.ui.btw import asks_dir, direct_launch, make_btw_runner
 from agent6.ui.cli._ask import (
     build_ask_session_digest,
     run_ask_repl,
     save_ask_transcript,
 )
-from agent6.ui.cli._btw import direct_launch, make_btw_runner
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import (
     build_approver,
@@ -91,15 +90,6 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
         f"Apply the operator-installed skill(s) below to this task.\n\n{joined}\n\n---\n\n",
         "",
     )
-
-
-def _asks_dir(session_dir: Path) -> Path:
-    """The asks bucket beside *session_dir*'s own, for `/btw`'s roster.
-
-    Derived from the running session's dir rather than re-resolving the state
-    base: the two must agree even when `[agent6].state_dir` is overridden.
-    """
-    return bucket_dir(layout_of(session_dir).state_dir, "asks")
 
 
 def _remember_steer(cell: list[SteerState | None], state: SteerState) -> SteerState:
@@ -167,8 +157,8 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
                     session_dir.name,
                     launch=direct_launch,
                     list_asks=lambda: (
-                        [d for d in _asks_dir(session_dir).iterdir() if d.is_dir()]
-                        if _asks_dir(session_dir).is_dir()
+                        [d for d in asks_dir(session_dir).iterdir() if d.is_dir()]
+                        if asks_dir(session_dir).is_dir()
                         else []
                     ),
                     events=events,

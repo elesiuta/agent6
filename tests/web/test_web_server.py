@@ -1325,3 +1325,38 @@ def test_client_disconnects_are_quiet(tmp_path: Path, capsys: pytest.CaptureFixt
         assert "ValueError" in capsys.readouterr().err
     finally:
         srv.server_close()
+
+
+def test_steer_btw_opens_a_side_ask(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/btw <question>` from the web composer opens the side ask (the CLI
+    menu's mechanism, shared) instead of steering the run; a bare `/btw` is
+    refused with what to type."""
+    import agent6.ui.btw as btw_mod
+
+    _srv, port = server
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "btw-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    asks = resolved_state_dir(tmp_path) / "sessions" / "asks"
+
+    def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
+        d = asks / "quiet-fox-DDDDDD"
+        d.mkdir(parents=True)
+        (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}))
+        lines = [
+            {"type": "session.start", "user_task": "q"},
+            {"type": "role.result", "text": "no"},
+            {"type": "session.end", "reason": "answered", "all_passed": True},
+        ]
+        (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in lines))
+        return ""
+
+    monkeypatch.setattr(btw_mod, "direct_launch", launch)
+    status, body = _post(port, "/api/session/btw-run/steer", {"text": "/btw"})
+    assert status == 422 and "ask something" in str(body)
+    status, body = _post(port, "/api/session/btw-run/steer", {"text": "/btw is it safe?"})
+    assert status == 200 and body["ok"] is True and "opened" in str(body["message"])
+    assert not (session_dir / "steer.request").exists()

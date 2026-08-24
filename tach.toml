@@ -99,7 +99,7 @@ depends_on = [
   "agent6.sessions.ipc",
   "agent6.sessions.manifest",
   "agent6.ui.mcp_server",
-  "agent6.machine", "agent6.models.choices", "agent6.verify_infer",]
+  "agent6.machine", "agent6.models.choices", "agent6.verify_infer", "agent6.ui.btw",]
 
 [[modules]]
 path = "agent6.workflows"
@@ -144,13 +144,18 @@ depends_on = []
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
 # agent6.git_ops: one branch-tips snapshot per hub poll (the unmerged mark).
-depends_on = ["agent6.app", "agent6.git_ops", "agent6.sessions.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.ui.spawn", "agent6.ui.notify", "agent6.sessions.ipc", "agent6.sessions.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.types", "agent6.viewmodel", "agent6.models.choices"]
+depends_on = ["agent6.app", "agent6.git_ops", "agent6.sessions.layout", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.ui.spawn", "agent6.ui.notify", "agent6.sessions.ipc", "agent6.sessions.manifest", "agent6.machine", "agent6.models.cache", "agent6.models.registry", "agent6.models.validate", "agent6.paths", "agent6.portable", "agent6.types", "agent6.viewmodel", "agent6.models.choices", "agent6.ui.btw"]
 
 [[modules]]
 # The steer seam + its file-bridge implementation, shared by the CLI's SIGINT
 # machinery and terminal-less fronts (detached spawns, ACP).
 path = "agent6.ui.steer"
 depends_on = ["agent6.sessions.ipc"]
+
+[[modules]]
+# The /btw side ask every composer opens (CLI menu, TUI, web).
+path = "agent6.ui.btw"
+depends_on = ["agent6.sessions.layout", "agent6.app", "agent6.sandbox", "agent6.ui.spawn", "agent6.events"]
 
 [[modules]]
 # Find the agent6 exe and spawn it detached (new work / machines / background
@@ -238,7 +243,7 @@ depends_on = [
   "agent6.machine",
   # config-editor value suggestions: the one owner every editor and TAB
   # completion read
-  "agent6.models.choices",
+  "agent6.models.choices", "agent6.ui.btw",
 ]
 
 [[modules]]

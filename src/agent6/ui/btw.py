@@ -20,6 +20,7 @@ from threading import Thread
 from agent6.app.btw import BtwLaunch, BtwSession, btw_answer, render_btw, start_btw
 from agent6.events import EventSink
 from agent6.sandbox.jail import keep_out_of_the_sweep
+from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.spawn import agent6_exe
 
 # How often the watcher looks for the answer. A btw is a short question, and
@@ -97,3 +98,32 @@ def _watch(session: BtwSession, events: EventSink) -> None:
             events.emit("btw.answered", btw_id=session.id, block=render_btw(session, answer))
             return
         time.sleep(_POLL_S)
+
+
+def asks_dir(session_dir: Path) -> Path:
+    """The asks bucket beside *session_dir*'s own, for `/btw`'s roster.
+
+    Derived from the running session's dir rather than re-resolving the state
+    base: the two must agree even when `[agent6].state_dir` is overridden.
+    """
+    return session_dir.parent.parent / "asks"
+
+
+def open_btw(session_dir: Path, question: str) -> str:
+    """`/btw <question>` from any composer: open the side ask beside the live
+    run at *session_dir* and return the line to show. The answer lands later
+    as a `btw.answered` event on the run's journal, which every surface folds.
+    """
+    if not question.strip():
+        return "[agent6] ask something: `/btw <question>`"
+    runner = make_btw_runner(
+        session_dir.name,
+        launch=direct_launch,
+        list_asks=lambda: (
+            [d for d in asks_dir(session_dir).iterdir() if d.is_dir()]
+            if asks_dir(session_dir).is_dir()
+            else []
+        ),
+        events=EventSink(session_dir / LOGS_NAME),
+    )
+    return runner(question, session_dir)
