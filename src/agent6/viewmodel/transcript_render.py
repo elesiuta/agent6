@@ -6,8 +6,9 @@ agent6 writes one JSON file per LLM round-trip under `<run>/transcripts/` --
 the full, lossless `{request, response}` (secrets redacted). Each request
 carries the whole conversation up to that call, so the sequence is a complete,
 self-contained record (no join with `logs.jsonl` needed). This module folds
-that sequence -- across BOTH the OpenAI and Anthropic wire shapes -- into an
-ordered list of conversation turns and renders them as Markdown.
+that sequence, across the Chat Completions, Anthropic, and Responses wire
+shapes, into an ordered list of conversation turns and renders them as
+Markdown.
 
 `agent6 sessions transcript` is the CLI front end (`--json` returns the raw
 transcript array instead). The fold walks transcripts in seq order, emitting
@@ -107,9 +108,87 @@ def _shape(req: dict[str, Any], resp: dict[str, Any]) -> str:
         return "openai"
     if isinstance(resp.get("content"), list) and resp.get("role"):
         return "anthropic"
+    if isinstance(resp.get("output"), list) or isinstance(req.get("input"), list):
+        return "responses"
     # Fall back on the request: Anthropic carries a top-level `system` and
     # content-block messages; OpenAI uses a system *message* + flat strings.
     return "anthropic" if "system" in req else "openai"
+
+
+def _request_items(req: dict[str, Any], shape: str) -> list[Any]:
+    """The request's conversation list: Responses `input`, else `messages`."""
+    return (req.get("input") if shape == "responses" else req.get("messages")) or []
+
+
+def _item_text(item: dict[str, Any]) -> str:
+    """A Responses message item's text parts, joined."""
+    content = item.get("content")
+    if isinstance(content, str):
+        return content
+    return "".join(
+        str(part.get("text", ""))
+        for part in content or []
+        if isinstance(part, dict) and part.get("type") in ("input_text", "output_text", "text")
+    )
+
+
+def _responses_turns(items: list[Any], names: dict[str, str]) -> list[Turn]:
+    """Responses items -> turns. One model response spans several items
+    (reasoning, a message, function calls), so consecutive assistant-side items
+    fold into ONE assistant turn; a user message or a call output ends it."""
+    turns: list[Turn] = []
+    current: Turn | None = None
+
+    def flush() -> None:
+        nonlocal current
+        if current is not None:
+            turns.append(current)
+            current = None
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("type")
+        if kind == "message" and item.get("role") != "assistant":
+            flush()
+            turns.append(Turn(role=str(item.get("role") or "user"), text=_item_text(item)))
+            continue
+        if kind == "function_call_output":
+            flush()
+            call_id = str(item.get("call_id", ""))
+            output = str(item.get("output", ""))
+            turns.append(Turn(role="tool", text=output, tool_name=names.get(call_id, "")))
+            continue
+        if current is None:
+            current = Turn(role="assistant")
+        if kind == "reasoning":
+            summary = "\n".join(
+                str(part.get("text", ""))
+                for part in item.get("summary") or []
+                if isinstance(part, dict) and part.get("text")
+            )
+            if summary:
+                current.thinking = f"{current.thinking}\n{summary}".strip()
+        elif kind == "message":
+            text = _item_text(item)
+            if text:
+                current.text = f"{current.text}\n{text}".strip()
+        elif kind == "function_call":
+            name = str(item.get("name", ""))
+            call_id = str(item.get("call_id") or item.get("id") or "")
+            if call_id:
+                names[call_id] = name
+            current.tool_calls.append((name, _pretty_args(item.get("arguments", ""))))
+    flush()
+    return turns
+
+
+def _same_item(a: Any, b: Any) -> bool:
+    """Whether a replayed Responses input item is the recorded output item."""
+    if not isinstance(a, dict) or not isinstance(b, dict) or a.get("type") != b.get("type"):
+        return False
+    key = "call_id" if a.get("type") == "function_call" else "id"
+    return a.get(key) == b.get(key) if (a.get(key) or b.get(key)) else a == b
 
 
 def _pretty_args(raw: Any) -> str:
@@ -198,6 +277,8 @@ def _message_turns(m: dict[str, Any], shape: str, names: dict[str, str]) -> list
 
 
 def _response_turns(resp: dict[str, Any], shape: str, names: dict[str, str]) -> list[Turn]:
+    if shape == "responses":
+        return _responses_turns(resp.get("output") or [], names)
     if shape == "openai":
         choices = resp.get("choices") or []
         if not choices:
@@ -217,7 +298,7 @@ def _elided_strings(msg: dict[str, Any]) -> list[str]:
     """Every elision-placeholder string one wire message carries (either shape:
     an OpenAI `role: tool` string content, or Anthropic `tool_result` items)."""
     out: list[str] = []
-    content = msg.get("content")
+    content = msg.get("content") if "content" in msg else msg.get("output")
     if isinstance(content, str):
         if content.startswith(ELISION_MARKER_PREFIX):
             out.append(content)
@@ -291,15 +372,17 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     prev_len = 0  # messages of the prior request already emitted
     prev_msgs: list[Any] = []  # the prior request's messages, for elision diffing
     pending_response = False  # the prior transcript's response yielded turns
+    prev_output: list[Any] = []  # a Responses call's output items, echoed by the next request
     for t in transcripts:
         seq = int(t.get("seq", 0))
         req = _request_body(t)
         resp = _response_body(t)
         shape = _shape(req, resp)
-        msgs = req.get("messages") or []
-        # Anthropic keeps the system prompt out of `messages`; surface it once.
-        if shape == "anthropic" and prev_len == 0 and req.get("system"):
-            sys = req["system"]
+        msgs = _request_items(req, shape)
+        # Anthropic and Responses keep the system prompt out of the message
+        # list; surface it once.
+        sys = req.get("system") if shape == "anthropic" else req.get("instructions")
+        if shape in ("anthropic", "responses") and prev_len == 0 and sys:
             turns.append(
                 Turn(role="system", seq=seq, text=sys if isinstance(sys, str) else json.dumps(sys))
             )
@@ -311,12 +394,27 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
             turns.append(Turn(role="marker", text=marker, seq=seq))
         # The previously-emitted response is msgs[prev_len] only when the
         # history grew; a retry that re-sends the identical list skips nothing.
-        start = prev_len + 1 if pending_response and len(msgs) > prev_len else prev_len
-        for m in msgs[start:]:
-            if isinstance(m, dict):
-                for tt in _message_turns(m, shape, names):
-                    tt.seq = seq
-                    turns.append(tt)
+        # A Responses call's output is several items, echoed back verbatim.
+        start = prev_len
+        if shape == "responses":
+            while (
+                start - prev_len < len(prev_output)
+                and start < len(msgs)
+                and _same_item(msgs[start], prev_output[start - prev_len])
+            ):
+                start += 1
+        elif pending_response and len(msgs) > prev_len:
+            start = prev_len + 1
+        fresh = msgs[start:]
+        if shape == "responses":
+            new_turns = _responses_turns(fresh, names)
+        else:
+            new_turns = [
+                tt for m in fresh if isinstance(m, dict) for tt in _message_turns(m, shape, names)
+            ]
+        for tt in new_turns:
+            tt.seq = seq
+            turns.append(tt)
         response_turns = _response_turns(resp, shape, names)  # this call's assistant output
         for rt in response_turns:
             rt.seq = seq
@@ -324,6 +422,7 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
         prev_len = len(msgs)
         prev_msgs = list(msgs)
         pending_response = bool(response_turns)
+        prev_output = list(resp.get("output") or []) if shape == "responses" else []
     return turns
 
 

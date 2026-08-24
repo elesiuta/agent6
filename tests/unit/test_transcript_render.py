@@ -145,6 +145,119 @@ _ANTHROPIC = [
 ]
 
 
+_RESPONSES = [
+    {
+        "seq": 1,
+        "request": {
+            "body": {
+                "instructions": "SYSTEM PROMPT",
+                "input": [
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "do X"}],
+                    }
+                ],
+            }
+        },
+        "response": {
+            "body": {
+                "output": [
+                    {
+                        "type": "reasoning",
+                        "id": "rs_1",
+                        "encrypted_content": "OPAQUE",
+                        "summary": [{"type": "summary_text", "text": "let me think"}],
+                    },
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "working on it"}],
+                    },
+                    {
+                        "type": "function_call",
+                        "call_id": "c1",
+                        "name": "read_file",
+                        "arguments": '{"path":"a.py"}',
+                    },
+                ],
+                "status": "end_turn",
+            }
+        },
+    },
+    {
+        "seq": 2,
+        "request": {
+            "body": {
+                "instructions": "SYSTEM PROMPT",
+                "input": [
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "do X"}],
+                    },
+                    {
+                        "type": "reasoning",
+                        "id": "rs_1",
+                        "encrypted_content": "OPAQUE",
+                        "summary": [{"type": "summary_text", "text": "let me think"}],
+                    },
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "working on it"}],
+                    },
+                    {
+                        "type": "function_call",
+                        "call_id": "c1",
+                        "name": "read_file",
+                        "arguments": '{"path":"a.py"}',
+                    },
+                    {"type": "function_call_output", "call_id": "c1", "output": "file body"},
+                ],
+            }
+        },
+        "response": {
+            "body": {
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "done"}],
+                    }
+                ],
+                "status": "end_turn",
+            }
+        },
+    },
+]
+
+
+def test_fold_and_render_the_responses_shape() -> None:
+    """A ChatGPT (Responses) transcript: `instructions` is the system turn,
+    `input` items fold into turns (one model response spans reasoning, a
+    message and calls, so those items make ONE assistant turn), the next
+    request's echo of the recorded output items is not printed twice, and a
+    call output is labelled with its call's name."""
+    turns = fold_conversation(_RESPONSES)
+    assert [(t.role, t.seq) for t in turns] == [
+        ("system", 1),
+        ("user", 1),
+        ("assistant", 1),
+        ("tool", 2),
+        ("assistant", 2),
+    ]
+    assert turns[0].text == "SYSTEM PROMPT" and turns[1].text == "do X"
+    first = turns[2]
+    assert first.thinking == "let me think" and first.text == "working on it"
+    assert first.tool_calls == [("read_file", '{"path": "a.py"}')]
+    assert turns[3].text == "file body" and turns[3].tool_name == "read_file"
+    assert turns[4].text == "done"
+    md = render_markdown(turns, session_id="s")
+    assert "<thinking>\nlet me think\n</thinking>" in md
+    assert md.count("working on it") == 1 and "-> read_file" in md
+
+
 @pytest.mark.parametrize("transcripts", [_OPENAI, _ANTHROPIC], ids=["openai", "anthropic"])
 def test_fold_and_render_both_shapes(transcripts: list[dict[str, Any]]) -> None:
     turns = fold_conversation(transcripts)
