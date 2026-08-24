@@ -315,8 +315,8 @@ def main() -> int:
     pull_failed = [r["instance_id"] for r in results if r.get("status") == "pull_failed"]
     if pull_failed:
         print(
-            f"{len(pull_failed)} instance(s) had NO pred written (image pull failed, "
-            f"likely a Docker Hub 429): {', '.join(pull_failed[:8])}"
+            f"{len(pull_failed)} instance(s) had NO pred written: image pull failed "
+            f"(the pull_failed rows above carry the daemon's reason): {', '.join(pull_failed[:8])}"
             f"{' ...' if len(pull_failed) > 8 else ''}. Re-run to fill them.",
             flush=True,
         )
