@@ -28,9 +28,9 @@ Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `co
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root.
   The four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`), `ui/mcp_server.py` (agent6 as an MCP server), and the write helpers `ui/spawn` and `ui/notify`, over the shared read-model fold (`viewmodel`).
-- **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: the run, resume, fork, and machine-agent lifecycles, the run-branch merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), and the `--parallel` fan-out.
-  It never imports `agent6.ui`.
-  What it cannot do itself (own a terminal, render a live view, spawn a detached `agent6`) arrives as frozen callables the front-end injects (`SessionFrontend`, `LaneRuntime`), and its output goes through an injected two-channel `Reporter`.
+- **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
+    - never imports `agent6.ui`
+    - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
 - **workflows** ([src/agent6/workflows/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/workflows)): `loop` (the agent loop behind `agent6 run` and `resume`) and `review` (the read-only pass behind `agent6 review`).
   The single-turn `code_review` call shape lives here too; the agent loop makes its own provider calls inline.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
@@ -38,11 +38,11 @@ Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `co
   The jail bounds commands, one launcher per run; the agent process itself is never confined.
 
 **Where the CLI resolves things.** `ui/cli` parses arguments, optionally spawns the TUI, and picks a workflow.
-`cli_main` is the one error boundary: an `OperatorError` (`agent6.errors`, with `ConfigError` and `MemoryStoreError` as subclasses) prints as an `ERROR:` refusal at exit 2, and anything else is a bug that crash-reports with a saved traceback at exit 1.
-Config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (built-in defaults, then global, then per-repo, then `--config FILE`), paths and sudo/root resolution through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py), API keys through [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secrets.py).
-Per-repo state lives out of the workspace under `$XDG_STATE_HOME/agent6/<repo-id>/`, keyed on the nearest enclosing `.git`, so a subdirectory reaches the same runs, memory, and config.
-The base moves with the global-only `[agent6].state_dir` or `AGENT6_STATE_HOME`.
-Every config edit from every surface goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held cycle that validates the written value, revalidates the merged config, and rolls back, or keeps the write with a "kept as written" error when the fail-open lock was not held.
+
+- `cli_main` is the one error boundary: `OperatorError` (with `ConfigError`, `MemoryStoreError`) prints an `ERROR:` refusal at exit 2; anything else crash-reports with a saved traceback at exit 1
+- config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (defaults, global, per-repo, `--config FILE`); paths and sudo/root through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py); keys through [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secrets.py)
+- per-repo state lives out of the workspace at `$XDG_STATE_HOME/agent6/<repo-id>/`, keyed on the nearest enclosing `.git` (a subdirectory reaches the same runs, memory, config); the base moves with `[agent6].state_dir` or `AGENT6_STATE_HOME`
+- every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
 
 Three model roles route independently: `worker` drives `run` and `resume`, `planner` drives `plan`, `reviewer` drives `review` and the in-loop panel.
 Unset roles fall back to `worker`.
@@ -50,9 +50,10 @@ Unset roles fall back to `worker`.
 ## A run
 
 One provider, one model, one message history.
-The model drives by calling tools; the workflow dispatches them, snapshots state, and tracks budget.
-Multi-step work is the model calling the next tool in the same conversation: no planner-to-worker handoff, no separate reviewer agent by default.
-The in-loop review panel is opt-in (`[review]`) and layers onto that same history.
+
+- the model drives by calling tools; the workflow dispatches, snapshots, tracks budget
+- multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
+- the in-loop review panel is opt-in (`[review]`), layered on the same history
 
 ```mermaid
 stateDiagram-v2
@@ -86,44 +87,48 @@ flowchart TD
 `agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` from the matching checkpoint.
 With the per-tool transcripts, an interrupted run replays deterministically up to the next model call.
 
-**Per-step commits** fire when `run_verify_command` returns 0, through `git_ops.py` from outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, staged through a temp index).
-`branch_per_run` also advances a visible `agent6/<id>` branch.
-HEAD, the index, and the checkout never move, so operator or model git activity mid-run cannot collide with the run's record.
-How those commits consolidate is chosen later at `agent6 sessions merge` time (`git.merge_strategy`: `squash`, `merge`, or `ff`).
+**Per-step commits** fire when `run_verify_command` returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
 
-**The task DAG is scaffolding.** `add_task` / `update_task` / `list_tasks` write to a curator-owned side store with explicit `depends_on` edges, cycle-checked by the curator.
-They do not pick the next tool.
-agent6 reads the DAG to keep a small or weak model focused: each turn it surfaces the current task into the prompt (the cursor while it points at an open subtask, else the first dependency-satisfied pending one), advances the cursor as tasks pass, and marks the surfaced task `in_progress`.
-It refuses `finish_session` while the worker's own subtasks are open, capped so an unclosable task cannot stall the run.
-The surfaced banner survives tier-1 elision and is re-injected after each tier-2 restart.
-A focus task held for many turns with no forward motion draws a nudge offering to split, pass, or skip it, re-firing periodically up to a small cap; any progress resets the counter.
+- `branch_per_run` also advances a visible `agent6/<id>` branch
+- HEAD, the index, and the checkout never move: mid-run git activity cannot collide with the record
+- consolidation is chosen at `sessions merge` time (`git.merge_strategy`: `squash`, `merge`, `ff`)
 
-**Standing tasks park a run instead of ending it.** A standing task (`run --standing "<goal>"`, or `add_task(standing=true)`) is the frontier's never-passing fallback, worked only when no ordinary subtask is ready; the model retires its own (`skipped`/`obsolete`), the operator's `--standing` goal only the operator retires.
-While one exists, the soft out-of-work endings (`finish_session`, the settled family, a quiet turn) convert into re-entry.
-Faults, operator verbs, the iteration cap, and a spent budget still end the run.
-A re-entry round that landed no executed tool call escalates the nudge (dig deeper, try a different approach) instead of quitting; `[workflow].standing_patience` bounds how many such rounds are absorbed (`-1`, the default, never ends on its own; a round that lands work resets the streak).
-An interactive run (`run -i` / `resume -i`) parks the same way on a quiet turn: the conversation waits on the steer bridge, and a steer from any composer or the pause menu continues it in place.
+**The task DAG is scaffolding.** `add_task` / `update_task` / `list_tasks` write a curator-owned side store with `depends_on` edges, cycle-checked; they do not pick the next tool.
 
-**Context compaction has two tiers**, with thresholds in `[context]`.
-At `drop_at_chars` the oldest tool results become a short placeholder naming the elided call, with reads of files the worker edited in the last few turns elided last.
-A large `read_file` result decays in two stages: first to a placeholder carrying a model-written gist of the file, then under continued pressure to the bare marker, oldest gists first.
-Files changing under edits are never gisted.
-At `summarise_at_chars` the elided history is summarised by the `reviewer` model and the conversation restarts from task plus summary.
-The task DAG survives that restart: agent6 re-surfaces the current task, and asks the summariser which tracked tasks the transcript shows finished and what new work it found, marking the finished ones `passed` and queueing the new ones.
-Compaction is visible: the events carry what was elided and the full restart summary, every conversation view marks elisions and restarts in place, and `/status` shows the counts.
-`/compact [focus]` compacts on demand and `/pin <text>` survives every tier-2 restart verbatim (pins capped at 4000 chars in total, with a loud refusal over the cap) and persists in the resume snapshot.
+- each turn the current task surfaces into the prompt (the cursor's open subtask, else the first dependency-satisfied pending one), advances as tasks pass, marks `in_progress`
+- `finish_session` refuses while the worker's own subtasks are open, capped so an unclosable task cannot stall the run
+- the surfaced banner survives tier-1 elision and re-injects after each tier-2 restart
+- a focus task held without forward motion draws a split/pass/skip nudge, re-firing up to a small cap; progress resets it
 
-**Repo memory** is one fact per markdown file under `<state-dir>/<repo-id>/memory/`, plus a `MEMORY.md` index of one line per entry.
-The index injects into every run's prompt as a capped `<memory>` block; a run that needs depth reads the file.
-The worker writes through the ordinary edit tools with a narrow grant to that directory, in-process only, and the jail never mounts it.
-Run mode writes, plan and ask read, machine modes see none.
-Models never write memory unprompted (measured over 46 bench legs: zero writes), so the loop surfaces the mechanism twice: an advisory when verify first goes green after a red one, and a once-deferred `finish_session` after such a recovery if nothing was recorded.
-`agent6 memory add/list/show/rm` is the operator surface over the same files.
+**Standing tasks park a run instead of ending it.** A standing task (`run --standing "<goal>"`, `add_task(standing=true)`) is the never-passing fallback, worked only when no ordinary subtask is ready.
 
-**Skills** resolve at run start from `<data-dir>/skills/` plus `[skills].extra_dirs`, through the dispatcher's single resolution, so the `<skills>` prompt index and what `use_skill` serves cannot diverge.
-`always`-state skills inject their full text; the rest get one index line and load on demand.
-Run mode only.
-Delivery is measured: small models never call `use_skill` from the index alone, so the reliable paths are `always`, `/name` in the pause menu, and `run --skill`.
+- the model retires its own (`skipped`/`obsolete`); the operator's `--standing` goal only the operator retires
+- while one exists, the soft out-of-work endings (`finish_session`, the settled family, a quiet turn) convert into re-entry
+- faults, operator verbs, the iteration cap, and a spent budget still end the run
+- a re-entry round landing no executed tool call escalates the nudge; `[workflow].standing_patience` bounds the streak (`-1` default: never self-ends; landed work resets)
+- an interactive run parks the same way on a quiet turn: the conversation waits on the steer bridge; any composer or the pause menu continues it in place
+
+**Context compaction has two tiers**, thresholds in `[context]`.
+
+- tier 1, `drop_at_chars`: the oldest tool results become placeholders naming the elided call; reads of recently-edited files elide last
+- a large `read_file` decays in two stages: a model-written gist first, the bare marker under continued pressure (oldest gists first); files changing under edits are never gisted
+- tier 2, `summarise_at_chars`: the elided history is summarised by the `reviewer` model; the conversation restarts from task + summary
+- the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
+- compaction is visible: events carry the elisions and the restart summary, every view marks them in place, `/status` shows counts
+- `/compact [focus]` compacts on demand; `/pin <text>` survives every restart verbatim (4000-char total cap, loud refusal over it) and persists in the snapshot
+
+**Repo memory**: one fact per markdown file under `<state-dir>/<repo-id>/memory/`, plus a one-line-per-entry `MEMORY.md` index.
+
+- the index injects into every run's prompt as a capped `<memory>` block; depth is a file read
+- the worker writes through the ordinary edit tools under a narrow grant, in-process only; the jail never mounts it
+- run mode writes; plan and ask read; machine modes see none
+- models never write unprompted (46 bench legs: zero writes), so the loop surfaces the mechanism twice: an advisory when verify first recovers green, and a once-deferred `finish_session` after such a recovery with nothing recorded
+- `agent6 memory add/list/show/rm` is the operator surface over the same files
+
+**Skills** resolve at run start from `<data-dir>/skills/` plus `[skills].extra_dirs`, through one resolution: the `<skills>` index and what `use_skill` serves cannot diverge.
+
+- `always` skills inject full text; the rest get an index line and load on demand; run mode only
+- delivery is measured: small models never call `use_skill` from the index alone; the reliable paths are `always`, `/name`, and `run --skill`
 
 **`finish_session(summary)`** is the only terminal tool: it emits a `session.end` event and returns control to the CLI.
 
@@ -202,9 +207,10 @@ A segment's first token counts as a spec when it contains a comma or a slash, si
 A bare name like `opus` stays task text, and a task whose first word is a path parses as a bogus model spec, so start a task with a verb.
 
 Before any clone, a spec's models are checked against what a lane can run.
-Lanes inherit the worker provider and override only the model, so the universe is the worker's configured model plus that provider's cached listing, checked in [models/validate.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/models/validate.py).
-An unknown model refuses early with a did-you-mean where a cache exists, and proceeds with a warning where none does, so an offline machine is never blocked on a regenerable cache.
-All three consumers validate through that one helper, which keeps `workflows` free of a models dependency.
+
+- lanes inherit the worker provider and override only the model: the universe is the worker's model plus that provider's cached listing ([models/validate.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/models/validate.py))
+- unknown model: refuses early with a did-you-mean where a cache exists; proceeds with a warning where none does (offline machines never block on a regenerable cache)
+- all three consumers validate through the one helper, keeping `workflows` free of a models dependency
 
 The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/subrun.py), with no LLM, no UI, and no process spawning:
 
@@ -215,29 +221,30 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) implements those Protocols and is the only module that knows how to run a lane.
 The detached spawn it drives (`ui.spawn`, the path `attach` and `resume` use) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`, and liveness and stop requests go to the run-dir bridge (`sessions.ipc`).
 
-**`agent6 run --parallel N|model-a,model-b`** plans one `LaneSpec` per lane and spawns each as an ordinary detached `agent6 run`, with its own jail and `run_commands` policy.
-Each lane's live session dir is symlinked into `<origin_state>/sessions/runs/` as soon as it is located, so every hub resolves it like any other session and a fan-out is visible while it runs.
-On completion each lane is imported and the symlink becomes the real directory; a lane that failed to start, is still running, or was refused import keeps its clone and symlink rather than losing the only copy of its work.
-Imported candidates are auto-compared into a ranked report with `agent6 sessions merge <id>` lines: a structured judge call ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py)) where a reviewer model is configured, else a mechanical verify-then-cost ranking.
-The compare stamps a `compare` block into each imported lane's manifest as the one writer, so every run view shows where a lane placed and why, and listings mark the winner with a star.
-Nothing merges automatically.
-`--max-usd` is per lane and caps the judge like one more lane, and the orchestrator prints the `$X/lane x N + judge = $Y total` line before spawning.
+**`agent6 run --parallel N|model-a,model-b`** plans one `LaneSpec` per lane, each spawned as an ordinary detached `agent6 run` with its own jail and `run_commands` policy.
 
-**A `/parallel` steer dispatches a sibling group** through `Workflow.lane_spawner`, the injection point that keeps `workflows` from importing `ui`.
-`run.py` and `resume.py` build the real spawner and wire it in for a run-mode workflow only.
-The loop then blocks, with no provider calls while lanes run: it chain-commits a changed worktree first, since lanes cut from the chain tip, expands each segment into its lanes, then clones, spawns, awaits, and imports every lane, merging each branch onto the run's chain in dispatch order (`chain_merge`, which also syncs the merged files into the worktree).
-Each segment gets one DAG node stamped `passed` with the last joined sha, or `failed` when every lane failed or conflicted; a conflict aborts that one merge and tells the model to resolve it, and the run continues either way.
-`loop.parallel.dispatched` / `joined` / `failed` events render as conversation markers on every surface, so the blocked wait is visible rather than silent.
+- each lane's live session dir symlinks into `<origin_state>/sessions/runs/` on locate: a fan-out is visible in every hub while it runs
+- on completion a lane imports and the symlink becomes the real directory; a failed-to-start, still-running, or refused lane keeps its clone and symlink (never the only copy lost)
+- imported candidates auto-compare into a ranked report with `sessions merge <id>` lines: a structured judge ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py)) where a reviewer model exists, else verify-then-cost
+- the compare stamps each lane's manifest (`compare`, one writer): every view shows placement and why; listings star the winner
+- nothing merges automatically
+- `--max-usd` is per lane and caps the judge like one more lane; the `$X/lane x N + judge = $Y total` line prints before spawning
+
+**A `/parallel` steer dispatches a sibling group** through `Workflow.lane_spawner` (the injection point keeping `workflows` from importing `ui`; `run.py`/`resume.py` wire the real spawner, run mode only).
+
+- the loop blocks with no provider calls while lanes run: chain-commit the worktree first (lanes cut from the chain tip), expand segments, clone/spawn/await/import, merge each branch onto the chain in dispatch order (`chain_merge` syncs merged files into the worktree)
+- each segment gets one DAG node: `passed` with the last joined sha, or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
+- `loop.parallel.dispatched` / `joined` / `failed` render as conversation markers: the blocked wait is visible, never silent
 
 **Depth is 1.** Every spawned lane carries `AGENT6_SUBRUN=1`, and both `--parallel` and `build_coordinator_spawner` refuse to wire a `lane_spawner` when it is set.
 
 ## Enforcement layering
 
 - `git_ops.py` runs outside the jail, in the agent's own process, so the read-only bind of `.git` stops the worker without stopping the workflow's commits.
-- `protect_git` is strict-only. On strict the jail read-only bind-remounts `.git` over the workspace mount.
-  Hardened has no mount namespace to carve with, so it grants blanket read-write on the repo cwd and `.git` is writable by jailed commands there.
-  Carving `.git` read-only on hardened would also deny new top-level entries and break toolchains that create `target/` or `.pytest_cache/`.
-  That writable `.git` is gated by `run_commands` (default `ask`), recoverable through branch-per-run and `git_ops`, and bounded by the surrounding container.
+- `protect_git` is strict-only: strict read-only bind-remounts `.git` over the workspace mount
+    - hardened has no mount namespace to carve: blanket read-write on the cwd, `.git` writable by jailed commands
+    - carving it there would also deny new top-level entries (`target/`, `.pytest_cache/`)
+    - the writable `.git` is gated by `run_commands` (default `ask`), recoverable via branch-per-run + `git_ops`, bounded by the container
 - Run state is out of reach of jailed commands because it lives outside the workspace, at `<state-dir>/<repo-id>/`, unreachable from the repo cwd.
 
 [security.md](security.md) states which guarantee each layer provides.
@@ -254,11 +261,12 @@ flowchart LR
     Agent -->|in-process| Rest["loop_state.json<br/>logs.jsonl<br/>transcripts"]
 ```
 
-One curator per run is an invariant: two live curators on one session dir cache the graph independently, so the second one's write drops the first's parent-child links.
-`run`, `resume`, and `fork` therefore take a single-writer flock on `<run-dir>/worker.lock`, and a second process on the same run refuses.
-A crashed writer releases the lock on death, so resume-after-crash is never blocked.
-The curator also holds a per-mutation flock on the session dir against a concurrent operator-CLI read or write.
-A write-path fault after the in-memory update reloads the graph from disk before surfacing, so a later read never observes a node that was never persisted.
+One curator per run is an invariant (two live curators cache independently; the second write drops the first's parent-child links).
+
+- `run`/`resume`/`fork` take a single-writer flock on `<run-dir>/worker.lock`; a second process refuses
+- a crashed writer releases on death: resume-after-crash never blocks
+- a per-mutation flock on the session dir guards concurrent operator-CLI reads/writes
+- a write-path fault after the in-memory update reloads from disk before surfacing: no read ever observes an unpersisted node
 
 One live run-mode worker per checkout is the level above (`sessions/lock.py`, a repo-wide flock on `<state-dir>/repo.lock`): run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
 A second `agent6 run` parks: the submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings) and `agent6 resume <id>` starts it once the checkout is free; the message also offers a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
@@ -329,11 +337,12 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, false = not green, null = nothing gated it); one shape from every exit path |
 
 A `run_command` approval publishes as `approval.prompt`.
-The TUI shows an Allow/Deny modal and writes the operator's literal choice to `approvals/<id>.answer`, which the workflow reads before recording `approval.answer`.
-The asking side decides what a choice grants: each prompt names the scope an "allow all" would cover (`command`, or one MCP server), a standing answer is recorded per scope, and a gate that offers none sets `standing: false` so no front-end shows the button.
-The answer poll falls back headless, to a stdin prompt or a deny for a machine state, only after the front-end has stayed dead for 30 consecutive seconds, so a page reload or a locked phone does not convert a pending approval into a deny.
-While a browser watches a run it registers as the run's answer front-end, so prompts bridge to the page.
-The task DAG is not in this stream: it is curator-owned in `graph.jsonl`, read through `agent6 sessions graph`.
+
+- the TUI's Allow/Deny writes the literal choice to `approvals/<id>.answer`; the workflow reads it before recording `approval.answer`
+- the asking side decides what a choice grants: each prompt names its "allow all" scope (`command`, or one MCP server); standing answers record per scope; a no-standing gate sets `standing: false` and no front-end shows the button
+- the answer poll falls back headless (stdin, or deny for a machine state) only after the front-end stays dead 30 consecutive seconds: a page reload or locked phone never converts a pending approval into a deny
+- a watching browser registers as the run's answer front-end; prompts bridge to the page
+- the task DAG is not in this stream: curator-owned `graph.jsonl`, read via `sessions graph`
 
 ## Where things live
 
