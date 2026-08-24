@@ -4442,6 +4442,14 @@ def test_ends_with_question_detection() -> None:
     assert ends_with_question("I found two options.\nWhich do you prefer?")
     assert not ends_with_question("Done. All tests pass.")
     assert not ends_with_question("")
+    # A ruling the recorder must not miss: decoration after the '?', and the
+    # question-then-options close. A question buried above prose stays a no.
+    assert ends_with_question("Should I proceed? (y/n)")
+    assert ends_with_question("**Which one?**")
+    assert ends_with_question("Which shape do you want?\n1. the modal\n2) the inline row")
+    assert ends_with_question("Keep or drop?\n- keep\n- drop")
+    assert not ends_with_question("Which one?\nI went with the modal. Done.")
+    assert not ends_with_question("Options considered?\nA long explanation follows here.")
     assert ends_with_question("Should I proceed?  ")  # trailing space tolerated
 
 

@@ -261,13 +261,33 @@ MEMORY_FINISH_NUDGE = (
 )
 
 
+# A line that asks: its last '?' is followed only by decoration and at most
+# one short parenthesized tail ("proceed? (y/n)", "**which?**", "…?\"").
+_ASKS = re.compile(r"\?[\s)\"'`*_\]]*(?:\([^()]{0,24}\))?[\s)\"'`*_\]]*$")
+# An option line under a question: "1. yes", "2) no", "- keep", "* drop",
+# "a) first". The question stays the ask when only options follow it.
+_OPTION_LINE = re.compile(r"^(?:[-*]|\d{1,2}[.)]|[a-z][.)])\s")
+
+
+def _asks(line: str) -> bool:
+    return _ASKS.search(line) is not None
+
+
 def ends_with_question(text: str) -> bool:
-    """Best-effort: the model's prose ends by asking the operator something. The
-    last non-empty line ending in '?' catches the common 'Should I proceed?' /
-    'Which option do you want?' close that a model writes instead of calling
-    ask_user."""
+    """The model's prose ends by asking the operator something: the last
+    non-empty line asks (a trailing "(y/n)" or markdown decoration does not
+    hide the '?'), or the lines after the asking line are all options
+    ("1. yes / 2. no"). Feeds the question nudge and the steer-answer
+    recorder, so a miss here is an operator ruling never recorded."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return bool(lines) and lines[-1].endswith("?")
+    if not lines:
+        return False
+    if _asks(lines[-1]):
+        return True
+    for back in range(2, min(6, len(lines) + 1)):
+        if _asks(lines[-back]):
+            return all(_OPTION_LINE.match(after) for after in lines[-back + 1 :])
+    return False
 
 
 def standing_fruitless_nudge(reason: str, task_id: str, title: str, streak: int) -> str:
