@@ -252,11 +252,28 @@ This run's verify_command (run via `run_verify_command`):
   argv: {argv}
   timeout: {timeout_s}s
 
-Returncode 0 passes; a passing run auto-commits the step.
+Returncode 0 passes. {when}
 finish_session's stale_gate field records a replacement-gate proposal
 for the operator; the gate itself does not move.
 </verify-command>
 """
+
+# The `[workflow].verify_when` fact for the block above, by mode; {retries}
+# is `verify_retries`.
+V2_VERIFY_WHEN = {
+    "finish": (
+        "The harness runs it when finish_session is called and the tree changed"
+        " since the last passing run; a red result returns to you {retries}"
+        " time(s) with its output, then the run ends red."
+    ),
+    "step": (
+        "The harness runs it after every turn that edits the tree, and when"
+        " finish_session is called over a tree no passing run covers; a red"
+        " finish returns to you {retries} time(s) with its output, then the run"
+        " ends red."
+    ),
+    "never": "The harness never runs it; only your run_verify_command calls do.",
+}
 
 V2_NO_VERIFY_BLOCK = """<no-verify-command>
 No verify command is configured for this run, so `run_verify_command` is not

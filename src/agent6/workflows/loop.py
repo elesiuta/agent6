@@ -160,8 +160,6 @@ from agent6.workflows._nudges import (
     TOOL_ERROR_NUDGE_AFTER,
     TOOL_ERROR_STOP_AFTER,
     VERIFY_BROKEN_NUDGE,
-    VERIFY_FINISH_GATE,
-    VERIFY_FINISH_PATIENCE,
     VERIFY_SETTLED_NUDGE,
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
@@ -219,6 +217,11 @@ from agent6.workflows._spiral_guards import SpiralGuard
 from agent6.workflows._toolset import (
     build_readonly_review_tools,
     tool_definitions,
+)
+from agent6.workflows._verify_gate import (
+    finish_red_notice,
+    harness_verify_due,
+    harness_verify_notice,
 )
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.subrun import (
@@ -347,7 +350,8 @@ class _LoopState:
     plateau_nudges_used: int = 0
     metric_finish_nudges_used: int = 0
     task_finish_nudges_used: int = 0
-    verify_finish_nudges_used: int = 0
+    # Red finish certifications returned to the model so far (`verify_retries`).
+    verify_finish_retries_used: int = 0
     ever_edited: bool = False
     # Attemptless-stagnation notice: recall spirals make few calls with long
     # reasoning between them, so the identical-signature repeat guard never
@@ -1306,8 +1310,9 @@ class Workflow:
     def _turn_dispatch_tools(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
         """Dispatch each tool_use in the turn, appending one tool_result per
         call and noting effects (verify / metric / edits / DAG / finish) on
-        `turn`. Returns a SessionResult only for the unexecutable-operator-
-        command abort; tool errors become error tool_results instead."""
+        `turn`, then the harness's own gate run when one is due. Returns a
+        SessionResult only for the unexecutable-operator-command abort; tool
+        errors become error tool_results instead."""
         # This iteration produced tool_uses, so the went_quiet
         # nudge budget refills (failures are per-streak, not per-run).
         state.went_quiet_nudges_used = 0
@@ -1374,7 +1379,8 @@ class Workflow:
                     for_call=tu,
                 )
             )
-        return None
+        # The gate run the harness adds to the turn, after the model's calls.
+        return self._turn_harness_verify(state, turn)
 
     # A jailed command that hit its timeout, per sandbox.jail's contract.
     _EXIT_TIMEOUT = 124
@@ -1663,6 +1669,43 @@ class Workflow:
             )
         )
 
+    def _turn_harness_verify(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
+        """Run the gate the harness owes this turn (`[workflow].verify_when`):
+        after an editing turn under `step`, and when finish_session arrives
+        over a tree no green run covers under `step` or `finish`. The model's
+        own run_verify_command this turn already judged the tree, so nothing
+        runs on top of it. `run_commands = "no"` withholds the gate from the
+        harness as it does from the model. An unexecutable operator command
+        ends the run as it does on the tool path."""
+        why = harness_verify_due(
+            when=self.config.workflow.verify_when,
+            gate_present=(
+                self.mode == "run"
+                and bool(self.config.workflow.verify_command)
+                and self.dispatcher.command_policy() != "no"
+            ),
+            verified_this_turn=turn.verify_just_passed or turn.verify_just_failed,
+            changed_this_turn=turn.edit_since_verify_pass,
+            finishing=turn.finish_signal is not None and turn.finish_kind == "finish_session",
+            green_and_untouched=state.verify.green_and_untouched,
+        )
+        if why is None:
+            return None
+        self._log(f"LOOP: harness verify ({why}) at iter {turn.iteration}")
+        self._emit("loop.verify_harness", why=why, iteration=turn.iteration)
+        try:
+            result = self.dispatcher.run_verify()
+        except ToolError as exc:
+            turn.tool_results.append(Notice(f"[harness verify] {why}: not run: {exc}"))
+            return None
+        except OperatorCommandUnexecutable as exc:
+            return self._unexecutable_abort(
+                exc, iteration=turn.iteration, tool_calls=state.tool_calls
+            )
+        self._note_verify_result(state, turn, result)
+        turn.tool_results.append(Notice(harness_verify_notice(result, why)))
+        return None
+
     def _turn_auto_commit_and_metric(
         self, state: _LoopState, turn: _TurnState
     ) -> SessionResult | None:
@@ -1681,16 +1724,23 @@ class Workflow:
         Returns a SessionResult for the REPL hook's "stop" directive or an
         unexecutable operator metric command; None otherwise."""
         gateless = not self.config.workflow.verify_command
-        gateless_changed = gateless and (turn.edited or self._worktree_dirty())
+        # A step no gate judged commits as a checkpoint: every gateless step,
+        # and under `verify_when = "finish"` every step the model did not
+        # verify itself (the gate certifies the tree the run ends on).
+        unjudged = gateless or (
+            self.config.workflow.verify_when == "finish"
+            and not (turn.verify_just_passed or turn.verify_just_failed)
+        )
+        unjudged_changed = unjudged and (turn.edited or self._worktree_dirty())
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
         if (
             self.mode != "run"
             or not self.commit_per_step
-            or not (verified_commit or gateless_changed)
+            or not (verified_commit or unjudged_changed)
         ):
             return None
         commit_subject = self._checkpoint_subject(
-            turn, fallback="checkpoint" if gateless else "verify passed"
+            turn, fallback="checkpoint" if unjudged_changed else "verify passed"
         )
         sha = ""
         try:
@@ -1704,10 +1754,11 @@ class Workflow:
                     "loop.auto_commit", iteration=turn.iteration, sha=sha, subject=commit_subject
                 )
             turn.committed = bool(sha)
-            if gateless and sha:
-                # Seed the idle-stop net for gateless runs (no green verify
-                # ever fires); see the verify-settled bookkeeping.
+            if unjudged_changed and sha:
+                # Seed the idle-stop net for runs where no green verify
+                # fires per step; see the verify-settled bookkeeping.
                 state.gateless_ever_committed = True
+            if gateless and sha:
                 self._maybe_adopt_verify(state, turn)
             if sha:
                 # Surface "what the worker just changed" to a live viewer
@@ -1848,7 +1899,7 @@ class Workflow:
         self._gate_before_finish_review(state, turn, conversation)
         self._gate_metric_early_finish(state, turn)
         self._gate_task_finish(state, turn)
-        self._gate_verify_green(state, turn)
+        self._gate_verify_finish(state, turn)
         self._gate_memory_finish(state, turn)
         self._gate_standing_finish(state, turn)
 
@@ -1982,37 +2033,42 @@ class Workflow:
         turn.finish_payload = None
         turn.tool_results.append(Notice(nudge))
 
-    def _gate_verify_green(self, state: _LoopState, turn: _TurnState) -> None:
-        """Opt-in hard finish gate: refuse finish_session while verify is red or
-        stale (bounded, so a genuinely-unpassable task can't pin the loop). The
-        honest all_passed=False signal in the stop checks applies whether or
-        not this is on; this just gives the worker a few pushes to get green
-        first."""
+    def _gate_verify_finish(self, state: _LoopState, turn: _TurnState) -> None:
+        """A finish over a tree the gate did not certify returns to the model
+        `verify_retries` times, then stands (reported finished, never passed;
+        the honest all_passed=False in the stop checks applies either way).
+        A gate that was red before the run touched anything is not the
+        model's to fix, so it is never returned."""
+        wf = self.config.workflow
         if not (
             turn.finish_signal is not None
             and turn.finish_kind == "finish_session"
             and self.mode == "run"
+            and wf.verify_when != "never"
+            and wf.verify_command
             and self._tree_is_verify_green(state) is False
-            # A gate that was already red before this run touched anything is
-            # not something the worker can be pushed to fix: demanding green
-            # there is demanding it repair whatever it inherited.
             and state.verify.baseline_ok is not False
-            and self.config.workflow.require_verify_to_finish
-            and state.verify_finish_nudges_used < VERIFY_FINISH_PATIENCE
+            and state.verify_finish_retries_used < wf.verify_retries
+            and self.dispatcher.command_policy() != "no"
         ):
             return
-        state.verify_finish_nudges_used += 1
+        state.verify_finish_retries_used += 1
         turn.finish_signal = None
         turn.finish_payload = None
-        turn.tool_results.append(Notice(VERIFY_FINISH_GATE))
+        turn.tool_results.append(
+            Notice(
+                finish_red_notice(used=state.verify_finish_retries_used, retries=wf.verify_retries)
+            )
+        )
         self._log(
-            f"  finish_session gated: verify not green (nudge"
-            f" #{state.verify_finish_nudges_used}) at iter {turn.iteration}"
+            f"  finish_session returned: verify not green (return"
+            f" #{state.verify_finish_retries_used} of {wf.verify_retries}) at iter"
+            f" {turn.iteration}"
         )
         self._emit(
             "loop.verify_finish.gated",
             iteration=turn.iteration,
-            nudges_used=state.verify_finish_nudges_used,
+            nudges_used=state.verify_finish_retries_used,
         )
 
     def _gate_memory_finish(self, state: _LoopState, turn: _TurnState) -> None:

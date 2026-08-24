@@ -160,7 +160,7 @@ def test_after_auto_commit_default_continues() -> None:
         root=Path("/tmp"),
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         provider=MagicMock(),
         dispatcher=MagicMock(),
@@ -184,7 +184,7 @@ def test_after_auto_commit_field_is_overridable() -> None:
         root=Path("/tmp"),
         config=MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         provider=MagicMock(),
         dispatcher=MagicMock(),

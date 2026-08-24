@@ -191,7 +191,8 @@ def _config() -> Any:
     return SimpleNamespace(
         workflow=SimpleNamespace(
             verify_command=("pytest", "-q"),
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             metric=None,
         ),
         prompt=SimpleNamespace(decompose="off"),

@@ -47,7 +47,7 @@ def _wf(**kw: Any) -> Workflow:
             git=_GIT_STUB,
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
@@ -88,7 +88,8 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
@@ -173,7 +174,8 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
@@ -207,7 +209,8 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
@@ -293,7 +296,8 @@ def test_resume_seeds_state_from_snapshot_scalars() -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
@@ -373,7 +377,8 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
@@ -452,7 +457,8 @@ def test_resume_start_carries_the_leg_identity(tmp_path: Path) -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
@@ -504,7 +510,8 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
@@ -572,7 +579,8 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal=None),
@@ -711,7 +719,8 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: Path) ->
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=("pytest", "-q"),
             metric=SimpleNamespace(goal=None),
         ),
@@ -773,7 +782,8 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: Path) -> Non
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=("pytest",),
             metric=SimpleNamespace(goal=None),
         ),
@@ -814,7 +824,8 @@ def test_a_forked_leg_reports_the_elisions_its_context_carries() -> None:
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=(),
             verify_infer=True,
             metric=SimpleNamespace(goal="maximize"),
@@ -929,7 +940,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
     dispatcher.dispatch.return_value = RawResult({"ok": True})
     config = MagicMock(
         prompt=MagicMock(system_prompt_file=""),
-        workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
     )
     ev = _EventCapture()
     wf = _wf(
@@ -993,7 +1004,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     dispatcher.dispatch.return_value = RawResult({"ok": True})
     config = MagicMock(
         prompt=MagicMock(system_prompt_file=""),
-        workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+        workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
     )
     ev = _EventCapture()
     huge = "x" * (PINS_MAX_CHARS + 1)
@@ -1048,7 +1059,8 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
         git=_GIT_STUB,
         budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
         workflow=SimpleNamespace(
-            require_verify_to_finish=False,
+            verify_when="never",
+            verify_retries=2,
             verify_command=("make", "check"),  # the operator pinned one since
             metric=SimpleNamespace(goal="maximize"),
         ),

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """The verify finish gate: finish_session can never report 'passed' over a red or
-stale verify (honest default), and require_verify_to_finish turns that into an
-opt-in hard gate. Both ground on _tree_is_verify_green."""
+stale verify, and `[workflow].verify_when` has the harness run the gate itself
+at finish (or every step), returning a red finish `verify_retries` times. Both
+ground on _tree_is_verify_green."""
 
 from __future__ import annotations
 
@@ -56,8 +57,9 @@ def test_green_only_when_last_verify_passed_and_tree_unedited() -> None:
     assert _green(wf, last_ok=True, edited_since=True) is False
 
 
-def test_require_verify_to_finish_defaults_off() -> None:
-    assert Config().workflow.require_verify_to_finish is False
+def test_the_harness_gate_defaults_to_finish_with_two_returns() -> None:
+    wf = Config().workflow
+    assert (wf.verify_when, wf.verify_retries) == ("finish", 2)
 
 
 def _verified(wf: Workflow, **verdict_kw: Any) -> str:
@@ -137,7 +139,7 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(tmp_path: P
     edited_since_verify was set only by apply_edit/apply_patch, so a model
     could verify green, then mutate through run_command (or an MCP tool) and
     still finish reporting verified="passed" -- defeating exit 4,
-    require_verify_to_finish, and the auto-merge gate together. Grounded on
+    the finish certification, and the auto-merge gate together. Grounded on
     git, so a read-only command keeps the pass it had."""
     import subprocess as sp
 
@@ -238,3 +240,194 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> N
 
     # No head recorded at write time: nothing to compare against.
     assert _resumed_state(wf, _snap(head_sha="", **green)).verify.last_ok is None
+
+
+# ---- the harness-run gate (`[workflow].verify_when`) -------------------------
+
+
+def _exec(rc: int, out: str = "") -> Any:
+    from agent6.tools.results import ExecResult
+
+    return ExecResult(returncode=rc, stdout=out, stderr="", duration_s=1.0, exec_failed=False)
+
+
+def _harness_wf(when: str, retries: int = 2, *, policy: str = "yes") -> tuple[Workflow, MagicMock]:
+    """A run-mode loop over a gate, and the mock dispatcher that owns `run_verify`."""
+    data: dict[str, Any] = {
+        "workflow": {"verify_command": ["true"], "verify_when": when, "verify_retries": retries}
+    }
+    dispatcher = MagicMock()
+    dispatcher.command_policy.return_value = policy
+    wf = Workflow(
+        root=Path("/tmp"),
+        config=Config.model_validate(data),
+        provider=MagicMock(),
+        dispatcher=dispatcher,
+        logger=lambda _m: None,
+        mode="run",
+    )
+    return wf, dispatcher
+
+
+def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
+    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    turn = _TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
+    if finishing:
+        turn.finish_signal = "done"
+        turn.finish_kind = "finish_session"
+    if edited:
+        turn.edited = True
+        turn.edit_since_verify_pass = True
+    return turn
+
+
+def _notices(turn: Any) -> list[str]:
+    from agent6.workflows._conversation import Notice
+
+    return [r.text for r in turn.tool_results if isinstance(r, Notice)]
+
+
+def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree() -> None:
+    """`verify_when = "finish"`: the harness runs the gate on finish_session and the
+    model sees the verdict; a green run certifies the tree (the verdict's own
+    bookkeeping, so the finish gate sees green and auto-commit sees a pass)."""
+    wf, dispatcher = _harness_wf("finish")
+    dispatcher.run_verify.return_value = _exec(0, "3 passed")
+    state = _LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True, edited=True)
+
+    assert wf._turn_harness_verify(state, turn) is None  # pyright: ignore[reportPrivateUsage]
+
+    dispatcher.run_verify.assert_called_once_with()
+    assert state.verify.green_and_untouched and turn.verify_just_passed
+    assert _notices(turn) == ["[harness verify] finish: verify_command passed (1s).\n3 passed"]
+    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert turn.finish_signal == "done"
+
+
+def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() -> None:
+    """A red gate at finish returns the finish with the output `verify_retries`
+    times; the next red finish stands (reported finished, never passed)."""
+    wf, dispatcher = _harness_wf("finish", retries=2)
+    dispatcher.run_verify.return_value = _exec(1, "1 failed")
+    state = _LoopState(original_task="t", tool_calls=0)
+    seen: list[str | None] = []
+    notices: list[str] = []
+    for _ in range(3):
+        turn = _turn(finishing=True, edited=True)
+        wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+        wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+        seen.append(turn.finish_signal)
+        notices.extend(_notices(turn))
+    assert seen == [None, None, "done"]
+    assert state.verify_finish_retries_used == 2
+    assert wf._tree_is_verify_green(state) is False  # pyright: ignore[reportPrivateUsage]
+    assert any("(return 1 of 2); 1 more red finish returns" in n for n in notices)
+    assert any("(return 2 of 2); the next red finish ends the run" in n for n in notices)
+
+
+def test_zero_retries_lets_the_first_red_finish_stand() -> None:
+    wf, dispatcher = _harness_wf("finish", retries=0)
+    dispatcher.run_verify.return_value = _exec(1)
+    state = _LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True, edited=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert turn.finish_signal == "done"
+    assert wf._verification(state) == "failed"  # pyright: ignore[reportPrivateUsage]
+
+
+def test_a_tree_the_model_already_certified_is_not_judged_twice() -> None:
+    """Green and untouched since: the finish needs no second run. And a turn
+    whose own run_verify_command judged the tree is never judged on top."""
+    wf, dispatcher = _harness_wf("finish")
+    state = _LoopState(original_task="t", tool_calls=0)
+    state.verify.note_pass()
+    turn = _turn(finishing=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_not_called()
+
+    turn = _turn(finishing=True, edited=True)
+    turn.verify_just_failed = True  # the model ran the gate itself this turn
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_not_called()
+
+
+def test_step_mode_judges_every_editing_turn_and_finish_mode_does_not() -> None:
+    for when, calls in (("step", 1), ("finish", 0), ("never", 0)):
+        wf, dispatcher = _harness_wf(when)
+        dispatcher.run_verify.return_value = _exec(0)
+        state = _LoopState(original_task="t", tool_calls=0)
+        wf._turn_harness_verify(state, _turn(edited=True))  # pyright: ignore[reportPrivateUsage]
+        assert dispatcher.run_verify.call_count == calls, when
+
+
+def test_never_mode_leaves_a_finish_over_an_unverified_tree_alone() -> None:
+    """`never`: the measured model-driven shape. The harness neither runs the gate
+    nor returns the finish; the end is reported finished, not passed."""
+    wf, dispatcher = _harness_wf("never")
+    state = _LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True, edited=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_not_called()
+    assert turn.finish_signal == "done"
+    assert wf._verification(state) == "unverified"  # pyright: ignore[reportPrivateUsage]
+
+
+def test_run_commands_no_withholds_the_gate_from_the_harness_too() -> None:
+    wf, dispatcher = _harness_wf("finish", policy="no")
+    state = _LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True, edited=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_not_called()
+    assert turn.finish_signal == "done"
+
+
+def test_a_gate_the_harness_cannot_run_is_said_so_and_the_finish_is_returned_once() -> None:
+    """Not approved under `ask`: the model is told the gate did not run; the
+    finish returns as any uncertified finish does, bounded by the retries."""
+    from agent6.tools.errors import ToolDenied
+
+    wf, dispatcher = _harness_wf("finish", retries=1)
+    dispatcher.run_verify.side_effect = ToolDenied("run_verify_command not approved")
+    state = _LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True, edited=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert _notices(turn) == ["[harness verify] finish: not run: run_verify_command not approved"]
+    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert turn.finish_signal is None
+
+
+def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
+    from agent6.types import RepoSummary
+    from agent6.workflows._prompt_blocks import build_system_prompt
+
+    repo = RepoSummary(
+        root=Path("/tmp"),
+        branch="main",
+        head_sha="0" * 40,
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+    )
+
+    def block(when: str, mode: Literal["run", "plan"] = "run") -> str:
+        cfg = Config.model_validate(
+            {"workflow": {"verify_command": ["true"], "verify_when": when, "verify_retries": 1}}
+        )
+        return build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)
+
+    assert "The harness runs it when finish_session is called" in block("finish")
+    assert "returns to you 1 time(s)" in block("finish")
+    assert "after every turn that edits the tree" in block("step")
+    assert "The harness never runs it; only your run_verify_command calls do." in block("never")
+    # plan and ask never run the gate, whatever the knob says
+    assert "The harness never runs it" in block("finish", mode="plan")
+    # the commit fact follows: a finish-certified run commits each editing step
+    assert "commits each editing step automatically" in block("finish")
+    assert "commits automatically after each passing verify" in block("never")
+    assert "a passing run auto-commits the step" not in block("never")

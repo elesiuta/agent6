@@ -222,6 +222,7 @@ def _build_wf(
     events: Any = None,
     dispatcher: MagicMock | None = None,
     verify_command: tuple[str, ...] = (),
+    verify_when: str = "finish",
     max_iterations: int = 2,
 ) -> Workflow:
     steer = _OneShotSteer(steer_text)
@@ -235,7 +236,9 @@ def _build_wf(
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=verify_command, require_verify_to_finish=False),
+            workflow=MagicMock(
+                verify_command=verify_command, verify_when=verify_when, verify_retries=2
+            ),
             # A real int, not a Mock: segment_lanes compares the spec's lane
             # count against this cap.
             parallel=SimpleNamespace(max_lanes=4),
@@ -626,7 +629,9 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: Path) -> None:
         lane_spawner=spawner,
         events=events,
         dispatcher=dispatcher,
-        verify_command=("true",),  # gated: the wip edit stays uncommitted until dispatch
+        # A model-run gate: the wip edit stays uncommitted until dispatch.
+        verify_command=("true",),
+        verify_when="never",
     )
     wf.run("start")
 
@@ -674,7 +679,8 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
         steer_text="/parallel keep going",
         lane_spawner=spawner,
         dispatcher=dispatcher,
-        verify_command=("true",),  # gated: the wip edit stays uncommitted
+        verify_command=("true",),  # a model-run gate: the wip edit stays uncommitted
+        verify_when="never",
     )
     wf.run("start")
 

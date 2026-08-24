@@ -157,18 +157,6 @@ PLAN_NUDGE_AFTER_ITERS = 12
 # honoured. Only SUBTASKS gate -- the always-pending auto-root would deadlock.
 TASK_FINISH_PATIENCE = 3
 
-# Opt-in hard finish gate (`require_verify_to_finish`): how many times to bounce a
-# finish_session over a red/stale verify before honouring it anyway (as an honest
-# all_passed=False "finished"). Bounded so a task that genuinely can't pass can't
-# pin the loop to the iteration cap.
-VERIFY_FINISH_PATIENCE = 3
-VERIFY_FINISH_GATE = (
-    "[harness] finish_session refused: verify is not green"
-    " (require_verify_to_finish). A green verify lifts the refusal; the third"
-    " refusal is the last, after which a finish is honored and reported as"
-    " finished, not passed."
-)
-
 # verify-settled completion (run mode). A non-metric run has no positive "done"
 # signal, clean exit depends on the worker volunteering finish_session, and a weak
 # worker keeps re-running read-only commands after success. Once verify has

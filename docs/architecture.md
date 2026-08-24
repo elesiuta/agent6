@@ -73,11 +73,13 @@ Drawn by hand against `workflows/loop.py`'s drive tier, the same turn with its d
 flowchart TD
     pre["pre-call: snapshot,<br/>nudge, compact"] --> model["provider call, streamed<br/>steer interrupts"]
     model --> tools["tool calls, jailed"]
-    tools --> commit["auto-commit + metric"]
+    tools --> hgate["harness gate run<br/>(verify_when)"]
+    hgate --> commit["auto-commit + metric"]
     commit --> review["review triggers"]
     review --> gates{"finish<br/>requested?"}
     gates -->|verify green| done(["finished"])
-    gates -->|gate red| notices["notices + stop checks"]
+    gates -->|gate red, retries left| notices["notices + stop checks"]
+    gates -->|gate red, retries spent| done
     gates -->|no| notices
     notices -->|budget, stagnation, abort| stopped(["stopped, resumable"])
     notices -->|continue| pre
@@ -87,7 +89,10 @@ flowchart TD
 `agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` from the matching checkpoint.
 With the per-tool transcripts, an interrupted run replays deterministically up to the next model call.
 
-**Per-step commits** fire when `run_verify_command` returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
+**The harness runs the gate** (`[workflow].verify_when`, default `finish`): when `finish_session` arrives over a tree no green run covers, the loop runs `verify_command` itself through the same dispatcher path as the model's `run_verify_command` (approvals included); `step` also runs it after every editing turn; `never` leaves every run to the model.
+A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
+
+**Per-step commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged); a step no gate judged (a gateless run, or `verify_when = "finish"` between the model's own gate runs) commits as a checkpoint.
 
 - `branch_per_run` also advances a visible `agent6/<id>` branch
 - HEAD, the index, and the checkout never move: mid-run git activity cannot collide with the record

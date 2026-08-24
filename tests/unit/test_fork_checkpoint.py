@@ -60,7 +60,7 @@ def _wf(**kw: Any) -> Workflow:
         "root": Path("/tmp"),
         "config": MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
@@ -86,7 +86,10 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
     curator.graph_version = 7
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
+            verify_when="never",
+            verify_retries=2,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
@@ -124,7 +127,10 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
     snap = session_dir / "loop_state.json"
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
+            verify_when="never",
+            verify_retries=2,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
@@ -158,7 +164,10 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
     snap = session_dir / "loop_state.json"
     config = SimpleNamespace(
         workflow=SimpleNamespace(
-            require_verify_to_finish=False, verify_command=(), metric=SimpleNamespace(goal=None)
+            verify_when="never",
+            verify_retries=2,
+            verify_command=(),
+            metric=SimpleNamespace(goal=None),
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)

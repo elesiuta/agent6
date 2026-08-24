@@ -323,7 +323,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: Path) -> None:
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         provider=provider,
         dispatcher=dispatcher,

@@ -195,13 +195,13 @@ def test_the_listing_and_the_header_agree_on_the_word() -> None:
 
 
 def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path) -> None:
-    """`require_verify_to_finish` bounces a finish until the gate goes green.
+    """The finish certification returns a red finish until the gate goes green.
     Over a gate that was already red, that is demanding the worker repair
     whatever it inherited before it may stop."""
     wf = _wf()
     wf.mode = "run"
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
-        workflow=SimpleNamespace(verify_command=("pytest",), require_verify_to_finish=True)
+        workflow=SimpleNamespace(verify_command=("pytest",), verify_when="finish", verify_retries=2)
     )
     state = _LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False
@@ -210,6 +210,6 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     turn.finish_signal = MagicMock()
     turn.finish_kind = "finish_session"
 
-    wf._gate_verify_green(state, turn)  # pyright: ignore[reportPrivateUsage]
+    wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
 
     assert turn.finish_signal is not None, "the finish was bounced over an inherited failure"

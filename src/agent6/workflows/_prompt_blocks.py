@@ -36,6 +36,7 @@ from agent6.prompts.loop import (
     V2_NO_VERIFY_BLOCK,
     V2_REPO_BLOCK_TEMPLATE,
     V2_VERIFY_BLOCK_TEMPLATE,
+    V2_VERIFY_WHEN,
     dag_rules_block,
 )
 from agent6.skills import ResolvedSkills
@@ -297,11 +298,12 @@ def build_system_prompt(
     )
     # Auto-commit is the agent6-control chain; under [git].control = "model"
     # nothing commits automatically and the model owns the record. Under
-    # agent6 control the WHEN is the gate's presence: each passing verify,
-    # or each editing step on a gateless run.
+    # agent6 control the WHEN is whether a gate judges each step: each
+    # passing verify when it does, each editing step when it does not (a
+    # gateless run, or a gate the harness runs at finish).
     if config.git.control == "model":
         commit_rule = MODEL_GIT_RULE
-    elif config.workflow.verify_command:
+    elif config.workflow.verify_command and config.workflow.verify_when != "finish":
         commit_rule = AUTO_COMMIT_RULE
     else:
         commit_rule = AUTO_COMMIT_RULE_GATELESS
@@ -352,6 +354,11 @@ def build_system_prompt(
             V2_VERIFY_BLOCK_TEMPLATE.format(
                 argv=json.dumps(verify_argv),
                 timeout_s=config.workflow.verify_timeout_s,
+                # The harness runs the gate in run mode only; plan and ask
+                # leave every run to the model.
+                when=V2_VERIFY_WHEN[
+                    config.workflow.verify_when if mode == "run" else "never"
+                ].format(retries=config.workflow.verify_retries),
             )
         )
     else:

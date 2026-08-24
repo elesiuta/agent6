@@ -101,7 +101,7 @@ def _build_wf(repo: Path, provider: MagicMock, **kwargs: Any) -> Workflow:
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         provider=provider,
         dispatcher=dispatcher,

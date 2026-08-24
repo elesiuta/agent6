@@ -41,7 +41,7 @@ def _wf(**kw: Any) -> Workflow:
         "config": MagicMock(
             git=_GIT_STUB,
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),

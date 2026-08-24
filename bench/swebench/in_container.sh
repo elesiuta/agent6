@@ -155,6 +155,7 @@ branch_per_run = false
 
 [workflow]
 $VERIFY_TOML
+${AGENT6_SB_VERIFY_WHEN:+verify_when = \"$AGENT6_SB_VERIFY_WHEN\"}
 # Half a 1200s run died in ONE 600s full-suite verify; fast signal wins.
 verify_timeout_s = 240
 

@@ -48,9 +48,9 @@ from agent6.workflows.loop import SessionResult
 _EXIT_BUDGET_EXHAUSTED = 3
 # The agent finished deliberately but the verify gate was red or stale. Its own
 # code so a script can tell "the work is not green" from "the run broke" (1)
-# without parsing the event log; `require_verify_to_finish` turns the same
-# condition into a refusal to finish at all. Public: the parallel fan-out exits
-# with it when gates ran and no lane passed.
+# without parsing the event log; `[workflow].verify_retries` bounds how often
+# the same condition returns a finish to the model first. Public: the parallel
+# fan-out exits with it when gates ran and no lane passed.
 EXIT_VERIFY_FAILED = 4
 # The agent finished and the gate (if any) was green, but the promised run
 # branch never came into existence and the edits sit uncommitted

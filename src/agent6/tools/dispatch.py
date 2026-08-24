@@ -409,7 +409,7 @@ class ToolDispatcher:
             FindReferencesInput.TOOL_NAME: self._find_references,
             ApplyEditInput.TOOL_NAME: self._apply_edit,
             ApplyPatchInput.TOOL_NAME: self._apply_patch,
-            RunVerifyInput.TOOL_NAME: self._run_verify,
+            RunVerifyInput.TOOL_NAME: lambda _raw: self.run_verify(),
             RunCommandInput.TOOL_NAME: self._run_command,
             ReadSessionInput.TOOL_NAME: self._read_session,
             FetchInput.TOOL_NAME: self._fetch,
@@ -808,7 +808,9 @@ class ToolDispatcher:
             return ToolDenied(f"{name} not run: the run was asked to stop while awaiting approval")
         return ToolDenied(f"{name} not approved (sandbox.run_commands='ask')")
 
-    def _run_verify(self, _raw: dict[str, Any]) -> ExecResult:
+    def run_verify(self) -> ExecResult:
+        """Run the gate: the model's `run_verify_command` and the harness's
+        `verify_when` certification share this one path, approvals included."""
         argv = tuple(self._config.workflow.verify_command)
         if self.command_policy() == "ask" and not self._approver(
             f"Allow run_verify_command: {shlex.join(argv)}", scope=COMMAND_SCOPE

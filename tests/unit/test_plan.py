@@ -459,7 +459,7 @@ def _wf(**kw: Any) -> Workflow:
         "root": Path("/tmp"),
         "config": MagicMock(
             prompt=MagicMock(system_prompt_file=""),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         "provider": MagicMock(),
         "dispatcher": MagicMock(),
@@ -513,7 +513,7 @@ def _plan_wf(repo: Path, provider: Any, plan_path: Path, state_path: Path) -> Wo
         config=MagicMock(
             budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=MagicMock(system_prompt_file="", decompose="off"),
-            workflow=MagicMock(verify_command=(), require_verify_to_finish=False),
+            workflow=MagicMock(verify_command=(), verify_when="never", verify_retries=2),
         ),
         provider=provider,
         dispatcher=MagicMock(dispatch=MagicMock(return_value=RawResult({"acknowledged": True}))),

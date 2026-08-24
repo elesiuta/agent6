@@ -137,12 +137,6 @@ class WorkflowConfig(BaseModel):
             "`read_background`, stop it, or carry on. `0` disables the hand-back."
         ),
     )
-    # When true, finish_session is refused while the last verify is red (or a verify
-    # command is configured but was never run): the worker must get verify green
-    # or explicitly stop. Default false keeps finish_session always honorable, but
-    # even then a finish over a red verify is reported honestly (session.end
-    # all_passed=False -> "finished", never "passed"); this flag turns the honest
-    # signal into a hard gate for operators who want it.
     standing_patience: int = Field(
         ge=-1,
         default=-1,
@@ -154,12 +148,27 @@ class WorkflowConfig(BaseModel):
             "honoured. A round that lands work resets the streak."
         ),
     )
-    require_verify_to_finish: bool = Field(
-        default=False,
+    # The harness-run gate. `finish` certifies the tree the run ends on;
+    # `never` leaves every gate run to the model's own run_verify_command
+    # calls (the measured model-driven shape); `step` is the expensive end.
+    verify_when: Literal["finish", "step", "never"] = Field(
+        default="finish",
         description=(
-            "Refuse `finish_session` while the last verify is red or never ran (with bounded "
-            "nudges toward getting it green). `false`: the finish is honored, and a finish over a "
-            'red verify is still reported as "finished", never "passed".'
+            "When the harness runs `verify_command` itself: `finish` (when the model calls "
+            "`finish_session` and the tree changed since the last green run), `step` (also after "
+            "every turn that edits the tree), `never` (only the model's own `run_verify_command` "
+            "calls run it). The tool stays available in every mode; a run with no verify command "
+            "has no gate to run."
+        ),
+    )
+    verify_retries: int = Field(
+        ge=0,
+        default=2,
+        description=(
+            "How many times a red finish certification returns to the model with the gate's "
+            "output before the finish stands and the run is reported as finished, never passed. "
+            "`0`: the first red ends the run. A gate that was red before the run touched anything "
+            "is not returned."
         ),
     )
     metric: MetricConfig | None = Field(

@@ -74,7 +74,14 @@ def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
     assert "stale_gate" not in gateless and "passing verify" not in gateless
     assert "commits each editing step" in gateless  # the gate-aware commit rule
     assert "run project tests only through" not in gateless.lower()
-    assert "stale_gate" in with_verify and "after each passing verify" in with_verify
+    assert "stale_gate" in with_verify and "commits each editing step" in with_verify
+    # The per-step commit rule belongs to a gate that judges each step.
+    never = Config.model_validate(
+        {"workflow": {"verify_command": ["true"], "verify_when": "never"}}
+    )
+    assert "after each passing verify" in build_system_prompt(
+        config=never, repo=repo, mode="run", skills=None
+    )
 
 
 def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
@@ -469,9 +476,9 @@ def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
     )
     agent6_prompt = build_system_prompt(config=agent6_cfg, repo=repo, mode="run", skills=None)
     model_prompt = build_system_prompt(config=model_cfg, repo=repo, mode="run", skills=None)
-    assert "The harness commits automatically" in agent6_prompt
+    assert "The harness commits" in agent6_prompt
     assert "You own git" not in agent6_prompt
-    assert "The harness commits automatically" not in model_prompt
+    assert "The harness commits" not in model_prompt
     assert "You own git" in model_prompt
 
     gateless_cfg = Config.model_validate(
