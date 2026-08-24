@@ -187,6 +187,7 @@ Where a run state's work lands:
 - each run state executes in a fresh clone (the `--parallel` lane mechanism, `[parallel].workdir` cache) checked out at the machine chain's tip
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
 - merge the branch when you want the work; `sessions prune` sweeps landed clones
+- the branch outlives the instance dir: a fresh instance over a leftover `agent6/machine-<id>` refuses, naming the merge and delete remedies
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip, so an edit-then-check loop sees the committed work with no plumbing
 - a `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR`
 - a machine with no run states runs its tool states in your checkout, unchanged
