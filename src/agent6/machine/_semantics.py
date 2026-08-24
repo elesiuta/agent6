@@ -634,9 +634,11 @@ def _validate_capture(
         problems.extend(_check_capture_target(name, whole_target, owner, var_owner))
         target_type = var_types.get(whole_target)
         if target_type is not None and whole_type is not None and target_type != whole_type:
+            decl = whole_type.name if isinstance(whole_type, RecordT) else type_str(whole_type)
             problems.append(
                 f"state {name!r}: capture target {whole_target!r} has type"
-                f" {type_str(target_type)} but the captured value is {type_str(whole_type)}"
+                f" {type_str(target_type)} but the captured value is {type_str(whole_type)};"
+                f' declare it as type = "{decl}"'
             )
     if capture.set is not None:
         for target, template in capture.set.items():
@@ -659,7 +661,10 @@ def _check_capture_target(
 ) -> list[str]:
     actual = var_owner.get(target)
     if actual is None:
-        return [f"state {name!r}: capture target {target!r} is not a declared variable"]
+        return [
+            f"state {name!r}: capture target {target!r} is not a declared variable;"
+            f" declare it in [vars.{owner}]"
+        ]
     if actual != owner:
         return [
             f"state {name!r}: a `{owner}` state may only write `[vars.{owner}]` variables,"

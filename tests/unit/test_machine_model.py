@@ -203,6 +203,30 @@ def test_tool_cannot_write_agent_var(tmp_path: Path) -> None:
     assert any("may only write `[vars.code]`" in p for p in problems)
 
 
+def test_undeclared_capture_target_names_where_to_declare_it(tmp_path: Path) -> None:
+    """The diagnostic states the accepted form, not just the miss.
+
+    A create attempt burned on 'is not a declared variable' left the model
+    guessing where a declaration goes; the message now names [vars.<owner>].
+    """
+    body = VALID_MACHINE.replace(
+        'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
+        'capture = { set = { nonesuch = "{{ result.pending }}" } }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any("declare it in [vars.code]" in p for p in problems)
+
+
+def test_capture_type_mismatch_names_the_type_to_declare(tmp_path: Path) -> None:
+    """The type-mismatch diagnostic states the declaration that would fit."""
+    body = VALID_MACHINE.replace(
+        'verdict = { type = "classification", default = {} }',
+        'verdict = { type = "json", default = {} }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any('declare it as type = "classification"' in p for p in problems)
+
+
 def test_capture_cannot_write_operator_var(tmp_path: Path) -> None:
     body = VALID_MACHINE.replace(
         'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
