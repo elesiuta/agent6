@@ -21,9 +21,9 @@ import pytest
 
 from agent6.config.layer import resolved_state_dir
 from agent6.ui.web import model
+from agent6.ui.web.page import CLIENT_JS
 from agent6.ui.web.server import WebServer
 
-_CLIENT = Path(model.__file__).with_name("client.js")
 # `<id>` stands in for whatever the page interpolates; the fixture creates it.
 _ID = "brave-oak-AAAAAA"
 
@@ -49,7 +49,7 @@ def served(tmp_path: Path) -> Iterator[int]:
 
 def _client_api_paths() -> set[str]:
     """The `/api/...` paths client.js builds, with interpolation collapsed."""
-    source = _CLIENT.read_text(encoding="utf-8")
+    source = CLIENT_JS
     found: set[str] = set()
     for raw in re.findall(r"'(/api/[^']*)'", source):
         # `'/api/session/' + encodeURIComponent(id) + '/steer'` arrives as two
@@ -95,7 +95,7 @@ def test_the_page_reads_the_keys_the_hub_actually_sends(tmp_path: Path) -> None:
     Scoped to the hub's own `build(d)` body, because `d` is the page's generic
     name for any decoded response.
     """
-    source = _CLIENT.read_text(encoding="utf-8")
+    source = CLIENT_JS
     start = source.index("const build = (d) => {")
     body = source[start : source.index("\n  };", start)]
     read = set(re.findall(r"\bd\.([a-z_]+)\b", body))

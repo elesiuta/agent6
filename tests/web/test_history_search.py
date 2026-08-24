@@ -5,9 +5,7 @@ scoped to the focused composer so the browser keeps its reload elsewhere."""
 
 from __future__ import annotations
 
-from importlib import resources
-
-CLIENT_JS = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+from agent6.ui.web.page import CLIENT_JS  # the concatenated page-family files
 
 
 def test_composer_intercepts_ctrl_r_only() -> None:

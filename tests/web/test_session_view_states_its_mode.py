@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from agent6.sessions.layout import bucket_dir
-from agent6.ui.web import model
+from agent6.ui.web.page import CLIENT_JS
 from agent6.viewmodel import session_snapshot
 
 
@@ -44,7 +44,7 @@ def test_the_page_heads_the_panel_with_the_mode_not_a_fixed_word() -> None:
     """A hard-coded 'Run' is right one time in three: paintRun must write the
     snapshot's mode into the heading (the old absence check passed forever
     without saying what the page does instead)."""
-    client = (Path(model.__file__).with_name("client.js")).read_text(encoding="utf-8")
+    client = CLIENT_JS
     assert "cards._head_title.textContent = s.mode" in client
 
 
@@ -54,7 +54,7 @@ def test_conversation_route_paints_the_prompts_it_claims_to_answer() -> None:
     an approval waited on a page that could not show it. The route's builder
     paints prompts like the run view -- seeded from the snapshot, then per
     frame."""
-    client = (Path(model.__file__).with_name("client.js")).read_text(encoding="utf-8")
+    client = CLIENT_JS
     conv = client[client.index("async function renderConversation") :]
     conv = conv[: conv.index("// --- machine watch")]
     assert conv.count("paintPrompts(") >= 2, "the conversation route paints no prompts"

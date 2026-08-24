@@ -17,7 +17,10 @@ from __future__ import annotations
 from importlib import resources
 
 _ASSETS = resources.files(__package__)
-CLIENT_JS = _ASSETS.joinpath("client.js").read_text(encoding="utf-8")
+# One script block from the page-family files, concatenated in declaration
+# order: the shared core + hub, the run dashboard, the machine watch, config.
+_CLIENT_FILES = ("client.js", "client_run.js", "client_machine.js", "client_config.js")
+CLIENT_JS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
 STYLES_CSS = _ASSETS.joinpath("styles.css").read_text(encoding="utf-8")
 
 # The page is a hash-routed SPA: #/ hub, #/session/<id>, #/machine/<name>,
