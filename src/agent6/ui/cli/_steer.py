@@ -30,6 +30,7 @@ from agent6.sessions.ipc import (
     steer_answer_is_abort,
     steer_request_pending,
     take_steer_answer,
+    write_steer_answer,
 )
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._menu_input import menu_capable
@@ -239,7 +240,7 @@ def _install_status_signal(
     return signal.signal(signal.SIGTSTP, _handler)
 
 
-def install_steer_sigint(
+def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared stage dict
     events: EventSink,
     session_dir: Path,
     console_view: ConsoleView | None = None,
@@ -341,6 +342,9 @@ def install_steer_sigint(
                 state["stage"] = 0
                 clear_steer_request(session_dir)
             return answer
+        return _menu()
+
+    def _menu() -> str | None:
         pause = console_view.pause if console_view is not None else contextlib.nullcontext
         state["prompting"] = True
         try:
@@ -357,6 +361,20 @@ def install_steer_sigint(
                 )
         finally:
             state["prompting"] = False
+
+    def armed() -> bool:
+        return state["stage"] >= 1
+
+    def prompt_now() -> None:
+        """The pause menu right after an operator prompt's answer (an operator
+        prompt counts as a boundary): the action seeds the steer answer the
+        next between-steps boundary consumes without re-prompting; an empty
+        action (continue) disarms instead."""
+        action = _menu()
+        if action is None or not action.strip():
+            state["stage"] = 0
+            return
+        write_steer_answer(session_dir, action)
 
     def restore() -> None:
         with contextlib.suppress(Exception):
@@ -376,6 +394,8 @@ def install_steer_sigint(
         abort_pending=lambda: steer_answer_is_abort(session_dir),
         interrupt=interrupt,
         reset_stage=reset_stage,
+        armed=armed,
+        prompt_now=prompt_now,
     )
 
 

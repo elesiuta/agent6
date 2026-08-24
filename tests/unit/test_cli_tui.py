@@ -521,3 +521,58 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
     seen.clear()
     interactmod.default_stdin_approver("Proceed?", standing=False)
     assert seen[0] == "Proceed? [y/N]: "
+
+
+def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator prompt counts as a Ctrl-C boundary: with a pause armed, the
+    approval prompt says so and the pause menu runs right after the answer
+    (its action seeds the steer the next boundary consumes). Before, the armed
+    pause waited out the rest of the step in silence."""
+    from agent6.events import EventSink
+    from agent6.ui.cli import _interact as interactmod
+    from agent6.ui.steer import SteerState
+
+    events = EventSink(tmp_path / "logs.jsonl")
+    notices: list[str] = []
+    calls: list[str] = []
+
+    def _steer(armed: bool) -> SteerState:
+        return SteerState(
+            requested=lambda: armed,
+            clear=lambda: None,
+            prompt=lambda: None,
+            restore=lambda: None,
+            abort_pending=lambda: False,
+            interrupt=lambda: False,
+            reset_stage=lambda: None,
+            armed=lambda: armed,
+            prompt_now=lambda: calls.append("menu"),
+        )
+
+    def _not_live(_d: Path) -> bool:
+        return False
+
+    def _no_away(_d: Path) -> str | None:
+        return None
+
+    def _approve_yes(_p: str, *, standing: bool = True) -> str:
+        return "yes"
+
+    monkeypatch.setattr(interactmod, "frontend_is_live", _not_live)
+    monkeypatch.setattr(interactmod, "away_mode", _no_away)
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", lambda: True)
+    monkeypatch.setattr(interactmod, "tty_message", notices.append)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _approve_yes)
+
+    approve = interactmod.build_approver(tmp_path, events, None, [_steer(True)])
+    assert approve("Allow run_command: ls", scope="command") is True
+    assert calls == ["menu"]
+    assert any("pause armed" in n for n in notices)
+
+    calls.clear()
+    notices.clear()
+    approve = interactmod.build_approver(tmp_path, events, None, [_steer(False)])
+    assert approve("Allow run_command: ls", scope="command") is True
+    assert calls == [] and notices == []

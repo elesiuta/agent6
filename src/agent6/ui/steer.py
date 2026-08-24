@@ -9,7 +9,7 @@ machinery on the same shape."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent6.sessions.ipc import (
@@ -37,6 +37,13 @@ class SteerState:
     # Zeroes only the SIGINT stage; the steer marker files stay, because
     # resume --steer seeds the next leg through them.
     reset_stage: Callable[[], None]
+    # A Ctrl-C pause is armed (an operator prompt counts as a boundary: the
+    # approval prompt consults this to open the menu right after its answer).
+    armed: Callable[[], bool] = field(default=lambda: False)
+    # Run the pause menu NOW and seed its action as the steer answer the next
+    # boundary consumes without re-prompting; an empty action (continue)
+    # disarms instead. No-op off the terminal (the file bridge has no menu).
+    prompt_now: Callable[[], None] = field(default=lambda: None)
 
 
 def file_bridge_steer(session_dir: Path) -> SteerState:

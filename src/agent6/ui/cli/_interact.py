@@ -9,7 +9,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -32,6 +32,7 @@ from agent6.ui.cli._steer import (
     tty_message,
     tty_prompt,
 )
+from agent6.ui.steer import SteerState
 
 if TYPE_CHECKING:
     from agent6.tools.dispatch import Approver
@@ -128,7 +129,10 @@ def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:
 
 
 def build_approver(
-    session_dir: Path, events: EventSink, console_view: ConsoleView | None = None
+    session_dir: Path,
+    events: EventSink,
+    console_view: ConsoleView | None = None,
+    steer_cell: Sequence[SteerState | None] | None = None,
 ) -> Approver:
     """Build the command approver, bridged to a live TUI when present.
 
@@ -136,7 +140,12 @@ def build_approver(
     answer comes from its Allow/Deny modal via the file bridge
     (`approvals/<id>.answer`), otherwise -- or if the TUI dies / times out -- it
     falls back to the stdin `[y/N]` prompt. Emits `approval.answer` either way.
-    This is what wires the watch/auto-spawn TUI to run_command approval."""
+    This is what wires the watch/auto-spawn TUI to run_command approval.
+
+    `steer_cell` (the CLI leg's late-bound SteerState): an operator prompt
+    counts as a Ctrl-C boundary, so with a pause armed the terminal prompt says
+    so and the pause menu opens right after the answer (its action seeds the
+    steer the next between-steps boundary consumes)."""
     counter = {"n": 0}
 
     def approve(prompt: str, *, scope: str | None = None) -> bool:
@@ -187,7 +196,10 @@ def build_approver(
             events.emit("approval.answer", id=prompt_id, approved=approved, source="await-frontend")
             return approved
         # Foreground (a controlling tty, no away-mode): prompt on it directly.
+        steer = steer_cell[0] if steer_cell else None
         with _pause(console_view):
+            if steer is not None and steer.armed():
+                tty_message("\n[agent6] pause armed: the menu opens after this answer.\n")
             answer_s = default_stdin_approver(prompt, standing=bool(scope))
         # A session choice persists (across this run's resumes); session-deny
         # WITHDRAWS the scope's tools from the next turn rather than refusing
@@ -195,6 +207,8 @@ def build_approver(
         # will not open.
         approved = record_answer(session_dir, answer_s, scope)
         events.emit("approval.answer", id=prompt_id, approved=approved, source="stdin")
+        if steer is not None and steer.armed():
+            steer.prompt_now()
         return approved
 
     return approve

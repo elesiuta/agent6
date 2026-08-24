@@ -70,6 +70,7 @@ from agent6.ui.cli.parallel import (
     dispatch_parallel,
 )
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
+from agent6.ui.steer import SteerState
 from agent6.viewmodel import session_policy
 
 
@@ -101,6 +102,12 @@ def _asks_dir(session_dir: Path) -> Path:
     return bucket_dir(layout_of(session_dir).state_dir, "asks")
 
 
+def _remember_steer(cell: list[SteerState | None], state: SteerState) -> SteerState:
+    """Publish the leg's SteerState for the approver's late-bound read."""
+    cell[0] = state
+    return state
+
+
 def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     """Build the presentation seam `app.run.run_task` / `app.resume.resume_task`
     drive: one per invocation (the console-view cell is run-scoped). The console
@@ -109,6 +116,10 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     owns egress (`app.egress`) itself; only the two exe-spawn primitives it
     can't reach (`ui.spawn`) are injected."""
     console_cell: list[ConsoleView | None] = [None]
+    # Late-bound: the leg builds the approver before the steer state exists;
+    # the approver reads the cell at approval time (an operator prompt counts
+    # as a Ctrl-C boundary, see build_approver).
+    steer_cell: list[SteerState | None] = [None]
 
     def attach_console_view(events: EventSink) -> None:
         # The sink writes into the run dir, so its path is the handle to the
@@ -137,30 +148,33 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
         loop_logger=lambda mode: loop_logger(mode, console_cell[0]),
         tui_session=lambda session_dir, enabled: tui_session(session_dir, enabled=enabled),
         build_approver=lambda session_dir, events: build_approver(
-            session_dir, events, console_cell[0]
+            session_dir, events, console_cell[0], steer_cell
         ),
         build_questioner=lambda session_dir, events: build_questioner(
             session_dir, events, console_cell[0]
         ),
-        make_steer_state=lambda events, session_dir, facts: make_steer_state(
-            events,
-            session_dir,
-            console_cell[0],
-            facts,
-            # `/btw` spawns beside the run. `direct_launch` is right here: the
-            # CLI process is the one with a terminal, so it is not the confined
-            # coordinator a `/parallel` lane has to escape from.
-            make_btw_runner(
-                session_dir.name,
-                launch=direct_launch,
-                list_asks=lambda: (
-                    [d for d in _asks_dir(session_dir).iterdir() if d.is_dir()]
-                    if _asks_dir(session_dir).is_dir()
-                    else []
+        make_steer_state=lambda events, session_dir, facts: _remember_steer(
+            steer_cell,
+            make_steer_state(
+                events,
+                session_dir,
+                console_cell[0],
+                facts,
+                # `/btw` spawns beside the run. `direct_launch` is right here: the
+                # CLI process is the one with a terminal, so it is not the confined
+                # coordinator a `/parallel` lane has to escape from.
+                make_btw_runner(
+                    session_dir.name,
+                    launch=direct_launch,
+                    list_asks=lambda: (
+                        [d for d in _asks_dir(session_dir).iterdir() if d.is_dir()]
+                        if _asks_dir(session_dir).is_dir()
+                        else []
+                    ),
+                    events=events,
                 ),
-                events=events,
+                config_path=config_path,
             ),
-            config_path=config_path,
         ),
         confirm_unconfined_autorun=confirm_unconfined_autorun,
         confirm_run_on_run_branch=confirm_run_on_run_branch,
