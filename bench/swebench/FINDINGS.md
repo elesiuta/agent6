@@ -696,3 +696,24 @@ A run that commits and goes idle ends "settled" without calling
 panel. The fix routes the settled stop (and a silent finish) through the
 same gates a `finish_session` passes: every end in the rerun carries a
 panel verdict (6 at `finish_session`, 4 at the settled stop).
+
+### The leaderboard scaffold, compared (2026-08-23)
+
+From swe-rebench.com/about and the SWE-rebench GitHub org: the board
+evaluates every model on one fixed minimal ReAct scaffold
+(mini-swe-agent), 128K context, default generation hyperparameters,
+five runs per problem reporting the mean resolved rate (with SEM and a
+separate pass@5), a `submit` command ends the session, and the prompt
+forbids modifying or adding tests. No cost or time cap is published.
+
+Against our 48/110 run: the statistic is comparable (their 62.3 is a
+mean, not best-of); context is not the difference (ours is larger); the
+no-test-edits rule is not the difference (0 of our 110 patches touch a
+test file); their runs are uncapped where ours carry $1 and 1200s (7 of
+our 110 hit the wall), and a ReAct loop retries freely within its step
+budget where our runs finish when the model believes it is done. The
+levers this leaves, in evidence order: the finish certification with
+returns on the same 110 (the cert30 subset cut regressions 14 -> 5); a
+raised-caps arm on a hard sample to price the budget shape; executed
+test-first and conventions-mining arms for the zero-F2P class (the
+imagined-examples step measured null-to-negative).
