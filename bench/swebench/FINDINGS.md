@@ -499,7 +499,8 @@ gpt-5.6-sol[medium] 62.3, Junie 61.8, Claude Code 60.4, Codex 58.0
 
 The gap is NOT cap pressure: 53 of the 55 wrong-patch runs finished
 under their own power (2 wall timeouts), so a limits-raised arm would
-not close it. Failure profile of the 55: 22 near-miss (some
+not close it. Failure profile of the 55 (classes overlap: a run can be
+near-miss and broke-P2P, so the counts sum past 55): 22 near-miss (some
 FAIL_TO_PASS passing), 30 zero-F2P (contract missed entirely), and 14
 broke PASS_TO_PASS -- regressions nothing caught before finish, the
 price of gateless on UNFAMILIAR repos that Verified's 12 famous ones

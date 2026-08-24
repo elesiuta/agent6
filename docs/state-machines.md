@@ -225,11 +225,10 @@ A single command, argv-style (never a shell string), through the existing `run_i
 - `nonzero` is any non-zero exit
 - stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#45-names-references-and-namespaces-normative))
 - capture has two modes; a state uses at most one:
-
-- **Opaque whole-capture**: `capture = { stdout_json = "<var>" }` binds the entire parsed stdout to one variable
-    - no `output_schema` needed; `result` is opaque and may not be dotted
-- **Typed field-capture**: `output_schema = "<record>"` types `result`; pull fields with `set = { <var> = "{{ result.<field> }}" }`
-    - every `result.<field>` is statically checked, mirroring how an `agent` state validates `finish_session`
+    - **Opaque whole-capture**: `capture = { stdout_json = "<var>" }` binds the entire parsed stdout to one variable
+        - no `output_schema` needed; `result` is opaque and may not be dotted
+    - **Typed field-capture**: `output_schema = "<record>"` types `result`; pull fields with `set = { <var> = "{{ result.<field> }}" }`
+        - every `result.<field>` is statically checked, mirroring how an `agent` state validates `finish_session`
 
 - a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element ([Templating and list-splicing](#44-templating-and-list-splicing))
 - `scan-inbox` is an illustrative stand-in: a `tool` state runs whatever audited command the operator names
@@ -353,11 +352,10 @@ reason = "done"
 - the message is a blackboard template, checked at `machine check`
 - emission is at-least-once across a crash (a resume re-enters and re-emits)
 
-Two channels render it:
+Two channels render it; agent6 owns no push infrastructure:
 
 - device-present front-ends (`agent6 web`, the TUI Machines page, `agent6 attach`): an ephemeral notification
 - out-of-band: `[machine.notify].on_event` ([config.md](config.md)), an operator argv on the host, outside the jail, on every `machine.notify` and `machine.end` (fan out to ntfy/Pushover/email/Telegram)
-- agent6 owns no push infrastructure
 
 ### 4.4 Templating and list-splicing
 
