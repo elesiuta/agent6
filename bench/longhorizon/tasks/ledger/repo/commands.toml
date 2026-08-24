@@ -1,0 +1,16 @@
+# The CLI command table. tools/gen_cli.py renders it into ledger/_commands.py.
+
+[[command]]
+name = "add"
+handler = "ledger.ops:add_legacy"
+help = "add DATE FROM TO AMOUNT [MEMO]: post a transaction"
+
+[[command]]
+name = "balance"
+handler = "ledger.ops:balance"
+help = "balance ACCOUNT: the account's balance"
+
+[[command]]
+name = "show"
+handler = "ledger.ops:show"
+help = "show: every posted entry"

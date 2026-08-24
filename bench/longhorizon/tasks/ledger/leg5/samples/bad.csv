@@ -1,0 +1,5 @@
+txid,date,account,amount,memo
+t1,2026-05-01,assets:cash,-12.50,lunch
+t1,2026-05-01,expenses:food,12.50,lunch
+t2,2026-05-02,assets:cash,-100.00,rent share
+t2,2026-05-02,expenses:rent,60.00,rent share

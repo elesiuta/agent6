@@ -38,6 +38,7 @@ agent uses those channels is part of what the bench measures.
 | `stylebook` | implement a 10-rule text auditor; each rule is one ~4k-char authoritative doc, with deliberate cross-file couplings (R01<->R09/R10, R08<->R09) | 1 | retention: per-rule component scores = which early-read rules survive elision |
 | `relay` | 6-module event pipeline with a strict interface chain (incl. a ping count threaded through stages 3->6) | 1 | organic length, interface retention, add_dependency shape |
 | `orchard` | leg 1: fix a price whose root cause is a SOURCE table behind a generated file (verify regenerates, hand-edits get clobbered); leg 2: WEEKEND tier touching the same generator + the cents/half-up convention; leg 3: CLEARANCE feed re-probing BOTH conventions with fresh discriminators, spec deliberately silent on them (no NOTES.md pointer) | 3 | memory value: leg-2/leg-3 iterations/score/trap-edits, baseline vs fresh_state. Leg 3 is the READ-side probe: leg-1/2 recoverers hold nudged memories by leg 3, the 2-leg design could not separate that from task ease |
+| `ledger` | a double-entry CLI whose command table is GENERATED from `commands.toml` (verify regenerates), money in integer cents with half-up rounding (`docs/CONVENTIONS.md`), every posting through the balanced-transaction invariant; leg 1 fixes a handler mapping, legs 2-5 add `split`, `convert`, `report`, `import-csv`, each spec silent about the conventions it needs | 5 | cross-session memory value over a 5-session campaign: later-leg score, tool calls and tokens, re-reads, memory writes; the `poisoned` probe |
 
 Graders were validated against reference solutions (reference scores 1.0,
 stub 0.0, targeted mutants dent exactly their component; references live
@@ -65,6 +66,7 @@ tools, so a hand-written feed no generator reproduces scores zero.
 - `fresh_state`: private state dir per leg: the no-cross-run-memory
   control for sequences.
 
+- `poisoned`: the shared state dir, plus the task's stale memories (plausible, wrong, contradicted by the repo) planted with `agent6 memory add` before leg 2; whether later legs verify before trusting shows in their trap components and `memory_invalidations`
 ## Metrics per leg (from the run's logs.jsonl + the grader)
 
 `score`/`component_scores` (partial credit; per-rule retention curve on
@@ -78,6 +80,20 @@ nudges) and a post-leg store snapshot (`memories_ids`/`memories_bytes`),
 of orchard's generated feeds; matched on the `path` arg when present so a
 generator merely mentioning the feed in a docstring does not count),
 `iterations`, `usd`, `tokens`, `wall_s`, `end_reason`, `tampered`.
+
+Memory metrics read the real channel: the repo memory is files under the
+state home's `memory/` dir (plus the injected `MEMORY.md` index), so
+`memory_writes` counts edit-tool calls targeting that dir, `memory_reads`
+counts `read_file` calls there, and a before/after file diff per leg gives
+`memory_files_added/changed/removed` (`memory_invalidations` = changed +
+removed) and `poison_touched`: whether a planted stale memory was rewritten
+or removed.
+
+## State and resume
+
+- A sequence's state dirs sit BESIDE its workdir (`<seq>.state`, `<seq>.state-leg<i>`): agent6 refuses a private dir inside the workspace it edits.
+- A label is resumable: a cell (task, condition, rep) with every leg recorded under `results/<label>.jsonl` is skipped; a partial cell reruns whole and is named.
+- `--leg-memory-max 8G` runs each session in its own `systemd-run --scope` with that MemoryMax, so an OOM kills the leg, never the driver.
 
 ## Running
 

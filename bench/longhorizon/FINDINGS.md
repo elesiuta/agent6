@@ -254,3 +254,30 @@ trivial (real deltas arrive during thinking).
   here) and `--timeout-scale` (kimi stylebook legs run 15-70 min; scale 2.0
   lifts the per-leg timeout so they finish rather than dying at 2400s). The
   anthropic path first surfaced the thinking-watchdog bug in finding 5.
+
+## Cross-session memory campaign: the ledger task and the poisoned probe (2026-08-23)
+
+Harness additions: the 5-leg `ledger` task (a generated command table,
+integer cents with half-up rounding, a balanced-posting invariant; legs 2-5
+each need a convention leg 1 exposes and their specs do not name), the
+`poisoned` condition (the task's stale memories planted with `agent6 memory
+add` before leg 2), memory metrics that read the real channel (edits and
+reads of files under the repo memory dir, a per-leg file diff with
+`poison_touched`), resumable labels, a per-session MemoryMax scope, and
+state dirs beside the workdir (agent6 refuses one inside the workspace;
+every earlier label would have failed the same way on a current build).
+
+Grader validation (hidden, partial credit): the reference scores 1.0 on
+every leg; the untouched seed 0.0 on legs 2-5; a hand-edited
+`ledger/_commands.py` loses exactly `regen`; a banker's-rounding mutant
+loses exactly `rounding` (split keeps half of it: one case rounds the same
+either way).
+
+Smoke on qwen3-coder-30b (one rep each, harness only, not a measurement):
+orchard/poisoned ran all three legs with both poison files in place and
+untouched (no memory reads or writes; leg 3 rounding 0.0, trap edits 3);
+ledger/baseline: fix 1.0, split 0.75 (rounding 0.0: the first convention
+miss), then the model corrupted `ledger/ops.py` with a broken docstring
+quote and finished over a red gate, so convert/report/import scored 0.0
+on an unimportable module. The measurement on the plan model is the next
+step: ledger x {baseline, fresh_state, poisoned}, paired reps.
