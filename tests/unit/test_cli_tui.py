@@ -496,3 +496,28 @@ def test_approver_wait_consumes_a_claimless_answer(
     approve = interactmod.build_approver(tmp_path, events)
     assert approve("run_verify_command", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
+
+
+def test_stdin_approver_renders_the_command_on_its_own_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The approval prompt glued the command to the question on one line; a
+    long argv wrapped into the [y/N/a/d] suffix and the input point drowned.
+    The payload renders indented on its own lines with a blank line before
+    the answer line."""
+    from agent6.ui.cli import _interact as interactmod
+
+    seen: list[str] = []
+
+    def _capture(rendered: str, **_kw: object) -> str:
+        seen.append(rendered)
+        return "y"
+
+    monkeypatch.setattr(interactmod, "tty_prompt", _capture)
+    assert interactmod.default_stdin_approver("Allow run_command: git log --stat -5") == "yes"
+    rendered = seen[0]
+    assert rendered.startswith("Allow run_command:\n\n    git log --stat -5\n\n  [y/N/a/d]")
+    # A prompt without the "<head>: <payload>" shape keeps the one-line form.
+    seen.clear()
+    interactmod.default_stdin_approver("Proceed?", standing=False)
+    assert seen[0] == "Proceed? [y/N]: "

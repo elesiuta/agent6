@@ -67,9 +67,19 @@ def default_stdin_approver(prompt: str, *, standing: bool = True) -> str:
     persist, and they mirror each other. `standing=False` is a gate that has no
     session answer to give (`fetch`), so it does not offer one. Routed via
     /dev/tty so the prompt stays visible when a TUI has redirected the std
-    streams to its console log."""
+    streams to its console log.
+
+    Every dispatch prompt is "Allow <tool>: <payload>"; the payload renders on
+    its own indented lines with a blank line before the answer line, so the
+    input point stands clear of a long or wrapped command."""
     suffix = "[y/N/a/d]  (a = allow all, d = deny all, this session): " if standing else "[y/N]: "
-    ans = tty_prompt(f"{prompt} {suffix}")
+    head, sep, payload = prompt.partition(": ")
+    if sep and payload.strip():
+        body = "\n".join(f"    {ln}" for ln in payload.splitlines())
+        rendered = f"{head}:\n\n{body}\n\n  {suffix}"
+    else:
+        rendered = f"{prompt} {suffix}"
+    ans = tty_prompt(rendered)
     if ans is None:
         return "no"
     ans = ans.strip().lower()
