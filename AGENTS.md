@@ -49,6 +49,7 @@ The agent6 concretions, and the principles the Zen doesn't cover:
   A problem the operator keeps hitting has a systematic cause: correlate every occurrence before concluding "transient"; when the root cause stays unfound, say so.
 - **Evidence over churn.** When measurement shows something is better, adopt it and delete the old shape.
   A change whose value is a claim about model behaviour, prompts, or performance SHIPS only with a measured A/B (replicates, variance); a null result is reported, not shipped.
+  A change that only removes or simplifies ships on no measurable regression against the old best baseline.
   The bar is on shipping, never on measuring: an experiment needs no prior justification.
   Unmeasured tuning is superstition.
 - **Structures over scores.** A measure that becomes a target stops measuring: never chase line, module, or graph-edge counts.
@@ -116,10 +117,11 @@ The shortest version that still carries the point wins.
   "Now", "no longer", "previously", "used to" in a comment is a story about a change: cut it.
   Test docstrings are the exception: the regression they pin is their spec.
   A comment earns its keep by saying what the code and a grep cannot; restating either is noise that invites drift.
-- Commit messages: imperative subject; a body only for a non-obvious why, in point form.
+- Commit messages: a subject that states the change, facts only; a body only for a non-obvious why, in point form.
 - Flat documents: a heading plus short paragraphs or bullets.
   Bold is for lead-in labels and caveats that carry weight.
   No intensifiers or marketing adjectives.
+- Bench findings are neutral observation: facts and tables, no opinions.
 - Padding to cut on sight: antithesis ("a lock, not a boundary"), the "N things, one X" appositive, aphorism ("the container is the blast radius"), cleft ("what is bounded is"), anaphora, transitions ("beyond one-shot runs"), all-caps emphasis.
 - Markdown carries one bullet and one sentence per line, unwrapped; sentences after the first sit on continuation lines.
   A bullet needing several sentences wants sub-bullets.

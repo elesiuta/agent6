@@ -302,6 +302,7 @@ Under `none` isolation nothing is enforced or refused.
     - a browser hits the `oauth_issuer` authorize page; the code returns on `localhost:1455` (or is pasted), state-checked either way
     - token exchange and refreshes `POST` only to `<oauth_issuer>/oauth/token`
     - tokens live in `secrets.toml` under the same `0600` and executes-nothing rules
+    - agent6 never sends a rating or feedback on a response and has no rating surface: the backend may use rated turns for training, and that choice is never made on the operator's behalf
 
 ### 9. State and locks
 
