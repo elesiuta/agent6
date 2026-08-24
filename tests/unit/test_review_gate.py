@@ -400,3 +400,90 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
             original_task="t",
         )
     assert panel.calls == 0
+
+
+# ---- the settled end passes the same gates a finish_session does ------------
+
+
+def _settled_state() -> Any:
+    from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
+    from agent6.workflows.loop import _LoopState  # pyright: ignore[reportPrivateUsage]
+
+    state = _LoopState(original_task="t", tool_calls=0)
+    state.gateless_ever_committed = True
+    state.verify_settled_idle = VERIFY_SETTLED_STOP_AFTER
+    return state
+
+
+def _idle_turn() -> Any:
+    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+
+    return _TurnState(iteration=9, resp=MagicMock(), assistant=MagicMock())
+
+
+def test_a_settled_end_is_reviewed_like_a_finish() -> None:
+    """A gateless run that commits and goes idle ends "settled" without ever
+    calling finish_session; the before-finish panel judges that end too: a
+    rejection hands the findings to the model and restarts the idle count, an
+    approval lets the end stand."""
+    wf = _wf(review_trigger="before_finish")
+    wf.mode = "run"
+    wf.config.workflow.metric = None
+    panel = _PanelScript(
+        [
+            CritiqueResult(text="* a test is missing", satisfied=False),
+            CritiqueResult(text="* fine", satisfied=True),
+        ]
+    )
+    with patch.object(Workflow, "_run_review_panel", panel):
+        state = _settled_state()
+        turn = _idle_turn()
+        assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
+        assert turn.verify_settled_stop is False
+        assert state.verify_settled_idle == 0
+        assert turn.review_text is not None and "a test is missing" in turn.review_text
+        state = _settled_state()
+        turn = _idle_turn()
+        wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
+        assert turn.verify_settled_stop is True
+    assert panel.calls == 2
+
+
+def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
+    """Under `verify_when = "finish"` a settled end over an unverified tree
+    runs the gate like a finish would: red returns to the model with the
+    output (bounded by verify_retries), green lets the end stand."""
+    from agent6.config import Config
+
+    cfg = Config.model_validate(
+        {"workflow": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
+    )
+    dispatcher = MagicMock()
+    dispatcher.command_policy.return_value = "yes"
+    dispatcher.run_verify.return_value = ExecResult(
+        returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
+    )
+    wf = _wf(config=cfg, dispatcher=dispatcher, review_seats=[])
+    wf.mode = "run"
+    state = _settled_state()
+    turn = _idle_turn()
+    assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_called_once_with()
+    assert turn.verify_settled_stop is False and state.verify_settled_idle == 0
+    assert state.verify_finish_retries_used == 1
+    notices = [r.text for r in turn.tool_results if hasattr(r, "text")]
+    assert any("[harness verify] finish" in n for n in notices)
+    assert any("the next red finish ends the run" in n for n in notices)
+    # The return is spent: the next settled end stands, red and all.
+    state.verify_settled_idle = 6
+    turn = _idle_turn()
+    wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert turn.verify_settled_stop is True
+    # A green gate certifies the end at once.
+    dispatcher.run_verify.return_value = ExecResult(
+        returncode=0, stdout="", stderr="", duration_s=1.0, exec_failed=False
+    )
+    state = _settled_state()
+    turn = _idle_turn()
+    wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert turn.verify_settled_stop is True and state.verify.green_and_untouched

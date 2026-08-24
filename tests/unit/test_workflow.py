@@ -5582,12 +5582,19 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     class DispatcherStub(_StubDispatcher):
         def __init__(self) -> None:
             self.adopted: tuple[str, ...] | None = None
+            self.gate_runs = 0
 
         def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
             self.adopted = argv
             return True
 
         def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+        def run_verify(self) -> ExecResult:
+            self.gate_runs += 1
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -5617,10 +5624,11 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     assert provider.adoption_notices >= 1  # the gate flip was said to the model
     assert result.completed is True
     # The worker then idled without ever running the adopted verify; the
-    # settle summary must not claim no command existed (one demonstrably did).
-    assert result.reason == "settled"
-    assert "adopted verify never passed" in result.summary
-    assert "no verify command existed" not in result.summary
+    # settled end runs it (the harness certifies the tree it ends on), so the
+    # run ends verified instead of "adopted verify never passed".
+    assert dispatcher.gate_runs == 1
+    assert result.reason == "verify_settled"
+    assert result.verified == "passed"
 
 
 def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(

@@ -1131,7 +1131,9 @@ class Workflow:
             self._turn_finish_gates(state, turn, conversation)
             self._turn_notices(state, turn)
             self._turn_metric_plateau(state, turn)
-            self._turn_verify_settled(state, turn)
+            result = self._turn_verify_settled(state, turn)
+            if result is not None:
+                return result
             self._turn_no_progress(state, turn)
             conversation.results(turn.tool_results)
             # Snapshot AFTER the executed tools (assistant turn + tool_results
@@ -1682,12 +1684,15 @@ class Workflow:
             )
         )
 
-    def _turn_harness_verify(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
+    def _turn_harness_verify(
+        self, state: _LoopState, turn: _TurnState, *, ending: bool = False
+    ) -> SessionResult | None:
         """Run the gate the harness owes this turn (`[workflow].verify_when`):
-        after an editing turn under `step`, and when finish_session arrives
-        over a tree no green run covers under `step` or `finish`. The model's
-        own run_verify_command this turn already judged the tree, so nothing
-        runs on top of it. `run_commands = "no"` withholds the gate from the
+        after an editing turn under `step`, and when the run is ending (a
+        finish_session, or `ending`: an end the harness declares) over a tree
+        no green run covers under `step` or `finish`. The model's own
+        run_verify_command this turn already judged the tree, so nothing runs
+        on top of it. `run_commands = "no"` withholds the gate from the
         harness as it does from the model. An unexecutable operator command
         ends the run as it does on the tool path."""
         why = harness_verify_due(
@@ -1699,7 +1704,8 @@ class Workflow:
             ),
             verified_this_turn=turn.verify_just_passed or turn.verify_just_failed,
             changed_this_turn=turn.edit_since_verify_pass,
-            finishing=turn.finish_signal is not None and turn.finish_kind == "finish_session",
+            finishing=ending
+            or (turn.finish_signal is not None and turn.finish_kind == "finish_session"),
             green_and_untouched=state.verify.green_and_untouched,
         )
         if why is None:
@@ -1919,36 +1925,55 @@ class Workflow:
     def _gate_before_finish_review(
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
-        """Gate the agent's finish_session on panel approval. An unsatisfied
+        """Gate the agent's finish_session on panel approval: an unsatisfied
         verdict suppresses the finish (the tool_result still goes back so the
-        call isn't half-applied) and injects the findings - the loop carries on
-        with them visible. After `max_consecutive_review_rejections`
-        back-to-back rejections the finish goes through (findings still
-        injected) so the worker can't bounce indefinitely."""
+        call isn't half-applied) and the loop carries on with the findings
+        visible."""
+        del conversation
         if not (
             turn.finish_signal is not None
             and turn.finish_kind == "finish_session"
-            and self.review_trigger == "before_finish"
-            and self._has_reviewer()
+            and self._end_is_reviewed(state, turn, ending="finish_session")
         ):
             return
+        turn.finish_signal = None
+        turn.finish_payload = None
+
+    def _end_is_reviewed(self, state: _LoopState, turn: _TurnState, *, ending: str) -> bool:
+        """The before-finish panel over an end (`finish_session`, or the
+        settled stop the harness declares): True when the panel rejected it
+        and the run carries on with the findings injected. After
+        `max_consecutive_review_rejections` back-to-back rejections the end
+        goes through (findings still injected) so the worker can't bounce
+        indefinitely. False when there is no panel or it approved."""
+        if not (self.review_trigger == "before_finish" and self._has_reviewer()):
+            return False
         critique = self._run_review_panel(state, trigger="before_finish", iteration=turn.iteration)
+        if critique is None:
+            return False
         cap = self.max_consecutive_review_rejections
         cap_reached = cap > 0 and state.consecutive_review_rejections >= cap
-        if critique is not None and not critique.satisfied and not cap_reached:
-            self._log(f"  review rejected finish_session at iter {turn.iteration}")
-            self._emit("loop.review.rejected_finish", iteration=turn.iteration)
-            turn.finish_signal = None
-            turn.finish_payload = None
+        if not critique.satisfied and not cap_reached:
+            self._log(f"  review rejected {ending} at iter {turn.iteration}")
+            self._emit("loop.review.rejected_finish", iteration=turn.iteration, ending=ending)
             state.consecutive_review_rejections += 1
             turn.review_text = (
-                "The review panel rejected your finish_session call. Address the"
-                " issues below before calling finish_session again.\n\n" + critique.text
-            )
-        elif critique is not None and not critique.satisfied and cap_reached:
+                (
+                    "The review panel rejected your finish_session call. Address the"
+                    " issues below before calling finish_session again.\n\n"
+                )
+                if ending == "finish_session"
+                else (
+                    "The review panel rejected the settled end. Address the issues"
+                    " below; the run ends when it settles again or finish_session"
+                    " passes.\n\n"
+                )
+            ) + critique.text
+            return True
+        if not critique.satisfied:
             self._log(
-                f"  review rejected finish_session at iter {turn.iteration} but"
-                f" rejection cap ({cap}) reached - letting finish through"
+                f"  review rejected {ending} at iter {turn.iteration} but"
+                f" rejection cap ({cap}) reached - letting the end through"
             )
             self._emit(
                 "loop.review.rejection_cap_reached",
@@ -1957,12 +1982,12 @@ class Workflow:
             )
             turn.review_text = (
                 "The review panel flagged issues but the rejection cap was"
-                " reached; finish_session will be accepted. Findings:\n\n" + critique.text
+                " reached; the end stands. Findings:\n\n" + critique.text
             )
-            state.consecutive_review_rejections = 0
-        elif critique is not None:
-            self._log("  review approved finish_session")
-            state.consecutive_review_rejections = 0
+        else:
+            self._log(f"  review approved {ending}")
+        state.consecutive_review_rejections = 0
+        return False
 
     def _gate_metric_early_finish(self, state: _LoopState, turn: _TurnState) -> None:
         """Metric-run early-finish guard. On optimisation runs the worker often
@@ -2243,7 +2268,45 @@ class Workflow:
                 budget_remaining=budget_remaining,
             )
 
-    def _turn_verify_settled(self, state: _LoopState, turn: _TurnState) -> None:
+    def _settled_end_gates(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
+        """An end the harness declares passes the gates a finish_session
+        would: the verify certification (`verify_when`) and the before-finish
+        review panel. A red gate with returns left, or a rejected panel,
+        hands the run back to the model with the output and restarts the
+        idle count; the unexecutable-command abort ends the run as it does
+        on the tool path."""
+        aborted = self._turn_harness_verify(state, turn, ending=True)
+        if aborted is not None:
+            return aborted
+        wf = self.config.workflow
+        red_returned = (
+            wf.verify_when != "never"
+            and bool(wf.verify_command)
+            and turn.verify_just_failed
+            and state.verify.baseline_ok is not False
+            and state.verify_finish_retries_used < wf.verify_retries
+        )
+        if red_returned:
+            state.verify_finish_retries_used += 1
+            turn.tool_results.append(
+                Notice(
+                    finish_red_notice(
+                        used=state.verify_finish_retries_used, retries=wf.verify_retries
+                    )
+                )
+            )
+            self._emit(
+                "loop.verify_finish.gated",
+                iteration=turn.iteration,
+                nudges_used=state.verify_finish_retries_used,
+            )
+        if red_returned or self._end_is_reviewed(state, turn, ending="settled"):
+            turn.verify_settled_stop = False
+            state.verify_settled_idle = 0
+            state.verify_settled_nudged = False
+        return None
+
+    def _turn_verify_settled(self, state: _LoopState, turn: _TurnState) -> SessionResult | None:
         """Verify-settled completion bookkeeping (run mode): count no-progress
         iterations after the first green verify; nudge once, then stop (the
         stop happens in the stop checks, via `turn.verify_settled_stop`).
@@ -2280,6 +2343,10 @@ class Workflow:
             and settled_seeded
             and state.verify_settled_idle >= VERIFY_SETTLED_STOP_AFTER
         )
+        if turn.verify_settled_stop:
+            aborted = self._settled_end_gates(state, turn)
+            if aborted is not None:
+                return aborted
         if (
             non_metric_run
             and turn.finish_signal is None
@@ -2295,6 +2362,7 @@ class Workflow:
                 iteration=turn.iteration,
                 idle=state.verify_settled_idle,
             )
+        return None
 
     def _note_tool_error(
         self, state: _LoopState, name: str, tool_input: dict[str, Any], exc: ToolError
