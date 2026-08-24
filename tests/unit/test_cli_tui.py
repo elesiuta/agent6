@@ -509,9 +509,11 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
     from agent6.ui.cli import _interact as interactmod
 
     seen: list[str] = []
+    plains: list[object] = []
 
-    def _capture(rendered: str, **_kw: object) -> str:
+    def _capture(rendered: str, **kw: object) -> str:
         seen.append(rendered)
+        plains.append(kw.get("plain"))
         return "y"
 
     monkeypatch.setattr(interactmod, "tty_prompt", _capture)
@@ -521,6 +523,8 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
     assert plain.startswith("? Allow run_command:\n\n    git log --stat -5\n\n  [y/N/a/d]")
     # The console vocabulary: a bold yellow ? marks the question.
     assert "\x1b[1m\x1b[33m?" in rendered
+    # The stdin fallback (stdout may be a pipe) gets the same text unstyled.
+    assert plains[0] == plain
     # A prompt without the "<head>: <payload>" shape keeps the one-line form.
     seen.clear()
     interactmod.default_stdin_approver("Proceed?", standing=False)

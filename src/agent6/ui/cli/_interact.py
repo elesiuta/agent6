@@ -85,9 +85,12 @@ def default_stdin_approver(prompt: str, *, standing: bool = True) -> str:
         rendered = (
             f"{bold}{yellow}?{reset} {bold}{head}:{reset}\n\n{body}\n\n  {dim}{suffix}{reset}"
         )
+        plain = f"? {head}:\n\n{body}\n\n  {suffix}"
     else:
-        rendered = f"{prompt} {suffix}"
-    ans = tty_prompt(rendered)
+        rendered = plain = f"{prompt} {suffix}"
+    # /dev/tty is a terminal by definition; the stdin fallback prints to
+    # stdout, which may be a pipe, so it gets the text without escapes.
+    ans = tty_prompt(rendered, plain=plain)
     if ans is None:
         return "no"
     ans = ans.strip().lower()

@@ -153,11 +153,14 @@ def tty_message(text: str) -> None:
             print(text, file=sys.stderr, flush=True)
 
 
-def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
+def tty_prompt(
+    text: str, *, fall_back_to_stdin: bool = True, plain: str | None = None
+) -> str | None:
     """Prompt on the controlling terminal directly (see `tty_message`).
     Falls back to stdin when there is no controlling terminal, unless the
     caller must never consume piped stdin (`fall_back_to_stdin=False`:
-    return None)."""
+    return None); the fallback prints `plain` when given (the text without
+    terminal escapes, since stdout may be a pipe)."""
     try:
         # The getpass recipe: O_RDWR on the device + an unbuffered FileIO.
         # A plain open("/dev/tty", "r+") NEVER works -- buffered update mode
@@ -178,7 +181,7 @@ def tty_prompt(text: str, *, fall_back_to_stdin: bool = True) -> str | None:
         if not fall_back_to_stdin:
             return None
         try:
-            return input(text)
+            return input(text if plain is None else plain)
         except (EOFError, KeyboardInterrupt):
             return None
     try:
