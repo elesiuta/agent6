@@ -553,3 +553,35 @@ is gone: the model self-tests by default when nothing forbids it.
 SHIPPED the bare fact (less-is-a-win on a measured null). First
 confirmation of the world-state-everything direction; the full recast
 of all model-facing text is the queued P5 arm.
+
+### Contract census on the rebench misses (2026-08-22)
+
+Every 2026_03 run with a readable event log, by outcome: resolved,
+near-miss (some FAIL_TO_PASS passing), zero-F2P (none passing), and
+broke-P2P (a PASS_TO_PASS failing; takes precedence over the other two
+miss classes). "F2P file" is the test file the hidden tests live in.
+
+| class | n | tool calls | read the F2P file | ran the F2P file | read a test before the first edit |
+|---|---|---|---|---|---|
+| resolved | 48 | 22.3 | 40/48 | 39/48 | 44/48 |
+| near-miss | 15 | 24.4 | 13/15 | 15/15 | 14/15 |
+| broke-P2P | 14 | 25.4 | 12/14 | 12/14 | 14/14 |
+| zero-F2P | 26 | 25.9 | 18/26 | 15/26 | 25/26 |
+
+How much of the hidden contract exists in the repo at all (an F2P test
+is "new" when the hidden test patch adds its function; class
+membership here by report alone, overlapping):
+
+| class | F2P tests | newly added | instances with every F2P test new |
+|---|---|---|---|
+| resolved (48) | 139 | 115 (83%) | 38/48 |
+| near-miss (25) | 169 | 120 (71%) | 18/25 |
+| broke-P2P (14) | 48 | 39 (81%) | 11/14 |
+| zero-F2P (30) | 71 | 68 (96%) | 27/30 |
+
+Reading: the model behaves the same way in every class and already
+finds the file the hidden contract lands in; a zero-F2P miss is a
+contract that exists only in tests not yet written (96%), so a search
+over the existing suite cannot surface it. What is left is deriving
+the exact expected behaviour from the issue text, and the 14
+broke-P2P regressions a gate catches (this split ran gateless).
