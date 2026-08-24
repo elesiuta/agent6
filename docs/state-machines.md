@@ -19,33 +19,36 @@ Where "always-on" agents hand the LLM the *control flow* (so the same inputs tak
 
 ## 2. Non-goals
 
-- Not a general programming language.
-  The branch/predicate grammar is intentionally non-Turing-complete (no loops *inside* a predicate, no arbitrary code).
-  Loops exist only as graph edges.
-- Not a distributed scheduler.
-  One machine = one OS process (systemd / cron-friendly), restartable.
-  No clustering in v1.
-- Not a new network surface.
-  Anything that talks to the outside world is a *tool*, gated by the existing audit rules.
-- Not LLM-authorized.
-  `machine create` may draft a machine, but in a repository `machine run` refuses the draft until the operator commits it.
+- Not a general programming language
+    - the branch/predicate grammar is non-Turing-complete: no loops inside a predicate, no arbitrary code
+    - loops exist only as graph edges
+- Not a distributed scheduler
+    - one machine = one OS process (systemd / cron-friendly), restartable; no clustering in v1
+- Not a new network surface
+    - anything that talks to the outside world is a *tool*, gated by the existing audit rules
+- Not LLM-authorized
+    - `machine create` may draft a machine; in a repository `machine run` refuses the draft until the operator commits it
 
 ---
 
 ## 3. Design principles
 
-- **Control flow is static and operator-owned; work is dynamic and model-owned.** The graph of states/edges is fixed at author time.
-  What happens *inside* an `agent` state is the usual agent6 loop.
-- **Authored in a text editor.** TOML, diff-friendly and commentable.
-  A state can *be* an agent6 run, so mini-agents are wired together rather than written in Python.
-- **Everything nondeterministic is journaled as a fact.** Wall-clock reads, tool stdout, agent outputs: each is appended to an immutable event log the moment it is observed.
-  The engine is a pure reducer over `(machine, blackboard, event) → blackboard'`.
-  Replay reads the journal instead of re-observing the world, so a run backtests offline.
-- **Fail loudly** (repo convention).
-  One file parses to exactly one validated machine or a precise error: a missing transition target, an unreachable state, a type mismatch on a blackboard variable, or an unknown key is a *load-time* error.
-- **No implicit defaults** (mirrors `Config`: `extra="forbid", frozen=True`).
-  Every variable is declared with a type and an explicit initial value (`value` for `[vars.operator]`, `default` for the mutable `[vars.code]`/`[vars.agent]`).
-  Every state declares every outcome edge it can produce.
+- **Control flow is static and operator-owned; work is dynamic and model-owned**
+    - the graph of states/edges is fixed at author time
+    - inside an `agent` state runs the usual agent6 loop
+- **Authored in a text editor**
+    - TOML: diff-friendly, commentable
+    - a state can *be* an agent6 run, so mini-agents are wired together rather than written in Python
+- **Everything nondeterministic is journaled as a fact**
+    - wall-clock reads, tool stdout, agent outputs: appended to an immutable event log the moment observed
+    - the engine is a pure reducer over `(machine, blackboard, event) → blackboard'`
+    - replay reads the journal instead of re-observing the world: a run backtests offline
+- **Fail loudly** (repo convention)
+    - one file parses to exactly one validated machine or a precise error
+    - a missing transition target, an unreachable state, a blackboard type mismatch, an unknown key: load-time errors
+- **No implicit defaults** (mirrors `Config`: `extra="forbid", frozen=True`)
+    - every variable declares a type and an explicit initial value (`value` for `[vars.operator]`, `default` for mutable `[vars.code]`/`[vars.agent]`)
+    - every state declares every outcome edge it can produce
 
 ---
 
@@ -101,24 +104,27 @@ The subtable header carries the owner, so who may write a value is checkable at 
 
 Only `tool` states (into `[vars.code]`) and `agent` states (into `[vars.agent]`) ever mutate the blackboard; `branch`/`wait`/`terminal` only route, sleep, or end.
 
-- **`[vars.operator]`** are the machine's parameters: set once when the operator authors/commits the file and never written by any state.
-  Declared with a concrete `value` (not a `default`).
-  Any `capture`/`set` that targets an operator var is a *load-time* error.
-  The names above are illustrative; an operator var may be any JSON-serializable value.
-- **`[vars.code]`** change only as a pure function of journaled tool output; this is what keeps the path deterministic and replayable.
-- **`[vars.agent]`** change only through the single validated structured output of one `agent` state: the LLM's one sanctioned channel into the blackboard.
+- **`[vars.operator]`**: the machine's parameters, set once at author/commit time, never written by any state
+    - declared with a concrete `value` (not a `default`)
+    - a `capture`/`set` targeting an operator var is a load-time error
+    - any JSON-serializable value; the names above are illustrative
+- **`[vars.code]`**: change only as a pure function of journaled tool output (what keeps the path deterministic and replayable)
+- **`[vars.agent]`**: change only through the single validated structured output of one `agent` state (the LLM's one sanctioned channel into the blackboard)
 
-At `machine check` time the validator enforces the ownership wall: a `tool` capture may target only `[vars.code]` vars, an `agent` capture may target only `[vars.agent]` vars, and `[vars.operator]` vars are read-only to every state.
-A `tool` cannot smuggle a write into an LLM-owned variable, and an agent cannot overwrite a deterministic one.
+`machine check` enforces the ownership wall.
+
+- a `tool` capture targets only `[vars.code]`; an `agent` capture only `[vars.agent]`; `[vars.operator]` is read-only to every state
+- a `tool` cannot smuggle a write into an LLM-owned variable; an agent cannot overwrite a deterministic one
 
 Allowed types (all three subtables): `str`, `int`, `float`, `bool`, `list[<scalar>]`, `json`, and any **named record type** declared in `[schemas.*]` (see [Record schemas](#46-record-schemas-schemas)).
 The two structured types differ on exactly one axis, **navigability**:
 
-- `json` is an **opaque** blob: read or written *wholesale* only.
-  It may be passed to a tool/agent (`{{ x | json }}`) or captured as a whole, but it may not be dotted.
-  `x.key` where `x` is `json` is a *load-time* error.
-  Use `json` only when the machine never inspects the value's internals.
-- A **record type** (e.g. `classification`) is **navigable**: every `.field` read in a predicate or template is checked against the schema at `machine check` time; a misspelled field is a load error rather than a silent misroute.
+- `json` is an **opaque** blob: read or written wholesale only
+    - passable to a tool/agent (`{{ x | json }}`) or captured whole, never dotted (`x.key` on `json` is a load-time error)
+    - use it only when the machine never inspects the value's internals
+- a **record type** (e.g. `classification`) is **navigable**
+    - every `.field` read in a predicate or template checks against the schema at `machine check` time
+    - a misspelled field is a load error, not a silent misroute
 
 Declaring types up front is what makes branch predicates statically type-checkable: scalars by their declared type, record fields by their schema, and `json` forbidden from being dotted at all.
 
