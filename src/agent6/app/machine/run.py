@@ -47,7 +47,9 @@ from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    chain_tip,
     is_git_repo,
+    machine_branch_for,
     machine_chain_ref_for,
     paths_dirty,
     verify_git_identity,
@@ -425,6 +427,20 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             # tell a crashed machine from a parked one), mirroring cli/run.py.
             write_worker_pid(root, os.getpid())
             if not journal.exists():
+                # A fresh instance must not silently continue a dead one's
+                # tree: the chain ref outlives an archived instance dir, and
+                # its tip is the OLD instance's work, not this repo's HEAD.
+                stale = has_run_agent and chain_tip(cwd, machine_chain_ref_for(spec.machine))
+                if stale:
+                    branch = machine_branch_for(spec.machine)
+                    reporter.refuse(
+                        f"no journal for {spec.machine!r}, but its chain branch"
+                        f" {branch!r} exists with a previous instance's work."
+                        f" Keep it (`git merge {branch}`) or discard it"
+                        f" (`git branch -D {branch}` and `git update-ref -d"
+                        f" {machine_chain_ref_for(spec.machine)}`), then rerun."
+                    )
+                    return 2
                 write_bundle(root, path)
             # Operator argv fired on machine.notify/machine.end, on the host
             # outside the jail (None when [machine.notify].on_event is unset).

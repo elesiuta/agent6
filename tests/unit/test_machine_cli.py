@@ -693,6 +693,51 @@ def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
     assert os.environ.get("AGENT6_AUTO_APPROVE") == "1"
 
 
+def test_a_fresh_instance_over_a_stale_chain_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A machine chain ref outlives an archived instance dir; a fresh instance
+    silently continued the dead instance's tree (a live leg saw its fix and
+    reported tests passed over a broken repo). The run refuses instead, naming
+    the branch and both remedies."""
+    import subprocess
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    f = repo / "runwarn.asm.toml"
+    f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
+    for argv in (
+        ["git", "init", "-q"],
+        ["git", "add", "runwarn.asm.toml"],
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"],
+        ["git", "update-ref", "refs/agent6/machine-run-warn/head", "HEAD"],
+    ):
+        subprocess.run(argv, cwd=repo, check=True)
+    cfg = tmp_path / "agent6.toml"
+    cfg.write_text(
+        """[providers.p]
+api_format = "openai"
+base_url = "http://127.0.0.1:9"
+api_key_env = "AGENT6_TEST_KEY"
+
+[models.worker]
+provider = "p"
+model = "m"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_TEST_KEY", "x")
+    code = main(["--config", str(cfg), "machine", "run", str(f)])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "chain branch 'agent6/machine-run-warn' exists" in err
+    assert "git branch -D agent6/machine-run-warn" in err
+
+
 def test_run_no_commands_withholds_them_from_the_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
