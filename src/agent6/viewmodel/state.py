@@ -518,8 +518,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 ),
             )
 
-        case events.ApprovalPrompt(id=aid, prompt=prompt, standing=standing, ts_ep=ts_ep):
-            ap = ApprovalPrompt(id=aid, prompt=prompt, standing=standing, asked_ep=ts_ep)
+        case events.ApprovalPrompt(id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep):
+            ap = ApprovalPrompt(id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep)
             return replace(state, pending_approvals=(*state.pending_approvals, ap))
 
         case events.ApprovalAnswer(id=wanted_id, approved=approved):
@@ -529,13 +529,13 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
             return replace(state, pending_approvals=new)
 
-        case events.QuestionPrompt(id=qid, questions=qs, ts_ep=ts_ep):
+        case events.QuestionPrompt(id=qid, questions=qs, asked_ep=asked_ep):
             questions = tuple(Question(question=q.question, options=q.options) for q in qs)
             qp = QuestionPrompt(
                 id=qid,
                 questions=questions,
                 from_harness=not state.started or state.finished,
-                asked_ep=ts_ep,
+                asked_ep=asked_ep,
             )
             return replace(state, pending_questions=(*state.pending_questions, qp))
 
@@ -665,18 +665,18 @@ def status_facts(state: SessionState) -> StatusFacts:
     """The fold's answers to the status questions -- the typed twin of
     `LogScan.status_facts()`, for surfaces that hold a `SessionState`. The two
     producers must agree on the same log (pinned by the status matrix test)."""
-    pending: list[tuple[float | None, str]] = [
-        (a.asked_ep, "approval") for a in state.pending_approvals if not a.answered
-    ] + [(q.asked_ep, "question") for q in state.pending_questions if not q.answered]
-    oldest = min(pending, key=lambda p: p[0] if p[0] is not None else float("inf"), default=None)
+    pending: list[tuple[str, float | None]] = [
+        ("approval", a.asked_ep) for a in state.pending_approvals if not a.answered
+    ] + [("question", q.asked_ep) for q in state.pending_questions if not q.answered]
+    oldest = min(pending, key=lambda p: p[1] if p[1] is not None else float("inf"), default=None)
     return StatusFacts(
         started=state.started,
         finished=state.finished,
         all_passed=state.all_passed,
         end_reason=state.end_reason,
         operator_blocked=bool(pending),
-        blocked_kind=oldest[1] if oldest else "",
-        blocked_since_ep=oldest[0] if oldest else None,
+        blocked_kind=oldest[0] if oldest else "",
+        blocked_since_ep=oldest[1] if oldest else None,
     )
 
 

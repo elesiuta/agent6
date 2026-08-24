@@ -202,7 +202,7 @@ class ApprovalPrompt:
     standing: bool = True
     # When it was asked (epoch), for the waiting status's age; None on a log
     # whose line carried no parseable ts.
-    ts_ep: float | None = None
+    asked_ep: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,7 +221,7 @@ class EventQuestion:
 class QuestionPrompt:
     id: str
     questions: tuple[EventQuestion, ...]
-    ts_ep: float | None = None  # asked-at epoch, for the waiting status's age
+    asked_ep: float | None = None  # asked-at epoch, for the waiting status's age
 
 
 @dataclass(frozen=True, slots=True)
@@ -451,7 +451,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
                 id=str(raw.get("id", "")),
                 prompt=str(raw.get("prompt", "")),
                 standing=bool(raw.get("standing", True)),
-                ts_ep=event_epoch(raw.get("ts")),
+                asked_ep=event_epoch(raw.get("ts")),
             )
         case "approval.answer":
             return ApprovalAnswer(
@@ -467,7 +467,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
                 if isinstance(q, dict)
             )
             return QuestionPrompt(
-                id=str(raw.get("id", "")), questions=questions, ts_ep=event_epoch(raw.get("ts"))
+                id=str(raw.get("id", "")), questions=questions, asked_ep=event_epoch(raw.get("ts"))
             )
         case "question.answer":
             raw_ans = raw.get("answers", ()) or ()
