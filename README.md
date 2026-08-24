@@ -26,20 +26,27 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 
 ## Features
 
-- **Jailed commands**: Landlock + seccomp, and under `strict` (what the default `auto` picks when the host allows it) user namespaces, `pivot_root`, read-only `.git`, no route off the box ([Security](https://agent6.dev/security/))
-- **Providers**: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), or a ChatGPT subscription (`agent6 connect chatgpt`); model + reasoning effort per role ([Config](https://agent6.dev/config/))
-- **Clean checkout**: per-step commits on a detached ref, `sessions merge` to land them, snapshot resume, fork at any turn
-- **Verify gate**: inferred when unset, pinned for the run, green/red on every surface; a worker can propose a replacement gate instead of reverting
-- **Budget**: hard `max_usd` cap, token cap for calls the provider does not price
-- **Sessions**: run, plan, ask (plan and ask never edit); `--from <id>` seeds from another, cross-session reads, `/btw` asks beside a live run
-- **Four front-ends, one engine**: CLI, TUI, [browser](https://agent6.dev/web/) (stdlib server, no JS deps, phone), and [editor over ACP](https://agent6.dev/acp/); `attach`, `exec`, `forward`, `history`
-- **Background commands**: `background: true` hands back a handle, `read_background` polls, `/shells` lists them; none outlive the run
-- **Context control**: compaction visible on every surface, `/compact [focus]`, `/pin`, repo memory injected per run
-- **State machines**: LLM-drafted, operator-reviewed, journaled, replayable; they pause for input, take events, steer from any front-end ([State machines](https://agent6.dev/state-machines/))
-- **Task graph**: the worker keeps its plan in a persistent DAG (dependencies, acceptance criteria, statuses) journaled with the run; it survives crash and compaction restarts, shows live on every surface, and `decompose = "auto"` front-loads it for models measured to need it
-- **Code review**: `agent6 review` on any diff, plus an in-loop panel of adversarial reviewers where only blocking-category findings gate
-- **Parallel fan-out**: `--parallel N|model-a,model-b` clone-based lanes, auto-compared into a ranked report; `sessions compare` for past runs, `/parallel` mid-run ([Architecture](https://agent6.dev/architecture/#parallel-runs))
-- **Skills**: SKILL.md packs (the format Claude Code and most agents share) index into the prompt, load on demand, fire as `/name` or `--skill`; repo instructions from `AGENTS.md`
+- **Jailed commands**: Landlock + seccomp; `strict` (the `auto` pick where the host allows) adds user namespaces, `pivot_root`, read-only `.git`, no route off the box ([Security](https://agent6.dev/security/))
+- **Providers**: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), or a ChatGPT subscription ([Config](https://agent6.dev/config/))
+  - model + reasoning effort per role
+- **Clean checkout**: per-step commits on a detached ref; `sessions merge` lands them
+  - snapshot resume; fork at any turn
+- **Verify gate**: inferred when unset, pinned for the run, green/red on every surface
+  - a worker proposes a replacement gate instead of reverting
+- **Budget**: hard `max_usd` cap; token cap for unpriced calls
+- **Sessions**: run, plan, ask (plan and ask never edit)
+  - `--from <id>` seeds from another; `/btw` asks beside a live run
+- **Four front-ends, one engine**: CLI, TUI, [browser](https://agent6.dev/web/) (stdlib server, no JS deps, phone), [editor over ACP](https://agent6.dev/acp/)
+  - `attach`, `exec`, `forward`, `history`, `ps`
+- **Background commands**: `background: true` hands back a handle; none outlive the run
+- **Context control**: compaction visible on every surface; `/compact [focus]`, `/pin`; repo memory injected per run
+- **State machines**: LLM-drafted, operator-reviewed, journaled, replayable ([State machines](https://agent6.dev/state-machines/))
+  - pause for input, take events, steer from any front-end
+- **Task graph**: the worker's plan as a persistent DAG, journaled with the run, live on every surface
+  - survives crash and compaction restarts; `decompose = "auto"` front-loads it for models measured to need it
+- **Code review**: `agent6 review` on any diff; an in-loop adversarial panel where only blocking findings gate
+- **Parallel fan-out**: `--parallel N|model-a,model-b` clone-based lanes, auto-compared into a ranked report ([Architecture](https://agent6.dev/architecture/#parallel-runs))
+- **Skills**: SKILL.md packs (the format most agents share) index into the prompt, fire as `/name` or `--skill`; repo instructions from `AGENTS.md`
 - **Fixed tool surface**: extended only by operator-configured MCP servers, off by default, jailed by default
 - **Eight runtime dependencies**, no telemetry, no auto-update
 
@@ -91,9 +98,10 @@ agent6 fork <session-id> --at-turn 7
 
 See [usage](https://agent6.dev/usage/) for the full command tour, [the web UI](https://agent6.dev/web/) for driving runs from a phone, [configuration](https://agent6.dev/config/) for every field, and the [security model](https://agent6.dev/security/) for what the sandbox enforces.
 
-Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (in the state dir, out of the workspace, per-machine, never committed), then `--config FILE`.
-`agent6 config show` prints every effective value with the layer that set it.
-Every field has a default, and security-sensitive fields default to the safe value: `isolation = "auto"`, `network = "auto"`, `run_commands = "ask"`, `protect_git = true`.
-Under `"auto"` the sandbox picks the most secure option available on the host and warns if it cannot enforce the full policy; an explicitly set value it cannot enforce refuses to run.
-`protect_git = true` re-binds `.git` read-only, which needs `strict`; on `hardened` the default warns and an explicitly set `true` refuses to run.
-agent6 itself does not push, rewrite history, or `reset --hard`, and no config key can enable them.
+Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (state dir, never committed), then `--config FILE`.
+
+- `agent6 config show`: every effective value with the layer that set it
+- every field has a default; security-sensitive fields default safe: `isolation = "auto"`, `network = "auto"`, `run_commands = "ask"`, `protect_git = true`
+- `"auto"` picks the most secure option the host allows, warning when it falls short; an explicit value the host cannot enforce refuses to run
+- `protect_git = true` (read-only `.git`) needs `strict`: on `hardened` the default warns, an explicit `true` refuses
+- agent6 never pushes, rewrites history, or `reset --hard`; no config key can enable them
