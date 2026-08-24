@@ -5,8 +5,9 @@
 Both modes withhold the structured edit tools (apply_edit/apply_patch), commit
 tools, and the task DAG, but a jailed `run_command` can still write the
 workspace as a side effect. So an absolute "you CANNOT change anything" or a
-"read-only guarantee" is a lie; the prompts state the truth (commands run
-jailed, may write) and keep "mutate nothing" only as guidance.
+"read-only guarantee" is a lie; the prompts state the truth: commands run
+jailed, a probe's writes land in the workspace, and nothing carries them
+forward.
 
 plan is clamped like ask: a standing run_commands="yes" becomes "ask", so a
 write during planning is operator-approved, never auto-run.
@@ -66,17 +67,19 @@ def test_plan_and_ask_prompts_do_not_promise_a_read_only_workspace(tmp_path: Pat
         assert "cannot change anything" not in low, mode
         assert "cannot edit files" not in low, mode
         assert "read-only guarantee" not in low, mode
-        # The truth is stated: commands run jailed and may write the workspace.
+        # The truth is stated: commands run jailed and their writes land in
+        # the workspace.
         assert "jailed" in low, mode
-        assert "may write" in low, mode
+        assert "land in the workspace" in low, mode
 
 
-def test_plan_and_ask_prompts_keep_mutate_nothing_as_guidance(tmp_path: Path) -> None:
-    """Withhold the false guarantee, not the guidance: the worker is still told
-    to make no changes it means to keep."""
+def test_plan_and_ask_prompts_state_that_probe_writes_go_nowhere(tmp_path: Path) -> None:
+    """Withhold the false guarantee and state the consequence: nothing carries
+    a probe's writes forward, so an edit the answer or plan needs is described
+    or recorded, never applied."""
     for mode in _INTERACTIVE:
         low = _norm(tmp_path, mode)
-        assert "mutate nothing" in low or "changes you intend to keep" in low, mode
+        assert "nothing carries them forward" in low, mode
 
 
 def test_plan_clamps_run_commands_like_ask(tmp_path: Path) -> None:

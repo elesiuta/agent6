@@ -78,9 +78,9 @@ def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
 
 
 def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
-    """The gateless block claims no commits in any mode. Run mode's terminal
-    tool is the base prompt's fact (`finish_session ends the run`), not the
-    block's; plan finishes via `finish_planning`; ask has no terminal tool."""
+    """The gateless block states the gate's absence and nothing else, in every
+    mode: the terminal tool is each base prompt's fact (run: `finish_session
+    ends the run`; plan: `finish_planning` ends the pass); ask has none."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=False)
     run = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
@@ -93,7 +93,7 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
 
     run_block, plan_block, ask_block = block(run), block(plan), block(ask)
     assert "finish_session" not in run_block and "finish_session ends the run" in run
-    assert "finish_planning" in plan_block
+    assert "finish_planning" not in plan_block and "`finish_planning` ends the pass" in plan
     assert "finish_session" not in plan_block and "commits" not in plan_block
     assert "finish_session" not in ask_block and "finish_planning" not in ask_block
     assert "commits" not in ask_block

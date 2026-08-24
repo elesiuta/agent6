@@ -34,22 +34,20 @@ TOOL_ERROR_ESCALATE_AFTER = 5
 TOOL_ERROR_STOP_AFTER = 8
 
 TOOL_ERROR_NUDGE = (
-    "[harness tool-error] The same call failed repeatedly with the same"
-    " error: the call is wrong, not the code. Fix the call shape or use a"
-    " different tool."
+    "[harness tool-error] The same call has failed three times with the same"
+    " error; the error comes from the call's shape, not from the code."
 )
 TOOL_ERROR_ESCALATION = (
-    "[harness tool-error] The identical error persists. Do not send this"
-    " call again: switch tool or approach, or proceed with what you have."
+    "[harness tool-error] The identical error persists; the run ends at the eighth."
 )
 
 # A streak of ToolDenied refusals (approval policy, the git guard): the call
 # was REFUSED, not malformed, so the generic "fix the call shape" text would
 # be false and invite pointless reshuffling of the same command.
 TOOL_DENIED_NUDGE = (
-    "[harness tool-error] Refused by policy, not failure; repeating or"
-    " reshaping it cannot change the outcome. Follow the refusal's guidance,"
-    " use tools that need no approval, or finish and report."
+    "[harness tool-error] Refused by policy, not a failure: the same call gets"
+    " the same refusal, and the refusal names what applies. Tools that need no"
+    " approval, and finish_session, are available."
 )
 
 
@@ -71,15 +69,14 @@ _VERIFY_DEAD_SIGNATURES = (
 
 BASELINE_RED_NOTICE = (
     "[harness] That verify ran on an unmodified tree: the gate was already"
-    " failing before your changes. Those failures are not yours; do the task"
-    " and note them in your summary."
+    " failing before your changes; those failures predate the task."
 )
 
 VERIFY_BROKEN_NUDGE = (
     "[harness verify-broken] Verify exited at once without running tests:"
-    " the runner is missing or misconfigured, not a real failure. Do not"
-    " change working code for it. Find the project's real test command"
-    " (setup.cfg, tox.ini, pyproject, bin/test) and run it via run_command."
+    " the runner is missing or misconfigured, not a test failure. The"
+    " project's own test command (setup.cfg, tox.ini, pyproject, bin/test)"
+    " runs via run_command."
 )
 
 
@@ -101,15 +98,14 @@ def tool_error_signature(name: str, error_text: str) -> str:
 
 
 NO_PROGRESS_NUDGE = (
-    "[harness no-progress] Verify failed repeatedly with the same error;"
-    " your edits are not changing the outcome. Stop editing, state the root"
-    " cause in one sentence, then make one fix aimed at it."
+    "[harness no-progress] Verify has failed four times with the same error;"
+    " the edits so far have not changed the outcome."
 )
 
 NO_PROGRESS_ESCALATION = (
-    "[harness no-progress] The identical failure persists. Re-read the"
-    " failing test; if earlier edits made things worse, restore a file"
-    " (`git show HEAD:<path>`, apply_edit it back) and make one minimal fix."
+    "[harness no-progress] The identical failure persists; the run ends at"
+    " the tenth. Earlier file content is readable (`git show HEAD:<path>`)"
+    " and restorable with apply_edit."
 )
 
 _SIG_NOISE = re.compile(r"line \d+|0x[0-9a-fA-F]+|\d+\.\d+s\b|:\d+:|/tmp/\S+|\bin \d+(\.\d+)?s\b")
@@ -146,8 +142,9 @@ TASK_FINISH_PATIENCE = 3
 VERIFY_FINISH_PATIENCE = 3
 VERIFY_FINISH_GATE = (
     "[harness] finish_session refused: verify is not green"
-    " (require_verify_to_finish). Fix what it reports and finish once it"
-    " passes; if the task genuinely cannot pass, say so and stop."
+    " (require_verify_to_finish). A green verify lifts the refusal; the third"
+    " refusal is the last, after which a finish is honored and reported as"
+    " finished, not passed."
 )
 
 # verify-settled completion (run mode). A non-metric run has no positive "done"
@@ -164,9 +161,9 @@ VERIFY_SETTLED_NUDGE_AFTER = 3
 VERIFY_SETTLED_STOP_AFTER = 6
 
 VERIFY_SETTLED_NUDGE = (
-    "[harness settled] Changes are committed and recent turns changed"
-    " nothing. If the task is complete, call finish_session now; if not,"
-    " make a concrete edit, not more read-only commands."
+    "[harness settled] Changes are committed and the last three turns changed"
+    " nothing; finish_session ends the run, and at six unchanged turns the"
+    " run ends on its own."
 )
 
 # A non-metric `run` injects a one-shot wrap-up directive when the budget gets
@@ -176,15 +173,16 @@ VERIFY_SETTLED_NUDGE = (
 RUN_BUDGET_NUDGE_BELOW = 0.25
 
 RUN_BUDGET_NUDGE = (
-    "[harness budget] Budget is low. Run run_verify_command now; if green,"
-    " finish_session immediately; if red, fix only the smallest blocker,"
-    " re-verify, finish. Nothing else."
+    "[harness budget] Under a quarter of the budget remains; the loop halts"
+    " when a cap is crossed. run_verify_command certifies the work and"
+    " finish_session ends the run."
 )
 
 # Gateless variant (no verify command this run): there is nothing to verify, so
 # steer straight to finish_session.
 RUN_BUDGET_NUDGE_GATELESS = (
-    "[harness budget] Budget is low. Call finish_session now with a short summary. Nothing else."
+    "[harness budget] Under a quarter of the budget remains; the loop halts"
+    " when a cap is crossed. finish_session ends the run."
 )
 
 # plan.md on disk is the plan; the planner's conversation only ever holds a
@@ -192,17 +190,16 @@ RUN_BUDGET_NUDGE_GATELESS = (
 # loop re-reads the file each turn and prepends this header when it differs
 # from what the planner was last shown.
 PLAN_ON_DISK_HEADER = (
-    "[harness plan] plan.md on disk now reads as follows. The operator may have"
-    " edited it (answers under `**A:**`, new constraints, deletions), and it"
-    " supersedes any earlier version of the plan in this conversation. Carry"
-    " these edits into the plan_markdown you pass to finish_planning, which"
-    " overwrites the file."
+    "[harness plan] plan.md on disk now reads as follows; it supersedes every"
+    " earlier version in this conversation (operator edits: answers under"
+    " `**A:**`, new constraints, deletions). The plan_markdown passed to"
+    " finish_planning overwrites the file."
 )
 
 PLAN_BUDGET_NUDGE = (
-    "[harness budget] Budget is low and finish_planning has not been called."
-    " Call it now with the best plan you have; a rough delivered plan beats"
-    " an exhaustive one never emitted."
+    "[harness budget] finish_planning has not been called, and the pass is"
+    " past its turn allowance or low on budget; the loop halts when a cap is"
+    " crossed, and the plan exists only once finish_planning writes it."
 )
 
 
@@ -216,15 +213,15 @@ PLAN_BUDGET_NUDGE = (
 # answers in prose is the legitimate implicit-finish path.
 SILENT_NO_WORK_PATIENCE = 2
 SILENT_NO_WORK_NUDGE = (
-    "[harness] Prose with no tool call, and nothing changed yet; text alone"
-    " cannot finish this task. Use the tools to do the work, or call"
-    " finish_session and say why you are blocked."
+    "[harness] Prose with no tool call on an untouched tree is not a finish"
+    " here; the tools do the work, and finish_session ends the run (its"
+    " summary carries a blocker)."
 )
 
 
 QUESTION_NUDGE = (
-    "[harness] You asked a question in prose; nobody sees it. Use ask_user"
-    " for operator input, proceed if you can, or finish_session if done."
+    "[harness] A question in prose reaches nobody; ask_user reaches the"
+    " operator, and finish_session ends the run."
 )
 
 
@@ -241,17 +238,16 @@ QUESTION_NUDGE = (
 # a new computation; a store carrying only the formula it was first seen in
 # did not.
 MEMORY_FLIP_NUDGE = (
-    "[harness memory] Verify flipped green. If the fix rested on a durable"
-    " non-obvious fact about this repo, record the general rule in the"
-    " memory dir (a new <name>.md plus its MEMORY.md line); if ordinary,"
-    " carry on."
+    "[harness memory] Verify flipped green and nothing is recorded in the"
+    " memory dir this run; it takes a durable non-obvious repo fact as a"
+    " general rule (a new <name>.md plus its MEMORY.md line)."
 )
 
 MEMORY_FINISH_NUDGE = (
     "[harness memory] finish_session deferred once: verify recovered earlier"
-    " and nothing was recorded. If the root cause was a durable non-obvious"
-    " repo fact, record the general rule in the memory dir; then call"
-    " finish_session again either way."
+    " and nothing is recorded. The memory dir takes a durable non-obvious"
+    " repo fact as a general rule; the next finish_session call is honored"
+    " either way."
 )
 
 
