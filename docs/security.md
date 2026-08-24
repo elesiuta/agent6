@@ -17,31 +17,32 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 **Holds**
 
-- No writes outside the workspace.
-  `sandbox.extra_write_paths` and the per-repo memory dir widen it, visibly in `config show`.
-- No reads outside the workspace and a read-only system set for installed toolchains.
-  Under `strict` it is `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, plus a minimal `/etc` the launcher writes and a curated `/dev`; under `hardened` Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`.
-  `sandbox.extra_read_paths` adds more, and `agent6 check boundaries` prints the resolved set.
-- `/tmp` is writable at every level.
-  Under `strict` it is a private tmpfs discarded with the run; under `hardened` it is the host's `/tmp`, and `HOME` (`/tmp/agent6-home`) is a host dir shared by every run on the machine.
-- agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git)).
-  A `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `strict`, and push needs egress.
-- No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary.
-    - Every chmod-family syscall (`fchmodat2` included) is denied when the mode carries `S_ISUID` / `S_ISGID`; ordinary chmod passes.
-      Every mount carries `nosuid` and `nodev`, except the five bound `/dev` character nodes (`null`, `zero`, `urandom`, `random`, `full`), which `nodev` would make unusable.
-      `/tmp` allows exec, which toolchains use for helpers.
-    - Children write inside the jail's mount namespace (`strict`) or the Landlock write grants (`hardened`).
-    - Nothing a command starts outlives it.
-      `strict`'s PID namespace takes the tree down; on `hardened` the agent holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command (a `setsid` daemon included).
-      A survivor the sweep cannot kill fails the command.
+- No writes outside the workspace
+    - `sandbox.extra_write_paths` and the per-repo memory dir widen it, visibly in `config show`
+- No reads outside the workspace and a read-only system set for installed toolchains
+    - `strict`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, a minimal `/etc` the launcher writes, a curated `/dev`
+    - `hardened`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`
+    - `sandbox.extra_read_paths` adds more; `agent6 check boundaries` prints the resolved set
+- `/tmp` is writable at every level
+    - `strict`: a private tmpfs discarded with the run
+    - `hardened`: the host's `/tmp`; `HOME` (`/tmp/agent6-home`) is a host dir shared by every run on the machine
+- agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
+    - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `strict`, and push needs egress
+- No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary
+    - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
+    - every mount carries `nosuid` and `nodev`, except the five bound `/dev` character nodes (`null`, `zero`, `urandom`, `random`, `full`), which `nodev` would make unusable
+    - `/tmp` allows exec (toolchain helpers)
+    - children write inside the jail's mount namespace (`strict`) or the Landlock write grants (`hardened`)
+    - nothing a command starts outlives it: `strict`'s PID namespace takes the tree down; `hardened` holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command (a `setsid` daemon included)
+    - a survivor the sweep cannot kill fails the command
 
 **Does not hold**
 
-- The agent process's own egress is unbounded.
-  agent6 reaches the configured providers (each `[providers.*].base_url` host, plus a chatgpt provider's `oauth_issuer` for token grants), and nothing stops the process reaching elsewhere.
-  A jailed command's egress is bounded ([Network](#5-network)).
-- On `hardened`, a command can hand work to a user daemon already running (tmux, `systemd --user`): unix sockets have no Landlock hook and stay nameable without a mount namespace.
-  `strict` does not expose them.
+- The agent process's own egress is unbounded
+    - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus a chatgpt provider's `oauth_issuer` for token grants); nothing stops the process reaching elsewhere
+    - a jailed command's egress is bounded ([Network](#5-network))
+- On `hardened`, a command can hand work to a user daemon already running (tmux, `systemd --user`): unix sockets have no Landlock hook and stay nameable without a mount namespace
+    - `strict` does not expose them
 
 ## Defense layers
 
@@ -49,19 +50,21 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 ### 1. Trust boundary
 
-The agent's Python process is trusted and runs unconfined at every isolation level.
-It holds the provider keys, writes the per-repo state dir, and spawns the jail.
-Isolation levels differ only in which jail features the launcher enables.
+The agent's Python process is trusted and runs unconfined at every isolation level; the model is untrusted.
 
-The model is untrusted.
-It reaches the machine through two surfaces:
+- the process holds the provider keys, writes the per-repo state dir, spawns the jail
+- isolation levels differ only in which jail features the launcher enables
+
+The model reaches the machine through two surfaces:
 
 - The in-process tools, whose paths resolve against the file boundary ([File access](#3-file-access)).
 - Anything that executes, which runs in the jail ([Sandbox](#2-sandbox)).
 
-The model sees the fixed tool set in `src/agent6/tools/schema.py`: structured edits, read-only navigation, fixed-argv verify and metric commands, `finish_session`, `ask_user`, a curator task notepad, an approval-gated `fetch` ([Network](#5-network)), and capability-gated `run_command`.
-There is no `shell`, no `write_file`, and no `eval`.
-Adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md)).
+The model sees the fixed tool set in `src/agent6/tools/schema.py`.
+
+- structured edits, read-only navigation, fixed-argv verify and metric commands, `finish_session`, `ask_user`, a curator task notepad, approval-gated `fetch` ([Network](#5-network)), capability-gated `run_command`
+- no `shell`, no `write_file`, no `eval`
+- adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md))
 
 ### 2. Sandbox
 
@@ -99,23 +102,21 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 **Inside the jail**
 
-- Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths` and operator tool dirs at their real paths.
-  Every mount keeps the path it has outside.
-- Masked last, after every bind (`strict`): the config dir, the state base, and `[sandbox].hide_paths`.
-  A grant at or inside a private dir is refused at config load.
-  `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses.
-- `/dev` (`strict`): `null`, `zero`, `urandom`, `random`, `full`, and a private `shm`.
-  No `/dev/tty`.
-- `/proc` (`strict`): fresh and private, empty if that fails.
-  The launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`.
-- seccomp: deny-list returning `EPERM` for `ptrace`, `pidfd_getfd`, `process_vm_readv`, `process_vm_writev`, `kcmp`, `io_uring_setup`, `userfaultfd`, `mount`, `setns`, `unshare`, `kexec`, `bpf`, `perf`, `keyctl`, module loading, `reboot`, clock-set.
-  Everything else is allowed.
+- Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths` and operator tool dirs at their real paths
+    - every mount keeps the path it has outside
+- Masked last, after every bind (`strict`): the config dir, the state base, `[sandbox].hide_paths`
+    - a grant at or inside a private dir is refused at config load
+    - `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
+- `/dev` (`strict`): `null`, `zero`, `urandom`, `random`, `full`, a private `shm`; no `/dev/tty`
+- `/proc` (`strict`): fresh and private, empty if that fails
+    - the launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`
+- seccomp: deny-list returning `EPERM` for `ptrace`, `pidfd_getfd`, `process_vm_readv`, `process_vm_writev`, `kcmp`, `io_uring_setup`, `userfaultfd`, `mount`, `setns`, `unshare`, `kexec`, `bpf`, `perf`, `keyctl`, module loading, `reboot`, clock-set; everything else allowed
 - Capabilities: cleared between fork and exec.
-- Timeout: `timeout_s` (the verify and metric gates use `[workflow].verify_timeout_s`, default 600), then SIGKILL of the process group and rc=124.
-  A model's `run_command` is not wall-clock killed: at `[workflow].command_checkin_s` it is handed back as a background job instead ([Commands and environment](#4-commands-and-environment)).
-- One launcher per run at every isolation level; its commands share that netns, PID namespace, and `/tmp`.
-  Closing the run's channel takes the PID namespace down.
-  A launcher that cannot start leaves each command its own.
+- Timeout: `timeout_s` (verify and metric gates use `[workflow].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124
+    - a model's `run_command` is not wall-clock killed: at `[workflow].command_checkin_s` it is handed back as a background job ([Commands and environment](#4-commands-and-environment))
+- One launcher per run at every isolation level; its commands share that netns, PID namespace, and `/tmp`
+    - closing the run's channel takes the PID namespace down
+    - a launcher that cannot start leaves each command its own
 - The policy arrives as JSON on the launcher's stdin, validated against a strict schema; unknown fields are refused.
 - `[sandbox].memory_limit_mb` (default 0, off): per-process `RLIMIT_DATA`.
 
@@ -142,21 +143,19 @@ Every path they take resolves through `Workspace`:
       - [sandbox].hide_paths
       - agent6's own config dir and state base
 
-- The boundary comes from config values.
-  A degradation (`auto` falling back to `hardened` or `none`, a host with no jail) leaves it unchanged, and under `none` isolation it is the only boundary.
-- A denied path is refused with the reason.
-  `list_dir` drops the entry and reports `hidden: N`.
-  The jail masks the path instead (empty dir, empty file; see [Sandbox](#2-sandbox)).
-- The symbol index skips a hidden file.
-  An indexed one leaks its symbol names and line numbers through `find_definition`.
-- The edit tools refuse a write into the project's own `.git`, raw or symlink-resolved, at every isolation level.
-  The name is matched case-folded on every platform (macOS and Windows open `.GIT/config` as `.git/config`, and macOS runs unsandboxed).
-  The same refusal covers a `pyvenv.cfg` dir, a `site-packages` ancestor, and an operator protect path.
-- Rewriting an editable-install `.pth` corrupts a venv invisibly (venvs are gitignored).
-  Reads stay allowed, and an editable install still imports itself inside the jail, because the repo is bound at its real path.
+- The boundary comes from config values
+    - a degradation (`auto` falling back to `hardened` or `none`, a host with no jail) leaves it unchanged; under `none` isolation it is the only boundary
+- A denied path is refused with the reason
+    - `list_dir` drops the entry and reports `hidden: N`
+    - the jail masks the path instead (empty dir, empty file; [Sandbox](#2-sandbox))
+- The symbol index skips a hidden file (an indexed one leaks symbol names and line numbers through `find_definition`)
+- The edit tools refuse a write into the project's own `.git`, raw or symlink-resolved, at every isolation level
+    - the name matches case-folded on every platform (macOS and Windows open `.GIT/config` as `.git/config`; macOS runs unsandboxed)
+    - the same refusal covers a `pyvenv.cfg` dir, a `site-packages` ancestor, and an operator protect path
+- Rewriting an editable-install `.pth` corrupts a venv invisibly (venvs are gitignored), so those writes refuse
+    - reads stay allowed; an editable install still imports itself inside the jail (the repo is bound at its real path)
 - Inside the state dir the edit tools may write the memory dir (`<state-dir>/<repo-id>/memory/`) and nothing else (the exempt list in `tools/_path_safety.py`).
-- Uncovered: with `isolation = "none"` and `run_commands = "yes"`, a command reads a denied path directly.
-  `run_command` argv is not screened.
+- Uncovered: with `isolation = "none"` and `run_commands = "yes"`, a command reads a denied path directly (`run_command` argv is not screened)
 
 **Repo memory** is a prompt-injection persistence channel: `MEMORY.md` joins the system prompt of later runs on the same repo.
 
@@ -175,14 +174,15 @@ Every command tool (`run_command`, `run_verify_command`, `stop_background`) answ
 The agent works within the environment it is given and cannot expand it:
 
 - `sudo` cannot escalate, even passwordless: `NO_NEW_PRIVS` voids setuid, so jailed `sudo` fails under any `NOPASSWD` rule.
-- Package installs fail.
-  `apt` / `dnf` / `apk` need root (blocked), a route to a mirror (the default `network` has none off the box), and `/usr` or `/var` writes (denied).
+- Package installs fail: `apt` / `dnf` / `apk` need root (blocked), a route to a mirror (the default `network` has none off the box), and `/usr` or `/var` writes (denied)
 - Host-installed toolchains compile and run; a networked build step needs `network` loosened.
 - Toolchains, venvs, and deps are installed outside agent6. Access widens through config (`extra_read_paths`, `network`, `[providers.*].base_url`), all visible in `config show`.
-- Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary: `strict` maps inside-root to real root, so jailed children run as real root under Landlock, seccomp, and `NO_NEW_PRIVS` only.
-  Writes outside the workspace and routes off the box stay closed; readable files now include root-only ones (`/etc/shadow` under `hardened`, hidden by `strict`'s rootfs).
-- Under `sudo`, agent6 reads the real user's config and secrets (from `SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back.
-  It does not drop privileges in-process; confinement comes from the jail.
+- Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary
+    - `strict` maps inside-root to real root: jailed children run as real root under Landlock, seccomp, and `NO_NEW_PRIVS` only
+    - writes outside the workspace and routes off the box stay closed
+    - readable files now include root-only ones (`/etc/shadow` under `hardened`; `strict`'s rootfs hides it)
+- Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back
+    - it does not drop privileges in-process; confinement comes from the jail
 
 ### 5. Network
 
@@ -251,14 +251,11 @@ Under `none` isolation nothing is enforced or refused.
 
 ### 6. Approvals
 
-- `[sandbox].run_commands` (`ask` default, `yes`, `no`) gates every command tool.
-  An `ask` prompt shows the argv.
+- `[sandbox].run_commands` (`ask` default, `yes`, `no`) gates every command tool; an `ask` prompt shows the argv
 - Each `mcp__<server>__<tool>` call prompts with its arguments (`[mcp.servers.<name>].approve`, default `ask`).
-- An "allow all" answer covers that server for the run.
-  It does not extend to the command tools or to another server.
+- An "allow all" answer covers that server for the run, never the command tools or another server
 - A tool name matching no configured server is refused, not prompted.
-- The `fetch` off-list host prompt and the sandbox-off gate take no standing answer.
-  Both say so, and no front-end shows the button.
+- The `fetch` off-list host prompt and the sandbox-off gate take no standing answer; both say so, and no front-end shows the button
 - `isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue?
   [y/N]` interactively, a warning in CI and `machine run`.
 - A prompt with no operator to answer it denies.
@@ -267,64 +264,69 @@ Under `none` isolation nothing is enforced or refused.
 
 **agent6's own git**
 
-- agent6's own git writes go through `git_ops.py` alone.
-  It wraps the safe ops (status, add, commit, diff, branch, checkout) and refuses `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo`, `branch -D` / `--force`, and any `--force` / `-f` on a destructive verb.
-  The read-only exceptions are on the [subprocess allowlist](#12-host-side-subprocess-allowlist): the `review` / `sessions diff` / `ask` collectors carry the same hardening flags, and `skills install` clones with fixed argv.
+- agent6's own git writes go through `git_ops.py` alone
+    - it wraps the safe ops (status, add, commit, diff, branch, checkout)
+    - it refuses `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo`, `branch -D` / `--force`, and any `--force` / `-f` on a destructive verb
+    - read-only exceptions live on the [subprocess allowlist](#12-host-side-subprocess-allowlist): the `review` / `sessions diff` / `ask` collectors carry the same hardening flags; `skills install` clones with fixed argv
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch the manifest confirms was squash-merged (the commit survives in the reflog).
-- `git_ops.py` runs git with the configured `api_key_env` names removed from its environment, so a credential helper or content driver never inherits one.
-  PATH, SSH, proxy, and credential-helper vars stay.
-  The read-only collectors inherit the environment untouched: they contact no remote, and the hardening flags leave no repo-controlled code to receive it.
+- `git_ops.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
+    - PATH, SSH, proxy, and credential-helper vars stay
+    - the read-only collectors inherit the environment untouched (no remote contact; the hardening flags leave no repo-controlled code to receive it)
 
 **A `git` the model runs through `run_command`** is bounded by the sandbox, and its argv is not screened.
 
-- `protect_git` (default on) keeps `.git` unwritable under `strict`, which re-binds it read-only and recursively: a mount nested under it (`.git/objects` on its own bind) stays visible and read-only.
-  A rewrite fails, and `push` has no egress.
-- `protect_git` is strict-only.
-  On `hardened` the default degrades with a warning and an explicitly-set `true` refuses to run.
-  A jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`, which agent6's own auto-commit (a temp-index `git add -A` on the host) then runs, reaching `$HOME` and the network.
-  Landlock cannot express the exclusion: a grant on a directory is recursive, and stacked rulesets intersect, so denying `.git` means not granting the workspace root either.
-- The protected scope is the project's own `.git`, at every isolation level: the in-process edit tools refuse to write under it ([File access](#3-file-access)).
-  A nested `.git` (a vendored repo's, a submodule's) is workspace content, writable like any other file.
+- `protect_git` (default on) keeps `.git` unwritable under `strict`: re-bound read-only, recursively (a mount nested under it stays visible and read-only)
+    - a rewrite fails; `push` has no egress
+- `protect_git` is strict-only: on `hardened` the default degrades with a warning, an explicit `true` refuses to run
+    - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`, which agent6's own auto-commit (a temp-index `git add -A` on the host) then runs, reaching `$HOME` and the network
+    - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
+- The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
+    - a nested `.git` (a vendored repo's, a submodule's) is workspace content, writable like any other file
 
 **Repo-controlled host code in a poisoned `.git/config`**
 
 - `core.fsmonitor` and `diff.external` are always off.
 - `.git/hooks/*` run only under `git.run_repo_hooks = true` (default false); `core.hooksPath` points away, so a hook cannot fire on agent6's auto-commit.
-- Content drivers (`filter.<n>.clean` / `smudge` / `process`, `merge.<n>.driver`) are off by default (`git.run_repo_filters`), neutralized per name.
-  The clean filter runs on the auto-commit's `git add` and the merge driver on the chain merge's `merge-tree`, so a cloned poisoned repo fires one or the other without any model action.
-  `true` honors them (the Git-LFS opt-in).
+- Content drivers (`filter.<n>.clean` / `smudge` / `process`, `merge.<n>.driver`) are off by default (`git.run_repo_filters`), neutralized per name
+    - the clean filter runs on the auto-commit's `git add`, the merge driver on the chain merge's `merge-tree`: a cloned poisoned repo fires one without any model action
+    - `true` honors them (the Git-LFS opt-in)
 
 ### 8. Secrets and `connect`
 
 - Provider keys live in `$XDG_CONFIG_HOME/agent6/secrets.toml`, `0600` and owner-only (refused if group- or other-readable, or foreign-owned), or come from `[providers.<name>].api_key_env` (env wins).
 - They are absent from transcripts, redacted in `config show`, and masked from the jail: the config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
-- `agent6 connect` prompts locally (`getpass`) and writes config and secrets.
-  It makes one read-only `GET` to the provider's key endpoint to confirm auth (status only; `--no-verify` skips it) and executes nothing a remote returns.
-- `agent6 connect chatgpt` is a PKCE OAuth sign-in: a browser hits the `oauth_issuer` authorize page, the code returns on `localhost:1455` (or is pasted, state-checked either way), and the token exchange and refreshes `POST` only to `<oauth_issuer>/oauth/token`.
-  The resulting tokens live in `secrets.toml` under the same `0600` rules; the same executes-nothing rule holds.
+- `agent6 connect` prompts locally (`getpass`) and writes config and secrets
+    - one read-only `GET` to the provider's key endpoint confirms auth (status only; `--no-verify` skips it)
+    - it executes nothing a remote returns
+- `agent6 connect chatgpt` is a PKCE OAuth sign-in
+    - a browser hits the `oauth_issuer` authorize page; the code returns on `localhost:1455` (or is pasted), state-checked either way
+    - token exchange and refreshes `POST` only to `<oauth_issuer>/oauth/token`
+    - tokens live in `secrets.toml` under the same `0600` and executes-nothing rules
 
 ### 9. State and locks
 
-- An in-process `GraphCurator` owns the task graph.
-  It validates every mutation against a pydantic schema before writing and holds a per-mutation flock on the session dir.
-  A write-path fault after the in-memory update reloads from disk before surfacing, so a later read never observes a node that was never persisted.
+- An in-process `GraphCurator` owns the task graph
+    - every mutation validates against a pydantic schema before writing, under a per-mutation flock on the session dir
+    - a write-path fault after the in-memory update reloads from disk before surfacing: a later read never observes a node that was never persisted
 - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/` (override with `[agent6].state_dir`), outside the working directory jailed commands run in.
-- The config write lock serializes read-modify-write cycles and enforces nothing.
-  Publishes are atomic, so a torn config is impossible with or without it.
-  It fails open (a planted symlink is refused `O_NOFOLLOW`, a stale root-owned lock is ignored), and a write that proceeds without it is kept, reported as "kept as written" (docs/config.md).
+- The config write lock serializes read-modify-write cycles and enforces nothing
+    - publishes are atomic: a torn config is impossible with or without it
+    - it fails open (a planted symlink refuses `O_NOFOLLOW`; a stale root-owned lock is ignored); a write proceeding without it is kept, reported "kept as written" (docs/config.md)
 
 ### 10. Parallel lanes
 
 `agent6 run --parallel`, `agent6 sessions compare`, and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each spawn subordinate work.
 
-- Every lane is an ordinary run: a detached `agent6 run` on its own clone, with its own jail per `sandbox.isolation` and its own `run_commands` policy.
-  No sandbox socket is shared across lanes or with the parent.
+- Every lane is an ordinary run: a detached `agent6 run` on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy
+    - no sandbox socket is shared across lanes or with the parent
 - Every spawned lane carries `AGENT6_SUBRUN=1`; both the `--parallel` flag and the coordinator's `lane_spawner` wiring refuse when it is set, so a lane cannot fan out or dispatch again.
-- A lane's config carries key references, never secret values.
-  The orchestrator writes each lane a `--config` file via `materialize()`, a dump of the resolved `Config` model (provider `base_url`, `api_key_env` names), which never holds a raw API key.
-  The lane reads the same `secrets.toml` or provider env var as any other run.
+- A lane's config carries key references, never secret values
+    - the orchestrator writes each lane a `--config` via `materialize()` (the resolved `Config`: provider `base_url`, `api_key_env` names), never a raw key
+    - the lane reads the same `secrets.toml` or provider env var as any other run
 - Lane git plumbing (clone, fetch, merge) goes through `git_ops.py` and lane spawning through `ui/spawn.py`, both already on the [subprocess allowlist](#12-host-side-subprocess-allowlist).
-- A lane starts from committed state only: the fan-out clones HEAD and a coordinator dispatch cuts lanes at the run's chain tip after chain-committing changes, so `--parallel` refuses an origin with uncommitted tracked changes under `git.require_clean_worktree`.
+- A lane starts from committed state only
+    - the fan-out clones HEAD; a coordinator dispatch cuts lanes at the run's chain tip after chain-committing changes
+    - `--parallel` refuses an origin with uncommitted tracked changes under `git.require_clean_worktree`
 
 ### 11. State machines
 
@@ -333,16 +335,16 @@ Each `tool` state is jailed, so a per-tool `network` sets its netns independentl
 
 **Operator-gated policy**
 
-- `network` is read only from the operator's config.
-  A machine's `[config]` overlay is rejected at load if it declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, `[mcp.*]`, `machine.notify`, `notify.on_complete`, `git.run_repo_hooks`, or `git.run_repo_filters`.
+- `network` is read only from the operator's config
+    - a machine's `[config]` overlay is rejected at load if it declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, `[mcp.*]`, `machine.notify`, `notify.on_complete`, `git.run_repo_hooks`, or `git.run_repo_filters`
 - A `tool` only declares `network`; honoring `allow` is the operator's call, and every conflict is refused at startup naming the state.
 
 **Bundle confinement**
 
-- Scripts live in a reviewed `scripts/` beside the `.asm.toml`.
-  `machine check` verifies every entry and static reference resolves inside the bundle (escaping symlinks rejected).
-- Scripts are operator-authored and committed, never fetched or generated at run time.
-  The `.asm.toml` and `scripts/` are read-only in every jail during a run.
+- Scripts live in a reviewed `scripts/` beside the `.asm.toml`
+    - `machine check` verifies every entry and static reference resolves inside the bundle (escaping symlinks rejected)
+- Scripts are operator-authored and committed, never fetched or generated at run time
+    - the `.asm.toml` and `scripts/` are read-only in every jail during a run
 - Front-ends render `machine.notify` as an overlay, and `attach` / TUI call `notify-send` with fixed argv, so a model message is inert data.
 - The out-of-band hook `[machine.notify].on_event` runs an operator argv on the host with the minimal `hook_env` env plus `AGENT6_MACHINE_*`.
 
@@ -378,14 +380,13 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 
 ## Skills
 
-- A skill is operator-installed config: install only from trusted sources.
-  `agent6 skills install <url>` is an operator-initiated CLI fetch (the same trust class as `connect`), and what it installs enters the system prompt and tool results verbatim.
-- Nothing in a skill runs at install or load.
-  Its scripts run only when the model runs them through the jailed command path, subject to `run_commands`.
-- `use_skill` is read-only and path-contained: it serves the skill's own dir through a component-walked descriptor (any symlink hop or `..` refused).
-  Skill dirs are not mounted into the jail; content reaches the model engine-side.
-- Repo-local `.claude/skills/` are not discovered.
-  Only the installed dir and `[skills].extra_dirs` are scanned.
+- A skill is operator-installed config: install only from trusted sources
+    - `skills install <url>` is an operator-initiated CLI fetch (the `connect` trust class); what it installs enters the system prompt and tool results verbatim
+- Nothing in a skill runs at install or load
+    - its scripts run only through the jailed command path, subject to `run_commands`
+- `use_skill` is read-only and path-contained: the skill's own dir through a component-walked descriptor (any symlink hop or `..` refused)
+    - skill dirs are not mounted into the jail; content reaches the model engine-side
+- Repo-local `.claude/skills/` are not discovered; only the installed dir and `[skills].extra_dirs` are scanned
 
 ## Prompt-injection tests
 
@@ -395,13 +396,14 @@ It catches prompt regressions; the structural defenses above confine a model tha
 ## Known limitations
 
 - User namespaces must be enabled; agent6 refuses `strict` on distros that disable them.
-- AppArmor userns (Ubuntu 24.04+) blocks unprivileged userns without a profile.
-  agent6 ships one scoped to the launcher (`agent6 system apparmor install`): with it `strict` is available, without it `hardened`.
+- AppArmor userns (Ubuntu 24.04+) blocks unprivileged userns without a profile
+    - agent6 ships one scoped to the launcher (`agent6 system apparmor install`): with it `strict`, without it `hardened`
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
-- Devcontainers get `hardened`: the container bounds filesystem damage, and jailed commands share the container's network ([Network](#5-network)).
-  The XDG state base is ephemeral (lost on rebuild), so mount a volume at the state dir or set `[agent6].state_dir`.
-- agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace: a jailed command can rewrite it, and the next tool call runs the rewrite as you, outside the jail.
-  Install agent6 outside the tree (pipx, `uv tool`); agent6 warns at run entry when it detects this shape.
+- Devcontainers get `hardened`: the container bounds filesystem damage; jailed commands share the container's network ([Network](#5-network))
+    - the XDG state base is ephemeral (lost on rebuild): mount a volume at the state dir or set `[agent6].state_dir`
+- agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace
+    - a jailed command can rewrite it; the next tool call runs the rewrite as you, outside the jail
+    - install agent6 outside the tree (pipx, `uv tool`); agent6 warns at run entry on this shape
 - Side channels: no claim about timing, cache, or speculative side channels.
-- Supply chain: pin your install.
-  Runtime deps `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, `ruff`, `ty`; build dep `hatchling`; the jail's Rust crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`, `serde_json`.
+- Supply chain: pin your install
+    - runtime deps `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, `ruff`, `ty`; build dep `hatchling`; jail crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`, `serde_json`
