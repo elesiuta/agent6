@@ -297,8 +297,8 @@ on = { signal = "handle" }        # no timer: a forever wait declares `signal`
 
 - one signal pending at a time: a second poke replaces the first, payload included (a wake, never a queue)
 - the payload is journaled on the `signal` `WaitFact` (replay-safe) and materialized to `$AGENT6_MACHINE_DATA_DIR/poke.json` for the next `tool`
-No capture is added to `wait`: the payload flows through the existing tool -> capture -> branch pattern (a tool reads `poke.json`, emits JSON captured into `[vars.code]`, and a `branch` routes on it).
-On replay the journaled payload reproduces the identical input.
+- no capture on `wait`: the payload flows through the existing tool -> capture -> branch pattern
+- on replay the journaled payload reproduces the identical input
 
 #### `branch`
 
@@ -311,13 +311,12 @@ when = [
 ]
 ```
 
-`when` is an ordered list; the first matching `if` wins; a final `else = true` is required (total function, no "stuck" state).
-The predicate grammar is a restricted, non-Turing-complete expression language (see [Execution semantics](#5-execution-semantics)): comparisons, `and`/`or`/`not`, membership, `len()`, `has()`, numeric/string literals, and blackboard references (see [Names, references, and namespaces](#45-names-references-and-namespaces-normative)).
-`has()` tests whether a reference is present, the guard an `optional` record field needs before a read.
-`has(out.score) and out.score > 0` is safe because `and` short-circuits.
-No function calls beyond a tiny fixed allow-list, no Python attribute access, no `eval`.
-Dotted references like `verdict.confidence` are *data* navigation into a record value interpreted by agent6's own evaluator (see [Names, references, and namespaces](#45-names-references-and-namespaces-normative)), never Python attribute resolution.
-This is a hard security boundary: a `.asm.toml` file must never be able to execute arbitrary code.
+- `when` is ordered; the first matching `if` wins; a final `else = true` is required (total function, no stuck state)
+- the predicate grammar is restricted and non-Turing-complete ([Execution semantics](#5-execution-semantics)): comparisons, `and`/`or`/`not`, membership, `len()`, `has()`, literals, blackboard references
+- `has()` tests presence: the guard an `optional` record field needs before a read (`has(out.score) and out.score > 0` is safe; `and` short-circuits)
+- no function calls beyond the fixed allow-list, no Python attribute access, no `eval`
+- dotted references (`verdict.confidence`) are data navigation by agent6's own evaluator, never Python attribute resolution
+- a hard security boundary: a `.asm.toml` must never execute arbitrary code
 
 #### `terminal`
 
@@ -328,9 +327,8 @@ status = "failed"        # "ok" | "failed"
 reason = "machine budget exhausted"
 ```
 
-Absorbing.
-Emits a `machine.end` event and returns control to the CLI.
-A machine may have many terminal states (success and failure variants).
+- absorbing: emits `machine.end` and returns control to the CLI
+- a machine may have many terminal states (success and failure variants)
 
 #### `notify` (any state)
 
@@ -349,24 +347,25 @@ status = "ok"
 reason = "done"
 ```
 
-Entering the state journals a `machine.notify` event (message + level) and fires the operator notify hook.
-It is presentation only: no edge, no control-flow effect, no blackboard write.
-The terminal `machine.end` is also a notify trigger for front-ends, so a terminal need not set `notify` to be surfaced.
-The message is a template over the blackboard, checked at `machine check` like any other.
-Emission is at-least-once across a crash: a resume re-enters the current state and re-emits.
+- entering the state journals a `machine.notify` event (message + level) and fires the operator notify hook
+- presentation only: no edge, no control-flow effect, no blackboard write
+- `machine.end` is also a notify trigger, so a terminal need not set `notify` to be surfaced
+- the message is a blackboard template, checked at `machine check`
+- emission is at-least-once across a crash (a resume re-enters and re-emits)
 
-Two independent channels render it.
-Device-present front-ends (`agent6 web`, the TUI Machines page, `agent6 attach`) show an ephemeral notification.
-For out-of-band delivery, set the operator notify hook `[machine.notify].on_event` (see [config.md](config.md)): an operator argv run on the host, outside the jail, on every `machine.notify` and `machine.end`, so you fan out to your own push channel (ntfy/Pushover/email/Telegram).
-agent6 owns no push infrastructure.
+Two channels render it:
+
+- device-present front-ends (`agent6 web`, the TUI Machines page, `agent6 attach`): an ephemeral notification
+- out-of-band: `[machine.notify].on_event` ([config.md](config.md)), an operator argv on the host, outside the jail, on every `machine.notify` and `machine.end` (fan out to ntfy/Pushover/email/Telegram)
+- agent6 owns no push infrastructure
 
 ### 4.4 Templating and list-splicing
 
 Strings may contain `{{ ... }}` interpolations.
-The contents of an interpolation are one reference (see [Names, references, and namespaces](#45-names-references-and-namespaces-normative)) plus an optional single filter, nothing more.
-No arbitrary expressions, no chained filters, no method calls.
-Anything richer belongs in a `branch` predicate, which is itself restricted.
-This keeps both author-time validation and replay simple and keeps the format from quietly becoming a scripting language.
+
+- an interpolation is one reference plus at most one filter, nothing more
+- no arbitrary expressions, no chained filters, no method calls; anything richer belongs in a `branch` predicate (itself restricted)
+- this keeps validation and replay simple, and the format from quietly becoming a scripting language
 
 There are exactly two filters, both zero-argument:
 
@@ -375,16 +374,16 @@ There are exactly two filters, both zero-argument:
 | `len`  | `str`, `list`, or a `json`/record container | the integer length |
 | `json` | any value | compact JSON, object keys sorted (deterministic) |
 
-There is deliberately no `join` filter: building a delimited string that a downstream command must re-split is fragile and injection-prone.
-Lists reach a command's argv by **splicing** instead (below).
+- deliberately no `join` filter: a delimited string a command must re-split is fragile and injection-prone; lists reach argv by **splicing** (below)
+- an interpolation always produces a string
+- a bare `{{ x }}` is legal only for a scalar (`str`/`int`/`float`/`bool`); a bare `list`/`json`/record reference is a load error (apply `json`, or splice a list in argv)
 
-An interpolation always produces a string.
-A bare `{{ x }}` is legal only when `x` resolves to a scalar (`str`/`int`/`float`/`bool`); a bare reference to a `list`, `json`, or record value is a *load error*: apply `json` (or, for a list in argv, splice it) so the rendering is explicit rather than a surprising Python `repr`.
+**List-splicing (argv only).**
 
-**List-splicing (argv only).** Inside a `tool` state's `command` array, an element that is *exactly* the string `"{{ listvar }}"` (a lone reference to a `list[...]` variable, no filter, no surrounding text) expands in place to one argv element per list item, each rendered as a scalar.
-This is the only way a list crosses into a command, and it is injection-safe because each element stays a distinct argument that is never re-parsed by a shell.
-Two load errors guard it: splicing a non-list value, and embedding `{{ listvar }}` inside a larger string (`"--x={{ items }}"`) rather than as a standalone element.
-Filter and reference grammar are validated at `machine check`.
+- a `command` element that is exactly `"{{ listvar }}"` (lone list reference, no filter, no surrounding text) expands to one argv element per item
+- the only way a list crosses into a command; injection-safe (each element stays a distinct argument, never shell-re-parsed)
+- two load errors guard it: splicing a non-list, and embedding `{{ listvar }}` inside a larger string (`"--x={{ items }}"`)
+- filter and reference grammar are validated at `machine check`
 
 ### 4.5 Names, references, and namespaces (normative)
 
