@@ -38,6 +38,7 @@ The agent6 concretions, and the principles the Zen doesn't cover:
   A name collision, or a rename on import, is a smell.
 - **One obvious way.** One well-named command, not near-duplicate aliases.
   One knob per behaviour: never a second config surface over what an existing one already controls.
+  One mechanism per job internally: a second implementation of the same decision (a shadow check, a parallel detector, a twin fold) diverges and drifts; harden the one that exists.
 - **Least surprise.** A command does the boring, expected thing.
   Config writes default to the global config, `--repo` (and `--machine-file FILE`) redirect; the same target selection everywhere; set-valued config merges last-overlay-wins.
 - **Consistency.** One mental model covers how agent6 works and its UX: learning one command teaches its siblings.
