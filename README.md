@@ -31,7 +31,7 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
   - model + reasoning effort per role
 - **Clean checkout**: per-step commits on a detached ref; `sessions merge` lands them
   - snapshot resume; fork at any turn
-- **Verify gate**: inferred when unset, pinned for the run, green/red on every surface
+- **Verify gate**: inferred when unset, certifies the tree when the run finishes (or every step), green/red on every surface
   - a worker proposes a replacement gate instead of reverting
 - **Budget**: hard `max_usd` cap; token cap for unpriced calls
 - **Sessions**: run, plan, ask (plan and ask never edit)
