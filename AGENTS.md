@@ -28,8 +28,10 @@ An instruction in one never transfers to the other.
 We follow the **Zen of Python** (`python -c 'import this'`).
 The agent6 concretions, and the principles the Zen doesn't cover:
 
-- **Simplicity first.** Less code beats more; no speculative abstraction for a future that hasn't arrived.
+- **Simplicity first.** Less code beats more; no speculative abstraction for a future that hasn't arrived (build it when it is needed, never because it might be).
+  Simple and stupid beats clever, in code, in shapes, and in interfaces: cleverness hides bugs, yields interfaces that are hard to use, and raises cognitive load; what a beginner can follow is the target.
   A reviewer should read a module top to bottom in one sitting: inline a one-caller helper, make a stateless class a function, delete pass-through wrappers and ceremony kept for symmetry.
+  Refactoring is continuous: every series leaves the shapes it touched simpler than it found them.
 - **Right-shaped data.** The shape matters more than the code; fix the shape first and the code around it gets small.
   Interfaces are shapes too: settle a feature's config keys, schema, or payload before implementing behind them.
   A field that can never be half-set belongs in one frozen type; code that keeps converting between shapes means the shape is wrong.
