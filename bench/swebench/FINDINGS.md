@@ -486,3 +486,29 @@ adds context and recovers, about one turn each), multi-file V4A 11/49
 zero), misc 5. Conclusion: patch friction is background noise, not a
 differentiator; no tool-description A/B is warranted here, and the
 uniqueness discipline stays.
+
+### SWE-rebench 2026_03: the fresh-task check (2026-08-22)
+
+agent6 + gpt-5.6-sol (effort medium, $1 token cap, 1200s wall, pinned
+gateless, 0.0.28 wheel) on the full 110-instance 2026_03 leaderboard
+split (official SWE-rebench fork, prebuilt swerebench images):
+**48/110 = 43.6%** resolved, 7 empty (all wall timeouts, one rerun
+each), 0 errors. Reference rows under the leaderboard's own scaffold:
+gpt-5.6-sol[medium] 62.3, Junie 61.8, Claude Code 60.4, Codex 58.0
+(cross-scaffold caveats: their wall/token limits are not published).
+
+The gap is NOT cap pressure: 53 of the 55 wrong-patch runs finished
+under their own power (2 wall timeouts), so a limits-raised arm would
+not close it. Failure profile of the 55: 22 near-miss (some
+FAIL_TO_PASS passing), 30 zero-F2P (contract missed entirely), and 14
+broke PASS_TO_PASS -- regressions nothing caught before finish, the
+price of gateless on UNFAMILIAR repos that Verified's 12 famous ones
+never charged. Spot-checked evals are structurally sound (tests
+collect and run; near-misses are genuine).
+
+Reading: Verified overstates us the same way it overstates everyone
+(familiar repos reward recall and tuned verify heuristics); fresh
+diverse tasks expose contract discovery and regression safety as the
+real frontier. This re-motivates the softened-rule/verify-shape A/B
+(the 14 P2P-breakers are exactly what a certifying gate catches) and
+puts contract search ahead of further Verified coverage.
