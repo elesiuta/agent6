@@ -36,16 +36,17 @@ Restart the shell afterwards.
 ## Shell completion
 
 One command installs tab-completion.
-It detects the shell you are running, or takes the name of one.
-Rerunning it is safe and refreshes the completion.
+
+- detects your shell, or takes the name of one
+- rerunning is safe and refreshes it
 
 ```sh
 agent6 completions          # or: agent6 completions bash|zsh|fish|xonsh
 ```
 
-Bash and zsh get a marker-guarded source line in their rc file, pointing at a script under the agent6 config dir.
-Fish and xonsh get a file in their auto-loaded native locations (`fish/completions`, `xonsh/rc.d`), with no rc edit.
-`agent6 completions --print bash` emits the script instead, for `eval` or a dotfiles repo.
+- bash/zsh: a marker-guarded source line in the rc file, pointing at a script under the config dir
+- fish/xonsh: a file in the auto-loaded native location (`fish/completions`, `xonsh/rc.d`), no rc edit
+- `--print bash` emits the script instead, for `eval` or a dotfiles repo
 
 ## Check the install
 
@@ -68,8 +69,8 @@ The jail uses Landlock, seccomp, and user namespaces, and its seccomp filter exi
 
 - On other architectures and on macOS, `isolation = "auto"` resolves to `none`: commands run as ordinary subprocesses behind a startup warning, and an explicit `strict` or `hardened` refuses.
 - On Windows, use WSL.
-- Unprivileged user namespaces are on by default on Ubuntu, Debian, and most cloud images.
-  Ubuntu 24.04+ blocks them with `kernel.apparmor_restrict_unprivileged_userns = 1`: set that sysctl to 0, or install the bundled AppArmor profile with `agent6 system apparmor install` (`agent6 system apparmor remove` reverts it).
+- Unprivileged user namespaces are on by default on Ubuntu, Debian, and most cloud images
+    - Ubuntu 24.04+ blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (remove reverts)
 - Without user namespaces agent6 falls back to `hardened` isolation, which keeps Landlock, seccomp, and `NO_NEW_PRIVS`.
 
 The [security model](security.md) describes what each isolation level enforces.
