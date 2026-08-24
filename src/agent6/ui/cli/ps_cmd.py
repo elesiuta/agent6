@@ -8,19 +8,12 @@ and the id to attach."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from agent6.paths import repo_root_of_id, state_base
 from agent6.sessions.ipc import frontend_is_live, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import SESSION_BUCKETS
+from agent6.ui.cli._common import home_contracted
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import summarize_session_dir
-
-
-def _home_contracted(path: Path) -> str:
-    home = str(Path.home())
-    s = str(path)
-    return "~" + s[len(home) :] if s == home or s.startswith(home + "/") else s
 
 
 def cmd_ps() -> int:
@@ -37,7 +30,7 @@ def cmd_ps() -> int:
             root = repo_root_of_id(repo_dir.name)
             # An elided-hash id is not reversible to a path: the cell says so
             # instead of offering a state-dir name the cd line cannot use.
-            where = _home_contracted(root) if root is not None else f"? ({repo_dir.name})"
+            where = home_contracted(str(root)) if root is not None else f"? ({repo_dir.name})"
             for bucket in SESSION_BUCKETS:
                 bucket_path = sessions / bucket
                 if not bucket_path.is_dir():

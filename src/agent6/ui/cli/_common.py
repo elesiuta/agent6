@@ -323,3 +323,10 @@ def plural(n: int, singular: str, plural: str | None = None) -> str:
     """'1 transition' / '3 transitions': no '1 branches' in user-facing counts."""
     word = singular if n == 1 else (plural or singular + "s")
     return f"{n} {word}"
+
+
+def home_contracted(path: str) -> str:
+    """*path* with `$HOME` shortened to `~`, only at a path boundary (the
+    sibling `/home/erica` of `/home/eric` stays whole)."""
+    home = str(Path.home())
+    return "~" + path[len(home) :] if path == home or path.startswith(home + "/") else path

@@ -40,7 +40,7 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
-from agent6.ui.cli._common import sgr
+from agent6.ui.cli._common import home_contracted, sgr
 from agent6.ui.cli._steer_menu import MENU_COMMANDS
 
 _ORIGIN_FILE = ".origin.toml"
@@ -69,8 +69,7 @@ def _short_source(src: str) -> str:
         if src.startswith(scheme):
             src = src[len(scheme) :]
             break
-    home = str(Path.home())
-    return "~" + src[len(home) :] if src.startswith(home) else src
+    return home_contracted(src)
 
 
 def _installed_dir() -> Path:
