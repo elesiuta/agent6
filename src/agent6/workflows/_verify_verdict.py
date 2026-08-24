@@ -26,10 +26,14 @@ class VerifyVerdict:
     pass must not count as currently green for the finish gate.
     `fail_streak` counts consecutive failures sharing one normalized
     signature (the no-progress spiral guard); a green verify or a new
-    signature resets it.
+    signature resets it. `denied` records an approval denial of the gate
+    (a human's no, or the unattended auto-deny): the gate is withheld for
+    the rest of the run, like `run_commands = "no"`, instead of a finish
+    bounce nobody can discharge.
     """
 
     last_ok: bool | None = None
+    denied: bool = False
     baseline_ok: bool | None = None
     last_tail: str = ""
     fail_signature: str = ""

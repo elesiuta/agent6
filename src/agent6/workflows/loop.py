@@ -1702,7 +1702,9 @@ class Workflow:
         no green run covers under `step` or `finish`. The model's own
         run_verify_command this turn already judged the tree, so nothing runs
         on top of it. `run_commands = "no"` withholds the gate from the
-        harness as it does from the model. An unexecutable operator command
+        harness as it does from the model, and a DENIED gate (ask: a human's
+        no, or the unattended auto-deny) is withheld for the rest of the run
+        the same way. An unexecutable operator command
         ends the run as it does on the tool path."""
         why = harness_verify_due(
             when=self.config.workflow.verify_when,
@@ -1710,6 +1712,7 @@ class Workflow:
                 self.mode == "run"
                 and bool(self.config.workflow.verify_command)
                 and self.dispatcher.command_policy() != "no"
+                and not state.verify.denied
             ),
             # An edit after the turn's own verify un-verifies it: the gate
             # judged a tree that no longer exists.
@@ -1728,6 +1731,15 @@ class Workflow:
         self._emit("loop.verify_harness", why=why, iteration=turn.iteration)
         try:
             result = self.dispatcher.run_verify()
+        except ToolDenied as exc:
+            state.verify.denied = True
+            turn.tool_results.append(
+                Notice(
+                    f"[harness verify] {why}: not run: {exc}."
+                    " The gate is withheld for the rest of the run; the run ends unverified."
+                )
+            )
+            return None
         except ToolError as exc:
             turn.tool_results.append(Notice(f"[harness verify] {why}: not run: {exc}"))
             return None
@@ -2107,6 +2119,7 @@ class Workflow:
             and state.verify.baseline_ok is not False
             and state.verify_finish_retries_used < wf.verify_retries
             and self.dispatcher.command_policy() != "no"
+            and not state.verify.denied
         ):
             return
         state.verify_finish_retries_used += 1

@@ -386,19 +386,33 @@ def test_run_commands_no_withholds_the_gate_from_the_harness_too() -> None:
     assert turn.finish_signal == "done"
 
 
-def test_a_gate_the_harness_cannot_run_is_said_so_and_the_finish_is_returned_once() -> None:
-    """Not approved under `ask`: the model is told the gate did not run; the
-    finish returns as any uncertified finish does, bounded by the retries."""
+def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
+    """Not approved under `ask` (a human's no, or the unattended auto-deny):
+    the gate is withheld for the rest of the run like `run_commands = "no"`,
+    the model is told so, and the finish stands unverified. Bouncing the
+    finish against a denial burned every retry on a wall nobody could open
+    (a live machine leg failed with its fix committed and tests green)."""
     from agent6.tools.errors import ToolDenied
 
-    wf, dispatcher = _harness_wf("finish", retries=1)
+    wf, dispatcher = _harness_wf("finish", retries=2)
     dispatcher.run_verify.side_effect = ToolDenied("run_verify_command not approved")
     state = _LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
-    assert _notices(turn) == ["[harness verify] finish: not run: run_verify_command not approved"]
+    assert _notices(turn) == [
+        "[harness verify] finish: not run: run_verify_command not approved."
+        " The gate is withheld for the rest of the run; the run ends unverified."
+    ]
     wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
-    assert turn.finish_signal is None
+    assert turn.finish_signal == "done"  # no bounce
+    assert state.verify_finish_retries_used == 0
+    assert wf._verification(state) == "unverified"  # pyright: ignore[reportPrivateUsage]
+
+    # A later end never re-asks: the withheld gate stays withheld.
+    turn2 = _turn(finishing=True, edited=True)
+    wf._turn_harness_verify(state, turn2)  # pyright: ignore[reportPrivateUsage]
+    assert dispatcher.run_verify.call_count == 1
+    assert _notices(turn2) == []
 
 
 def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
