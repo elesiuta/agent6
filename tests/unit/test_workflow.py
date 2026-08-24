@@ -6721,6 +6721,9 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
     texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]
     assert any(t.startswith(VERIFY_UNADOPTED_NOTICE[:30]) for t in texts)
     assert not st.verify.broken_warned
+    # No verdict was produced: the turn is not "verify failed" (an
+    # on_verify_fail panel and the checkpoint logic key on the flag).
+    assert turn.verify_just_failed is False
     assert any(
         e.get("command") == [] and e.get("source") == "unadopted" and e.get("adopted_at") == 4
         for e in events

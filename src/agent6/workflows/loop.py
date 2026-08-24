@@ -1464,6 +1464,10 @@ class Workflow:
                 cmd = " ".join(verdict.adopted)
                 verdict.unadoptable.add(verdict.adopted)
                 verdict.adopted = ()
+                # The gate produced no verdict and no longer exists: the turn
+                # is not "verify failed" (an on_verify_fail panel and the
+                # checkpoint logic key on it).
+                turn.verify_just_failed = False
                 self.config = self.config.with_verify_command(())
                 self.dispatcher.drop_verify_command()
                 self._log(f"LOOP: verify un-adopted ({why}): {cmd}")
