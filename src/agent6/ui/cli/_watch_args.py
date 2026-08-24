@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parser builders for the three ways to observe/drive a run: `attach` (raw
-tail or full-screen TUI on one run/machine), `tui` (the run/plan/ask hub),
-and `web` (the browser UI)."""
+"""Parser builders for observing and driving a run: `attach` (raw tail or
+full-screen TUI on one run/machine), `steer` (queue an instruction for a
+live run), `tui` (the run/plan/ask hub), and `web` (the browser UI)."""
 
 from __future__ import annotations
 
@@ -109,6 +109,23 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="store_true",
         help="Opt in to bind a non-loopback --host (else a non-loopback bind is refused).",
     )
+
+
+def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    steer_p = _sub(
+        sub,
+        "steer",
+        help=(
+            "Queue a steering instruction for a live run: the same channel the"
+            " TUI and web composers use, picked up at the run's next iteration"
+            " boundary (pause-menu directives like abort and /undo ride the"
+            " same way). Live runs only; for a session that is not running,"
+            " `agent6 resume ID --steer TEXT` queues one for its next leg."
+        ),
+    )
+    steer_target = steer_p.add_argument("target", help="Session id (exact or unique prefix).")
+    steer_target.completer = _complete_session_ids  # type: ignore[attr-defined]
+    steer_p.add_argument("text", help="The instruction; rides verbatim.")
 
 
 def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

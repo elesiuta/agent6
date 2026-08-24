@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""`agent6 steer`: the cron-friendly wrapper over the one steer channel."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+
+from agent6.config.layer import resolved_state_dir
+from agent6.sessions.ipc import steer_request_pending, take_steer_answer, write_worker_pid
+from agent6.ui.cli import main
+
+
+def _run_session(tmp_path: Path, session_id: str) -> Path:
+    d = resolved_state_dir(tmp_path) / "sessions" / "runs" / session_id
+    d.mkdir(parents=True)
+    (d / "logs.jsonl").write_text("", encoding="utf-8")
+    return d
+
+
+def test_steer_queues_for_a_live_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "tiny-run-AAAA11")
+    write_worker_pid(d, os.getpid())
+
+    assert main(["steer", "tiny-run", "land your best patch now"]) == 0
+    out = capsys.readouterr().out
+    assert "steer queued for tiny-run-AAAA11" in out
+    # The one shared channel: request marker + answer, exactly what the
+    # composers write and the loop consumes.
+    assert steer_request_pending(d)
+    assert take_steer_answer(d) == "land your best patch now"
+
+
+def test_steer_refuses_a_session_that_is_not_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A dead session's steer would silently park; the refusal names the
+    queue-for-next-leg remedy that already exists (`resume --steer`)."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "tiny-run-BBBB22")
+    write_worker_pid(d, 10**9)  # a pid that is never alive
+
+    assert main(["steer", "tiny-run-BBBB22", "hello"]) == 2
+    err = capsys.readouterr().err
+    assert "not running" in err
+    assert "agent6 resume tiny-run-BBBB22 --steer" in err
+    assert not steer_request_pending(d)
+
+
+def test_steer_reports_an_unknown_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    assert main(["steer", "nonesuch", "hello"]) == 2
+    assert "ERROR" in capsys.readouterr().err
