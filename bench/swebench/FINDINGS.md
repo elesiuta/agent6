@@ -512,3 +512,25 @@ diverse tasks expose contract discovery and regression safety as the
 real frontier. This re-motivates the softened-rule/verify-shape A/B
 (the 14 P2P-breakers are exactly what a certifying gate catches) and
 puts contract search ahead of further Verified coverage.
+
+### Paired A/B: the softened verify rule SHIPPED (2026-08-22)
+
+Hard-30 sample (seed 20260825: 15 baseline-resolved + 15 unresolved
+from the scored pool), verify-on, two 0.0.28 wheels differing in ONE
+verify-block bullet ("tests only through the gate, never run_command"
+vs "targeted run_command tests are fine; the gate certifies"),
+official scorer:
+
+| arm | resolved | targeted tests via run_command | gate runs | arm wall |
+|---|---|---|---|---|
+| never-rule | 17/30 | 103 | 65 | 2:23 |
+| softened   | 19/30 | 206 | 40 | 2:01 |
+
+Gained django-11885/13344/14493, lost pytest-7205; sign p=0.31 (n=4),
+zero empties both arms. The base arm's 103 targeted tests show the
+model already broke the "never" rule; softening legitimizes the
+behaviour it was measured doing. Shipped on non-inferior resolve plus
+the large behaviour shift and the 16% wall drop (fewer 240s gate
+stacks) -- the gateless-default precedent's shape. The prompt change
+is one bullet, reverted in one commit if the larger-n picture ever
+disagrees.
