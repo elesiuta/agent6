@@ -629,3 +629,31 @@ then pruned: ~10 minutes per batch. A scorer killed mid-run leaves its
 named `sweb.eval.*` container, and the next run of that run id fails
 with a 409 on the same instance; remove the container before
 re-scoring.
+
+### Tranche 5, the coverage remainder, and a paired verify-on arm (2026-08-23)
+
+The 77 Verified instances never drawn nor scored (every id without a
+prediction or a sample draw), gateless, 0.0.28 wheel, --conc 6 on 16
+cores, official scorer: 58/77 = 75.3% resolved, Wilson95 [64.6, 83.6];
+empty=0, err=0.
+
+Coverage across all draws: 376/487 = 77.2% [73.3, 80.7] (verify-on
+82/110; gateless v2 79 + v3 77 + t4 80 + t5 58 = 294/377 = 78.0%).
+
+The same 77 under verify-on (the finish-gated mode, the rebench
+certification cell's config), paired, same wheel and seeds:
+58/77 resolved (56 shared; 2 P2P-broken -> resolved, 1 -> unresolved;
+1 resolved -> P2P-broken, 1 -> unresolved, 1 empty patch);
+PASS_TO_PASS regressions 4 vs 6; 1357 vs 1063 model calls (+28%);
+wall per instance 7.0 vs 2.8 min mean (6.5 vs 2.8 median). With the
+rebench cell (17/30 vs 16/30, regressions 5 vs 14, +50% calls, 2x
+wall): the gate is resolve-rate neutral, cuts collateral damage (10 of
+20 regressions across both samples, 1 introduced), and costs 1.3-1.5x
+the calls and 2-2.5x the wall time.
+
+Harness: the first pass lost 32 of the 77 to `pull_failed` because
+`/mnt/bench` (Docker's root) was full: the layer extract fails and the
+guard's message blames a Docker Hub 429 it did not see. `docker image
+prune -af` between chains; the redo (run_sweep skips ids with a pred)
+ran beside the verify-on arm, 6+6 containers per batch of 12, images
+pruned after both scorers.
