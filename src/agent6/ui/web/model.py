@@ -12,13 +12,14 @@ are exactly `session_state_as_dict` / `machine_state_as_dict` (identical to
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
-from agent6.git_ops import run_branch_tips
+from agent6.git_ops import commit_diff, diff_range, run_branch_tips
 from agent6.models.choices import config_value_choices
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -27,6 +28,7 @@ from agent6.sessions.layout import (
     is_safe_session_id,
     machines_root,
 )
+from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
     fold_session,
     fold_transcript,
@@ -279,3 +281,25 @@ def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> 
     except ConfigError:
         return []
     return config_value_choices(eff, key)
+
+
+def step_diff_payload(
+    repo: Path, session_dir: Path, sha: str, *, cumulative: bool
+) -> tuple[dict[str, Any] | None, str]:
+    """The patch one step of the run introduced (`sha^..sha`), or the whole
+    chain up to it (`base..sha`) when *cumulative*. (payload, "") or (None,
+    why): a model-controlled run has no chain to select from."""
+    try:
+        m = read_manifest(session_dir)
+    except ManifestError as exc:
+        return None, f"unreadable manifest: {exc}"
+    if m.git_control == "model":
+        return None, "the model owns git in this run: no step chain to select from"
+    if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
+        return None, f"not a commit sha: {sha!r}"
+    patch = (
+        diff_range(repo, m.base_sha, sha) if cumulative and m.base_sha else commit_diff(repo, sha)
+    )
+    if not patch:
+        return None, f"no diff for {sha[:12]} (pruned, or not a commit of this run)"
+    return {"sha": sha, "cumulative": cumulative, "patch": patch}, ""

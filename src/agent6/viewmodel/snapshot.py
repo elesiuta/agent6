@@ -61,6 +61,8 @@ def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str,
     header: dict[str, Any] = dict(manifest_branches(session_dir, repo=repo))
     with contextlib.suppress(ManifestError):
         m = read_manifest(session_dir)
+        header["git_control"] = m.git_control
+        header["base_sha"] = m.base_sha
         lineage = format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
         if lineage:
             header["forked_from"] = lineage

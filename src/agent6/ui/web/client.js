@@ -1339,10 +1339,40 @@ function paintRun(cards, s) {
     planCard.style.display = 'none';
   }
 
-  // diff
+  // diff: the latest commit by default; a step selector over the run's
+  // chain (newest first) with a cumulative toggle, hidden truthfully when the
+  // model owns git (no chain) or nothing is committed yet.
   cards.diff.innerHTML = '';
-  if (s.latest_diff) cards.diff.appendChild(renderDiff(s.latest_diff));
-  else cards.diff.appendChild(el('div', 'muted', 'no commit yet'));
+  const steps = (s.steps || []).slice().reverse();
+  if (s.git_control === 'model') {
+    cards.diff.appendChild(el('div', 'muted', 'the model owns git in this run: no step chain'));
+  } else if (!steps.length) {
+    cards.diff.appendChild(el('div', 'muted', 'no commit yet'));
+  } else {
+    const nav = el('div', 'form-row');
+    const sel = document.createElement('select');
+    sel.appendChild(new Option('latest commit', ''));
+    for (const st of steps) sel.appendChild(new Option('iter ' + st.iteration + ' · ' + st.sha.slice(0, 7) + ' · ' + st.subject, st.sha));
+    const cum = document.createElement('input'); cum.type = 'checkbox'; cum.id = 'diff-cumulative';
+    const cumLabel = el('label', 'muted', ' cumulative'); cumLabel.htmlFor = 'diff-cumulative';
+    const pick = cards._diffPick || { sha: '', cumulative: false };
+    sel.value = pick.sha; cum.checked = pick.cumulative;
+    nav.appendChild(sel); nav.appendChild(cum); nav.appendChild(cumLabel);
+    cards.diff.appendChild(nav);
+    const body = el('div');
+    cards.diff.appendChild(body);
+    const show = async () => {
+      cards._diffPick = { sha: sel.value, cumulative: cum.checked };
+      body.innerHTML = '';
+      if (!sel.value) { body.appendChild(renderDiff(s.latest_diff || '')); return; }
+      try {
+        const d = await getJSON('/api/session/' + encodeURIComponent(id) + '/diff?sha=' + encodeURIComponent(sel.value) + '&cumulative=' + (cum.checked ? '1' : '0'));
+        body.appendChild(renderDiff(d.patch));
+      } catch (e) { body.appendChild(el('div', 'muted', e.message)); }
+    };
+    sel.onchange = show; cum.onchange = show;
+    show();
+  }
 }
 
 function renderDiff(text) {

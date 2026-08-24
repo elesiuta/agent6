@@ -27,7 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -584,6 +584,18 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(model.conversation_payload(session_dir))
         elif sub == "restate":
             self._send_json(model.restate_payload(session_dir))
+        elif sub == "diff":
+            q = parse_qs(urlsplit(self.path).query)
+            payload, why = model.step_diff_payload(
+                self.cwd,
+                session_dir,
+                (q.get("sha") or [""])[0],
+                cumulative=(q.get("cumulative") or ["0"])[0] in ("1", "true"),
+            )
+            if payload is None:
+                self._send_json({"error": why}, status=422)
+            else:
+                self._send_json(payload)
         elif sub == "events":
             self._sse_session(session_dir)
         else:

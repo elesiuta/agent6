@@ -821,3 +821,23 @@ def test_approval_parts_is_the_one_shape_every_surface_renders() -> None:
         "sh -c 'a\nb'",
     )
     assert approval_parts("Allow fetch?") == ("Allow fetch?", "")
+
+
+def test_auto_commits_fold_into_the_step_list() -> None:
+    """Every per-step commit lands in `steps` (oldest first) with its iteration
+    and subject: the dashboards' step selector; a sha-less auto_commit (nothing
+    to commit) adds no step."""
+    from agent6.viewmodel.state import apply_event, initial_state
+
+    s = apply_event(
+        initial_state(),
+        {"type": "loop.auto_commit", "iteration": 3, "sha": "a" * 40, "subject": "fix parser"},
+    )
+    s = apply_event(s, {"type": "loop.auto_commit", "iteration": 4, "sha": ""})
+    s = apply_event(
+        s, {"type": "loop.auto_commit", "iteration": 5, "sha": "b" * 40, "subject": "add test"}
+    )
+    assert [(st.iteration, st.sha[:1], st.subject) for st in s.steps] == [
+        (3, "a", "fix parser"),
+        (5, "b", "add test"),
+    ]

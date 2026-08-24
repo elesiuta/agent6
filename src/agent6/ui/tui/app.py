@@ -42,9 +42,11 @@ try:
     from textual.scroll_view import ScrollView
     from textual.widget import Widget
     from textual.widgets import (
+        Checkbox,
         DataTable,
         Footer,
         RichLog,
+        Select,
         Static,
         TextArea,
         Tree,
@@ -59,6 +61,7 @@ from agent6.app.fork import create_fork, undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_btw, parse_compact
+from agent6.git_ops import commit_diff, diff_range
 from agent6.sessions.ipc import (
     listening_ports,
     register_frontend,
@@ -258,6 +261,52 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         *menu_bindings(MENUS),
     ]
 
+    def _sync_diff_nav(self, s: SessionState) -> None:
+        """The step selector lists the run's commits (newest first) behind
+        "latest commit"; hidden while nothing is committed, and under
+        `[git].control = "model"` the pane says so (no chain to select from)."""
+        nav = self.query_one("#diff-nav", Horizontal)
+        if self._git_control() == "model":
+            nav.display = False
+            self.query_one("#diff").border_title = "diff · the model owns git"
+            return
+        if not s.steps:
+            nav.display = False
+            return
+        nav.display = True
+        if len(s.steps) != self._nav_steps:
+            self._nav_steps = len(s.steps)
+            options = [("latest commit", "")] + [
+                (f"iter {st.iteration} · {st.sha[:7]} · {st.subject[:40]}", st.sha)
+                for st in reversed(s.steps)
+            ]
+            select = self.query_one("#diff-step", Select)
+            select.set_options(options)
+            select.value = self._step_sel if any(v == self._step_sel for _, v in options) else ""
+
+    def _git_control(self) -> str:
+        with contextlib.suppress(ManifestError):
+            return read_manifest(self._tui.session_dir).git_control
+        return "agent6"
+
+    def _step_patch(self, sha: str) -> str:
+        if self._cumulative:
+            with contextlib.suppress(ManifestError):
+                base = read_manifest(self._tui.session_dir).base_sha
+                if base:
+                    return diff_range(Path.cwd(), base, sha) or "(no diff)"
+        return commit_diff(Path.cwd(), sha) or "(no diff)"
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id == "diff-step":
+            self._step_sel = str(event.value or "")
+            self.render_state()
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "diff-cumulative":
+            self._cumulative = bool(event.value)
+            self.render_state()
+
     def __init__(self, *, presets: list[str] | None = None) -> None:
         super().__init__()
         self._presets = presets if presets is not None else []
@@ -274,7 +323,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # burst's cost.
         self._rendered_tree: tuple[object, object] | None = None
         self._rendered_tools: tuple[object, object] | None = None
-        self._rendered_diff: tuple[object, object, object, object] | None = None
+        self._rendered_diff: tuple[object, ...] | None = None
+        self._step_sel = ""  # a selected step's sha ("" = latest)
+        self._cumulative = False
+        self._nav_steps = -1  # how many steps the selector lists
         self._compare_line: str | None = None  # cached fan-out compare header (terminal state)
         self._branch_line: str | None = None  # cached branch header (fixed for the leg)
         self._lineage_line: str | None = None  # cached fork lineage (never changes)
@@ -367,6 +419,11 @@ class DashboardScreen(ScreenChrome, Screen[None]):
                 max_lines=MAX_LOG_TAIL,
             )
             with _ScrollPane(id="diff"):
+                with Horizontal(id="diff-nav"):
+                    yield Select(
+                        [("latest commit", "")], value="", id="diff-step", allow_blank=False
+                    )
+                    yield Checkbox("cumulative", id="diff-cumulative")
                 yield Static("", id="diff-body")
         yield SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
         yield ResumePreset(self._presets, id="dash-preset")  # shown while the composer resumes
@@ -712,7 +769,15 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # selected, the commits made while it was in focus. Built as rich Text to
         # avoid markup parsing of diff/verify bodies (which contain brackets).
         # Skipped whenever none of its inputs changed.
-        diff_key = (sel, s.recent_diffs, s.last_verify, s.latest_diff)
+        self._sync_diff_nav(s)
+        diff_key = (
+            sel,
+            s.recent_diffs,
+            s.last_verify,
+            s.latest_diff,
+            self._step_sel,
+            self._cumulative,
+        )
         if self._rendered_diff is not None and all(
             a is b for a, b in zip(self._rendered_diff, diff_key, strict=True)
         ):
@@ -722,6 +787,17 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self.query_one("#diff").border_title = f"diff{filt}" if sel else ""
         verify = s.last_verify
         dt = Text()
+        if self._step_sel:
+            step = next((st for st in s.steps if st.sha == self._step_sel), None)
+            if step is not None:
+                what = "cumulative to" if self._cumulative else "step"
+                dt.append(
+                    f"{what} iter {step.iteration} · {step.sha[:7]} · {step.subject}\n",
+                    style="bold",
+                )
+                _append_colored_diff(dt, self._step_patch(step.sha)[:4000])
+                diff_widget.update(dt)
+                return
         if sel is not None:
             task_diffs = [d for d in s.recent_diffs if d.task_id == sel]
             if task_diffs:

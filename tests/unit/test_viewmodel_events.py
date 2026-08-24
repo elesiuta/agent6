@@ -28,7 +28,8 @@ def test_known_families_parse_to_their_typed_shape() -> None:
 def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
     # A telemetry type the fold never consumes, an unknown/future type, and a line
     # with no `type` all fall to RawEvent (the fold's old `case _`).
-    for raw in ({"type": "loop.auto_commit", "sha": "x"}, {"type": "totally.new"}, {"foo": 1}):
+    samples = ({"type": "loop.auto_commit.failed", "sha": "x"}, {"type": "totally.new"}, {"foo": 1})
+    for raw in samples:
         parsed = ev.parse_event(raw)
         assert isinstance(parsed, ev.RawEvent)
         assert parsed.raw is raw  # carries the dict for the log-line renderer

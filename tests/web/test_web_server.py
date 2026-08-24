@@ -1360,3 +1360,62 @@ def test_steer_btw_opens_a_side_ask(
     status, body = _post(port, "/api/session/btw-run/steer", {"text": "/btw is it safe?"})
     assert status == 200 and body["ok"] is True and "opened" in str(body["message"])
     assert not (session_dir / "steer.request").exists()
+
+
+def _git_chain(repo: Path) -> tuple[str, str, str]:
+    """A repo with a base commit and two run commits; returns (base, c1, c2)."""
+    import subprocess as sp
+
+    def git(*args: str) -> str:
+        return sp.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("one\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    base = git("rev-parse", "HEAD")
+    (repo / "a.txt").write_text("one\ntwo\n")
+    git("commit", "-q", "-am", "step one")
+    c1 = git("rev-parse", "HEAD")
+    (repo / "b.txt").write_text("three\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "step two")
+    c2 = git("rev-parse", "HEAD")
+    return base, c1, c2
+
+
+def test_step_diff_serves_one_step_or_the_cumulative_chain(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """The diff card's step selector reads `/diff?sha=`: one step's own patch,
+    or `base..sha` with `cumulative=1`; a run the model controls has no chain
+    and is refused, as is a sha that is not one of its commits."""
+    _srv, port = server
+    base, c1, c2 = _git_chain(tmp_path)
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "steps-run"
+    session_dir.mkdir(parents=True)
+    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "agent6"}),
+        encoding="utf-8",
+    )
+    status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c2}")
+    patch = str(json.loads(raw)["patch"])
+    assert status == 200 and "three" in patch and "two" not in patch
+    status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c2}&cumulative=1")
+    patch = str(json.loads(raw)["patch"])
+    assert status == 200 and "two" in patch and "three" in patch
+    status, _raw, _ = _get(port, "/api/session/steps-run/diff?sha=deadbeef")
+    assert status == 422
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "model"}),
+        encoding="utf-8",
+    )
+    status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c1}")
+    assert status == 422 and "owns git" in str(json.loads(raw)["error"])

@@ -135,6 +135,16 @@ class RoleCall:
     streamed_thinking: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class CommitStep:
+    """One per-step commit of the run: the iteration it closed, its sha, its
+    subject. The dashboards select among these."""
+
+    iteration: int
+    sha: str
+    subject: str
+
+
 def approval_parts(prompt: str) -> tuple[str, str]:
     """An approval prompt's two parts: the head (`Allow run_command`, the
     question) and the payload (the command under judgment, possibly several
@@ -213,6 +223,8 @@ class SessionState:
     undone_text: str = ""  # the message /undo took back (composer refill)
     finish_summary: str = ""  # the finish tool's summary: the agent's closing statement
     latest_diff: str = ""  # patch of the most recent auto-commit (diff.updated)
+    # The run's per-step commits, oldest first (the dashboard's step selector).
+    steps: tuple[CommitStep, ...] = ()
     # Monotonic count of mid-run steer requests (Ctrl-C). The TUI compares it
     # against its own "seen" count to react exactly once per press.
     steer_requests: int = 0
@@ -341,6 +353,12 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 tasks=_build_task_tree(nodes, cursor),
                 cursor_task_id=cursor,
             )
+
+        case events.AutoCommit(iteration=iteration, sha=sha, subject=subject):
+            if not sha:
+                return state
+            step = CommitStep(iteration=iteration, sha=sha, subject=subject)
+            return replace(state, steps=(*state.steps, step))
 
         case events.DiffUpdated(patch=patch, sha=sha):
             entry = DiffView(patch=patch, task_id=state.cursor_task_id, sha=sha)

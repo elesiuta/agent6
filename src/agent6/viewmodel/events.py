@@ -111,6 +111,15 @@ class DiffUpdated:
 
 
 @dataclass(frozen=True, slots=True)
+class AutoCommit:
+    """One per-step commit on the run's chain (`loop.auto_commit`)."""
+
+    iteration: int
+    sha: str
+    subject: str
+
+
+@dataclass(frozen=True, slots=True)
 class RoleCall:
     role: str
     model: str
@@ -307,6 +316,7 @@ Event = (
     | ResumeStart
     | GraphUpdate
     | DiffUpdated
+    | AutoCommit
     | RoleCall
     | RoleResult
     | RoleTextDelta
@@ -373,6 +383,12 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             )
         case "diff.updated":
             return DiffUpdated(patch=str(raw.get("patch", "")), sha=str(raw.get("sha", "")))
+        case "loop.auto_commit":
+            return AutoCommit(
+                iteration=_as_int(raw.get("iteration")),
+                sha=str(raw.get("sha") or ""),
+                subject=str(raw.get("subject") or ""),
+            )
         case "role.call":
             return RoleCall(
                 role=str(raw.get("role", "")),
