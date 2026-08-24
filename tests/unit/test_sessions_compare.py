@@ -775,9 +775,9 @@ def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
     side only injects the console spinner + reviewer-provider wiring."""
     from agent6.app import compare as app_compare
     from agent6.app import parallel
-    from agent6.ui.cli import sessions_cmds
+    from agent6.ui.cli import sessions_compare
 
     # The fan-out's auto-compare calls the core directly.
     assert getattr(parallel, "rank") is app_compare.rank  # noqa: B009
     # `sessions compare` goes through the CLI wrapper, which delegates to that core.
-    assert sessions_cmds.rank is compare_mod.rank
+    assert sessions_compare.rank is compare_mod.rank

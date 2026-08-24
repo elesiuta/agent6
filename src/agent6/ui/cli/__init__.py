@@ -430,13 +430,13 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
     )
     from agent6.ui.cli.sessions_cmds import (  # noqa: PLC0415
         _cmd_commits,
-        _cmd_compare,
         _cmd_diff,
         _cmd_list,
         _cmd_sessions_dir,
         _cmd_sessions_rm,
         _cmd_stop,
     )
+    from agent6.ui.cli.sessions_compare import _cmd_compare  # noqa: PLC0415
     from agent6.ui.cli.sessions_merge import _cmd_merge, _cmd_prune  # noqa: PLC0415
     from agent6.ui.cli.sessions_show import _cmd_status  # noqa: PLC0415
 
