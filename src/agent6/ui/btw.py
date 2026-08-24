@@ -110,13 +110,14 @@ def asks_dir(session_dir: Path) -> Path:
     return bucket_dir(layout_of(session_dir).state_dir, "asks")
 
 
-def open_btw(session_dir: Path, question: str) -> str:
+def open_btw(session_dir: Path, question: str) -> tuple[bool, str]:
     """`/btw <question>` from any composer: open the side ask beside the live
-    run at *session_dir* and return the line to show. The answer lands later
-    as a `btw.answered` event on the run's journal, which every surface folds.
+    run at *session_dir*. Returns (opened, the line to show); the answer lands
+    later as a `btw.answered` event on the run's journal, which every surface
+    folds. The flag carries the outcome, so no caller parses the line.
     """
     if not question.strip():
-        return "[agent6] ask something: `/btw <question>`"
+        return False, "[agent6] ask something: `/btw <question>`"
     runner = make_btw_runner(
         session_dir.name,
         launch=direct_launch,
@@ -127,4 +128,5 @@ def open_btw(session_dir: Path, question: str) -> str:
         ),
         events=EventSink(session_dir / LOGS_NAME),
     )
-    return runner(question, session_dir)
+    line = runner(question, session_dir)
+    return " opened;" in line, line

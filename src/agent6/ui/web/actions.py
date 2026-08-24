@@ -143,8 +143,8 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
     if question is not None:
         # `/btw <question>` opens a side ask beside the run (the answer lands
         # on the run's journal); never steer text.
-        line = open_btw(session_dir, question)
-        return ("opened" in line), line.removeprefix("[agent6] ")
+        opened, line = open_btw(session_dir, question)
+        return opened, line.removeprefix("[agent6] ")
     focus = parse_compact(text)
     if focus is not None:
         # `/compact [focus]` is an out-of-band request, not steer text the

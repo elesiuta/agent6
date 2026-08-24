@@ -449,8 +449,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             return
         if text.strip() == "/restate":
             # Local and free: rendered from the journal, nothing reaches the model.
-            text = restate(list(tail_events(self.logs_path, follow=False)))
-            self.push_screen(TextModal("since your last message", text))
+            rendered = restate(list(tail_events(self.logs_path, follow=False)))
+            self.push_screen(TextModal("since your last message", rendered))
             return
         if text.strip() == "/shells":
             self.push_screen(TextModal("background commands", shells_text(self.session_dir)))
@@ -458,7 +458,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         if self.session_controllable():
             question = parse_btw(text)
             if question is not None:
-                self.notify(open_btw(self.session_dir, question))
+                self.notify(open_btw(self.session_dir, question)[1])
                 return
             focus = parse_compact(text)
             if focus is not None:

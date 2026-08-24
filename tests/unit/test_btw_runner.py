@@ -194,9 +194,9 @@ def test_open_btw_serves_every_composer(tmp_path: Path, monkeypatch: pytest.Monk
         return ""
 
     monkeypatch.setattr(btw_mod, "direct_launch", launch)
-    assert "ask something" in btw_mod.open_btw(session_dir, "")
-    line = btw_mod.open_btw(session_dir, "is it safe?")
-    assert "quiet-fox-CCCCCC opened" in line
+    assert btw_mod.open_btw(session_dir, "") == (False, "[agent6] ask something: `/btw <question>`")
+    opened, line = btw_mod.open_btw(session_dir, "is it safe?")
+    assert opened and "quiet-fox-CCCCCC opened" in line
     deadline = time.monotonic() + 5
     log = ""
     while time.monotonic() < deadline:
