@@ -83,39 +83,27 @@ verify-confirmed finish.
 </dag-rules>"""
 
 DAG_RULES_DECOMPOSE = """<decompose-first>
-Before editing anything, break this task into a plan of ordered
-subtasks in the task DAG. This keeps you on one piece at a time instead
-of holding the whole job in your head.
+This run plans in the task DAG before the first edit, then works it one
+task at a time.
 
-1. PLAN as phases, then subtasks under each. Lay out the task as 2-5
-   top-level PHASES with `add_task(title, acceptance=...)` (e.g.
-   "investigate", "implement X", "wire up Y", "verify"). Then, for any
-   phase that is itself more than one step, add its steps as CHILD
-   subtasks: `add_task(title, parent_id=<phase id>, acceptance=...)`.
-   `add_task` returns the id you pass as the child's `parent_id`. A small
-   phase can stay a single task with no children. Cover the WHOLE task;
-   make `title` a short imperative and `acceptance` the concrete,
-   verifiable condition it is done. Put anything you must understand
-   before coding in an investigate phase and order it first. When one
-   subtask cannot start before another lands, declare it with
-   `depends_on` on `add_task` - the harness will not surface a task
-   until its dependencies have passed.
-2. WORK ONE AT A TIME, LEAF-FIRST. The harness surfaces your current
-   task each turn as a `[harness focus]` banner. Do that ONE task: for
-   an investigate task, read what you need and carry the finding forward;
-   for a coding task, make the edit and run `run_verify_command`. Only
-   when its acceptance holds, call `update_task(id, status="passed")` --
-   you are then moved to the next. A phase with children is done when its
-   children are done.
-3. RE-PLAN A TASK THAT TURNS OUT LARGE. When you enter a task and it is
-   bigger or more involved than its one line implied, do not grind it in
-   one turn: add child subtasks under it (`parent_id=<its id>`) breaking
-   it into the finer steps, then work those. Planning at the point you
-   have the most context beats planning it all up front.
-4. KEEP THE LIST HONEST. If you discover new work, `add_task` it rather
-   than doing it inline. If a subtask turns out unnecessary, mark it
-   `obsolete` or `skipped`. Do NOT call `finish_session` until every subtask
-   is passed (or explicitly skipped/obsolete).
+- The plan: 2-5 top-level phases (`add_task(title, acceptance=...)`, e.g.
+  "investigate", "implement X", "wire up Y", "verify"), each multi-step
+  phase holding its steps as children (`add_task(title, parent_id=<phase
+  id>, acceptance=...)`; `add_task` returns the id). `title` is a short
+  imperative, `acceptance` the verifiable condition the task is done;
+  what must be understood before coding is an investigate phase, ordered
+  first. `depends_on` declares a task that cannot start before another
+  lands; the harness surfaces a task only once its dependencies passed.
+- The work: the harness surfaces the current task each turn as a
+  `[harness focus]` banner. An investigate task ends with its finding
+  carried forward; a coding task with the edit and `run_verify_command`.
+  `update_task(id, status="passed")` when its acceptance holds moves the
+  focus to the next task; a phase with children is done when they are.
+- A task that turns out larger than its line gets child subtasks
+  (`parent_id=<its id>`) at the point of most context, then those run.
+- New work found along the way is an `add_task`; a subtask no longer
+  needed is `obsolete` or `skipped`. `finish_session` is refused while a
+  subtask is open.
 </decompose-first>"""
 
 
