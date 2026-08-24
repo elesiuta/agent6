@@ -26,18 +26,21 @@ def test_rows_match_the_typed_prefix() -> None:
         "/parallel",
         "/restate",
         "/undo",
+        "/btw",
+        "/shells",
     ]
     assert [c for c, _ in steer_suggestion_rows("/p", mode="steer")] == ["/pin", "/parallel"]
     assert steer_suggestion_rows("fix it", mode="steer") == []
     assert steer_suggestion_rows("/pin keep this", mode="steer") == []  # args typed: hints gone
 
 
-def test_compact_is_live_only() -> None:
+def test_compact_and_btw_are_live_only() -> None:
     assert [c for c, _ in steer_suggestion_rows("/", mode="resume")] == [
         "/pin",
         "/parallel",
         "/restate",
         "/undo",
+        "/shells",
     ]
     assert complete_steer("/c", mode="resume") is None  # Tab keeps its focus-move meaning
     assert complete_steer("/c", mode="steer") == "/compact "

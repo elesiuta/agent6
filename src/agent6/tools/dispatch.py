@@ -65,7 +65,7 @@ from agent6.tools._result_format import (
     truncate_args,
 )
 from agent6.tools._skill_tools import use_skill
-from agent6.tools.background import BackgroundError, BackgroundShells
+from agent6.tools.background import SHELLS_DIR, BackgroundError, BackgroundShells
 from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolError
 from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
 from agent6.tools.index import Symbol, SymbolIndex
@@ -379,7 +379,9 @@ class ToolDispatcher:
         # Background commands live under the run dir so they die with the run
         # and `sessions rm` clears them. None (tests, review dispatchers) leaves
         # them unwired: the tools raise ToolError, like the DAG tools.
-        self._shells = BackgroundShells(session_dir / "shells") if session_dir is not None else None
+        self._shells = (
+            BackgroundShells(session_dir / SHELLS_DIR) if session_dir is not None else None
+        )
         # One jail process for the whole run, opened on the first jailed
         # command and closed at teardown, so a run's commands share a netns, a
         # PID namespace and a /tmp and pay the setup once. RUN-SCOPED: a bare

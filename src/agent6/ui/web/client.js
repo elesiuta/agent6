@@ -618,6 +618,8 @@ const STEER_COMMANDS = [
   ['/parallel', 'fan out lanes: /parallel [N|models] <task> (repeat to queue more)'],
   ['/restate', 'restate the conversation since your last message (local, no model call)'],
   ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],
+  ['/btw', 'ask a question beside the run: /btw <question> (answers inline, later)'],
+  ['/shells', 'background commands this run started, and how they ended'],
 ];
 // Slash-command completion for a session composer: while the FIRST word is
 // being typed (`/…`, no whitespace yet), the matching directives with their
@@ -637,7 +639,7 @@ function attachCommandSuggest(ta, root, liveNow) {
   const render = () => {
     const w = word();
     if (w === null) { close(); return; }
-    items = STEER_COMMANDS.filter(([c]) => (liveNow() || c !== '/compact') && c.startsWith(w));
+    items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw')) && c.startsWith(w));
     if (!items.length) { close(); return; }
     if (active >= items.length) active = -1;
     if (!box) { box = el('div', 'ac-pop'); root.appendChild(box); }
@@ -832,6 +834,16 @@ function makeComposer(id) {
         .catch(err => toast(err.message, true));
       return;
     }
+    if (text === '/shells') {
+      // The view is the Background shells card: bring it up (the phone menu
+      // picks it; the desktop page scrolls to it).
+      const pick = document.querySelector('.wmenu button[data-w="shells"]');
+      if (pick) pick.click();
+      const card = document.querySelector('[data-w="shells"]');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      ta.value = '';
+      return;
+    }
     if (text === '/undo') {
       // Fork at the state before the last message; follow the fork with the
       // undone text back in the composer to edit and resend. A live run does
@@ -996,6 +1008,8 @@ async function renderRun(id, opts, gen) {
   mk('tasks', 'Task graph', 'scroll');
   mk('budget', 'Budget', '');
   mk('tools', 'Tool calls', 'scroll');
+  // Background commands the run started and how they ended (hidden until one exists).
+  mk('shells', 'Background shells', 'scroll');
   mk('diff', 'Latest commit', 'scroll');
   mk('log', 'Event log', 'scroll');
 
@@ -1013,7 +1027,7 @@ async function renderRun(id, opts, gen) {
   // The phone widget menu: pick which single widget the page shows.
   const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['plan', 'plan.md'],
                    ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
-                   ['diff', 'Latest commit'], ['log', 'Event log']];
+                   ['shells', 'Background shells'], ['diff', 'Latest commit'], ['log', 'Event log']];
   const wbtn = el('button', 'wmenu-btn', '☰');
   wbtn.title = 'widgets';
   const wmenu = el('div', 'wmenu'); wmenu.style.display = 'none';
@@ -1318,6 +1332,12 @@ function paintRun(cards, s) {
   }
   if (!(s.tool_calls||[]).length) cards.tools.appendChild(el('div', 'muted', 'no tool calls yet'));
   else cards.tools.appendChild(tbl);
+
+  // shells: the roster every surface reads off disk, one line per command
+  cards.shells.innerHTML = '';
+  const shellsCard = cards.shells.parentElement;
+  for (const line of (s.shells||[])) cards.shells.appendChild(el('div', 'shell', line));
+  shellsCard.style.display = (s.shells||[]).length ? '' : 'none';
 
   // log
   cards.log.innerHTML = '';

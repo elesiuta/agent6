@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The web composer's slash completion mirrors directive.STEER_COMMANDS
 verbatim (the client is static JS, so the shared table is pinned, not
-imported), and /compact stays a live-session offer."""
+imported), and /compact and /btw stay live-session offers."""
 
 from __future__ import annotations
 
@@ -19,5 +19,5 @@ def test_client_mirrors_the_steer_commands_verbatim() -> None:
 
 
 def test_compact_is_gated_on_live() -> None:
-    assert "liveNow() || c !== '/compact'" in CLIENT_JS
+    assert "liveNow() || (c !== '/compact' && c !== '/btw')" in CLIENT_JS
     assert "() => finished === false" in CLIENT_JS  # the composer's live truth feeds the gate

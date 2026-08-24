@@ -250,4 +250,6 @@ STEER_COMMANDS: dict[str, str] = {
     "/parallel": "fan out lanes: /parallel [N|models] <task> (repeat to queue more)",
     "/restate": "restate the conversation since your last message (local, no model call)",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
+    "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
+    "/shells": "background commands this run started, and how they ended",
 }

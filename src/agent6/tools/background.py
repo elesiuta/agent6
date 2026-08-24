@@ -57,6 +57,7 @@ _TAIL_BYTES = 1 << 20
 # What a surface needs that the run's own memory holds: the command, and when.
 # Written at start so `/shells` and any dashboard widget read the roster off
 # disk like every other run state, rather than needing the dispatcher.
+SHELLS_DIR = "shells"  # under the session dir; every surface reads the roster here
 _META_NAME = "meta.json"
 _REDIRECT = f'exec >"$0/{_LOG_NAME}" 2>&1; exec "$@"'
 
@@ -360,6 +361,11 @@ class BackgroundShells:
         if status.returncode is None:
             return ShellView(shell.id, shell.command, "died", None, status.error)
         return ShellView(shell.id, shell.command, "exited", status.returncode, "")
+
+
+def shells_text(session_dir: Path) -> str:
+    """The roster as one block for a text view; says so when there is none."""
+    return "\n".join(roster_from_dir(session_dir / SHELLS_DIR)) or "no background commands this run"
 
 
 def roster_from_dir(root: Path) -> list[str]:

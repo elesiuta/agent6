@@ -14,6 +14,7 @@ from agent6.git_ops import merge_stamp_holds
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel.format import format_branch, format_lineage
 from agent6.viewmodel.listing import session_compare
 from agent6.viewmodel.machine_state import fold_machine, machine_state_as_dict
@@ -81,6 +82,7 @@ def session_snapshot(session_dir: Path, *, repo: Path | None = None) -> dict[str
     state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
     snap = session_state_as_dict(state, session_dir)
     snap.update(manifest_header(session_dir, repo=repo))
+    snap["shells"] = roster_from_dir(session_dir / SHELLS_DIR)
     return snap
 
 

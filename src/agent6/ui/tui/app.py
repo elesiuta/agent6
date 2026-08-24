@@ -72,6 +72,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import LOGS_NAME, bucket_dir, layout_of
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.tools.background import shells_text
 from agent6.ui.btw import open_btw
 from agent6.ui.spawn import (
     DETACHED_RUN_ENV,
@@ -94,7 +95,7 @@ from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import (
     ConfirmModal,
-    RestateModal,
+    TextModal,
     ToolCallDetailModal,
 )
 from agent6.ui.tui.prompts import PromptDispatcher
@@ -1159,7 +1160,11 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             return
         if text.strip() == "/restate":
             # Local and free: rendered from the journal, nothing reaches the model.
-            self.push_screen(RestateModal(restate(list(tail_events(self.logs_path, follow=False)))))
+            text = restate(list(tail_events(self.logs_path, follow=False)))
+            self.push_screen(TextModal("since your last message", text))
+            return
+        if text.strip() == "/shells":
+            self.push_screen(TextModal("background commands", shells_text(self.session_dir)))
             return
         if self.session_controllable():
             question = parse_btw(text)

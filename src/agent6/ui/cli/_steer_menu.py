@@ -44,7 +44,7 @@ from agent6.sessions.ipc import request_compact
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
-from agent6.tools.background import roster_from_dir
+from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.ui.cli._menu_input import menu_capable, menu_input
 from agent6.viewmodel import (
     fold_session,
@@ -66,8 +66,8 @@ MENU_COMMANDS: dict[str, str] = {
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
     "/compact": "compact the context now; `/compact <focus>` steers the summary",
     "/parallel": STEER_COMMANDS["/parallel"],
-    "/btw": "ask a question beside the run: `/btw <question>` (answers inline, later)",
-    "/shells": "background commands this run started, and how they ended",
+    "/btw": STEER_COMMANDS["/btw"],
+    "/shells": STEER_COMMANDS["/shells"],
     "/restate": "restate the conversation since your last message",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/continue": "resume the run unchanged (same as Enter)",
@@ -225,7 +225,7 @@ BtwRunner = Callable[[str, Path], str]
 def _print_shells(session_dir: Path) -> None:
     """The run's background commands. Read off disk, not from the dispatcher:
     the menu answers from the same place every other surface reads."""
-    lines = roster_from_dir(session_dir / "shells")
+    lines = roster_from_dir(session_dir / SHELLS_DIR)
     if not lines:
         print("[agent6] no background commands this run")
         return

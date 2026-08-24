@@ -290,17 +290,17 @@ class ToolCallDetailModal(ModalScreen[None]):
         self.dismiss(None)
 
 
-class RestateModal(ModalScreen[None]):
-    """`/restate`: the conversation since the operator's last message, rendered
-    read-only and selectable. Informational, so Esc and the backdrop close it."""
+class TextModal(ModalScreen[None]):
+    """A titled read-only text view (`/restate`, `/shells`), selectable.
+    Informational, so Esc and the backdrop close it."""
 
     DEFAULT_CSS = """
-    RestateModal { align: center middle; }
-    #restate-box {
+    TextModal { align: center middle; }
+    #text-box {
         width: 90%; max-width: 120; height: auto; max-height: 85%;
         border: round $accent; padding: 1 2; background: $surface;
     }
-    #restate-box TextArea {
+    #text-box TextArea {
         height: auto; max-height: 32; border: round $primary; background: $surface;
     }
     """
@@ -310,17 +310,18 @@ class RestateModal(ModalScreen[None]):
         Binding("q", "close", "Close", show=False),
     ]
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, title: str, text: str) -> None:
         super().__init__()
+        self._title = title
         self._text = text
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="restate-box"):
-            yield Static(Text("since your last message", style="bold"))
-            yield TextArea(self._text, read_only=True, soft_wrap=True, id="restate-text")
+        with Vertical(id="text-box"):
+            yield Static(Text(self._title, style="bold"))
+            yield TextArea(self._text, read_only=True, soft_wrap=True, id="text-view")
 
     def on_mount(self) -> None:
-        self.query_one("#restate-text", TextArea).focus()
+        self.query_one("#text-view", TextArea).focus()
 
     def on_click(self, event: events.Click) -> None:
         if event.widget is self:

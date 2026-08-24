@@ -42,6 +42,7 @@ from textual.widgets import Footer, Select, Static, TextArea
 
 from agent6.directive import STEER_COMMANDS
 from agent6.sessions.ipc import submit_steer, write_answer
+from agent6.tools.background import shells_text
 from agent6.ui.tui import clipboard
 from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.menubar import (
@@ -50,7 +51,7 @@ from agent6.ui.tui.menubar import (
     MenuItem,
     menu_bindings,
 )
-from agent6.ui.tui.modals import HistorySearchModal, RestateModal
+from agent6.ui.tui.modals import HistorySearchModal, TextModal
 from agent6.ui.tui.prompts import PromptDispatcher
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
@@ -158,7 +159,7 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
     if mode == "start":
         offered = {c: h for c, h in STEER_COMMANDS.items() if c == "/parallel"}
     elif mode == "resume":
-        offered = {c: h for c, h in STEER_COMMANDS.items() if c != "/compact"}
+        offered = {c: h for c, h in STEER_COMMANDS.items() if c not in ("/compact", "/btw")}
     else:
         offered = STEER_COMMANDS
     return [(c, h) for c, h in offered.items() if c.startswith(text)]
@@ -1013,8 +1014,12 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             submit(message.text)
             return
         if message.text.strip() == "/restate":
+            text = restate(list(tail_events(self._logs_path, follow=False)))
+            self.app.push_screen(TextModal("since your last message", text))
+            return
+        if message.text.strip() == "/shells":
             self.app.push_screen(
-                RestateModal(restate(list(tail_events(self._logs_path, follow=False))))
+                TextModal("background commands", shells_text(self._logs_path.parent))
             )
             return
         if self._live:
