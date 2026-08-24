@@ -586,8 +586,12 @@ def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
         {
             "role": "assistant",
             "content": [
+                {
+                    "type": "thinking",
+                    "thinking": "plan",
+                    "chatgpt_reasoning": {"type": "reasoning", "id": "rs_1"},
+                },
                 {"type": "text", "text": "hi"},
-                {"type": "chatgpt_reasoning", "item": {"type": "reasoning", "id": "rs_1"}},
             ],
         },
         {"role": "user", "content": "next"},
@@ -597,4 +601,4 @@ def test_foreign_opaque_blocks_never_reach_the_wire() -> None:
     assert out[1] is messages[1]
     original = messages[0]["content"]
     assert isinstance(original, list)
-    assert original[1]["type"] == "chatgpt_reasoning"  # caller list untouched
+    assert "chatgpt_reasoning" in original[0]  # caller list untouched

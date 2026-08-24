@@ -6,8 +6,9 @@ Speaks the Responses API at `chatgpt.com/backend-api/codex/responses`,
 authorized by the OAuth credential from `agent6 connect chatgpt` plus the
 `chatgpt-account-id` header. The backend accepts streaming only, so every
 call runs over SSE; the delta callbacks stay optional. `instructions`
-carries agent6's own system prompt, and past reasoning is not replayed
-(same stance as the OpenAI provider: reasoning is shown, never re-sent).
+carries agent6's own system prompt; with `store=false` the model's
+encrypted reasoning items replay verbatim, in wire order, so its chain of
+thought survives across tool calls.
 
 Usage draws on the ChatGPT plan's limits, not a metered key, so
 `ProviderResponse.cost_usd` stays 0; token counts are still metered for
@@ -23,7 +24,7 @@ import json
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import httpx2
@@ -56,13 +57,13 @@ _USAGE_LIMIT_CODES = frozenset({"usage_limit_reached", "usage_not_included", "ra
 def responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """agent6's canonical Anthropic-shape messages -> Responses `input` items.
 
-    Block order is preserved: text runs flush as one message item;
+    Block order is the wire order: text runs flush as one message item;
     `tool_use` becomes a `function_call` item (arguments as a JSON string,
     keyed by `call_id`); `tool_result` becomes `function_call_output` with
-    the content flattened to a string. `chatgpt_reasoning` blocks replay
-    their raw Responses item verbatim, each only WITH its following kept
-    call (orphans violate the paired-item rules). Visible `thinking`
-    blocks are display-only and dropped.
+    the content flattened to a string. A `thinking` block carrying a
+    `chatgpt_reasoning` item replays that raw Responses item in place, only
+    WITH its following kept item (orphans violate the paired-item rules);
+    any other `thinking` block is display-only and dropped.
     """
     items: list[dict[str, Any]] = []
     # Ids of blank-name tool_use blocks skipped below (a resumed history can
@@ -101,9 +102,11 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
             continue
         btype = block.get("type")
         if btype == "text":
+            items.extend(pending_reasoning)
+            pending_reasoning.clear()
             text_run.append(str(block.get("text", "")))
-        elif btype == "chatgpt_reasoning" and role == "assistant":
-            item = block.get("item")
+        elif btype == "thinking" and role == "assistant":
+            item = block.get("chatgpt_reasoning")
             if isinstance(item, dict):
                 flush()
                 pending_reasoning.append(item)
@@ -170,35 +173,6 @@ def tools_to_responses(tools: list[ToolDefinition]) -> list[dict[str, Any]]:
     ]
 
 
-def _content_blocks(
-    text: str,
-    reasoning_parts: list[str],
-    tool_uses: list[dict[str, Any]],
-    ordered: list[dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    """The Anthropic-shape content blocks mirrored into `raw` (a leading
-    thinking block for display, then text, then the wire-ordered opaque
-    reasoning items and tool_use blocks), one shape across providers.
-
-    *ordered* interleaves `chatgpt_reasoning` (the raw Responses item,
-    replayed verbatim next request) with the tool_use blocks in output-item
-    order, so a reasoning item stays adjacent to the call it preceded; when
-    absent (other callers), tool_uses alone are appended."""
-    blocks: list[dict[str, Any]] = []
-    if reasoning_parts:
-        blocks.append({"type": "thinking", "thinking": "\n\n".join(reasoning_parts)})
-    if text:
-        blocks.append({"type": "text", "text": text})
-    if ordered is not None:
-        blocks.extend(ordered)
-        return blocks
-    blocks.extend(
-        {"type": "tool_use", "id": tu["id"], "name": tu["name"], "input": tu["input"]}
-        for tu in tool_uses
-    )
-    return blocks
-
-
 def _tool_use_of(item: dict[str, Any], *, n: int) -> dict[str, Any] | None:
     """A `function_call` item -> an Anthropic-shape tool_use, or None for a
     blank name (a malformed call must not enter history; see the OpenAI
@@ -226,43 +200,42 @@ def parse_output_items(
 ) -> ProviderResponse:
     """Final Responses output items -> `ProviderResponse` (Anthropic shape).
 
-    Usage normalisation matches the OpenAI parser: the backend's
-    `input_tokens` is the cached+fresh total, so cached moves to
-    `cache_read_tokens` and `input_tokens` keeps fresh-only semantics.
+    `raw["content"]` holds one block per output item in wire order: a
+    message's text, a reasoning item as a `thinking` block (its summary for
+    display, the raw item under `chatgpt_reasoning` for verbatim replay,
+    never decrypted), a function_call as `tool_use`. Usage normalisation
+    matches the OpenAI parser: the backend's `input_tokens` is the
+    cached+fresh total, so cached moves to `cache_read_tokens` and
+    `input_tokens` keeps fresh-only semantics.
     """
     text_parts: list[str] = []
-    reasoning_parts: list[str] = []
     tool_uses: list[dict[str, Any]] = []
-    ordered: list[dict[str, Any]] = []
+    blocks: list[dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
             continue
         itype = item.get("type")
         if itype == "message":
-            for part in item.get("content") or []:
-                if isinstance(part, dict) and part.get("type") in ("output_text", "text"):
-                    text_parts.append(str(part.get("text", "")))
+            text = "".join(
+                str(part.get("text", ""))
+                for part in item.get("content") or []
+                if isinstance(part, dict) and part.get("type") in ("output_text", "text")
+            )
+            if text:
+                text_parts.append(text)
+                blocks.append({"type": "text", "text": text})
         elif itype == "reasoning":
-            for part in item.get("summary") or []:
-                if isinstance(part, dict) and str(part.get("text", "")):
-                    reasoning_parts.append(str(part["text"]))
-            # The raw item (id + encrypted content), kept opaque and replayed
-            # in order on the next request: with store=false this is the
-            # model's own chain-of-thought state across tool calls. Never
-            # decrypted, never displayed (the summary above is the display).
-            ordered.append({"type": "chatgpt_reasoning", "item": item})
+            summary = "\n\n".join(
+                str(part["text"])
+                for part in item.get("summary") or []
+                if isinstance(part, dict) and str(part.get("text", ""))
+            )
+            blocks.append({"type": "thinking", "thinking": summary, "chatgpt_reasoning": item})
         elif itype == "function_call":
             tool_use = _tool_use_of(item, n=len(tool_uses))
             if tool_use is not None:
                 tool_uses.append(tool_use)
-                ordered.append(
-                    {
-                        "type": "tool_use",
-                        "id": tool_use["id"],
-                        "name": tool_use["name"],
-                        "input": tool_use["input"],
-                    }
-                )
+                blocks.append({"type": "tool_use", **tool_use})
     text = "".join(text_parts)
     if tool_uses and stop_reason == "end_turn":
         # Anthropic-shape semantics: a turn that stopped to call tools says
@@ -273,7 +246,6 @@ def parse_output_items(
     cached = int(details.get("cached_tokens", 0) or 0) if isinstance(details, Mapping) else 0
     prompt_total = int(usage.get("input_tokens") or 0)
     cached = min(cached, prompt_total)
-    raw_content = _content_blocks(text, reasoning_parts, tool_uses, ordered)
     return ProviderResponse(
         text=text,
         tool_uses=tuple(tool_uses),
@@ -283,7 +255,7 @@ def parse_output_items(
         cache_read_tokens=cached,
         cache_creation_tokens=0,
         cost_usd=0.0,
-        raw={"content": raw_content, "usage": dict(usage), "output": items},
+        raw={"content": blocks, "usage": dict(usage), "output": items},
     )
 
 
@@ -608,17 +580,16 @@ class ChatGPTProvider:
         parsed = parse_output_items(items, usage=usage, stop_reason=stop_reason)
         if not parsed.text and delta_text:
             # A backend that streamed text deltas but no final message item:
-            # keep what the operator already watched arrive.
-            parsed = ProviderResponse(
-                text="".join(delta_text),
-                tool_uses=parsed.tool_uses,
-                stop_reason=parsed.stop_reason,
-                input_tokens=parsed.input_tokens,
-                output_tokens=parsed.output_tokens,
-                cache_read_tokens=parsed.cache_read_tokens,
-                cache_creation_tokens=parsed.cache_creation_tokens,
-                cost_usd=parsed.cost_usd,
-                raw={**parsed.raw, "content": [{"type": "text", "text": "".join(delta_text)}]},
+            # keep what the operator already watched arrive, ahead of the
+            # turn's other blocks.
+            text = "".join(delta_text)
+            parsed = replace(
+                parsed,
+                text=text,
+                raw={
+                    **parsed.raw,
+                    "content": [{"type": "text", "text": text}, *parsed.raw["content"]],
+                },
             )
         call.record(
             status=200,

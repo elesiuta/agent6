@@ -244,7 +244,9 @@ def test_tool_call_and_reasoning_items_parse(signed_in: ChatGPTCredential) -> No
     ):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert resp.tool_uses == ({"id": "call_9", "name": "run", "input": {"cmd": "ls"}},)
-    assert resp.raw["content"][0] == {"type": "thinking", "thinking": "thought"}
+    thinking = resp.raw["content"][0]
+    assert thinking["type"] == "thinking" and thinking["thinking"] == "thought"
+    assert thinking["chatgpt_reasoning"]["type"] == "reasoning"
 
 
 def test_incomplete_max_output_tokens_maps_to_max_tokens(
@@ -436,10 +438,17 @@ def test_completed_stream_without_message_item_keeps_delta_text(
     signed_in: ChatGPTCredential,
 ) -> None:
     """A backend that streamed text deltas but closed with no final message
-    item still yields the watched text, not an empty turn."""
+    item still yields the watched text, not an empty turn, and the turn's
+    other blocks stay in history behind it."""
     lines: list[str] = []
     lines += _evt({"type": "response.output_text.delta", "delta": "half"})
     lines += _evt({"type": "response.output_text.delta", "delta": " answer"})
+    lines += _evt(
+        {
+            "type": "response.output_item.done",
+            "item": {"type": "function_call", "call_id": "c1", "name": "run", "arguments": "{}"},
+        }
+    )
     lines += _evt(
         {
             "type": "response.completed",
@@ -450,6 +459,7 @@ def test_completed_stream_without_message_item_keeps_delta_text(
     with mock.patch("httpx2.stream", side_effect=_serve(lines)):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "half answer"
+    assert [b["type"] for b in resp.raw["content"]] == ["text", "tool_use"]
 
 
 def test_tool_calling_completed_turn_reports_tool_use(signed_in: ChatGPTCredential) -> None:
@@ -500,10 +510,11 @@ def test_plan_usage_parses_the_credits_family() -> None:
 
 def test_reasoning_items_are_captured_and_replayed_in_order() -> None:
     """With store=false the encrypted reasoning item is the model's own
-    chain-of-thought state: the parse keeps the raw item opaque and in
-    output order, and the next request replays it verbatim immediately
-    before its function_call."""
-    from agent6.providers.chatgpt import parse_output_items, responses_input
+    chain-of-thought state: the parse keeps the raw item opaque, in its
+    wire position, inside the thinking block that displays its summary, and
+    the next request replays it verbatim immediately before its
+    function_call."""
+    from agent6.providers.chatgpt import parse_output_items
 
     reasoning = {
         "type": "reasoning",
@@ -519,9 +530,8 @@ def test_reasoning_items_are_captured_and_replayed_in_order() -> None:
     }
     got = parse_output_items([reasoning, call], usage={}, stop_reason="end_turn")
     blocks = got.raw["content"]
-    kinds = [b["type"] for b in blocks]
-    assert kinds == ["thinking", "chatgpt_reasoning", "tool_use"]
-    assert blocks[1]["item"] == reasoning
+    assert [b["type"] for b in blocks] == ["thinking", "tool_use"]
+    assert blocks[0]["thinking"] == "plan" and blocks[0]["chatgpt_reasoning"] == reasoning
 
     items = responses_input(
         [
@@ -536,14 +546,66 @@ def test_reasoning_items_are_captured_and_replayed_in_order() -> None:
     assert items[0] == reasoning
 
 
+def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
+    """A turn that reasons, comments, reasons again and calls a tool is
+    persisted as one block per output item in wire order and replayed in
+    that order: the commentary message never hoists ahead of the reasoning
+    that produced it. A display-only thinking block (another provider's,
+    or one whose item was stripped) replays nothing."""
+    from agent6.providers.chatgpt import parse_output_items
+
+    r1 = {"type": "reasoning", "id": "rs_1", "encrypted_content": "A", "summary": []}
+    note = {
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": "Looking at x."}],
+    }
+    r2 = {
+        "type": "reasoning",
+        "id": "rs_2",
+        "encrypted_content": "B",
+        "summary": [{"type": "summary_text", "text": "then read"}],
+    }
+    call = {"type": "function_call", "call_id": "c1", "name": "read_file", "arguments": "{}"}
+    got = parse_output_items([r1, note, r2, call], usage={}, stop_reason="end_turn")
+    blocks = got.raw["content"]
+    assert [b["type"] for b in blocks] == ["thinking", "text", "thinking", "tool_use"]
+    assert got.text == "Looking at x." and blocks[0]["thinking"] == ""
+    assert blocks[2]["thinking"] == "then read"
+
+    items = responses_input(
+        [
+            {
+                "role": "assistant",
+                "content": [{"type": "thinking", "thinking": "foreign"}, *blocks],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "body"}],
+            },
+        ]
+    )
+    assert [i.get("id") or i["type"] for i in items] == [
+        "rs_1",
+        "message",
+        "rs_2",
+        "function_call",
+        "function_call_output",
+    ]
+
+    # A final answer keeps its reasoning ahead of the message too.
+    final = parse_output_items([r1, note], usage={}, stop_reason="end_turn")
+    items = responses_input([{"role": "assistant", "content": final.raw["content"]}])
+    assert [i.get("id") or i["type"] for i in items] == ["rs_1", "message"]
+
+
 def test_orphaned_reasoning_is_dropped_with_its_call() -> None:
     """A reasoning item whose paired call is dropped (blank tool name from a
     cross-provider resume) must not replay alone: an orphan violates the
     paired-item rules and 400s the whole request."""
-    from agent6.providers.chatgpt import responses_input
-
+    item = {"type": "reasoning", "id": "rs_1"}
     blocks = [
-        {"type": "chatgpt_reasoning", "item": {"type": "reasoning", "id": "rs_1"}},
+        {"type": "thinking", "thinking": "", "chatgpt_reasoning": item},
         {"type": "tool_use", "id": "c1", "name": "", "input": {}},
     ]
     items = responses_input([{"role": "assistant", "content": blocks}])

@@ -2998,8 +2998,7 @@ class Workflow:
         if isinstance(raw_content, list):
             for block in raw_content:
                 if isinstance(block, dict) and block.get("type") == "thinking":
-                    reasoning_chars = len(str(block.get("thinking") or ""))
-                    break
+                    reasoning_chars += len(str(block.get("thinking") or ""))
         starved = output_cap_truncated(resp) and reasoning_chars > 0 and resp.output_tokens > 0
         if starved:
             self._log(

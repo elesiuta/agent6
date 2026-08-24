@@ -177,27 +177,22 @@ def drop_foreign_blocks(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     agent6's canonical blocks are Anthropic-shaped and pass through verbatim,
     so a block another provider minted for its own replay (the ChatGPT
-    `chatgpt_reasoning` item) would reach this API raw and 400 the request
-    on a cross-provider resume. Copy-on-write like the cache_control strip.
+    `thinking` block carrying a `chatgpt_reasoning` item: unsigned here,
+    its payload foreign) would reach this API raw and 400 the request on a
+    cross-provider resume. Copy-on-write like the cache_control strip.
     """
-    foreign = {"chatgpt_reasoning"}
+
+    def foreign(block: Any) -> bool:
+        return isinstance(block, dict) and "chatgpt_reasoning" in block
+
     out: list[dict[str, Any]] = []
     changed = False
     for msg in messages:
         content = msg.get("content")
-        if not isinstance(content, list) or not any(
-            isinstance(b, dict) and b.get("type") in foreign for b in content
-        ):
+        if not isinstance(content, list) or not any(foreign(b) for b in content):
             out.append(msg)
             continue
-        out.append(
-            {
-                **msg,
-                "content": [
-                    b for b in content if not (isinstance(b, dict) and b.get("type") in foreign)
-                ],
-            }
-        )
+        out.append({**msg, "content": [b for b in content if not foreign(b)]})
         changed = True
     return out if changed else messages
 
