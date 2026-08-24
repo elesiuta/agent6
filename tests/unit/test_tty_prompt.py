@@ -154,3 +154,40 @@ def test_questioner_marks_headless_defaults(
     assert answers == ("",)
     answer_events = [f for t, f in emitted if t == "question.answer"]
     assert answer_events and answer_events[0]["source"] == "headless-default"
+
+
+def test_a_wait_park_narrates_the_attach_remedy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A detached-wait session blocking on ask_user printed NOTHING: a piped
+    `resume` looked hung for 300s (a live find). The park now says where to
+    answer, on both the question and the approval paths."""
+    from agent6.ui.cli import _interact as interact_mod
+
+    lines: list[str] = []
+    monkeypatch.setattr(interact_mod, "tty_message", lines.append)
+
+    def _away(_d: object) -> str:
+        return "wait"
+
+    monkeypatch.setattr(interact_mod, "away_mode", _away)
+
+    def _reply(_d: object, _r: object) -> tuple[str, ...]:
+        return ("yes",)
+
+    monkeypatch.setattr(interact_mod, "await_frontend_reply", _reply)
+
+    class _Events:
+        def emit(self, event_type: str, **fields: Any) -> None:
+            pass
+
+    ask = build_questioner(tmp_path, _Events())  # type: ignore[arg-type]
+    ask((UserQuestion(question="pick?", options=("a", "b")),))
+    assert any("question awaits a front-end" in ln and "agent6 attach" in ln for ln in lines)
+
+    from agent6.ui.cli._interact import build_approver
+
+    lines.clear()
+    approve = build_approver(tmp_path, _Events())  # type: ignore[arg-type]
+    approve("Allow run_command: ls", scope=None)
+    assert any("approval awaits a front-end" in ln and "agent6 attach" in ln for ln in lines)
