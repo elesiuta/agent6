@@ -37,7 +37,7 @@ cd your-repo
 agent6 run "add a --json output mode to the CLI"
 ```
 
-agent6 edits your working tree, runs the verify command, and commits each passing step to a per-run chain.
+agent6 edits your working tree, commits each step to a per-run chain, and certifies the finished tree with the verify command.
 
 - your branch, HEAD, and index are never touched (the chain gets an `agent6/<id>` branch by default)
 - the run stops on `finish_session` or a budget ceiling
@@ -49,6 +49,8 @@ The verify command is the success gate.
 - unset `workflow.verify_command`: inferred per run and printed (AGENTS.md, a root `verify.sh`, manifest files, loose `test_*.py`, then a model call)
 - nothing inferable: the run proceeds gateless, committing each editing step
 - pin one (per-repo config or `agent6 init`) to make it deterministic
+- the harness runs it when the model finishes over an uncertified tree; a red returns to the model with the output (`workflow.verify_retries`, default 2), then the run ends red
+- `workflow.verify_when` moves the harness run to every editing step (`step`) or leaves every run to the model (`never`); the model can always run it itself
 
 `agent6 run` streams in your terminal, no full-screen UI.
 
