@@ -20,6 +20,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
+from textual.app import ScreenStackError
 from textual.widgets import Static
 
 from agent6.ui.tui.app import Agent6TUI
@@ -55,6 +57,16 @@ def _mk_crashed(d: Path) -> None:
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
 
 
+def _screen_is(app: Agent6TUI, name: str) -> bool:
+    """`app.screen` raises while the stack is transiently empty (startup,
+    mid-switch); a poll reads that as "not yet", never an error."""
+    try:
+        current = app.screen
+    except ScreenStackError:
+        return False
+    return current is getattr(app, name)
+
+
 async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> None:
     deadline = time.monotonic() + timeout
     while not cond():
@@ -63,9 +75,9 @@ async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> 
 
 
 async def _open_dash(app: Agent6TUI, pilot: Any) -> None:
-    await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
+    await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
     await pilot.press("ctrl+d")
-    await _wait_for(pilot, lambda: app.screen is app._dash, "the dashboard screen")
+    await _wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
     app._heartbeat_at = 0.0  # age the throttle so the dir-status probe fires now
     app._tick()
     await pilot.pause()
@@ -229,7 +241,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
     async def scenario() -> None:
         app = Agent6TUI(tmp_path / "parked2")
         async with app.run_test(size=(140, 40)) as pilot:
-            await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
+            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             picker = app._conv.query_one("#conv-preset", ResumePreset)
             await _wait_for(pilot, lambda: picker.display, "the preset picker")
             picker.query_one(Select).value = "quick"
@@ -313,7 +325,7 @@ def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) ->
     async def scenario() -> None:
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
+            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             app._heartbeat_at = 0.0
             app._tick()
             await _wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
@@ -348,7 +360,7 @@ def test_conversation_composer_routes_through_the_host_parser(tmp_path: Path) ->
     async def scenario() -> None:
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
+            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
@@ -386,7 +398,7 @@ def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
     async def scenario() -> None:
         app = Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
+            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             await _wait_for(pilot, lambda: app.state.pending_approvals, "the prompt to fold")
             app._heartbeat_at = 0.0
             app._tick()
@@ -401,7 +413,17 @@ def _approval_ready(app: Agent6TUI) -> bool:
     # The conversation screen renders an approval inline: the item plus its key
     # row, mounted and focused (a modal only on the other screens).
     rows = app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
-    return app.screen is app._conv and bool(rows) and app.focused is rows.first()  # pyright: ignore[reportPrivateUsage]
+    return _screen_is(app, "_conv") and bool(rows) and app.focused is rows.first()  # pyright: ignore[reportPrivateUsage]
+
+
+def test_screen_probe_tolerates_an_empty_stack(tmp_path: Path) -> None:
+    """`app.screen` raises ScreenStackError on an empty stack (a real window
+    during startup and screen switches; CI's Python 3.14.7 scheduling hit it
+    inside a poll lambda). The probe reads it as "not yet"."""
+    app = Agent6TUI(tmp_path)  # never run: the screen stack is empty
+    with pytest.raises(ScreenStackError):
+        _ = app.screen
+    assert _screen_is(app, "_conv") is False
 
 
 def test_live_run_still_gets_the_inline_approval(tmp_path: Path) -> None:

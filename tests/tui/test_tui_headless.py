@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from textual.app import App
+from textual.app import App, ScreenStackError
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
 from agent6.ui.tui.app import Agent6TUI
@@ -33,6 +33,16 @@ from agent6.viewmodel.state import Question
 
 def _ev(**fields: Any) -> dict[str, object]:
     return dict(fields)
+
+
+def _screen_is(app: Agent6TUI, name: str) -> bool:
+    """`app.screen` raises while the stack is transiently empty (startup,
+    mid-switch); a poll reads that as "not yet", never an error."""
+    try:
+        current = app.screen
+    except ScreenStackError:
+        return False
+    return current is getattr(app, name)
 
 
 async def _wait_for(pilot: Any, cond: Any, what: str, timeout: float = 10.0) -> None:
@@ -52,9 +62,9 @@ async def _show_dashboard(pilot: Any) -> None:
     actually be on top: startup pushes the screens asynchronously, and a Ctrl+D
     fired before the conversation lands would type into the wrong screen."""
     app = pilot.app
-    await _wait_for(pilot, lambda: app.screen is app._conv, "the conversation screen")
+    await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
     await pilot.press("ctrl+d")
-    await _wait_for(pilot, lambda: app.screen is app._dash, "the dashboard screen")
+    await _wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
 
 
 async def _settle_focus(pilot: Any, widget: Any) -> None:
