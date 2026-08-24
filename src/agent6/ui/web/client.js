@@ -836,12 +836,20 @@ function makeComposer(id) {
     }
     if (text === '/shells') {
       // The view is the Background shells card: bring it up (the phone menu
-      // picks it; the desktop page scrolls to it).
+      // picks it; the desktop page opens the drawer and scrolls to it), and
+      // say so when there is nothing to show, as the CLI and TUI do.
+      ta.value = '';
+      const card = document.querySelector('[data-w="shells"]');
+      if (!card || card.style.display === 'none') { toast('no background commands this run'); return; }
+      const drawer = document.querySelector('.drawer');
+      if (drawer && drawer.classList.contains('closed')) {
+        drawer.classList.remove('closed');
+        document.querySelector('.details-btn')?.classList.add('active');
+        localStorage.setItem('a6-drawer', 'open');
+      }
       const pick = document.querySelector('.wmenu button[data-w="shells"]');
       if (pick) pick.click();
-      const card = document.querySelector('[data-w="shells"]');
-      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      ta.value = '';
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
     if (text === '/undo') {

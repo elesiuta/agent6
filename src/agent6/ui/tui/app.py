@@ -270,7 +270,6 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         nav = self.query_one("#diff-nav", Horizontal)
         if self._git_control() == "model":
             nav.display = False
-            self.query_one("#diff").border_title = "diff · the model owns git"
             return
         if not s.steps:
             nav.display = False
@@ -617,10 +616,11 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             spinner = spinner_frame(tui.spin)
             beat = f" {spinner} {tui.seconds_since_event()}s"
         role_line = f"{role.role} / {role.model}{beat}" if role else "(idle)"
-        done_n = sum(1 for t in s.tasks if t.status in ("passed", "skipped"))
-        step = f"tasks: {done_n}/{len(s.tasks)}" if s.tasks else "tasks: —"
         finished = self._end_label()
         ds, as_of = self._details_state(s)
+        # tasks and cost are both as-of the selected step; ctx is live.
+        done_n = sum(1 for t in ds.tasks if t.status in ("passed", "skipped"))
+        step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
         cost = f"[b]{format_cost(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
         # Consumption of the binding ledger: THIS leg's metered spend vs its
         # usd_cap (resume re-arms the cap while usd_total stays cumulative),
@@ -639,7 +639,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         pct = tui.context_pct()
         ctx = f"   ctx: {pct}%" if pct is not None else ""
         self.query_one("#top", Static).update(
-            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{as_of}{budget}{ctx}"
+            f"[b]agent6[/]  {step}   role: {escape(role_line)}   cost: {cost}{budget}{as_of}{ctx}"
             f"   {finished}\n"
             f"task: {escape(task_snippet(s.user_task or tui.fallback_task, max_chars=120))}"
             f"{escape(self._lineage_top())}{escape(self._branch_top())}"
@@ -806,7 +806,11 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             return
         self._rendered_diff = diff_key
         diff_widget = self.query_one("#diff-body", Static)
-        self.query_one("#diff").border_title = f"diff{filt}" if sel else ""
+        self.query_one("#diff").border_title = (
+            "diff · the model owns git"
+            if self._git_control() == "model"
+            else (f"diff{filt}" if sel else "")
+        )
         verify = s.last_verify
         dt = Text()
         if self._step_sel:
