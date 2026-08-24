@@ -424,6 +424,9 @@ def test_screen_probe_tolerates_an_empty_stack(tmp_path: Path) -> None:
     with pytest.raises(ScreenStackError):
         _ = app.screen
     assert _screen_is(app, "_conv") is False
+    # The app's own probe (its tick paths dispatch prompts and retitle
+    # through it) answers None instead of raising.
+    assert app._screen_or_none() is None  # pyright: ignore[reportPrivateUsage]
 
 
 def test_live_run_still_gets_the_inline_approval(tmp_path: Path) -> None:

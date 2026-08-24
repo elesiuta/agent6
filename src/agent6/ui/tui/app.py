@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import ClassVar
 
 try:
-    from textual.app import App, SystemCommand
+    from textual.app import App, ScreenStackError, SystemCommand
     from textual.binding import Binding
     from textual.css.query import NoMatches
     from textual.screen import ModalScreen, Screen
@@ -172,7 +172,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self,
             answerable=self.session_controllable,
             lost=_ANSWER_LOST,
-            inline_approvals=lambda: isinstance(self.screen, ConversationScreen),
+            inline_approvals=lambda: isinstance(self._screen_or_none(), ConversationScreen),
         )
         self._seen_steer = 0
         self._dirty = False  # a structural event arrived; _tick coalesces the repaint
@@ -337,7 +337,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self._prompts.reset()
             # The task is known once the boundary folds: retitle the menu bar
             # (the conversation screen stamps its own title while on top).
-            if self.screen is self._dash:
+            if self._screen_or_none() is self._dash:
                 self.sub_title = self.run_title()
         if event.get("type") in _STATUS_NOW_EVENTS:
             # A terminal / leg-boundary / operator-blocking event changes the
@@ -375,6 +375,15 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self._dirty = True
             self._conv.refresh_liveness()
 
+    def _screen_or_none(self) -> Screen[object] | None:
+        """The active screen, or None while the stack is empty (startup,
+        teardown): `self.screen` raises there, and a tick or a replayed
+        event in that window has nothing to render on."""
+        try:
+            return self.screen
+        except ScreenStackError:
+            return None
+
     def _tick(self) -> None:
         # Prompt modals only while the run can consume an answer: the fold
         # keeps an unanswered prompt across session.end and a worker death (it
@@ -382,7 +391,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         # otherwise pop live-looking Allow/Deny over a dead run and write the
         # answer into a file nobody polls. Skipped ids are NOT marked seen, so
         # a prompt that outlives a stale probe still pops on the next tick.
-        if self.session_controllable():
+        # No screen yet (the first screens land async at startup) or none
+        # left (teardown): nothing can render a prompt, and unclaimed ids
+        # pop on the next tick.
+        if self.session_controllable() and self._screen_or_none() is not None:
             self._prompts.dispatch(self.session_dir, self.state)
         # Route an external steer request to the composer bar, once per Ctrl-C
         # (steer_requests is monotonic).
