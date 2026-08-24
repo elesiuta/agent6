@@ -1317,9 +1317,22 @@ class Workflow:
         # nudge budget refills (failures are per-streak, not per-run).
         state.went_quiet_nudges_used = 0
         for tu in turn.assistant.tool_uses:
-            state.tool_calls += 1
             name = tu.name
             tool_input = tu.input
+            if turn.finish_signal is not None:
+                # A finish ends the turn's work: the calls after it are not
+                # executed, as the finish tools' descriptions state.
+                turn.tool_results.append(
+                    ToolResultItem(
+                        tool_use_id=tu.id,
+                        content=json.dumps(
+                            {"error": f"{name} not executed: it follows {turn.finish_kind}"}
+                        ),
+                        for_call=tu,
+                    )
+                )
+                continue
+            state.tool_calls += 1
             # degenerate-loop signature tracking. Stable
             # JSON so dict key order does not break equality. Same
             # (name, args) back-to-back across iterations increments

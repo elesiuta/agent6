@@ -2234,6 +2234,77 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: Path) -> None:
     assert provider.calls == 1
 
 
+def test_tool_calls_after_finish_session_are_not_executed(tmp_path: Path) -> None:
+    """The finish tools say "tool calls after it are not executed": a
+    run_command emitted after finish_session in the same message is answered
+    with an error result and never dispatched."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            uses = (
+                {"id": "f1", "name": "finish_session", "input": {"summary": "done"}},
+                {"id": "c1", "name": "run_command", "input": {"command": "rm -rf build"}},
+            )
+            return ProviderResponse(
+                text="",
+                tool_uses=uses,
+                stop_reason="tool_use",
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                raw={"content": [{"type": "tool_use", **u} for u in uses]},
+            )
+
+    class DispatcherStub(_StubDispatcher):
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            del raw_input
+            self.calls.append(name)
+            return RawResult({"ok": True})
+
+    provider = ProviderStub()
+    dispatcher = DispatcherStub()
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="never",
+            verify_retries=2,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal="minimize"),
+        ),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=dispatcher,
+        budget=None,
+        max_iterations=20,
+        loop_guard_kill_threshold=0,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="system",
+        conversation=Conversation.from_wire(messages),
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+    assert result.reason == "finish_session"
+    assert dispatcher.calls == ["finish_session"]
+    assert result.tool_calls == 1
+
+
 def test_metric_at_fraction_ceiling_detects_maxed_score() -> None:
     from agent6.workflows._metric import (
         metric_at_fraction_ceiling as _metric_at_fraction_ceiling,
