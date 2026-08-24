@@ -530,3 +530,16 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
     ]
     done = next(it for it in fold_transcript(resumed_plan) if it.kind == "done")
     assert done.detail == "0 tools"
+
+
+def test_every_end_reason_has_a_done_line_label() -> None:
+    """The done marker words every end (`● stopped`, never `● steer_exit`):
+    a reason added to SessionEndReason without a label leaked its raw token
+    to the CLI, TUI and web transcripts."""
+    from typing import get_args
+
+    from agent6.viewmodel.transcript import _END_REASON_LABEL  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows._session_state import SessionEndReason
+
+    missing = set(get_args(SessionEndReason)) - set(_END_REASON_LABEL)
+    assert not missing, f"end reasons with no done-line label: {sorted(missing)}"
