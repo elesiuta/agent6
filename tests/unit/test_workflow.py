@@ -6806,12 +6806,14 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
     prompts = iter(["/caveman lite", "/nosuch thing"])
     dispatcher = MagicMock()
     dispatcher.resolved_skills.return_value = ResolvedSkills(
-        enabled=(skill,), always=(), warnings=()
+        enabled=(skill,), always=(), warnings=("one skill dir is unreadable",)
     )
+    events = MagicMock()
     wf = _wf(
         root=tmp_path,
         provider=MagicMock(),
         dispatcher=dispatcher,
+        events=events,
         steer_requested=lambda: True,
         steer_prompt=lambda: next(prompts),
         steer_clear=lambda: None,
@@ -6820,6 +6822,9 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
     st = _state()
     conv = MagicMock()
     assert wf._maybe_handle_steer(conv, 1, st) is None  # pyright: ignore[reportPrivateUsage]
+    # The steer reads the cached resolution: the prompt-assembly step's
+    # warnings are not re-emitted on every slash steer.
+    assert not [c for c in events.emit.call_args_list if c.args[:1] == ("loop.skills.warning",)]
     injected = conv.notice.call_args.args[0]
     assert "Apply the operator-installed skill 'caveman'" in injected
     assert (

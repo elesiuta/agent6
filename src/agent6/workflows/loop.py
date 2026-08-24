@@ -4628,7 +4628,7 @@ class Workflow:
         enabled skill."""
         if not steer_text.startswith("/"):
             return False
-        found = skill_command(steer_text, self._load_skills())
+        found = skill_command(steer_text, self.dispatcher.resolved_skills())
         if found is None:
             return False
         skill, args = found
