@@ -132,7 +132,7 @@ class GitConfig(BaseModel):
         description=(
             "Stash the tracked files' uncommitted changes at start without asking; at the end the "
             "stash is applied back per `auto_stash_pop`, else its `git stash apply <sha>` line is "
-            "printed (by sha, never silently left)."
+            "printed."
         ),
     )
     # When auto_stash stashed pre-run changes, restore them at run end. Default
@@ -158,11 +158,11 @@ class GitConfig(BaseModel):
     control: Literal["agent6", "model"] = Field(
         default="agent6",
         description=(
-            "Who manages git during a run: `agent6` (default) records every step on the run's "
-            "own commit chain and branch, never touching HEAD; `model` hands git to the model -- "
-            "no per-step chain, no run branch, the model's own commits and branches are the "
-            "record, and `sessions diff`/`merge`, `/undo`, and `fork` refuse for such runs. "
-            "Requires `sandbox.protect_git = false`."
+            "Who manages git during a run: `agent6` records every step on the run's own commit "
+            "chain and branch, never touching HEAD; `model` hands git to the model: no per-step "
+            "chain, no run branch, the model's own commits and branches are the record, and "
+            "`sessions diff`/`merge`, `/undo`, and `fork` refuse for such runs. Requires "
+            "`sandbox.protect_git = false`."
         ),
     )
     branch_per_run: bool = Field(
@@ -240,10 +240,9 @@ class GitConfig(BaseModel):
     run_repo_hooks: bool = Field(
         default=False,
         description=(
-            "Run the repo's own `.git/hooks/*` during agent6's git operations. `false`: hooks are "
-            "skipped, since a repo hook is repo-controlled code that would run on the host (an RCE "
-            "vector on an untrusted repo). `core.fsmonitor` and `diff.external` are always "
-            "neutralized."
+            "Run the repo's own `.git/hooks/*` during agent6's git operations. `false` skips "
+            "them: a repo hook is repo-controlled code that would run on the host. "
+            "`core.fsmonitor` and `diff.external` are always neutralized."
         ),
     )
     # Whether the repo's own content drivers -- `filter.<n>.clean/smudge/process`
@@ -258,10 +257,10 @@ class GitConfig(BaseModel):
         default=False,
         description=(
             "Honor the repo's content drivers (`filter.<name>.clean/smudge/process`, "
-            "`merge.<name>.driver`) during agent6's git operations. `false`: each is neutralized "
-            "by name, since a driver defined in `.git/config` is repo-controlled code that would "
-            "run on the host at every commit (the same class as a hook). `true` is what Git LFS "
-            "needs (its clean/smudge filters are exactly these)."
+            "`merge.<name>.driver`) during agent6's git operations. `false` neutralizes each by "
+            "name: a driver defined in `.git/config` is repo-controlled code that would run on "
+            "the host at every commit. `true` is what Git LFS needs (its clean/smudge filters "
+            "are these drivers)."
         ),
     )
     commit: GitCommitConfig = Field(default_factory=GitCommitConfig)

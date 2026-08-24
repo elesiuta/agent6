@@ -137,8 +137,8 @@ class SandboxConfig(BaseModel):
         ge=0,
         description=(
             "`RLIMIT_DATA` cap in MiB on each jailed process (inherited by its children). `0`: no "
-            "cap (the kernel handles a runaway; a cap costs real builds more than it buys). Set "
-            "one to bound a specific task; a process over it fails as an ordinary command error."
+            "cap. Set one to bound a specific task; a process over it fails as an ordinary command "
+            "error."
         ),
     )
     # Extra filesystem paths a JAILED command may READ and EXECUTE, on top of

@@ -97,8 +97,8 @@ class WorkflowConfig(BaseModel):
         default=600.0,
         description=(
             "Seconds one `verify_command` or `metric.command` call may take before it is killed "
-            "and counted as failed. The operator's gate needs a verdict, so it is bounded; a "
-            "model-chosen `run_command` is not (see `command_checkin_s`)."
+            "and counted as failed. A model-chosen `run_command` is not bounded (see "
+            "`command_checkin_s`)."
         ),
     )
     # Bounds one LEG: a resume gets a fresh allowance (numbering continues),
@@ -133,8 +133,7 @@ class WorkflowConfig(BaseModel):
             "Seconds a model's `run_command` may run before it is handed back as a background job. "
             "Not a timeout: nothing is killed, the command keeps running, and the model is told "
             "(`returncode: null`, `still_running: true`, a `background_id`) so it can wait with "
-            "`read_background`, stop it, or carry on. `0` disables the hand-back, which is right "
-            "when a human is watching and can interrupt."
+            "`read_background`, stop it, or carry on. `0` disables the hand-back."
         ),
     )
     # When true, finish_session is refused while the last verify is red (or a verify
@@ -148,10 +147,10 @@ class WorkflowConfig(BaseModel):
         default=-1,
         description=(
             "Consecutive fruitless standing-goal re-entries (rounds with no executed tool call) "
-            "the run absorbs before soft ends are honoured. `-1` (default): never on its own -- "
-            "the run ends on its budget, iteration cap, or an operator stop; `0`: the first "
-            "fruitless round ends it; `N`: N fruitless re-entries get an escalating nudge, then "
-            "ends are honoured. A round that lands work resets the streak."
+            "the run absorbs before soft ends are honoured. `-1`: never on its own (the run ends "
+            "on its budget, iteration cap, or an operator stop); `0`: the first fruitless round "
+            "ends it; `N`: N fruitless re-entries get an escalating nudge, then ends are "
+            "honoured. A round that lands work resets the streak."
         ),
     )
     require_verify_to_finish: bool = Field(
@@ -230,8 +229,8 @@ class ContextConfig(BaseModel):
         default=0,
         description=(
             "At tier-1 moments, drop the model's thinking from assistant turns older than this "
-            "many turns. `0` keeps all thinking. Anthropic-format providers only; the OpenAI wire "
-            "never re-sends thinking."
+            "many turns. `0` keeps all thinking. Wires that re-send thinking (Anthropic's signed "
+            "blocks, ChatGPT's reasoning items) replay less; the OpenAI wire never re-sends it."
         ),
     )
     summary_max_tokens: int = Field(
@@ -429,8 +428,7 @@ class ReviewConfig(BaseModel):
         default=0.25,
         description=(
             "Skip the panel (the finish is accepted) once the run's remaining budget falls below "
-            "this fraction of the whole; reviewing costs most exactly when the budget is scarcest. "
-            "`0.25`: no panel in the last quarter."
+            "this fraction of the whole. `0.25`: no panel in the last quarter."
         ),
     )
     seats: StrTuple = Field(
@@ -541,9 +539,8 @@ class BudgetConfig(BaseModel):
             "Cap on the plan percentage points one run may consume on a subscription provider "
             "(the rise in the account's reported used-percent across the run, accumulated across "
             "window resets, so values above 100 are meaningful). The reading is account-global: "
-            "a concurrent run's spend counts toward whichever run observes it next. `-1` "
-            "(default): unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per "
-            "run."
+            "a concurrent run's spend counts toward whichever run observes it next. `-1`: "
+            "unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per run."
         ),
     )
 

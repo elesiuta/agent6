@@ -145,7 +145,7 @@ class _ProviderBase(BaseModel):
         description=(
             "How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the "
             "OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local "
-            "endpoint). `agent6 connect` sets it; rarely typed by hand."
+            "endpoint). `agent6 connect` sets it."
         ),
     )
     # Static key: env var name (falls back to secrets.toml by provider name).
