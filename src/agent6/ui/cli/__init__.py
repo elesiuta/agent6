@@ -642,6 +642,7 @@ def _dispatch_model(args: argparse.Namespace) -> int:
 def _dispatch_memory(args: argparse.Namespace) -> int:
     from agent6.ui.cli.memory_cmds import (  # noqa: PLC0415
         _cmd_memory_add,
+        _cmd_memory_decisions,
         _cmd_memory_list,
         _cmd_memory_rm,
         _cmd_memory_show,
@@ -655,6 +656,8 @@ def _dispatch_memory(args: argparse.Namespace) -> int:
         return _cmd_memory_show(args.name)
     if args.memory_command == "rm":
         return _cmd_memory_rm(args.name)
+    if args.memory_command == "decisions":
+        return _cmd_memory_decisions()
     raise AssertionError("unreachable")  # pragma: no cover -- memory subparser is required
 
 

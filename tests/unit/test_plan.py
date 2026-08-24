@@ -617,3 +617,35 @@ def test_an_unreadable_plan_parks_the_leg(tmp_path: Path) -> None:
     assert "plan.md unreadable" in got.summary
     assert "agent6 resume" in got.summary  # the remedy is in hand
     assert got.iterations == 3 and got.tool_calls == 4
+
+
+def test_the_decisions_block_renders_when_rulings_exist(tmp_path: Path) -> None:
+    """The operator's rulings ride the system prompt in every mode, after the
+    memory block; nothing renders when none are recorded."""
+    from agent6.config import Config
+    from agent6.types import RepoSummary
+    from agent6.workflows.loop import build_system_prompt  # pyright: ignore[reportPrivateUsage]
+
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="",
+        head_sha="",
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+        is_git=False,
+    )
+    for mode in ("run", "plan", "ask"):
+        text = build_system_prompt(
+            config=Config(),
+            repo=repo,
+            mode=mode,
+            skills=None,
+            decisions="- 2026-08-23 00:00Z [s] Q: Modal?\n  A: No.",
+            decisions_path="/m/DECISIONS.md",
+        )
+        assert "<decisions>" in text and "A: No." in text and "/m/DECISIONS.md" in text
+    assert "<decisions>" not in build_system_prompt(
+        config=Config(), repo=repo, mode="run", skills=None
+    )

@@ -6551,3 +6551,55 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
         ),
     )
     assert wf2.config.workflow.verify_command == argv and st2.verify.broken_warned
+
+
+def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
+    """The decisions file is written by the harness, not the model: an
+    ask_user answer lands as a ruling with its question, a steer that answers
+    the model's trailing question lands with that question, an ordinary steer
+    does not, and the finish-time check finds them all in the file."""
+    from agent6.memory import decisions_path
+    from agent6.tools.results import AnswersResult
+    from agent6.workflows._conversation import Conversation
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    events = MagicMock(path=tmp_path / "sessions" / "runs" / "tidy-fox-1" / "logs.jsonl")
+    prompts = iter(["Use the inline item.", "unrelated instruction"])
+    wf = _wf(
+        root=tmp_path,
+        state_dir=state_dir,
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+        events=events,
+        steer_requested=lambda: True,
+        steer_prompt=lambda: next(prompts),
+        steer_clear=lambda: None,
+    )
+    st = _state()
+    turn = _turn(iteration=1)
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        st,
+        turn,
+        "ask_user",
+        AnswersResult(answers=("8931", "no")),
+        {"questions": [{"question": "Which port?"}, {"question": "Keep the modal?"}]},
+    )
+    conv = Conversation()
+    conv.notice("task")
+    conv.assistant([{"type": "text", "text": "Two shapes fit.\nDrop the modal or keep it?"}])
+    assert wf._maybe_handle_steer(conv, 2, st) is None  # pyright: ignore[reportPrivateUsage]
+    conv.assistant([{"type": "text", "text": "Done with the item."}])
+    assert wf._maybe_handle_steer(conv, 3, st) is None  # pyright: ignore[reportPrivateUsage]
+    text = decisions_path(state_dir).read_text(encoding="utf-8")
+    assert text.count("[tidy-fox-1]") == 3
+    assert "Q: Which port?\n  A: 8931\n" in text and "Q: Keep the modal?\n  A: no\n" in text
+    assert "Q: Drop the modal or keep it?\n  A: Use the inline item.\n" in text
+    assert "unrelated instruction" not in text
+    assert len(st.decisions_recorded) == 3
+    wf._check_decisions_recorded(st)  # pyright: ignore[reportPrivateUsage]
+    assert not any(
+        c.kwargs.get("missing")
+        for c in events.emit.call_args_list
+        if c.args[:1] == ("loop.decision.unrecorded",)
+    )

@@ -38,7 +38,7 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "ask": ("query", frozenset({"query", "list"})),
     "history": ("search", frozenset({"search"})),
     "skills": ("list", frozenset({"install", "update", "list", "enable", "disable", "remove"})),
-    "memory": ("list", frozenset({"add", "list", "show", "rm"})),
+    "memory": ("list", frozenset({"add", "list", "show", "rm", "decisions"})),
     "mcp": ("list", frozenset({"connect", "list", "serve"})),
     "config": (
         "show",
@@ -289,6 +289,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mem_show.add_argument("name", help="Memory name.")
     mem_rm = _sub(mem_sub, "rm", help="Delete a memory file and its index line.")
     mem_rm.add_argument("name", help="Memory name.")
+    _sub(
+        mem_sub,
+        "decisions",
+        help="Print the operator rulings the harness recorded (memory/DECISIONS.md).",
+    )
 
     _add_skills_parser(sub)
 

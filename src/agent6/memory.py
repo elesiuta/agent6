@@ -13,12 +13,18 @@ memory across repos is the operator copying it.
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
 from agent6.errors import OperatorError
 
 MEMORY_DIR_NAME = "memory"
 INDEX_NAME = "MEMORY.md"
+# Operator rulings, harness-written and append-only: every ask_user answer and
+# every steer that answered a question, verbatim. The model reads it (it is
+# shown first, like the index) and never writes it.
+DECISIONS_NAME = "DECISIONS.md"
+DECISIONS_INJECT_CAP = 4_096
 # The index is injected whole; past the cap it is clipped with a pointer so
 # a runaway index cannot flood every prompt in the repo.
 INDEX_INJECT_CAP = 4_096
@@ -36,6 +42,41 @@ def memory_dir(state_dir: Path) -> Path:
 
 def index_path(state_dir: Path) -> Path:
     return memory_dir(state_dir) / INDEX_NAME
+
+
+def decisions_path(state_dir: Path) -> Path:
+    return memory_dir(state_dir) / DECISIONS_NAME
+
+
+def record_decision(
+    state_dir: Path, *, question: str, answer: str, session: str, when: float | None = None
+) -> str:
+    """Append one operator ruling (question as asked, answer verbatim, the
+    session and UTC time) and return the entry written. Append-only: nothing
+    here rewrites or removes an earlier entry."""
+    stamp = time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(when))
+    q = question.strip().replace("\n", "\n  ")
+    a = answer.strip().replace("\n", "\n  ")
+    entry = f"- {stamp} [{session}] Q: {q}\n  A: {a}\n"
+    path = decisions_path(state_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(entry)
+    return entry
+
+
+def decisions_text(state_dir: Path) -> str:
+    """The decisions file for injection: whole when it fits the cap, else
+    its newest tail behind a pointer; "" when nothing is recorded."""
+    try:
+        text = decisions_path(state_dir).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    if len(text) <= DECISIONS_INJECT_CAP:
+        return text
+    tail = text[-DECISIONS_INJECT_CAP:]
+    tail = tail[tail.index("\n- ") + 1 :] if "\n- " in tail else tail
+    return f"... (earlier rulings clipped; {DECISIONS_NAME} holds all)\n{tail}"
 
 
 def index_text(state_dir: Path) -> str:

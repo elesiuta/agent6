@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.config import Config
+from agent6.memory import DECISIONS_NAME
 from agent6.paths import hidden_paths
 from agent6.sandbox.jail import operator_tool_paths
 from agent6.tools._path_safety import Workspace
@@ -46,6 +47,7 @@ def workspace_for(config: Config, root: Path, *, memory_dir: Path | None = None)
         read_roots=(*(Path(p).resolve() for p in sb.extra_read_paths), *writable, *mem),
         write_roots=(*writable, *mem),
         exempt=mem,
+        read_only=(memory_dir / DECISIONS_NAME,) if memory_dir is not None else (),
     )
 
 

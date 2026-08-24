@@ -69,6 +69,20 @@ def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
     return f"{header}\n\n{tail}\n</memory>"
 
 
+def decisions_block(text: str, decisions_path: str) -> str:
+    """The <decisions> block: the operator's recorded rulings, verbatim,
+    newest last; empty when none are recorded."""
+    body = text.strip()
+    if not body:
+        return ""
+    return (
+        f"<decisions>\nOperator rulings at {decisions_path}, recorded by the harness:"
+        " each ask_user answer and each steer that answered a question, verbatim,"
+        " newest last. Read-only; a ruling stands until the operator changes it."
+        f"\n\n{body}\n</decisions>"
+    )
+
+
 SKILL_INDEX_LINE_MAX_CHARS = 200
 SKILLS_INDEX_MAX_CHARS = 8000
 SKILL_ALWAYS_MAX_CHARS = 24000
@@ -230,6 +244,8 @@ def build_system_prompt(
     mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
     memory_index: str = "",
     memory_dir_path: str = "",
+    decisions: str = "",
+    decisions_path: str = "",
     skills: ResolvedSkills | None,
     isolation: IsolationLevel = "strict",
 ) -> str:
@@ -373,6 +389,8 @@ def build_system_prompt(
     # above) and for plan/ask with nothing recorded.
     if memory_part := memory_block(memory_index, memory_dir_path, mode=mode):
         parts.append(memory_part)
+    if decisions_part := decisions_block(decisions, decisions_path):
+        parts.append(decisions_part)
 
     # Operator-installed skills, last: `always` full texts + the on-demand
     # index. The caller resolves discovery + [skills.state]; None or an empty

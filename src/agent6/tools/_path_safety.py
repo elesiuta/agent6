@@ -99,6 +99,8 @@ class Workspace:
     # extra_read_paths + extra_write_paths (write implies read).
     read_roots: tuple[Path, ...] = ()
     write_roots: tuple[Path, ...] = ()
+    # Files inside a write grant that the harness owns: readable, never written.
+    read_only: tuple[Path, ...] = ()
     # agent6's own carve-outs from `denied`, not operator surface: today
     # exactly the per-repo memory dir, a state subtree that is model-writable
     # BY DESIGN (memory is model-authored context). An exempt path still needs
@@ -123,7 +125,10 @@ class Workspace:
         return self._resolve(candidate, (self.root, *self.read_roots))
 
     def resolve_write(self, candidate: str) -> SafePath:
-        return self._resolve(candidate, (self.root, *self.write_roots))
+        sp = self._resolve(candidate, (self.root, *self.write_roots))
+        if sp.abs_path in self.read_only:
+            raise ToolError(f"Path is harness-owned and read-only: {candidate!r}")
+        return sp
 
     def _resolve(self, candidate: str, bases: tuple[Path, ...]) -> SafePath:
         sp = (

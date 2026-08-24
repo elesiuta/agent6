@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent6.config.layer import resolved_state_dir
-from agent6.memory import add, index_text, memory_dir, remove, show
+from agent6.memory import add, decisions_path, index_text, memory_dir, remove, show
 
 
 def _cmd_memory_add(name: str, body: str) -> int:
@@ -32,6 +32,18 @@ def _cmd_memory_list() -> int:
 
 def _cmd_memory_show(name: str) -> int:
     print(show(resolved_state_dir(Path.cwd()), name), end="")
+    return 0
+
+
+def _cmd_memory_decisions() -> int:
+    state = resolved_state_dir(Path.cwd())
+    path = decisions_path(state)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        print(f"(no rulings recorded; the harness writes them to {path})")
+        return 0
+    print(text, end="")
     return 0
 
 

@@ -86,3 +86,30 @@ def test_index_text_degrades_to_empty(tmp_path: Path) -> None:
     d.mkdir(parents=True)
     (d / "MEMORY.md").write_bytes(b"\xff\xfe broken")
     assert index_text(tmp_path) == ""
+
+
+def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(tmp_path: Path) -> None:
+    """The harness-owned DECISIONS.md: append-only entries (question, answer
+    verbatim with continuation lines indented, session, UTC time); the
+    injected text keeps the newest rulings behind a pointer past the cap."""
+    from agent6.memory import DECISIONS_INJECT_CAP, decisions_path, decisions_text, record_decision
+
+    assert decisions_text(tmp_path) == ""
+    first = record_decision(
+        tmp_path, question="Keep the modal?", answer="No.\nInline item.", session="s1", when=0
+    )
+    second = record_decision(tmp_path, question="Port?", answer="8931", session="s2", when=60)
+    text = decisions_path(tmp_path).read_text(encoding="utf-8")
+    assert text == first + second
+    assert first == "- 1970-01-01 00:00Z [s1] Q: Keep the modal?\n  A: No.\n  Inline item.\n"
+    assert decisions_text(tmp_path) == text.strip()
+    for i in range(200):
+        record_decision(
+            tmp_path, question=f"q{i} " + "x" * 40, answer="y" * 40, session="s", when=0
+        )
+    clipped = decisions_text(tmp_path)
+    assert len(clipped) <= DECISIONS_INJECT_CAP + 80
+    assert clipped.startswith("... (earlier rulings clipped") and clipped.rstrip().endswith(
+        "y" * 40
+    )
+    assert "q199" in clipped and "Keep the modal" not in clipped

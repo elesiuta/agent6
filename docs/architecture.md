@@ -118,6 +118,7 @@ With the per-tool transcripts, an interrupted run replays deterministically up t
 - `/compact [focus]` compacts on demand; `/pin <text>` survives every restart verbatim (4000-char total cap, loud refusal over it) and persists in the snapshot
 
 **Repo memory**: one fact per markdown file under `<state-dir>/<repo-id>/memory/`, plus a one-line-per-entry `MEMORY.md` index.
+Beside it, `DECISIONS.md` holds the operator's rulings: the harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time; the model reads it first (a `<decisions>` block, re-shown after a compaction restart), never writes it (`agent6 memory decisions` prints it), and a finish-time check reports any ruling missing from the file.
 
 - the index injects into every run's prompt as a capped `<memory>` block; depth is a file read
 - the worker writes through the ordinary edit tools under a narrow grant, in-process only; the jail never mounts it
@@ -323,6 +324,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `session.start` | `user_task` |
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
+| `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `memory/DECISIONS.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
 | `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`agents_md` / manifest / `llm` / `none` / `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
 | `role.call` / `.result` | `role`, `model`, `tokens_in`, `tokens_out` |
 | `role.text_delta` | streamed assistant text chunk |

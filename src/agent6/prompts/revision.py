@@ -117,6 +117,7 @@ def progress_summary_from_notice(text: str) -> str:
 def context_restart_notice(
     mode: Literal["run", "plan", "ask", "machine", "agent"],
     pins: Sequence[str] = (),
+    decisions: str = "",
 ) -> str:
     """The post-compaction restart preamble. The DAG-recovery paragraph is
     included only for modes whose tool surface has the DAG tools (run, plan):
@@ -128,5 +129,7 @@ def context_restart_notice(
         parts.append(_CONTEXT_RESTART_DAG)
     if block := pinned_block(pins):
         parts.append(block)
+    if decisions.strip():
+        parts.append(f"OPERATOR RULINGS (recorded, still binding):\n{decisions.strip()}\n")
     parts.append("PROGRESS SUMMARY:\n")
     return "\n\n".join(parts)

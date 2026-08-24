@@ -93,3 +93,21 @@ def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: Path) -> None:
     assert read_contained(ws.resolve_read("ok.txt")) == "hello\n"
     (root / "sub").mkdir()
     assert [e.name for e in list_contained(ws.resolve_read("sub"))] == []
+
+
+def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: Path) -> None:
+    """DECISIONS.md sits inside the memory grant (the model may read it) but
+    is harness-owned: an in-process write refuses, loudly."""
+    from agent6.config import Config
+    from agent6.tools import ToolError
+    from agent6.tools.policy import workspace_for
+
+    mem = tmp_path / "state" / "memory"
+    mem.mkdir(parents=True)
+    (mem / "DECISIONS.md").write_text("- ruling\n", encoding="utf-8")
+    (mem / "MEMORY.md").write_text("", encoding="utf-8")
+    ws = workspace_for(Config(), tmp_path, memory_dir=mem)
+    assert ws.resolve_read(str(mem / "DECISIONS.md")).abs_path == (mem / "DECISIONS.md").resolve()
+    ws.resolve_write(str(mem / "MEMORY.md"))
+    with pytest.raises(ToolError, match="harness-owned"):
+        ws.resolve_write(str(mem / "DECISIONS.md"))

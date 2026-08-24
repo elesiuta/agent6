@@ -45,8 +45,8 @@ from agent6.graph.models import (
     TaskNodeDraft,
     UpdateStatusIntent,
 )
+from agent6.memory import decisions_path, decisions_text, memory_dir, record_decision
 from agent6.memory import index_text as memory_index_text
-from agent6.memory import memory_dir
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT,
@@ -77,7 +77,7 @@ from agent6.tools.dispatch import (
     ToolError,
 )
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX
-from agent6.tools.results import ExecResult, MetricResult, ToolResult
+from agent6.tools.results import AnswersResult, ExecResult, MetricResult, ToolResult
 from agent6.tools.schema import (
     FinishPlanningInput,
     FinishSessionInput,
@@ -308,6 +308,8 @@ class _LoopState:
     # curator rejects) is not "work since the last re-entry" -- a goal round
     # that produced nothing ends the run instead of re-entering to its budget.
     ok_tool_calls: int = 0
+    # Rulings this leg appended to DECISIONS.md, for the finish-time check.
+    decisions_recorded: list[str] = field(default_factory=list)
     metric_history: list[MetricSample] = field(default_factory=list)
     # Tier-2 re-fires only after the context grew 25% past the last restart's
     # size: a restart that lands near the threshold (tiny explicit thresholds,
@@ -445,6 +447,19 @@ class _NextTurn:
 
 
 _NEXT_TURN = _NextTurn()
+
+
+def _last_assistant_prose(conversation: Conversation) -> str:
+    """The text of the newest assistant turn ("" when the last turn is not
+    the assistant's), for pairing a steer with the question it answers."""
+    turns = conversation.turns
+    if not turns or not isinstance(turns[-1], AssistantTurn):
+        return ""
+    return "".join(
+        str(b.get("text", ""))
+        for b in turns[-1].raw_content
+        if isinstance(b, dict) and b.get("type") == "text"
+    )
 
 
 @dataclass(slots=True)
@@ -790,6 +805,8 @@ class Workflow:
             mode=self.mode,
             memory_index=self._load_memory_index(),
             memory_dir_path=str(memory_dir(self.state_dir)) if self.state_dir is not None else "",
+            decisions=self._load_decisions(),
+            decisions_path=str(decisions_path(self.state_dir)) if self.state_dir else "",
             skills=self._load_skills(),
             isolation=self.dispatcher.isolation,
         )
@@ -1486,6 +1503,11 @@ class Workflow:
         (they feed auto-commit-on-verify-pass and ground the review panel:
         verify-pass presumes correctness, verify-red is the hard signal),
         manual metric samples, tree edits, and DAG mutations."""
+        if name == "ask_user" and isinstance(result, AnswersResult):
+            questions = tool_input.get("questions") if isinstance(tool_input, dict) else None
+            for q, answer in zip(questions or [], result.answers, strict=False):
+                text = q.get("question", "") if isinstance(q, dict) else str(q)
+                self._record_decision(state, str(text), answer)
         if name == "run_verify_command" and isinstance(result, ExecResult):
             self._note_verify_result(state, turn, result)
         elif name == "run_metric_command" and isinstance(result, MetricResult):
@@ -2568,6 +2590,7 @@ class Workflow:
             # -- all_passed reflects the actual verify state, never just "the
             # model called finish_session".
             reason = self._finish_reason(turn, state)
+            self._check_decisions_recorded(state)
             if turn.finish_kind == "finish_session":
                 self._emit_run_end_grounded(reason=reason, iteration=turn.iteration, state=state)
             else:
@@ -3382,6 +3405,42 @@ class Workflow:
             return ""
         return memory_index_text(self.state_dir)
 
+    def _load_decisions(self) -> str:
+        """The operator's recorded rulings for the prompt ("" without a state
+        dir); every mode sees them, a ruling binds a planner as much as a
+        worker."""
+        return decisions_text(self.state_dir) if self.state_dir is not None else ""
+
+    def _record_decision(self, state: _LoopState, question: str, answer: str) -> None:
+        """An operator answer becomes a durable ruling the moment it arrives:
+        appended to the repo's DECISIONS.md by the harness (never by the
+        model), remembered for the finish-time check."""
+        if self.state_dir is None or not answer.strip():
+            return
+        session = self.events.path.parent.name if self.events is not None else ""
+        try:
+            entry = record_decision(
+                self.state_dir, question=question, answer=answer, session=session
+            )
+        except OSError as exc:
+            self._log(f"LOOP: decision not recorded: {exc}")
+            self._emit("loop.decision.unrecorded", error=str(exc))
+            return
+        state.decisions_recorded.append(entry)
+        self._log(f"LOOP: decision recorded ({len(answer)} chars)")
+        self._emit("loop.decision.recorded", question=question[:200], answer=answer[:200])
+
+    def _check_decisions_recorded(self, state: _LoopState) -> None:
+        """The finish-time check: every ruling this leg recorded is in the
+        file. A miss is reported (log + event), never a block."""
+        if self.state_dir is None or not state.decisions_recorded:
+            return
+        text = decisions_text(self.state_dir)
+        missing = [e for e in state.decisions_recorded if e.strip() not in text]
+        if missing:
+            self._log(f"LOOP: {len(missing)} recorded decision(s) missing from DECISIONS.md")
+            self._emit("loop.decision.unrecorded", missing=len(missing))
+
     def _load_skills(self) -> ResolvedSkills | None:
         """Operator-installed skills for the system prompt, run mode only.
 
@@ -3866,7 +3925,8 @@ class Workflow:
             self._apply_compaction_checkoff(raw, valid_ids={tid for tid, _ in open_tasks})
         summary = strip_checkoff(raw) if open_tasks else raw
         conversation.restart(
-            context_restart_notice(self.mode, pins=state.pins) + summary,
+            context_restart_notice(self.mode, pins=state.pins, decisions=self._load_decisions())
+            + summary,
             keep=turns[tail_start:],
         )
         state.tier2_floor_chars = int(context_chars(conversation) * 1.25)
@@ -4477,6 +4537,9 @@ class Workflow:
             return None
         self._log(f"  injecting steering instruction ({len(steer_text)} chars)")
         self._emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
+        asked = _last_assistant_prose(conversation)
+        if ends_with_question(asked):
+            self._record_decision(state, asked.strip().splitlines()[-1], steer_text)
         conversation.notice(
             "OPERATOR STEERING (mid-run instruction; "
             "incorporate this into your next step):\n"

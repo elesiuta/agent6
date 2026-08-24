@@ -46,3 +46,19 @@ def test_add_list_show_rm_roundtrip(env: Path, capsys: pytest.CaptureFixture[str
 def test_bad_name_refuses_loud(env: Path) -> None:
     with pytest.raises(MemoryStoreError, match="bad memory name"):
         _cmd_memory_add("Bad Name", "x")
+
+
+def test_decisions_prints_the_rulings_or_says_none(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.config.layer import resolved_state_dir
+    from agent6.memory import record_decision
+    from agent6.ui.cli.memory_cmds import (
+        _cmd_memory_decisions,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    assert _cmd_memory_decisions() == 0
+    assert "no rulings recorded" in capsys.readouterr().out
+    record_decision(resolved_state_dir(Path.cwd()), question="Q?", answer="A", session="s", when=0)
+    assert _cmd_memory_decisions() == 0
+    assert capsys.readouterr().out == "- 1970-01-01 00:00Z [s] Q: Q?\n  A: A\n"

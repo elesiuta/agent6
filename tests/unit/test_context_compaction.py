@@ -571,3 +571,15 @@ def test_strip_thinking_preserves_tool_use_pairing() -> None:
         if isinstance(m.get("content"), list)
         for b in m["content"]
     )
+
+
+def test_restart_notice_re_shows_the_operator_rulings() -> None:
+    """A compaction restart re-shows DECISIONS.md between the pins and the
+    summary, so a ruling survives the summary that might have dropped it."""
+    from agent6.prompts.revision import context_restart_notice
+
+    notice = context_restart_notice("run", pins=("pin one",), decisions="- Q: modal?\n  A: no")
+    head, rulings, summary = notice.partition("OPERATOR RULINGS (recorded, still binding):")
+    assert "pin one" in head and rulings and "- Q: modal?\n  A: no" in summary
+    assert summary.index("A: no") < summary.index("PROGRESS SUMMARY")
+    assert "OPERATOR RULINGS" not in context_restart_notice("run")
