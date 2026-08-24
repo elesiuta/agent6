@@ -551,8 +551,11 @@ class BudgetConfig(BaseModel):
         description=(
             "Allow chatgpt calls to spend PURCHASED credits once the included plan window "
             "is exhausted (auto top-up can buy more with the saved payment method). "
-            "Default false: such a call refuses and the run ends at its next boundary; "
-            "included-plan usage is unaffected."
+            "`false` is a circuit breaker, not a guarantee: a usage preflight before the "
+            "first call and every response's headers report the account's windows and "
+            "credits, and once a window is exhausted with credits present the run stops "
+            "at its next boundary; a call already in flight completes. Included-plan "
+            "usage is unaffected."
         ),
     )
 

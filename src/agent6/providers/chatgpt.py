@@ -269,7 +269,7 @@ def _unreachable_hook(data: dict[str, Any]) -> Any:
 
 
 def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
-    """The primary rate-limit window off a response's `x-codex-*` headers.
+    """The rate-limit windows off a response's `x-codex-*` headers.
 
     The percent budget and every plan-usage surface read this one parse;
     None when the backend sent no reading (absent or malformed)."""
@@ -291,6 +291,11 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
     def _flag(name: str) -> bool:
         return (headers.get(name) or "").strip().lower() == "true"
 
+    secondary: float | None
+    try:
+        secondary = float(headers.get("x-codex-secondary-used-percent", ""))
+    except (TypeError, ValueError):
+        secondary = None
     return PlanUsage(
         has_credits=_flag("x-codex-credits-has-credits"),
         credits_unlimited=_flag("x-codex-credits-unlimited"),
@@ -298,6 +303,53 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
         used_percent=used,
         window_minutes=int(_num("x-codex-primary-window-minutes")),
         resets_at=resets_at,
+        secondary_used_percent=secondary,
+    )
+
+
+def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
+    """The account's plan state off the backend's `/usage` body: both
+    rate-limit windows, its own limit-reached verdict, and the purchased-
+    credit family. None when the body carries no primary window."""
+    limits = body.get("rate_limit")
+    primary = limits.get("primary_window") if isinstance(limits, Mapping) else None
+    if not isinstance(limits, Mapping) or not isinstance(primary, Mapping):
+        return None
+    try:
+        used = float(primary.get("used_percent", ""))
+    except (TypeError, ValueError):
+        return None
+    secondary_window = limits.get("secondary_window")
+    secondary: float | None = None
+    if isinstance(secondary_window, Mapping):
+        try:
+            secondary = float(secondary_window.get("used_percent", ""))
+        except (TypeError, ValueError):
+            secondary = None
+    credits = body.get("credits")
+    credits = credits if isinstance(credits, Mapping) else {}
+    try:
+        resets_at = float(primary.get("reset_at") or 0)
+    except (TypeError, ValueError):
+        resets_at = 0.0
+    if not resets_at:
+        try:
+            resets_at = time.time() + float(primary.get("reset_after_seconds") or 0)
+        except (TypeError, ValueError):
+            resets_at = time.time()
+    try:
+        window_minutes = int(float(primary.get("limit_window_seconds") or 0) / 60)
+    except (TypeError, ValueError):
+        window_minutes = 0
+    return PlanUsage(
+        has_credits=bool(credits.get("has_credits")),
+        credits_unlimited=bool(credits.get("unlimited")),
+        credits_balance=str(credits.get("balance") or "").strip(),
+        used_percent=used,
+        window_minutes=window_minutes,
+        resets_at=resets_at,
+        secondary_used_percent=secondary,
+        limit_reached=bool(limits.get("limit_reached")),
     )
 
 
@@ -337,6 +389,28 @@ class ChatGPTProvider:
     # Stable per-provider id: the backend's `prompt_cache_key` (<= 64 chars)
     # and `session-id` header, so caching keys to this run's conversation.
     session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    # One usage preflight per provider (a mutable cell on a frozen dataclass).
+    _preflighted: list[bool] = field(default_factory=lambda: [False])
+
+    def preflight(self) -> PlanUsage | None:
+        """The account's plan state BEFORE any call, off the backend's
+        `/usage` (same host as `base_url`): both windows and the credit
+        family. Best effort: any failure reads as no reading, never as a
+        block. The body is parsed and dropped (it carries the account's
+        email), never recorded."""
+        try:
+            token = self.credential.token()
+            resp = httpx2.get(
+                f"{self.base_url.rstrip('/')}/usage",
+                headers=self._build_headers(token),
+                timeout=20.0,
+            )
+            if resp.status_code != 200:
+                return None
+            body = resp.json()
+        except (httpx2.HTTPError, ValueError, OSError):
+            return None
+        return plan_usage_from_usage_body(body) if isinstance(body, dict) else None
 
     def _build_headers(self, token: str) -> dict[str, str]:
         headers = {
@@ -372,6 +446,11 @@ class ChatGPTProvider:
         # Anthropic-shaped `extended_thinking` has no mapping here either.
         del max_tokens, temperature, extended_thinking
         if self.budget is not None:
+            if not self._preflighted[0]:
+                self._preflighted[0] = True
+                plan = self.preflight()
+                if plan is not None:
+                    self.budget.record_plan_preflight(self.model, plan)
             self.budget.check()
         url, _ = request_url(
             api_format="chatgpt",

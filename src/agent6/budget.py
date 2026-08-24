@@ -60,6 +60,20 @@ class PlanUsage:
     has_credits: bool = False
     credits_unlimited: bool = False
     credits_balance: str = ""
+    # The secondary window where the plan has one (None: none reported), and
+    # the backend's own verdict that a window is exhausted.
+    secondary_used_percent: float | None = None
+    limit_reached: bool = False
+
+    @property
+    def window_exhausted(self) -> bool:
+        """Whether the next plan-metered call draws past the included
+        allowance: either window at 100, or the backend says so."""
+        return (
+            self.limit_reached
+            or self.used_percent >= 100.0
+            or (self.secondary_used_percent or 0.0) >= 100.0
+        )
 
 
 @dataclass(slots=True)
@@ -337,7 +351,7 @@ class BudgetTracker:
             plan_usage.has_credits
             and not plan_usage.credits_unlimited
             and not self.allow_paid_credits
-            and plan_usage.used_percent >= 100.0
+            and plan_usage.window_exhausted
         ):
             balance = plan_usage.credits_balance or "unknown"
             self._exceeded_reason = (
@@ -357,6 +371,15 @@ class BudgetTracker:
                 f" percentage points >= max_percent {self.max_percent:g}"
                 f" (account at {plan_usage.used_percent:g}%)"
             )
+
+    def record_plan_preflight(self, model: str, plan: PlanUsage) -> None:
+        """A usage reading taken BEFORE the first plan-metered call: the
+        baseline every later delta counts from, and the paid-credit guard's
+        first look, so a run that would draw on purchased credits refuses at
+        its first call instead of after it."""
+        with self._lock:
+            self._note_plan_usage(plan)
+            self._check_plan_ceilings(model, plan)
 
     def check(self) -> None:
         """Raise `BudgetExceeded` if a prior `record()` crossed a ceiling."""

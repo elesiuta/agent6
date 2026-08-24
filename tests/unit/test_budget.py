@@ -333,3 +333,33 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
     )
     # The run consumed ~2.5 points of its 5-point cap.
     assert 0.4 <= t.fraction_remaining() <= 0.6
+
+
+def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
+    """A preflight reading is the baseline the first response's delta counts
+    from (no call's spend is invisible), and the paid-credit guard sees it
+    before any call; a secondary window at 100 counts as exhausted."""
+    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    t.record_plan_preflight("m", PlanUsage(used_percent=40.0, window_minutes=10080, resets_at=0))
+    t.record(
+        model="m",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        plan_usage=PlanUsage(used_percent=42.0, window_minutes=10080, resets_at=0),
+    )
+    assert t.snapshot().plan_consumed == 2.0
+    guarded = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    guarded.record_plan_preflight(
+        "m",
+        PlanUsage(
+            used_percent=10.0,
+            window_minutes=10080,
+            resets_at=0,
+            has_credits=True,
+            secondary_used_percent=100.0,
+        ),
+    )
+    with pytest.raises(BudgetExceeded, match="purchased"):
+        guarded.check()

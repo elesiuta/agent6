@@ -12,7 +12,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.budget import BudgetTracker
+from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.providers import ProviderError
 from agent6.providers.chatgpt import (
     ChatGPTProvider,
@@ -610,3 +610,130 @@ def test_orphaned_reasoning_is_dropped_with_its_call() -> None:
     ]
     items = responses_input([{"role": "assistant", "content": blocks}])
     assert items == []
+
+
+_USAGE_BODY: dict[str, Any] = {
+    "plan_type": "pro",
+    "rate_limit": {
+        "allowed": True,
+        "limit_reached": False,
+        "primary_window": {
+            "used_percent": 38,
+            "limit_window_seconds": 604800,
+            "reset_after_seconds": 435664,
+            "reset_at": 1787867609,
+        },
+        "secondary_window": None,
+    },
+    "credits": {"has_credits": False, "unlimited": False, "balance": "0"},
+}
+
+
+def test_usage_body_parses_both_windows_and_the_credit_family() -> None:
+    from agent6.providers.chatgpt import plan_usage_from_usage_body
+
+    plan = plan_usage_from_usage_body(_USAGE_BODY)
+    assert plan is not None
+    assert plan.used_percent == 38.0 and plan.window_minutes == 10080
+    assert plan.resets_at == 1787867609.0 and plan.secondary_used_percent is None
+    assert plan.has_credits is False and plan.window_exhausted is False
+    body = json.loads(json.dumps(_USAGE_BODY))
+    body["rate_limit"]["limit_reached"] = True
+    body["rate_limit"]["secondary_window"] = {"used_percent": 100}
+    body["credits"] = {"has_credits": True, "unlimited": False, "balance": "$12.50"}
+    plan = plan_usage_from_usage_body(body)
+    assert plan is not None and plan.secondary_used_percent == 100.0
+    assert plan.limit_reached and plan.has_credits and plan.credits_balance == "$12.50"
+    assert plan.window_exhausted
+    assert plan_usage_from_usage_body({"credits": {}}) is None
+
+
+def test_secondary_window_header_rides_into_the_reading() -> None:
+    from agent6.providers.chatgpt import _plan_usage_of  # pyright: ignore[reportPrivateUsage]
+
+    plan = _plan_usage_of(
+        {"x-codex-primary-used-percent": "12", "x-codex-secondary-used-percent": "100"}
+    )
+    assert plan is not None and plan.secondary_used_percent == 100.0
+    assert plan.window_exhausted
+
+
+def _usage_get(body: dict[str, Any], status: int = 200):
+    class _Resp:
+        status_code = status
+
+        def json(self) -> Any:
+            return body
+
+    calls: list[str] = []
+
+    def get(url: str, **kwargs: Any) -> _Resp:
+        calls.append(url)
+        return _Resp()
+
+    return get, calls
+
+
+def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
+    signed_in: ChatGPTCredential,
+) -> None:
+    """A usage reading taken BEFORE the first call: an exhausted window with
+    purchased credits and `allow_paid_credits = false` refuses the run at the
+    first call, with no request sent, and the reading seeds the percent
+    ledger. With the knob on, the call proceeds."""
+    body = json.loads(json.dumps(_USAGE_BODY))
+    body["rate_limit"]["limit_reached"] = True
+    body["credits"] = {"has_credits": True, "unlimited": False, "balance": "$5.00"}
+    get, urls = _usage_get(body)
+    streamed: list[str] = []
+
+    def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        streamed.append(url)
+        return _FakeStreamResponse(status_code=200, lines=_happy_stream())
+
+    provider = _provider(
+        signed_in, budget=BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1)
+    )
+    with (
+        mock.patch("httpx2.get", side_effect=get),
+        mock.patch("httpx2.stream", side_effect=stream),
+        pytest.raises(BudgetExceeded, match="purchased"),
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    assert urls == ["https://chatgpt.com/backend-api/codex/usage"] and streamed == []
+    assert provider.budget is not None and provider.budget.snapshot().plan_latest is not None
+
+    allowed = _provider(
+        signed_in,
+        budget=BudgetTracker(
+            max_usd=10.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True
+        ),
+    )
+    with mock.patch("httpx2.get", side_effect=get), mock.patch("httpx2.stream", side_effect=stream):
+        allowed.call(system="s", messages=[{"role": "user", "content": "x"}])
+        allowed.call(system="s", messages=[{"role": "user", "content": "y"}])
+    assert len(streamed) == 2 and len(urls) == 2  # one preflight per provider
+
+
+def test_preflight_failure_never_blocks(signed_in: ChatGPTCredential) -> None:
+    """The preflight is best effort: a transport error or a non-200 reads as
+    no reading, and the call proceeds on the response headers as before."""
+    get, _urls = _usage_get({}, status=503)
+    provider = _provider(
+        signed_in, budget=BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1)
+    )
+    with (
+        mock.patch("httpx2.get", side_effect=get),
+        mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
+    ):
+        resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    assert resp.text == "hello"
+    with (
+        mock.patch("httpx2.get", side_effect=OSError("down")),
+        mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
+    ):
+        fresh = _provider(
+            signed_in, budget=BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1)
+        )
+        resp = fresh.call(system="s", messages=[{"role": "user", "content": "x"}])
+    assert resp.text == "hello"
