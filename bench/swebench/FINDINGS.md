@@ -718,3 +718,25 @@ returns on the same 110 (the cert30 subset cut regressions 14 -> 5); a
 raised-caps arm on a hard sample to price the budget shape; executed
 test-first and conventions-mining arms for the zero-F2P class (the
 imagined-examples step measured null-to-negative).
+
+### The compute-shape parity arm: a null (2026-08-23)
+
+Whether the board's uncapped scaffold explains the rebench gap: the
+gateless baseline config with the caps raised from $1/1200s to $3/2400s
+(the $ cap never binds on the subscription, so the variable is wall),
+same 0.0.28 wheel, seed 20260828, 30 ids in two registered batches,
+official scorer.
+
+| baseline ($1/1200s) -> raised caps ($3/2400s) | resolved |
+|---|---|
+| 15 baseline-unresolved ids (the 9 wall-timeouts + 6 seeded misses) | 0/15 -> 2/15 |
+| 15 baseline-resolved controls (seeded) | 15/15 -> 13/15 |
+| net, all 30 | 15 -> 15 |
+
+Every empty is the agent's own wall timeout (11 of 30: 9 hard, 2
+controls; run.log markers). The old timeout ids mostly consume the
+doubled wall reading without converging, and two controls that resolved
+at 1200s wandered to a DNF at 2400s: run-to-run variance in both
+directions, zero net movement. Doubling wall and tripling the cap does
+not close the gap; the remaining suspects are loop shape and the
+zero-F2P contract class, not budget.
