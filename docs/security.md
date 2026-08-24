@@ -299,8 +299,8 @@ Under `none` isolation nothing is enforced or refused.
     - one read-only `GET` to the provider's key endpoint confirms auth (status only; `--no-verify` skips it)
     - it executes nothing a remote returns
 - `agent6 connect chatgpt` is a PKCE OAuth sign-in
-    - a browser hits the `oauth_issuer` authorize page; the code returns on `localhost:1455` (or is pasted), state-checked either way
-    - token exchange and refreshes `POST` only to `<oauth_issuer>/oauth/token`
+    - a browser hits the authorize page of OpenAI's fixed OAuth authority (a constant, not config); the code returns on `localhost:1455` (or is pasted), state-checked either way
+    - token exchange and refreshes `POST` only to the authority's `/oauth/token`
     - tokens live in `secrets.toml` under the same `0600` and executes-nothing rules
     - agent6 never sends a rating or feedback on a response and has no rating surface: the backend may use rated turns for training, and that choice is never made on the operator's behalf
 

@@ -65,8 +65,6 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is bounded at 20 s regardless. |
 | `prompt_caching` | `true` | Anthropic prompt caching: the system prompt, the tools, and the growing conversation are re-read at 0.1x the input price. `anthropic` format only. |
-| `oauth_issuer` | `"https://auth.openai.com"` | The OAuth authority `agent6 connect chatgpt` signs in against and tokens refresh against; with `base_url`, the only hosts this provider dials. |
-| `oauth_client_id` | `"app_EMoamEEZ73f0CkXaXp7hrann"` | The public OAuth client id presented to `oauth_issuer` (default: the Codex CLI client, whose registration pins the sign-in redirect to `localhost:1455`). |
 
 ### Deployments
 
@@ -108,14 +106,14 @@ agent6 connect chatgpt      # browser sign-in (paste fallback when headless)
 agent6 model worker chatgpt gpt-5-codex
 ```
 
-- `agent6 connect chatgpt` runs a PKCE OAuth sign-in against `oauth_issuer` and stores the tokens in `secrets.toml` (0600); they refresh automatically.
+- `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`, a constant, not config) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
 - Usage draws on the plan's own limits; cost meters show $0 for included-plan usage while token counts still feed the budget caps.
 - Past the included window, calls draw on PURCHASED credits (real money; auto top-up can buy more).
   `[budget].allow_paid_credits = false` (the default) is a circuit breaker: a usage preflight before the first call and every response's headers report both windows and the credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes, so a boundary-crossing call can spend before the stop.
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
 - Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs, never a static list), and its context windows size compaction.
-- `agent6 connect chatgpt --logout` signs out: the grant is revoked at `oauth_issuer` (best effort) and the tokens leave `secrets.toml`.
+- `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
 - Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show `plan usage: N% of the 7-day window`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run). Dollar figures stay an authoritative $0.
 
 ### OpenRouter routing and caching (`extra_body`)

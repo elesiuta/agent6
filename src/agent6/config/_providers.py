@@ -44,12 +44,6 @@ def validate_base_url(url: str, field: str = "base_url") -> None:
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 _OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 _CHATGPT_DEFAULT_BASE_URL = "https://chatgpt.com/backend-api/codex"
-_CHATGPT_DEFAULT_ISSUER = "https://auth.openai.com"
-# The Codex CLI's public OAuth client id (from the open-source Codex CLI);
-# its registration pins the sign-in redirect to localhost:1455. agent6
-# identifies itself honestly (`originator: agent6`) and never impersonates
-# the Codex client version.
-_CHATGPT_DEFAULT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
 
 def _default_base_url(api_format: str, deployment: str) -> str | None:
@@ -306,24 +300,12 @@ class ChatGPTProviderEntry(_ProviderBase):
     The Responses wire format at `chatgpt.com/backend-api/codex`, authorized
     by the OAuth tokens `agent6 connect chatgpt` stores in `secrets.toml`
     (no API key). Usage draws on the account's ChatGPT plan limits.
+    This provider dials only `base_url` and OpenAI's fixed OAuth authority
+    (the issuer and client id are constants, not config).
     """
 
     api_format: Literal["chatgpt"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         Field(description=_API_FORMAT_DESCRIPTION)
-    )
-    oauth_issuer: str = Field(
-        default=_CHATGPT_DEFAULT_ISSUER,
-        description=(
-            "The OAuth authority `agent6 connect chatgpt` signs in against and tokens refresh "
-            "against; with `base_url`, the only hosts this provider dials."
-        ),
-    )
-    oauth_client_id: str = Field(
-        default=_CHATGPT_DEFAULT_CLIENT_ID,
-        description=(
-            "The public OAuth client id presented to `oauth_issuer` (default: the Codex CLI "
-            "client, whose registration pins the sign-in redirect to `localhost:1455`)."
-        ),
     )
 
     @field_validator("base_url")
@@ -350,20 +332,6 @@ class ChatGPTProviderEntry(_ProviderBase):
         if clash:
             raise ValueError(
                 f"extra_headers may not override the chatgpt auth headers: {', '.join(clash)}"
-            )
-        return v
-
-    @field_validator("oauth_issuer")
-    @classmethod
-    def _check_oauth_issuer(cls, v: str) -> str:
-        validate_base_url(v, field="oauth_issuer")
-        if is_cleartext_url(v) and not is_loopback_url(v):
-            # The issuer receives the refresh token on every renewal; unlike a
-            # model base_url (where plain http serves LAN Ollama), cleartext
-            # for a credential authority is never right off-loopback.
-            raise ValueError(
-                "oauth_issuer must use https (plain http is allowed only for a"
-                " loopback test issuer)"
             )
         return v
 

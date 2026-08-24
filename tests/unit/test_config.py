@@ -409,8 +409,6 @@ def test_chatgpt_provider_defaults_and_refusals(tmp_path: Path) -> None:
     entry = cfg.providers["chatgpt"]
     assert isinstance(entry, ChatGPTProviderEntry)
     assert entry.base_url == "https://chatgpt.com/backend-api/codex"
-    assert entry.oauth_issuer == "https://auth.openai.com"
-    assert entry.oauth_client_id
     assert entry.auth_style == "bearer"
 
     for extra, named in (
@@ -418,7 +416,7 @@ def test_chatgpt_provider_defaults_and_refusals(tmp_path: Path) -> None:
         ('api_key_env = "OPENAI_API_KEY"\n', "api_key_env"),
         ('token_command = ["mint"]\n', "token_command"),
         ('auth_style = "none"\n', "auth_style"),
-        ('oauth_issuer = "not-a-url"\n', "oauth_issuer"),
+        ('oauth_issuer = "https://auth.example.com"\n', "oauth_issuer"),
     ):
         bad = body.replace(
             '[providers.chatgpt]\napi_format = "chatgpt"\n',
@@ -924,15 +922,19 @@ def test_a_provider_block_without_api_format_names_the_key(tmp_path: Path) -> No
     assert 'set api_format = "anthropic", "openai", or "chatgpt"' in str(exc.value)
 
 
-def test_chatgpt_issuer_refuses_cleartext_off_loopback(tmp_path: Path) -> None:
-    """The issuer receives the refresh token on every renewal: plain http is
-    refused except for a loopback test issuer."""
+def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:
+    """The issuer and client id are pinned to OpenAI's (a bearer authority is
+    never a config knob); a config that tries to set them is refused as an
+    unknown key, and the constants carry the pinned values."""
     from agent6.config import ChatGPTProviderEntry
+    from agent6.providers.chatgpt_oauth import CHATGPT_CLIENT_ID, CHATGPT_ISSUER
 
-    with pytest.raises(ValueError, match="https"):
-        ChatGPTProviderEntry(api_format="chatgpt", oauth_issuer="http://auth.lan.example")
-    ok = ChatGPTProviderEntry(api_format="chatgpt", oauth_issuer="http://127.0.0.1:8123")
-    assert ok.oauth_issuer.startswith("http://127.")
+    assert CHATGPT_ISSUER == "https://auth.openai.com"
+    assert CHATGPT_CLIENT_ID
+    with pytest.raises(ValueError, match="oauth_issuer"):
+        ChatGPTProviderEntry.model_validate(
+            {"api_format": "chatgpt", "oauth_issuer": "https://auth.example.com"}
+        )
 
 
 def test_model_git_control_requires_git_writes(tmp_path: Path) -> None:
@@ -972,10 +974,7 @@ def test_cleartext_rejection_is_scheme_case_insensitive(tmp_path: Path) -> None:
     """URL schemes are case-insensitive on the wire: `HTTP://` dials cleartext
     exactly like `http://`, so a prefix match would let a mixed-case scheme
     evade the https requirement on the chatgpt endpoints."""
-    for field, extra in (
-        ("base_url", 'base_url = "HTTP://api.example.com/codex"'),
-        ("oauth_issuer", 'oauth_issuer = "HTTP://auth.example.com"'),
-    ):
+    for field, extra in (("base_url", 'base_url = "HTTP://api.example.com/codex"'),):
         body = _VALID_TOML + f'\n[providers.gpt]\napi_format = "chatgpt"\n{extra}\n'
         d = tmp_path / field
         d.mkdir()

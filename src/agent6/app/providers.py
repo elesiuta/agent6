@@ -143,9 +143,7 @@ def _provider_from_entry(
     extra_body = dict(entry.extra_body)
     extra_query = dict(entry.extra_query)
     if isinstance(entry, ChatGPTProviderEntry):
-        chatgpt_credential = ChatGPTCredential(
-            provider_name, issuer=entry.oauth_issuer, client_id=entry.oauth_client_id
-        )
+        chatgpt_credential = ChatGPTCredential(provider_name)
         account = chatgpt_credential.account_id()  # raises the connect hint when not signed in
         if not account:
             raise ProviderError(

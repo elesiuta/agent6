@@ -5,9 +5,10 @@
 `agent6 connect chatgpt` owns the interaction (browser, local callback,
 paste fallback); this module owns the protocol: the authorize URL, the code
 exchange, the refresh grant, and the :class:`ChatGPTCredential` the provider
-holds per call. The issuer and client id come from the provider entry
-(`oauth_issuer`, `oauth_client_id`); the redirect is pinned to
-`localhost:1455` by the client registration, so it is a constant, not a knob.
+holds per call. The issuer, the client id, and the redirect
+(`localhost:1455`, pinned by the client registration) are constants, not
+knobs: the ChatGPT profile dials only OpenAI's hosts (tests inject a
+loopback issuer through the function parameters).
 
 Token requests go to `<issuer>/oauth/token` from agent6's own process;
 nothing a remote returns is executed. Tokens live in `secrets.toml` (0600)
@@ -35,6 +36,10 @@ from agent6.portable import locked_file
 from agent6.providers.types import ProviderError
 from agent6.secrets import OAuthTokens, load_oauth_tokens, save_oauth_tokens
 
+CHATGPT_ISSUER = "https://auth.openai.com"
+# The Codex CLI's public client registration, whose redirect is pinned to
+# localhost:1455 below.
+CHATGPT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 REDIRECT_URI = "http://localhost:1455/auth/callback"
 CALLBACK_PORT = 1455
 # The device flow's fixed pieces: where the person enters the code, and the
@@ -472,7 +477,13 @@ class ChatGPTCredential:
         "_tokens",
     )
 
-    def __init__(self, provider_name: str, *, issuer: str, client_id: str) -> None:
+    def __init__(
+        self,
+        provider_name: str,
+        *,
+        issuer: str = CHATGPT_ISSUER,
+        client_id: str = CHATGPT_CLIENT_ID,
+    ) -> None:
         self._provider = provider_name
         self._issuer = issuer
         self._client_id = client_id

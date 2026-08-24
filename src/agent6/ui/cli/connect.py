@@ -22,17 +22,18 @@ from pydantic import ValidationError
 
 from agent6.config import (
     AnthropicProviderEntry,
-    ChatGPTProviderEntry,
     OpenAIProviderEntry,
     ProviderEntry,
     validate_base_url,
 )
-from agent6.config.layer import load_effective, repo_config_path_for
+from agent6.config.layer import repo_config_path_for
 from agent6.config.write import PROVIDER_DEFAULTS, ConfigLeafValue, set_config_leaves
 from agent6.models.cache import probe_provider_key
 from agent6.paths import global_config_path
 from agent6.providers.chatgpt_oauth import (
     CALLBACK_PORT,
+    CHATGPT_CLIENT_ID,
+    CHATGPT_ISSUER,
     DEVICE_VERIFY_PATH,
     TokenGrant,
     authorize_url,
@@ -252,17 +253,6 @@ def _gui_browser_available() -> bool:
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
-def _chatgpt_oauth_fields(name: str) -> tuple[str, str]:
-    """The (issuer, client_id) to sign in with: the configured entry's when
-    `[providers.<name>]` is already a chatgpt block, else the defaults."""
-    with contextlib.suppress(Exception):
-        entry = load_effective(Path.cwd()).config.providers.get(name)
-        if isinstance(entry, ChatGPTProviderEntry):
-            return entry.oauth_issuer, entry.oauth_client_id
-    fresh = ChatGPTProviderEntry(api_format="chatgpt")
-    return fresh.oauth_issuer, fresh.oauth_client_id
-
-
 def _code_via_callback_server(url: str, state: str) -> str | None:
     """The GUI path: open the browser, wait on localhost for the redirect.
     None on timeout, Ctrl-C, or an unbindable port (the caller falls back)."""
@@ -319,7 +309,7 @@ def _chatgpt_sign_in(name: str) -> int:
     inputs read back are the authorization code (state-checked) and the
     token JSON.
     """
-    issuer, client_id = _chatgpt_oauth_fields(name)
+    issuer, client_id = CHATGPT_ISSUER, CHATGPT_CLIENT_ID
     verifier, challenge = pkce_pair()
     state = pysecrets.token_urlsafe(24)
     url = authorize_url(issuer, client_id, challenge=challenge, state=state)
@@ -383,10 +373,9 @@ def _cmd_logout(name: str) -> int:
     """
     tokens = load_oauth_tokens(name)
     if tokens is not None:
-        issuer, client_id = _chatgpt_oauth_fields(name)
-        err = revoke_tokens(issuer, client_id, tokens)
+        err = revoke_tokens(CHATGPT_ISSUER, CHATGPT_CLIENT_ID, tokens)
         if err is None:
-            print(f"Revoked the ChatGPT sign-in for {name!r} at {issuer}.")
+            print(f"Revoked the ChatGPT sign-in for {name!r} at {CHATGPT_ISSUER}.")
         else:
             print(f"WARNING: revocation failed ({err}); removing local tokens anyway.")
     try:
