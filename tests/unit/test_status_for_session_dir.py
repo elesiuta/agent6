@@ -183,3 +183,39 @@ def test_resume_clears_orphaned_pending_prompts() -> None:
     state = fold_session(events)
     assert len(state.pending_approvals) == 1  # the new leg's, not the orphan + a dup
     assert state.pending_questions == ()
+
+
+def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: Path) -> None:
+    """ "waiting · needs answer" said neither WHAT the run waits on nor for how
+    long. With a prompt ts, both fact producers word it "approval 5m" /
+    "question 5m" (oldest unanswered prompt); a ts-less log keeps the generic
+    wording."""
+    import datetime
+    import os
+
+    ts = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=5)).isoformat()
+    prompts: tuple[tuple[str, dict[str, object]], ...] = (
+        ("approval", {"type": "approval.prompt", "id": "approval-1", "prompt": "p", "ts": ts}),
+        ("question", {"type": "question.prompt", "id": "question-1", "questions": [], "ts": ts}),
+    )
+    for kind, ev in prompts:
+        events: list[dict[str, object]] = [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            ev,
+        ]
+        d = _mk(tmp_path, f"waiting-{kind}", events, parked="", pid=os.getpid())
+        scan = scan_session_log(d / "logs.jsonl")
+        fold = fold_session(events)
+        expect = ("waiting", f"{kind} 5m")
+        assert status_for_session_dir(d, scan.status_facts()) == expect
+        assert status_for_session_dir(d, status_facts(fold)) == expect
+
+    no_ts: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "approval.prompt", "id": "approval-1", "prompt": "p"},
+    ]
+    d = _mk(tmp_path, "waiting-no-ts", no_ts, parked="", pid=os.getpid())
+    assert status_for_session_dir(d, scan_session_log(d / "logs.jsonl").status_facts()) == (
+        "waiting",
+        "needs answer",
+    )

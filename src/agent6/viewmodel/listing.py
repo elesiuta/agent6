@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
 from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
 from agent6.task_text import operator_task_text
 from agent6.viewmodel.events import event_epoch
+from agent6.viewmodel.format import format_age
 
 
 def session_mtime(session_dir: Path) -> float:
@@ -237,6 +239,8 @@ class StatusFacts:
     all_passed: bool | None = False  # None = the end was ungated (no verify command)
     end_reason: str = ""
     operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
+    blocked_kind: str = ""  # "approval" | "question" | "" (oldest unanswered prompt)
+    blocked_since_ep: float | None = None  # that prompt's asked-at epoch
 
 
 def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, str]:
@@ -260,7 +264,12 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
         return status_word(finished=True, all_passed=facts.all_passed, end_reason=facts.end_reason)
     if facts.operator_blocked and worker_is_alive(session_dir):
         # Before session.start too: a run asks about the working tree's
-        # uncommitted changes before it starts.
+        # uncommitted changes before it starts. The detail names WHAT it
+        # waits on and for how long ("approval 12m"); a log whose prompt
+        # carried no parseable ts keeps the generic wording.
+        if facts.blocked_kind and facts.blocked_since_ep is not None:
+            age = format_age(time.time() - facts.blocked_since_ep)
+            return "waiting", f"{facts.blocked_kind} {age}"
         return "waiting", "needs answer"
     if not facts.started:
         return _unstarted_status(session_dir)
@@ -368,6 +377,8 @@ class LogScan:
     last_ep: float | None = None  # last event with a parseable ts
     last_type: str | None = None  # last event's type
     operator_blocked: bool = False  # a prompt is still unanswered on this leg
+    blocked_kind: str = ""  # oldest unanswered prompt's kind ("approval"/"question")
+    blocked_since_ep: float | None = None  # its asked-at epoch
     last_verify_rc: int | None = None  # this leg's last verify.end exit code
     pins: tuple[str, ...] = ()  # the operator's pinned instructions in force
 
@@ -396,6 +407,8 @@ class LogScan:
             all_passed=self.all_passed,
             end_reason=self.end_reason,
             operator_blocked=self.operator_blocked,
+            blocked_kind=self.blocked_kind,
+            blocked_since_ep=self.blocked_since_ep,
         )
 
 
@@ -464,7 +477,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     last_type: str | None = None
     # Prompt ids still awaiting their answer. A later event must not clear the
     # bit: Ctrl-C emits session.steer_requested while an approval still waits.
-    pending_prompts: set[str] = set()
+    pending_prompts: dict[str, tuple[str, float | None]] = {}
     last_verify_rc: int | None = None
     pins: list[str] = []
     try:
@@ -489,9 +502,10 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     # non-string id (an int) must be stored as str to match and
                     # clear -- else the run stays "waiting" forever.
                     if (pid := ev.get("id")) is not None:
-                        pending_prompts.add(str(pid))
+                        kind = "approval" if etype == "approval.prompt" else "question"
+                        pending_prompts[str(pid)] = (kind, ep)
                 elif etype in OPERATOR_ANSWER_EVENTS:
-                    pending_prompts.discard(str(ev.get("id")))
+                    pending_prompts.pop(str(ev.get("id")), None)
                 if etype == "session.start":
                     saw_start = True
                     finished = False  # a leg is starting (ask REPL re-runs in place)
@@ -569,6 +583,18 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         last_ep=last_ep,
         last_type=last_type,
         operator_blocked=bool(pending_prompts),
+        blocked_kind=(
+            oldest[0]
+            if (
+                oldest := min(
+                    pending_prompts.values(),
+                    key=lambda kv: kv[1] if kv[1] is not None else float("inf"),
+                    default=None,
+                )
+            )
+            else ""
+        ),
+        blocked_since_ep=oldest[1] if oldest else None,
         last_verify_rc=last_verify_rc,
         pins=tuple(pins),
     )

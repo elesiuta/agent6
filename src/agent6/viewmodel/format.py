@@ -42,6 +42,19 @@ def format_when(epoch: float) -> str:
     return time.strftime("%m-%d %H:%M", time.localtime(epoch))
 
 
+def format_age(seconds: float) -> str:
+    """A compact how-long figure for status cells: `<1m`, `12m`, `3h`, `2d`.
+    Floors, so two readings moments apart agree."""
+    s = max(0.0, seconds)
+    if s < 60:
+        return "<1m"
+    if s < 3600:
+        return f"{int(s // 60)}m"
+    if s < 172800:
+        return f"{int(s // 3600)}h"
+    return f"{int(s // 86400)}d"
+
+
 def format_cost(usd: float, *, partial: bool = False) -> str:
     """Render a USD cost identically on every surface (`budget.format_usd`:
     cents at >= $1, four decimals below), with a leading '~' when the figure is

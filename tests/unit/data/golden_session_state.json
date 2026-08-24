@@ -89,7 +89,8 @@
       "prompt": "Allow run_command: rm -rf build",
       "standing": true,
       "answered": true,
-      "approved": true
+      "approved": true,
+      "asked_ep": 1784023209.0
     }
   ],
   "pending_questions": [
@@ -113,7 +114,8 @@
         "hello",
         "yes"
       ],
-      "from_harness": false
+      "from_harness": false,
+      "asked_ep": 1784023210.0
     }
   ],
   "log_tail": [

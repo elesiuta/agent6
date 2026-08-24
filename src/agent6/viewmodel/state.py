@@ -143,6 +143,7 @@ class ApprovalPrompt:
     standing: bool = True
     answered: bool = False
     approved: bool | None = None
+    asked_ep: float | None = None  # for the waiting status's age
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +168,7 @@ class QuestionPrompt:
     answered: bool = False
     answers: tuple[str, ...] = ()
     from_harness: bool = False
+    asked_ep: float | None = None  # for the waiting status's age
 
 
 @dataclass(frozen=True, slots=True)
@@ -479,8 +481,8 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
                 ),
             )
 
-        case events.ApprovalPrompt(id=aid, prompt=prompt, standing=standing):
-            ap = ApprovalPrompt(id=aid, prompt=prompt, standing=standing)
+        case events.ApprovalPrompt(id=aid, prompt=prompt, standing=standing, ts_ep=ts_ep):
+            ap = ApprovalPrompt(id=aid, prompt=prompt, standing=standing, asked_ep=ts_ep)
             return replace(state, pending_approvals=(*state.pending_approvals, ap))
 
         case events.ApprovalAnswer(id=wanted_id, approved=approved):
@@ -490,10 +492,13 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             )
             return replace(state, pending_approvals=new)
 
-        case events.QuestionPrompt(id=qid, questions=qs):
+        case events.QuestionPrompt(id=qid, questions=qs, ts_ep=ts_ep):
             questions = tuple(Question(question=q.question, options=q.options) for q in qs)
             qp = QuestionPrompt(
-                id=qid, questions=questions, from_harness=not state.started or state.finished
+                id=qid,
+                questions=questions,
+                from_harness=not state.started or state.finished,
+                asked_ep=ts_ep,
             )
             return replace(state, pending_questions=(*state.pending_questions, qp))
 
@@ -782,13 +787,18 @@ def status_facts(state: SessionState) -> StatusFacts:
     """The fold's answers to the status questions -- the typed twin of
     `LogScan.status_facts()`, for surfaces that hold a `SessionState`. The two
     producers must agree on the same log (pinned by the status matrix test)."""
+    pending: list[tuple[float | None, str]] = [
+        (a.asked_ep, "approval") for a in state.pending_approvals if not a.answered
+    ] + [(q.asked_ep, "question") for q in state.pending_questions if not q.answered]
+    oldest = min(pending, key=lambda p: p[0] if p[0] is not None else float("inf"), default=None)
     return StatusFacts(
         started=state.started,
         finished=state.finished,
         all_passed=state.all_passed,
         end_reason=state.end_reason,
-        operator_blocked=any(not a.answered for a in state.pending_approvals)
-        or any(not q.answered for q in state.pending_questions),
+        operator_blocked=bool(pending),
+        blocked_kind=oldest[1] if oldest else "",
+        blocked_since_ep=oldest[0] if oldest else None,
     )
 
 
