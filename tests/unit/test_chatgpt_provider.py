@@ -635,15 +635,24 @@ def test_usage_body_parses_both_windows_and_the_credit_family() -> None:
     plan = plan_usage_from_usage_body(_USAGE_BODY)
     assert plan is not None
     assert plan.used_percent == 38.0 and plan.window_minutes == 10080
-    assert plan.resets_at == 1787867609.0 and plan.secondary_used_percent is None
+    assert plan.resets_at == 1787867609.0 and [w.name for w in plan.windows] == ["primary"]
     assert plan.has_credits is False and plan.window_exhausted is False
     body = json.loads(json.dumps(_USAGE_BODY))
     body["rate_limit"]["limit_reached"] = True
     body["rate_limit"]["secondary_window"] = {"used_percent": 100}
+    body["rate_limit"]["gpt-5.6-spark_window"] = {"used_percent": 55, "limit_window_seconds": 18000}
     body["credits"] = {"has_credits": True, "unlimited": False, "balance": "$12.50"}
     plan = plan_usage_from_usage_body(body)
-    assert plan is not None and plan.secondary_used_percent == 100.0
+    assert plan is not None
+    assert [(w.name, w.used_percent) for w in plan.windows] == [
+        ("primary", 38.0),
+        ("secondary", 100.0),
+        ("gpt-5.6-spark", 55.0),
+    ]
+    # The binding window is the one closest to its cap, whatever its name.
+    assert plan.binding.name == "secondary" and plan.used_percent == 100.0
     assert plan.limit_reached and plan.has_credits and plan.credits_balance == "$12.50"
+    assert plan.credits_usd == 12.5
     assert plan.window_exhausted
     assert plan_usage_from_usage_body({"credits": {}}) is None
 
@@ -654,8 +663,33 @@ def test_secondary_window_header_rides_into_the_reading() -> None:
     plan = _plan_usage_of(
         {"x-codex-primary-used-percent": "12", "x-codex-secondary-used-percent": "100"}
     )
-    assert plan is not None and plan.secondary_used_percent == 100.0
+    assert plan is not None and plan.binding.name == "secondary" and plan.used_percent == 100.0
     assert plan.window_exhausted
+
+
+def test_every_used_percent_header_family_is_a_window() -> None:
+    """A per-model family (the window spark burned) is a window like any
+    other: parsed without being named in code, and binding when it is the
+    tightest. Primary stays first; a family with no primary is no reading."""
+    from agent6.providers.chatgpt import _plan_usage_of  # pyright: ignore[reportPrivateUsage]
+
+    plan = _plan_usage_of(
+        {
+            "X-Codex-Primary-Used-Percent": "12",
+            "x-codex-primary-window-minutes": "10080",
+            "x-codex-primary-reset-at": "1787867609",
+            "x-codex-gpt-5-6-spark-used-percent": "97.5",
+            "x-codex-gpt-5-6-spark-window-minutes": "300",
+            "x-codex-gpt-5-6-spark-reset-after-seconds": "600",
+            "x-codex-credits-balance": "20.00",
+        }
+    )
+    assert plan is not None
+    assert [w.name for w in plan.windows] == ["primary", "gpt-5-6-spark"]
+    assert plan.binding.name == "gpt-5-6-spark" and plan.used_percent == 97.5
+    assert plan.window_minutes == 300 and 0 < plan.resets_at - time.time() <= 600
+    assert plan.credits_usd == 20.0 and not plan.window_exhausted
+    assert _plan_usage_of({"x-codex-gpt-5-6-spark-used-percent": "97.5"}) is None
 
 
 def _usage_get(body: dict[str, Any], status: int = 200):

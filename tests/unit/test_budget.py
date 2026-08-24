@@ -219,7 +219,7 @@ def test_percent_meter_sawtooth_and_cap() -> None:
             output_tokens=50,
             cache_read_tokens=0,
             cache_creation_tokens=0,
-            plan_usage=PlanUsage(used_percent=pct, window_minutes=10080, resets_at=2e9),
+            plan_usage=PlanUsage.single(used_percent=pct, window_minutes=10080, resets_at=2e9),
         )
 
     rec(37.0)  # baseline
@@ -250,14 +250,14 @@ def test_percent_zero_refuses_plan_metered_calls() -> None:
         output_tokens=1,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage(used_percent=1.0, window_minutes=300, resets_at=2e9),
+        plan_usage=PlanUsage.single(used_percent=1.0, window_minutes=300, resets_at=2e9),
     )
     with pytest.raises(BudgetExceeded, match="percent budget is 0"):
         t.check()
 
 
 def _plan_with_credits(used: float, *, unlimited: bool = False) -> PlanUsage:
-    return PlanUsage(
+    return PlanUsage.single(
         used_percent=used,
         window_minutes=10080,
         resets_at=2e9,
@@ -321,7 +321,7 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
         output_tokens=10,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage(used_percent=40.0, window_minutes=300, resets_at=0.0),
+        plan_usage=PlanUsage.single(used_percent=40.0, window_minutes=300, resets_at=0.0),
     )
     t.record(
         model="gpt-5.6-sol",
@@ -329,7 +329,7 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
         output_tokens=10,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage(used_percent=42.5, window_minutes=300, resets_at=0.0),
+        plan_usage=PlanUsage.single(used_percent=42.5, window_minutes=300, resets_at=0.0),
     )
     # The run consumed ~2.5 points of its 5-point cap.
     assert 0.4 <= t.fraction_remaining() <= 0.6
@@ -340,20 +340,22 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
     from (no call's spend is invisible), and the paid-credit guard sees it
     before any call; a secondary window at 100 counts as exhausted."""
     t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
-    t.record_plan_preflight("m", PlanUsage(used_percent=40.0, window_minutes=10080, resets_at=0))
+    t.record_plan_preflight(
+        "m", PlanUsage.single(used_percent=40.0, window_minutes=10080, resets_at=0)
+    )
     t.record(
         model="m",
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage(used_percent=42.0, window_minutes=10080, resets_at=0),
+        plan_usage=PlanUsage.single(used_percent=42.0, window_minutes=10080, resets_at=0),
     )
     assert t.snapshot().plan_consumed == 2.0
     guarded = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
     guarded.record_plan_preflight(
         "m",
-        PlanUsage(
+        PlanUsage.single(
             used_percent=10.0,
             window_minutes=10080,
             resets_at=0,
@@ -363,3 +365,61 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
     )
     with pytest.raises(BudgetExceeded, match="purchased"):
         guarded.check()
+
+
+def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
+    """Consumption is tracked per window and the cap binds on the one that
+    moved most: a per-model family the run burns counts even while the
+    primary window barely moves (the window spark burned)."""
+    from agent6.budget import PlanWindow
+
+    def reading(primary: float, spark: float) -> PlanUsage:
+        return PlanUsage(
+            windows=(
+                PlanWindow("primary", primary, 10080, 2e9),
+                PlanWindow("gpt-5-6-spark", spark, 300, 2e9),
+            )
+        )
+
+    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=5.0)
+    _record_plan(t, reading(10.0, 40.0))  # baselines
+    _record_plan(t, reading(10.5, 43.0))
+    assert t.snapshot().plan_consumed == 3.0  # spark moved 3, primary 0.5
+    _record_plan(t, reading(11.0, 46.0))
+    with pytest.raises(BudgetExceeded, match="gpt-5-6-spark window"):
+        t.check()
+    # A reset on one window restarts that window's count from zero only.
+    t2 = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=50.0)
+    _record_plan(t2, reading(10.0, 90.0))
+    _record_plan(t2, reading(12.0, 1.0))
+    assert t2.snapshot().plan_consumed == 2.0
+
+
+def test_purchased_credit_spend_meters_against_max_usd() -> None:
+    """With allow_paid_credits the balance that left the account during the
+    run is dollars spent: it counts into the USD estimate and trips max_usd.
+    A balance that is not a number meters nothing."""
+    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True)
+
+    def reading(balance: str) -> PlanUsage:
+        return PlanUsage.single(
+            used_percent=100.0,
+            window_minutes=10080,
+            resets_at=2e9,
+            has_credits=True,
+            credits_balance=balance,
+        )
+
+    _record_plan(t, reading("$12.50"))
+    _record_plan(t, reading("$11.90"))
+    assert t.estimate_usd()[0] == pytest.approx(0.60)
+    t.check()
+    _record_plan(t, reading("$11.40"))
+    with pytest.raises(BudgetExceeded, match="purchased credits spent"):
+        t.check()
+    opaque = BudgetTracker(
+        max_usd=1.0, max_tokens_fallback=100, max_percent=-1, allow_paid_credits=True
+    )
+    _record_plan(opaque, reading("lots"))
+    _record_plan(opaque, reading("fewer"))
+    assert opaque.estimate_usd()[0] == 0.0

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -29,7 +30,7 @@ from typing import Any
 
 import httpx2
 
-from agent6.budget import BudgetTracker, PlanUsage
+from agent6.budget import BudgetTracker, PlanUsage, PlanWindow
 from agent6.providers._openai_recovery import lenient_json_object
 from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
 from agent6.providers._transport import ProviderCall
@@ -268,87 +269,102 @@ def _unreachable_hook(data: dict[str, Any]) -> Any:
     raise ProviderError("chatgpt provider is stream-only")  # pragma: no cover
 
 
+_WINDOW_HEADER = re.compile(r"^x-codex-(?P<name>.+)-used-percent$")
+
+
+def _num(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _window_order(name: str) -> tuple[int, str]:
+    """Primary first, secondary second, every other family by name."""
+    return ({"primary": 0, "secondary": 1}.get(name, 2), name)
+
+
 def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
     """The rate-limit windows off a response's `x-codex-*` headers.
 
+    Every `x-codex-<name>-used-percent` family is one window (`primary`,
+    `secondary`, and whatever per-model families the backend adds), with
+    its `-window-minutes` and `-reset-at` / `-reset-after-seconds` siblings.
     The percent budget and every plan-usage surface read this one parse;
-    None when the backend sent no reading (absent or malformed)."""
-    try:
-        used = float(headers.get("x-codex-primary-used-percent", ""))
-    except (TypeError, ValueError):
+    None when the backend sent no primary reading (absent or malformed)."""
+    lowered = {k.lower(): v for k, v in headers.items()}
+    windows: list[PlanWindow] = []
+    for key in sorted(lowered):
+        m = _WINDOW_HEADER.match(key)
+        if m is None:
+            continue
+        name = m.group("name")
+        try:
+            used = float(lowered[key])
+        except (TypeError, ValueError):
+            continue
+        resets_at = _num(lowered.get(f"x-codex-{name}-reset-at"))
+        if not resets_at:
+            resets_at = time.time() + _num(lowered.get(f"x-codex-{name}-reset-after-seconds"))
+        windows.append(
+            PlanWindow(
+                name=name,
+                used_percent=used,
+                window_minutes=int(_num(lowered.get(f"x-codex-{name}-window-minutes"))),
+                resets_at=resets_at,
+            )
+        )
+    if not any(w.name == "primary" for w in windows):
         return None
 
-    def _num(name: str) -> float:
-        try:
-            return float(headers.get(name) or 0)
-        except (TypeError, ValueError):
-            return 0.0
-
-    resets_at = _num("x-codex-primary-reset-at")
-    if not resets_at:
-        resets_at = time.time() + _num("x-codex-primary-reset-after-seconds")
-
     def _flag(name: str) -> bool:
-        return (headers.get(name) or "").strip().lower() == "true"
+        return (lowered.get(name) or "").strip().lower() == "true"
 
-    secondary: float | None
-    try:
-        secondary = float(headers.get("x-codex-secondary-used-percent", ""))
-    except (TypeError, ValueError):
-        secondary = None
     return PlanUsage(
+        windows=tuple(sorted(windows, key=lambda w: _window_order(w.name))),
         has_credits=_flag("x-codex-credits-has-credits"),
         credits_unlimited=_flag("x-codex-credits-unlimited"),
-        credits_balance=(headers.get("x-codex-credits-balance") or "").strip(),
-        used_percent=used,
-        window_minutes=int(_num("x-codex-primary-window-minutes")),
-        resets_at=resets_at,
-        secondary_used_percent=secondary,
+        credits_balance=(lowered.get("x-codex-credits-balance") or "").strip(),
     )
 
 
 def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
-    """The account's plan state off the backend's `/usage` body: both
-    rate-limit windows, its own limit-reached verdict, and the purchased-
-    credit family. None when the body carries no primary window."""
+    """The account's plan state off the backend's `/usage` body: every
+    `<name>_window` under `rate_limit` is one window, plus its own
+    limit-reached verdict and the purchased-credit family. None when the
+    body carries no primary window."""
     limits = body.get("rate_limit")
-    primary = limits.get("primary_window") if isinstance(limits, Mapping) else None
-    if not isinstance(limits, Mapping) or not isinstance(primary, Mapping):
+    if not isinstance(limits, Mapping):
         return None
-    try:
-        used = float(primary.get("used_percent", ""))
-    except (TypeError, ValueError):
-        return None
-    secondary_window = limits.get("secondary_window")
-    secondary: float | None = None
-    if isinstance(secondary_window, Mapping):
+    windows: list[PlanWindow] = []
+    for key, raw in limits.items():
+        if not (isinstance(key, str) and key.endswith("_window") and isinstance(raw, Mapping)):
+            continue
+        name = key.removesuffix("_window")
         try:
-            secondary = float(secondary_window.get("used_percent", ""))
+            used = float(raw.get("used_percent", ""))
         except (TypeError, ValueError):
-            secondary = None
+            continue
+        resets_at = _num(raw.get("reset_at"))
+        if not resets_at:
+            resets_at = time.time() + _num(raw.get("reset_after_seconds"))
+        windows.append(
+            PlanWindow(
+                name=name,
+                used_percent=used,
+                window_minutes=int(_num(raw.get("limit_window_seconds")) / 60),
+                resets_at=resets_at,
+            )
+        )
+    if not any(w.name == "primary" for w in windows):
+        return None
     credits = body.get("credits")
     credits = credits if isinstance(credits, Mapping) else {}
-    try:
-        resets_at = float(primary.get("reset_at") or 0)
-    except (TypeError, ValueError):
-        resets_at = 0.0
-    if not resets_at:
-        try:
-            resets_at = time.time() + float(primary.get("reset_after_seconds") or 0)
-        except (TypeError, ValueError):
-            resets_at = time.time()
-    try:
-        window_minutes = int(float(primary.get("limit_window_seconds") or 0) / 60)
-    except (TypeError, ValueError):
-        window_minutes = 0
     return PlanUsage(
+        windows=tuple(sorted(windows, key=lambda w: _window_order(w.name))),
         has_credits=bool(credits.get("has_credits")),
         credits_unlimited=bool(credits.get("unlimited")),
         credits_balance=str(credits.get("balance") or "").strip(),
-        used_percent=used,
-        window_minutes=window_minutes,
-        resets_at=resets_at,
-        secondary_used_percent=secondary,
         limit_reached=bool(limits.get("limit_reached")),
     )
 

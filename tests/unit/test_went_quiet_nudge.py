@@ -355,7 +355,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None
         output_tokens=1,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        plan_usage=PlanUsage(used_percent=2.0, window_minutes=10080, resets_at=2e9),
+        plan_usage=PlanUsage.single(used_percent=2.0, window_minutes=10080, resets_at=2e9),
     )
     wf.run("do something")
 

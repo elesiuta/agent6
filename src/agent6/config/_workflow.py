@@ -548,7 +548,8 @@ class BudgetConfig(BaseModel):
         description=(
             "Cap on the plan percentage points one run may consume on a subscription provider "
             "(the rise in the account's reported used-percent across the run, accumulated across "
-            "window resets, so values above 100 are meaningful). The reading is account-global: "
+            "window resets, so values above 100 are meaningful; with several windows, the one "
+            "that moved most). The reading is account-global: "
             "a concurrent run's spend counts toward whichever run observes it next. `-1`: "
             "unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per run."
         ),
@@ -564,8 +565,9 @@ class BudgetConfig(BaseModel):
             "`false` is a circuit breaker, not a guarantee: a usage preflight before the "
             "first call and every response's headers report the account's windows and "
             "credits, and once a window is exhausted with credits present the run stops "
-            "at its next boundary; a call already in flight completes. Included-plan "
-            "usage is unaffected."
+            "at its next boundary; a call already in flight completes. `true`: the credit "
+            "balance's drop across the run is read as dollars and meters against `max_usd`. "
+            "Included-plan usage is unaffected."
         ),
     )
 
