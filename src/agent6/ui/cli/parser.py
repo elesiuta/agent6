@@ -292,6 +292,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_skills_parser(sub)
 
+    _sub(
+        sub,
+        "ps",
+        help=(
+            "Live agent6 sessions across every repository on this machine"
+            " (directory, id, status, pid; per-repo views: `sessions`)."
+        ),
+    )
+
     hist_p = _sub(
         sub,
         "history",

@@ -379,3 +379,58 @@ def test_one_state_dir_reader_two_strictness_policies(
     assert read_global_state_dir() is None
     with pytest.raises(ValueError, match="cannot be read"):
         read_global_state_dir(strict=True)
+
+
+def test_repo_root_of_id_inverts_repo_id() -> None:
+    """`agent6 ps` decodes state-dir names back to directories: the inverse
+    must round-trip every dash/slash mix, reject junk names, and reject a
+    candidate that does not re-encode identically (the elided-hash form)."""
+    from agent6.paths import repo_id, repo_root_of_id
+
+    for path in ("/a/b/c", "/a/b-c", "/a-b-c", "/x---y/z-", "/tmp/a--b", "/"):
+        rid = repo_id(Path(path))
+        assert repo_root_of_id(rid) == Path(path), path
+    assert repo_root_of_id("not-a-tag-zz") is None
+    assert repo_root_of_id("plain-file") is None
+    long = "/" + "/".join(["seg"] * 80)
+    assert repo_root_of_id(repo_id(Path(long))) is None  # elided form: not reversible
+
+
+def test_cmd_ps_lists_live_sessions_with_decoded_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One row per LIVE session across every repo state dir: the decoded
+    directory (so the operator can cd there and attach), id, mode, status,
+    pid; a dead session never lists."""
+    import json
+    import os
+
+    from agent6.paths import repo_id
+    from agent6.ui.cli import ps_cmd
+
+    base = tmp_path / "state"
+    repo = tmp_path / "proj"
+    repo.mkdir()
+    live = base / repo_id(repo) / "sessions" / "runs" / "brave-fox-AAAAAA"
+    live.mkdir(parents=True)
+    (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    (live / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    dead = base / repo_id(repo) / "sessions" / "runs" / "dead-oak-BBBBBB"
+    dead.mkdir(parents=True)
+    (dead / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(ps_cmd, "state_base", lambda: base)
+    assert ps_cmd.cmd_ps() == 0
+    out = capsys.readouterr().out
+    assert "brave-fox-AAAAAA" in out and str(repo) in out.replace("~", str(Path.home()))
+    assert "dead-oak-BBBBBB" not in out
+    assert "agent6 attach" in out
+
+    monkeypatch.setattr(ps_cmd, "state_base", lambda: tmp_path / "empty")
+    assert ps_cmd.cmd_ps() == 0
+    assert "no live agent6 sessions." in capsys.readouterr().out

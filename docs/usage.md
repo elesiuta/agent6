@@ -71,6 +71,7 @@ agent6 sessions graph         # the persisted task graph
 ```
 
 `agent6 history search <query>` greps across the transcripts of every run.
+`agent6 ps` lists the live sessions of every repository on the machine, with the directory to cd to and the id to attach.
 
 ## When a run goes wrong
 

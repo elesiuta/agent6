@@ -273,6 +273,29 @@ def repo_id(repo_root: Path) -> str:
     return f"{flat}-{tag}" if flat else tag
 
 
+def repo_root_of_id(state_dir_name: str) -> Path | None:
+    """The repo root a per-repo state-dir name encodes: `repo_id`'s inverse.
+
+    None for a name `repo_id` cannot have produced (a stray directory in the
+    state base, the elided-hash exception): the decoded candidate must
+    re-encode to exactly *state_dir_name*, so a wrong read is impossible."""
+    flat, _, tag = state_dir_name.rpartition("-")
+    try:
+        bits_val = int(tag, 16)
+    except ValueError:
+        return None
+    dashes = flat.count("-")
+    if bits_val >= (1 << dashes):
+        return None
+    marks = format(bits_val, f"0{dashes}b") if dashes else ""
+    out: list[str] = []
+    it = iter(marks)
+    for ch in flat:
+        out.append(("/" if next(it) == "1" else "-") if ch == "-" else ch)
+    candidate = Path("/" + "".join(out))
+    return candidate if repo_id(candidate) == state_dir_name else None
+
+
 def _head_bytes(s: str, limit: int) -> str:
     """The longest prefix of *s* fitting in *limit* bytes, never splitting a
     character (a half-encoded one would not round-trip)."""

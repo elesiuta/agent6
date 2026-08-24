@@ -685,6 +685,13 @@ def _dispatch_skills(args: argparse.Namespace) -> int:
     raise AssertionError("unreachable")  # pragma: no cover -- skills subparser is required
 
 
+def _dispatch_ps(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.ps_cmd import cmd_ps  # noqa: PLC0415
+
+    del args
+    return cmd_ps()
+
+
 def _dispatch_history(args: argparse.Namespace) -> int:
     from agent6.ui.cli.history_cmds import _cmd_history_search  # noqa: PLC0415
 
@@ -817,6 +824,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "memory": _dispatch_memory,
     "skills": _dispatch_skills,
     "history": _dispatch_history,
+    "ps": _dispatch_ps,
     "init": _dispatch_init,
     "review": _dispatch_review,
     "machine": _dispatch_machine,
