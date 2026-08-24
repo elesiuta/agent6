@@ -18,11 +18,9 @@ from __future__ import annotations
 
 import json
 import os
-import queue
 import socket
 import sys
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from ipaddress import ip_address
 from pathlib import Path
@@ -35,14 +33,12 @@ from agent6 import __version__
 from agent6.config import is_loopback_host
 from agent6.machine import MachineError
 from agent6.sessions.ipc import (
-    read_worker_pid,
     register_frontend,
     unregister_frontend,
-    worker_is_alive,
 )
-from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.spawn import spawn_new_work
 from agent6.ui.web import actions, model
+from agent6.ui.web._sse import SseChannel, stream_machine, stream_session
 from agent6.ui.web.page import (
     FAVICON_SVG,
     ICON_SVG,
@@ -52,24 +48,9 @@ from agent6.ui.web.page import (
 )
 from agent6.viewmodel import (
     UnknownStepError,
-    apply_event,
-    died_without_end,
-    initial_state,
-    machine_is_parked,
     machine_snapshot,
-    manifest_header,
     session_snapshot,
-    session_state_as_dict,
-    summarize_session_dir,
-    tail_events,
 )
-
-# SSE tuning: coalesce high-frequency streaming deltas, heartbeat idle streams so
-# a disconnected client is noticed and its worker thread exits.
-_DELTA_COALESCE_S = 0.15
-_HEARTBEAT_S = 15.0
-_MACHINE_POLL_S = 0.5
-_STREAMING_DELTAS = frozenset({"role.text_delta", "role.thinking_delta"})
 
 # POST body cap. The typed bodies are a few strings (a task, an answer, a config
 # value); 1 MiB is generous. An uncapped Content-Length would let one request
@@ -201,22 +182,6 @@ class WebServer(ThreadingHTTPServer):
 
 class _IPv6WebServer(WebServer):
     address_family = socket.AF_INET6
-
-
-def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
-    """*payload* with the reasoning fold's idle age filled in from its epoch.
-
-    Server-computed, like the run stream's, so a browser on another machine
-    needs no clock agreement: the client anchors its "working... Ns" timer to
-    (its own now) - age and ticks locally. Anchoring to the frame's ARRIVAL
-    instead showed a state wedged for forty minutes as three seconds of work.
-    """
-    reasoning = payload.get("reasoning") or {}
-    ep = reasoning.get("last_event_ep")
-    if not isinstance(ep, (int, float)):
-        return payload
-    fresh = {**reasoning, "last_event_age_s": max(0.0, time.time() - ep)}
-    return {**payload, "reasoning": fresh}
 
 
 def _bind_host(host: str) -> str:
@@ -677,174 +642,31 @@ class _Handler(BaseHTTPRequestHandler):
         return True
 
     def _sse_session(self, session_dir: Path) -> None:
-        """Stream a run: fold logs.jsonl incrementally, push a fresh SessionState
-        snapshot on each event (coalescing streaming deltas). A background tailer
-        feeds a queue so the response loop can heartbeat idle periods and exit
-        promptly when the client disconnects. While connected we register as the
-        run's answer front-end so its approval/steer prompts bridge to the browser."""
+        """Stream a run (see `_sse.stream_session`). While connected we register
+        as the run's answer front-end so its approval/steer prompts bridge to
+        the browser."""
         self._begin_sse()
         self.server.claim_session(session_dir)
         try:
-            self._sse_session_loop(session_dir)
+            stream_session(self._channel(), session_dir, repo=self.cwd)
         finally:
             self.server.release_session(session_dir)
 
-    def _sse_session_loop(self, session_dir: Path) -> None:
-        events: queue.Queue[dict[str, Any] | None] = queue.Queue()
-        stop = threading.Event()
-
-        def tail() -> None:
-            src = session_dir / LOGS_NAME
-            try:
-                # NOT stop_when_finished: a finished run resumed from any other
-                # surface logs into this same file, and a stream that closed at
-                # session.end left the page frozen on "stopped" while the hub
-                # said "running", forever. The TUI follows across legs the same
-                # way; the client closes only on stream_dead (or navigation).
-                for ev in tail_events(
-                    src, follow=True, stop_when_finished=False, should_stop=stop.is_set
-                ):
-                    events.put(ev)
-            finally:
-                # ALWAYS enqueue the sentinel, even if the tailer raises: without
-                # it the response loop would block on heartbeats forever.
-                events.put(None)  # run ended (or tail cancelled/failed), tailer done
-
-        threading.Thread(target=tail, daemon=True).start()
-
-        # Manifest-derived header fields (branch facts + the fan-out compare
-        # outcome), read once per connection: they are fixed for the run's life
-        # (merged_into lands after the run ends; a reopen/reconnect re-reads).
-        header = manifest_header(session_dir, repo=self.cwd)
-
-        def frame(*, dead: bool = False) -> dict[str, Any]:
-            # session_dir per frame, not once at connect: a parked run the operator
-            # resumes starts logging into this same stream, and the label (and
-            # `live`) have to follow.
-            d = {**session_state_as_dict(state, session_dir), **header}
-            if state.last_event_ep is not None:
-                # Server-computed so a browser on another machine needs no clock
-                # agreement: the client anchors its "working… Ns" timer to
-                # (its own now) - age, then ticks locally.
-                d["last_event_age_s"] = max(0.0, time.time() - state.last_event_ep)
-            if dead:
-                # Transport signal, distinct from the fold's `finished`: this
-                # stream will send nothing more (dead worker, no session.end), so
-                # the client must close instead of letting EventSource retry
-                # into a reconnect-refold loop. `finished` stays the fold truth
-                # -- a crashed run is stale, not "finished".
-                d["stream_dead"] = True
-            return d
-
-        try:
-            state = initial_state()
-            last_delta_emit = 0.0
-            while True:
-                try:
-                    ev: dict[str, Any] | None = events.get(timeout=_HEARTBEAT_S)
-                except queue.Empty:
-                    if not self._sse_ping():
-                        return
-                    # A run that reached terminal without its own session.end
-                    # (crash, went quiet, killed in preflight) would otherwise
-                    # pin this worker forever; ask the codebase's own
-                    # died_without_end rather than one word of it. `parked` is
-                    # deliberately excluded: a parked submission the operator
-                    # resumes starts logging into this same stream.
-                    word = summarize_session_dir(session_dir).status
-                    if word != "parked" and died_without_end(word):
-                        self._sse_send(frame(dead=True))
-                        return
-                    continue
-                # Fold everything already queued into ONE frame. On connect the
-                # tailer replays the whole history, and a full SessionState frame per
-                # historical event is quadratic (13 MB probed on a 502-event run).
-                last_type = ""
-                while ev is not None:
-                    state = apply_event(state, ev)
-                    last_type = str(ev.get("type", ""))
-                    try:
-                        ev = events.get_nowait()
-                    except queue.Empty:
-                        break
-                if ev is None:  # run ended: send the final snapshot and close
-                    self._sse_send(frame())
-                    return
-                now = time.monotonic()
-                if last_type in _STREAMING_DELTAS and (now - last_delta_emit) < _DELTA_COALESCE_S:
-                    continue  # coalesce bursts of text/thinking deltas
-                if not self._sse_send(frame()):
-                    return
-                last_delta_emit = now
-        finally:
-            # cancel the tailer so it exits on disconnect / dead run, not just session.end
-            stop.set()
-
     def _sse_machine(self, machine_dir: Path) -> None:
-        """Stream a machine: re-fold the journal + the current agent state's
-        reasoning on a poll, pushing the combined snapshot when it changes. While
-        connected we register as the answer front-end on the INSTANCE dir, so a
-        machine agent state's approval/question/steer prompts bridge to the
-        browser (the state's answer files live in its per-state dir; the liveness
-        gate probes this instance dir)."""
+        """Stream a machine (see `_sse.stream_machine`). While connected we
+        register as the answer front-end on the INSTANCE dir, so a machine
+        agent state's approval/question/steer prompts bridge to the browser
+        (the state's answer files live in its per-state dir; the liveness gate
+        probes this instance dir)."""
         self._begin_sse()
         self.server.claim_session(machine_dir)
         try:
-            self._sse_machine_loop(machine_dir)
+            stream_machine(self._channel(), machine_dir)
         finally:
             self.server.release_session(machine_dir)
 
-    def _sse_machine_loop(self, machine_dir: Path) -> None:
-        prev = ""
-        idle = 0.0
-        while True:
-            try:
-                payload = {
-                    "machine": machine_snapshot(machine_dir),
-                    "reasoning": model.machine_reasoning_snapshot(machine_dir),
-                }
-            except MachineError as exc:
-                self._sse_send({"error": "; ".join(exc.problems)})
-                return
-            blob = json.dumps(payload, sort_keys=True)
-            if blob != prev:
-                # The age is derived at SEND time and deliberately outside the
-                # comparison above: it changes every poll, so including it would
-                # send a frame every poll. The epoch it comes from does not.
-                if not self._sse_send(_with_idle_age(payload)):
-                    return
-                prev = blob
-                idle = 0.0
-            else:
-                idle += _MACHINE_POLL_S
-                if idle >= _HEARTBEAT_S and not self._sse_ping():
-                    return
-                if idle >= _HEARTBEAT_S:
-                    idle = 0.0
-            if payload["machine"].get("ended") is not None:
-                return  # machine terminated: final snapshot sent, close the stream
-            # A machine that died mid-state (no MachineEnd) would pin this
-            # stream forever: its worker.pid points at a dead process AND no
-            # armed wait explains the absence (a parked --exit-on-wait machine
-            # legitimately has no live process between scheduler ticks).
-            if (
-                read_worker_pid(machine_dir) is not None
-                and not worker_is_alive(machine_dir)
-                and not machine_is_parked(machine_dir)
-            ):
-                # Supervisor loss is NOT a journaled end: the instance is
-                # resumable, and a fabricated `ended` (a status the journal
-                # vocabulary does not even hold) styled it terminal. A
-                # distinct field closes the stream truthfully; `ended` stays
-                # reserved for a durable MachineEnd. A bare return would
-                # leave the tab reconnecting forever over a "running" machine.
-                payload["machine"]["worker_lost"] = {
-                    "reason": "worker died",
-                    "state": payload["machine"].get("current", ""),
-                }
-                self._sse_send(_with_idle_age(payload))
-                return
-            time.sleep(_MACHINE_POLL_S)
+    def _channel(self) -> SseChannel:
+        return SseChannel(send=self._sse_send, ping=self._sse_ping)
 
 
 def run_web(

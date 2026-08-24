@@ -779,12 +779,12 @@ def test_sse_run_closes_even_if_tailer_dies(
     # injected raise below is intentionally unhandled in that thread), the
     # stream sends the folded snapshot and closes instead of hanging until the
     # client gives up.
-    import agent6.ui.web.server as server_mod
+    import agent6.ui.web._sse as sse_mod
 
     def _boom(*_a: object, **_k: object) -> object:
         raise RuntimeError("tailer died")
 
-    monkeypatch.setattr(server_mod, "tail_events", _boom)
+    monkeypatch.setattr(sse_mod, "tail_events", _boom)
     _srv, port = server
     _make_run(tmp_path, "dead-tail", [{"type": "session.start", "user_task": "x"}])
     conn = HTTPConnection("127.0.0.1", port, timeout=5)
@@ -807,9 +807,9 @@ def test_sse_run_dead_worker_frame_is_terminal(
     status_label="stale". `finished` stays the fold truth (False -- a crashed
     run is stale, not finished); the client closes on either signal, so the
     tab never reconnect-refolds forever over a dead run."""
-    import agent6.ui.web.server as server_mod
+    import agent6.ui.web._sse as sse_mod
 
-    monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
     _make_run(
         tmp_path,
         "dead-worker",
@@ -841,9 +841,9 @@ def test_sse_run_pidless_stale_frame_is_terminal(
     RECORDED pid. The one dir decision (summarize_session_dir) already calls a
     pid-less run silent past its window "stale"; the stream must close on it
     with the same terminal frame as the recorded-dead-pid case."""
-    import agent6.ui.web.server as server_mod
+    import agent6.ui.web._sse as sse_mod
 
-    monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
     _make_run(
         tmp_path,
         "pidless-stale",
@@ -894,9 +894,9 @@ def test_sse_run_created_frame_is_terminal(
     frontends/ claim. The close now asks the codebase's own died_without_end,
     and the terminal frame keeps the truthful label ("created", not a
     hardcoded "stale")."""
-    import agent6.ui.web.server as server_mod
+    import agent6.ui.web._sse as sse_mod
 
-    monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
     session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "created-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
@@ -938,9 +938,9 @@ def test_sse_run_parked_keeps_streaming(
     open: a parked submission the operator resumes starts logging into this
     same stream. Pin the exclusion so the died_without_end close cannot
     swallow it."""
-    import agent6.ui.web.server as server_mod
+    import agent6.ui.web._sse as sse_mod
 
-    monkeypatch.setattr(server_mod, "_HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
     session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "parked-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
@@ -981,9 +981,9 @@ def test_sse_machine_frame_carries_the_idle_age(
     arrived, so a state wedged for forty minutes read as three seconds of work
     every time one landed. The frame carries a server-computed age, as the run
     stream's does, and the client ticks from that."""
-    import agent6.ui.web.server as server_mod
+    import agent6.ui.web._sse as sse_mod
 
-    monkeypatch.setattr(server_mod, "_MACHINE_POLL_S", 0.05)
+    monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
@@ -1025,9 +1025,9 @@ def test_sse_machine_dead_worker_frame_is_terminal(
     (the instance is resumable), so a fabricated `ended` styled it terminal;
     `ended` stays reserved for a durable MachineEnd, and a bare return left
     the tab reconnecting forever over a "running" machine."""
-    import agent6.ui.web.server as server_mod
+    import agent6.ui.web._sse as sse_mod
 
-    monkeypatch.setattr(server_mod, "_MACHINE_POLL_S", 0.05)
+    monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
