@@ -28,8 +28,8 @@ It can be empty or absent when the global config supplies a provider and model; 
 - `agent6 config get|set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay).
   Every edit is re-validated and rolled back if invalid.
   A sibling pair that must move together is set as one inline table: `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
-- Writes are atomic and the edit lock fails open (a blocked lock never blocks the write; worst case one lost update, the error says "kept as written").
-  A config file that is a symlink is followed only when you own the target.
+- Writes are atomic; a blocked edit lock never blocks the write (worst case one lost update, reported as "kept as written").
+  A symlinked config file is followed only when you own the target.
 - `agent6 config fill`: materialize defaults + global config into the global file.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop invalid entries (unknown keys, stale values), naming each; `--machine-file FILE` repairs an overlay instead.
@@ -160,9 +160,7 @@ Cross-vendor mixes are fine.
 
 ## `[sandbox]`
 
-The security boundary.
-The model: [Sandbox](security.md#2-sandbox) and [Network](security.md#5-network) in security.md.
-This is the field summary.
+The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox) and [Network](security.md#5-network).
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -239,7 +237,7 @@ This is the field summary.
 | `concurrency` | `1` | How many seats the in-loop panel runs at once (`1` = one after another; the panel's latency is its slowest seat). `agent6 review` always runs every seat in parallel. |
 | `tier` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `explore` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat). |
 
-Grounding is mechanical, not prose: a `block` gates only if its `file:line` is in the diff and its category is in a fixed allowed set (security / sandbox-bypass / off-topic-edit / data-loss / verify-uncovered-correctness); everything else is advisory and cannot stall the run.
+A `block` gates only when its `file:line` is in the diff and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness`; every other finding is advisory and cannot stall the run.
 
 ## `[context]`
 
@@ -390,7 +388,7 @@ A live run dispatches lanes the same way via the `/parallel` steer directive (de
 
 MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>`.
 A spawned server runs as a jailed child by default (its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) with a curated env (never your provider keys; `pass_env` adds named vars); a `url` server is a process you run and confine yourself.
-The LLM influences the arguments it passes, so each call is approved like a command (`approve`), and audit each server like a `run_command` allow-list.
+The model chooses the arguments, so each call is approved like a command (`approve`); audit each server like a `run_command` allow-list.
 `agent6 mcp connect` handshakes first and only then writes the entry; a server that does not start is skipped with an `mcp.server_unavailable` journal event, never fatal.
 
 ```
@@ -399,8 +397,7 @@ agent6 mcp connect browser --url http://127.0.0.1:8931/mcp --token-env PW_TOKEN
 agent6 mcp list
 ```
 
-A spawned server is a jailed child like any other: same launcher, same sandbox a `run_command` gets.
-Its `[sandbox]` block names what it needs on top of that.
+A spawned server's `[sandbox]` block names what it needs on top of the sandbox a `run_command` gets.
 
 ```toml
 [mcp.servers.notes]
@@ -440,8 +437,7 @@ Anything else that reaches an unconfined process is still a way out, so name the
 
 ## Reaching a run's network
 
-A run's commands share one network with no route off the box, so a dev server the agent starts is invisible from here, the same property that keeps it off the internet.
-Two commands are the way in, both operator-only:
+A run's commands share one network with no route off the box, so a dev server the agent starts is reachable only through these operator-only commands:
 
 ```
 agent6 sessions show <id>        # what it is serving, and the command to open it (the TUI dashboard and web run headers say the same)
@@ -451,7 +447,7 @@ agent6 exec <id> -- curl ...     # run a command in the run's sandbox
 ```
 
 `exec` runs in the whole sandbox (the run's recorded isolation and network, with mounts from your current config), so what you see is what the agent sees.
-Neither is reachable by the model.
+None of them is reachable by the model.
 
 ---
 
@@ -465,4 +461,4 @@ Neither is reachable by the model.
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
 
 A provider's `api_key_env` names the env var supplying its key; omit it to read `secrets.toml`.
-A few additional `AGENT6_*` toggles exist for testing/advanced use; see the source.
+The bench and development switches are listed in [architecture.md](architecture.md#bench-and-development-switches).
