@@ -26,28 +26,22 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 
 ## Features
 
-- **Jailed commands**: Landlock + seccomp; `strict` (the `auto` pick where the host allows) adds user namespaces, `pivot_root`, read-only `.git`, no route off the box ([Security](https://agent6.dev/security/))
-- **Providers**: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), or a ChatGPT subscription ([Config](https://agent6.dev/config/))
-  - model + reasoning effort per role
-- **Clean checkout**: per-step commits on a detached ref; `sessions merge` lands them
-  - snapshot resume; fork at any turn
-- **Verify gate**: inferred when unset, certifies the tree when the run finishes (or every step), green/red on every surface
-  - a worker proposes a replacement gate instead of reverting
-- **Budget**: hard `max_usd` cap; token cap for unpriced calls
-- **Sessions**: run, plan, ask (plan and ask never edit)
-  - `--from <id>` seeds from another; `/btw` asks beside a live run
-- **Four front-ends, one engine**: CLI, TUI, [browser](https://agent6.dev/web/) (stdlib server, no JS deps, phone), [editor over ACP](https://agent6.dev/acp/)
-  - `attach`, `exec`, `forward`, `history`, `ps`
-- **Background commands**: `background: true` hands back a handle; none outlive the run
-- **Context control**: compaction visible on every surface; `/compact [focus]`, `/pin`; repo memory injected per run
-- **State machines**: LLM-drafted, operator-reviewed, journaled, replayable ([State machines](https://agent6.dev/state-machines/))
-  - pause for input, take events, steer from any front-end
-- **Task graph**: the worker's plan as a persistent DAG, journaled with the run, live on every surface
-  - survives crash and compaction restarts; `decompose = "auto"` front-loads it for models measured to need it
-- **Code review**: `agent6 review` on any diff; an in-loop adversarial panel where only blocking findings gate
-- **Parallel fan-out**: `--parallel N|model-a,model-b` clone-based lanes, auto-compared into a ranked report ([Architecture](https://agent6.dev/architecture/#parallel-runs))
-- **Skills**: SKILL.md packs (the format most agents share) index into the prompt, fire as `/name` or `--skill`; repo instructions from `AGENTS.md`
-- **Fixed tool surface**: extended only by operator-configured MCP servers, off by default, jailed by default
+- **Jailed commands**: every command the model asks to run goes through a jail that controls what it can read and write and restricts its network access; `auto` picks the strongest level the host allows ([Security](https://agent6.dev/security/))
+- **State machines**: long-running workflows as declarative `.asm.toml` files you review, edit, test offline, run, watch, and replay, with waits, operator input, and steering built in ([State machines](https://agent6.dev/state-machines/))
+- **Three session kinds**: `run` edits; `plan` and `ask` never do; `--from <id>` seeds one from another, and `/btw` asks a question beside a live run
+- **Verify gate**: the repo's test command (inferred when unset) certifies the tree before a run may finish, and every surface shows the same green or red
+- **Clean checkout**: every step commits to the run's own hidden ref, so your branch, HEAD, and index are never touched (a visible `agent6/<id>` branch tracks it by default); `sessions merge` lands it, `resume` continues it, `fork` branches it at any turn
+- **Task graph**: the worker's plan is a persistent DAG, live on every surface and surviving crashes and compaction
+- **Context control**: compaction is visible everywhere, `/compact [focus]` and `/pin` steer it, and repo memory carries lessons across runs
+- **Four front-ends, one engine**: CLI, TUI, [browser](https://agent6.dev/web/) (desktop or phone), and [editor over ACP](https://agent6.dev/acp/) all drive the same runs
+- **Live runs are addressable**: `attach` follows and answers one, `steer` queues an instruction from a script or cron job, `exec` and `forward` reach inside its sandbox network, `ps` and `history` find it
+- **Parallel fan-out**: `--parallel N|model-a,model-b` runs isolated lanes and compares them into a ranked report ([Architecture](https://agent6.dev/architecture/#parallel-runs))
+- **Code review**: `agent6 review` on any diff, plus an in-loop adversarial panel where only blocking findings gate a finish
+- **Background commands**: a run's command can keep running behind a handle (dev servers, watchers); none outlive the run
+- **Skills**: SKILL.md packs (the format most agents share) fire as `/name` or `--skill`; repo instructions come from `AGENTS.md`
+- **Providers**: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), or a ChatGPT subscription, with model and reasoning effort set per role ([Config](https://agent6.dev/config/))
+- **Budget**: a hard `max_usd` cap per run, a token cap for calls with no price
+- **Fixed tool surface**: the model's tools are a fixed set, extended only by operator-configured MCP servers (off by default, jailed by default)
 - **Eight runtime dependencies**, no telemetry, no auto-update
 
 ## Install
@@ -98,10 +92,11 @@ agent6 fork <session-id> --at-turn 7
 
 See [usage](https://agent6.dev/usage/) for the full command tour, [the web UI](https://agent6.dev/web/) for driving runs from a phone, [configuration](https://agent6.dev/config/) for every field, and the [security model](https://agent6.dev/security/) for what the sandbox enforces.
 
-Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (state dir, never committed), then `--config FILE`.
+The general rules, which the rest of agent6 follows:
 
-- `agent6 config show`: every effective value with the layer that set it
-- every field has a default; security-sensitive fields default safe: `isolation = "auto"`, `network = "auto"`, `run_commands = "ask"`, `protect_git = true`
+- Commands need your approval: under the default `run_commands = "ask"`, each command the model proposes waits for your yes, once or for the session; a headless run auto-denies, and a hub-spawned one parks the prompt for a front-end
+- A run never touches your checkout: its work lands as per-step commits on its own chain (a visible `agent6/<id>` branch by default), and `agent6 sessions merge` lands them when you are ready
+- Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (state dir, never committed), then `--config FILE`
+- Nothing is hidden: `agent6 config show` prints every effective value and the layer that set it; every field has a default, and security-sensitive fields default safe (`network = "auto"`, `run_commands = "ask"`, `protect_git = true`)
 - `"auto"` picks the most secure option the host allows, warning when it falls short; an explicit value the host cannot enforce refuses to run
-- `protect_git = true` (read-only `.git`) needs `strict`: on `hardened` the default warns, an explicit `true` refuses
 - agent6 never pushes, rewrites history, or `reset --hard`; no config key can enable them

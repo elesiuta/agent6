@@ -33,13 +33,13 @@ Every page docks its text entry at the bottom, like a chat: type, Enter sends, S
     - prune merged run branches; clear saved asks
 - **Machines page**: instances, `machine create` drafts, cards that run an authored machine file
     - the docked composer creates a new one
-- **Session view** (live over SSE): the conversation is the page, the same folded transcript the CLI and TUI render, with the in-progress turn streaming underneath.
-    - A detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click.
-    - The run's context (status, task graph, budget, tool calls, background shells, latest commit diff, event log) lives in a resizable details drawer.
-    - The docked composer steers a live run or resumes an ended one; `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages.
+- **Session view** (live over SSE): the conversation is the page, the same folded transcript the CLI and TUI render, with the in-progress turn streaming underneath
+    - a detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click
+    - the run's context (status, task graph, budget, tool calls, background shells, latest commit diff, event log) lives in a resizable details drawer
+    - the docked composer steers a live run or resumes an ended one; `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages
     - the Latest commit widget selects any per-step commit (cumulative toggle); the Budget and Task graph widgets then show that step's state; a model-controlled run has no chain and says so
-    - Stop now / stop after step, compact, merge, delete history, run a finished plan (`run --from-plan`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline.
-      "Allow session" appears only where it would grant something beyond the one call it is clicked on.
+    - stop now / stop after step, compact, merge, delete history, run a finished plan (`run --from-plan`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline
+      ("Allow session" appears only where it would grant something beyond the one call it is clicked on)
 - **Machine view**: the state overview, the path taken, the current agent state's conversation
     - approve and answer the current state's prompts inline (same controls as a run)
     - the docked entry submits as **Steer** (into the current agent state) or **Message** (a `poke` payload a waiting machine's next tool reads)
