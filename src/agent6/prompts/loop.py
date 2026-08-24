@@ -296,8 +296,8 @@ This run's verify_command (call via `run_verify_command`):
 
 Returncode 0 passes. Non-zero means the change broke something: fix or
 revert before proceeding.
-- Run project tests only through `run_verify_command` (it runs this gate
-  in its configured environment), never via `run_command`.
+- Quick targeted tests via `run_command` are fine while iterating;
+  `run_verify_command` runs this gate and is what certifies the work.
 - If the gate no longer matches the task (it pins behaviour this run
   deliberately changed, or cannot run), finish with stale_gate set to
   the command you believe is right; it records a proposal for the
