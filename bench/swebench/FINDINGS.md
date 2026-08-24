@@ -606,3 +606,26 @@ empties. Wall is not comparable: the arm was interrupted by a machine
 change at 15/30 and finished at --conc 4 on 16 cores. SHIPPED with the
 follow-up recast of plan/ask/agent/machine text and the nudges, which
 SWE-bench does not exercise; those went out on paired live smokes.
+
+### Tranche 4 and the coverage total (2026-08-22)
+
+100 fresh Verified instances (seed 20260826, drawn from the 177 never
+drawn nor scored), gateless, 0.0.28 wheel carrying the world-state
+run-mode recast, --conc 6 then 4 on 16 cores, official scorer:
+80/100 = 80.0% resolved, Wilson95 [71.1, 86.7]; empty=0, err=0. By
+repo: django 40/45, sympy 12/19, sphinx 6/10, scikit-learn 3/5,
+matplotlib 5/5, pytest 3/3, pydata 4/4, astropy 2/3, pylint 1/2, the
+singletons 4/4.
+
+Coverage across all draws: 318/410 = 77.6% [73.3, 81.3] (verify-on
+82/110; gateless v2 79 + v3 77 + t4 80 = 236/300 = 78.7%).
+
+Harness: at this concurrency the pipeline spends two Docker Hub pulls
+per instance (the sweep prunes each image, the scorer re-pulls it) and
+hit the anonymous window's 429 at ~100 pulls inside an hour; the
+pull-failure guard wrote no false empties (75 pull_failed rows, zero
+preds). The rest ran as batches of 12 with images kept until scored,
+then pruned: ~10 minutes per batch. A scorer killed mid-run leaves its
+named `sweb.eval.*` container, and the next run of that run id fails
+with a 409 on the same instance; remove the container before
+re-scoring.
