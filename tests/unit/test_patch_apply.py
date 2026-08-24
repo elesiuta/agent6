@@ -398,3 +398,28 @@ def test_v4a_heal_refuses_a_second_indent_candidate() -> None:
     patch = "*** Begin Patch\n*** Update File: a.py\n@@\n-a = 1\n+a = 10\n*** End Patch"
     with pytest.raises(PatchError, match="context not found"):
         apply_v4a_text(patch, "def f():\n    a = 1\ndef g():\n        a = 1\n")
+
+
+def test_moved_heal_tail_state_follows_the_healed_position() -> None:
+    """`touches_tail` was computed from the hunk's stale header numbers, not
+    the healed position: a moved hunk relocated TO the tail kept the old
+    trailing newline, and one relocated AWAY from the tail flipped it.
+    The tail test reads the actual splice location."""
+    # Stale header says lines 2-3; the exact block lives at EOF (lines 4-5).
+    original = "x\ny\na\nb"  # no trailing newline
+    patch = "--- a/f.py\n+++ b/f.py\n@@ -2,2 +2,2 @@\n a\n-b\n+B\n"
+    _, new, healed = apply_patch_text(patch, original)
+    assert healed == ("f.py @@ -2,2 ~moved",)
+    # The replaced range IS the tail: the no-trailing-newline state of the
+    # original tail must survive (stale coordinates said "not tail" and
+    # re-added a newline).
+    assert new == "x\ny\na\nB"
+
+    # The inverse: stale header claims the tail, the block lives mid-file.
+    original2 = "a\nb\nx\ny\n"
+    patch2 = "--- a/f.py\n+++ b/f.py\n@@ -3,2 +3,2 @@\n a\n-b\n+B\n\\ No newline at end of file\n"
+    _, new2, healed2 = apply_patch_text(patch2, original2)
+    assert healed2 == ("f.py @@ -3,2 ~moved",)
+    # The tail (y + trailing newline) was untouched by the healed mid-file
+    # edit; the patch's no-newline marker must not strip the file's tail.
+    assert new2 == "a\nB\nx\ny\n"

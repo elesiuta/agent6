@@ -321,6 +321,7 @@ def apply_parsed_patch(  # noqa: PLR0912
                 replacement_new.append(txt)
 
         actual_old = buf[buf_start : buf_start + hunk.old_count]
+        moved_heal = False
         if actual_old != expected_old:
             heal = _heal_hunk(buf, buf_start, expected_old, replacement_new)
             if heal is None:
@@ -331,17 +332,19 @@ def apply_parsed_patch(  # noqa: PLR0912
                     f"On-disk lines:\n{_render_lines(actual_old)}"
                 )
             buf_start, replacement_new, kind = heal
+            moved_heal = kind == "moved"
             # The label leads with the file like the V4A one: a multi-file
             # patch's "healed" list is unattributable without it.
             healed.append(f"{patch.target_path} @@ -{hunk.old_start},{hunk.old_count} ~{kind}")
 
-        # Determine whether this hunk touches the file's tail. For a pure-
-        # insertion the anchor is `old_start` itself; for a replacement it is
-        # the 1-based last line of the replaced range.
+        # Determine whether this hunk touches the file's tail from the ACTUAL
+        # splice position: a `moved` heal relocates `buf_start` away from the
+        # stale header numbers, which once kept a hunk healed onto the tail
+        # from carrying its no-newline state (and vice versa).
         touches_tail = (
-            hunk.old_start == len(base_lines)
+            buf_start == len(buf)
             if hunk.old_count == 0
-            else (hunk.old_start - 1 + hunk.old_count) == len(base_lines)
+            else (buf_start + hunk.old_count) == len(buf)
         )
         buf[buf_start : buf_start + hunk.old_count] = replacement_new
         offset += hunk.new_count - hunk.old_count
@@ -349,7 +352,15 @@ def apply_parsed_patch(  # noqa: PLR0912
             # The hunk's `new_no_newline` flag is authoritative for the result.
             # If the hunk didn't declare a no-newline marker on the new side,
             # the result has a trailing newline (standard diff convention).
-            result_has_trailing = not hunk.new_no_newline
+            # A `moved` heal is the exception: it lands where the authored
+            # coordinates never pointed, so the patch expresses no EOF intent
+            # there; the file's tail state stands unless an explicit marker
+            # travels with the block.
+            if moved_heal:
+                if hunk.new_no_newline:
+                    result_has_trailing = False
+            else:
+                result_has_trailing = not hunk.new_no_newline
 
     if not buf:
         # Empty file, write empty string regardless of trailing-newline state.
