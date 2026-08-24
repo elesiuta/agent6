@@ -12,15 +12,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
-CONTRACT_SYSTEM_PROMPT = """\
-You derive the expected behaviour from a task statement before any code is read.
-Output 3-6 concrete examples a correct fix must satisfy, one per line:
-`input: <call, command, or state> -> expected: <result>`.
-Draw each from the task's own words (its traceback, quoted values, named functions);
-mark an example `(inferred)` when the task does not state it outright.
-No prose, no code, no questions.
-"""
-
 PROMPT_REVISION_SYSTEM_PROMPT = """\
 You revise raw coding-agent tasks before the main worker loop starts.
 
