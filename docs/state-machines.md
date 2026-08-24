@@ -515,20 +515,19 @@ loop:
     if state is terminal: break
 ```
 
-`execute` is the only place the outside world is touched (run an agent, run a tool, read the clock).
-Its result is written to the journal as a fact *before* the blackboard is updated.
-`reduce` and `next_state` are pure.
-Replaying the journal therefore reproduces the exact path, branches included: the captured outputs a branch reads are in the journal.
+- `execute` is the only place the world is touched (run an agent, run a tool, read the clock)
+- its result journals as a fact *before* the blackboard updates; `reduce` and `next_state` are pure
+- replaying the journal reproduces the exact path, branches included (the outputs a branch reads are in the journal)
 
 ### 5.2 Determinism guarantees and the predicate evaluator
 
-- Branch edges are pure functions of the blackboard, which is itself a pure function of journaled events.
-  No branch ever depends on un-logged state.
-- The predicate evaluator is a hand-written recursive evaluator over a small AST (parsed with `ast.parse(..., mode="eval")` then walked against a strict allow-list of node types: `Compare`, `BoolOp`, `UnaryOp`, `Name`, `Constant`, a fixed-name `Call` allow-list, and `Attribute` nodes reinterpreted as record data-field navigation ([Names and references](#45-names-references-and-namespaces-normative), [Record schemas](#46-record-schemas-schemas)), never as Python attribute access.
-  Anything outside the allow-list raises at `machine check` time.
-  The evaluator parses but never calls `eval`, `exec`, or `getattr`, and never resolves arbitrary Python names: an `Attribute` chain is walked against the blackboard dict, a `Name` must be a declared variable, and any other free name is a load error.
-- Wall-clock, randomness, and external reads are captured as facts.
-  `agent6 machine replay <machine-id>` feeds those recorded facts instead of touching the world, so a completed run replays to the identical path offline.
+- Branch edges are pure functions of the blackboard; the blackboard is a pure function of journaled events; no branch depends on un-logged state
+- The predicate evaluator is a hand-written recursive walk over a small AST
+    - `ast.parse(..., mode="eval")`, then a strict node allow-list: `Compare`, `BoolOp`, `UnaryOp`, `Name`, `Constant`, a fixed-name `Call` list, and `Attribute` reinterpreted as record data navigation, never Python attribute access
+    - anything outside the allow-list raises at `machine check`
+    - it parses but never calls `eval`, `exec`, or `getattr`; an `Attribute` chain walks the blackboard dict, a `Name` must be declared, any other free name is a load error
+- Wall-clock, randomness, and external reads are captured as facts
+    - `agent6 machine replay <machine-id>` feeds the recorded facts instead of touching the world: a completed run replays to the identical path offline
 
 ### 5.3 Persistence layout
 
@@ -545,39 +544,41 @@ Mirrors the existing per-run layout under the per-repo state dir, out of the wor
   machine.lock               # single-writer guard (one process per machine)
 ```
 
-Each `agent` state execution emits a `logs.jsonl` event stream under `states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run emits), so a running machine is followable live exactly like a run.
-These heavy logs are pruned to the most recent `state_log_keep` (default 50) so a long-running machine never accumulates them without bound; the journal stays the complete transition history regardless.
+- each `agent` state execution emits a `logs.jsonl` stream under `states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run emits): a running machine follows live exactly like a run
+- the heavy per-state logs prune to the most recent `state_log_keep` (default 50); the journal stays the complete transition history
 
-Sizing for long-running machines: the journal grows monotonically, roughly one line (~200 B) per transition.
-A 10-minute-interval machine makes ~150k transitions a year (3 per tick on the idle path), on the order of tens of MB.
-Snapshots do not accumulate: each write keeps only the most recent `[machine] snapshot_keep` (default 5, `0` = keep every one) and deletes the rest, so replay from the journal is bounded by that tail.
-The per-state reasoning logs also do not grow with wall-clock time, only with agent-state executions, and they self-prune.
-The journal itself has no rotation; archive or delete an instance directory once its history is no longer needed for replay, and size `[budget] max_transitions` as the primary runaway guard.
+Sizing for long-running machines:
+
+- the journal grows ~one line (~200 B) per transition; a 10-minute-interval machine makes ~150k transitions a year (3 per idle tick), tens of MB
+- snapshots keep only the most recent `[machine] snapshot_keep` (default 5, `0` = all); replay from the journal is bounded by that tail
+- per-state reasoning logs grow with agent-state executions only, and self-prune
+- the journal has no rotation: archive or delete an instance dir when replay no longer needs it; `[budget] max_transitions` is the primary runaway guard
 
 ### 5.4 Idempotency and crash recovery
 
-A state runs, then exactly one fsync'd `StepEvent` records its outcome and captured fact.
-That single line is the commit point: the engine validates the capture (a tool's stdout against its `output_schema`, an agent's `finish_session` against it) *before* writing the StepEvent, so a malformed output halts the machine loudly without ever journaling a fact that a later `reduce` could not replay.
-On restart the engine rehydrates from the last StepEvent and continues.
-
-The crash window is the gap between a side effect completing and its StepEvent reaching disk.
-A process killed there loses the unrecorded fact, so on resume the engine re-runs that one step.
-The posture is therefore *at-least-once*: a `tool` with an external side effect must be authored to be idempotent (the same discipline the rest of agent6 follows; the `tool` examples here move a file or write to `$AGENT6_MACHINE_DATA_DIR` so a re-run is a no-op).
-The journal itself is crash-tolerant: a torn final line from a kill mid-append is dropped on read and healed on the next append, and a corrupt newest snapshot falls back to the retained tail.
+- a state runs, then exactly one fsync'd `StepEvent` records its outcome and captured fact: the commit point
+- the capture validates (`output_schema` for a tool's stdout, `finish_session` for an agent) *before* the StepEvent writes: a malformed output halts loudly, never journaling a fact a later `reduce` could not replay
+- on restart the engine rehydrates from the last StepEvent and continues
+- the crash window is side-effect-done to StepEvent-on-disk: a kill there loses the fact and the step re-runs on resume
+- the posture is at-least-once: a `tool` with an external side effect must be idempotent (the examples move a file or write `$AGENT6_MACHINE_DATA_DIR`, so a re-run is a no-op)
+- the journal is crash-tolerant: a torn final line drops on read and heals on the next append; a corrupt newest snapshot falls back to the retained tail
 
 ---
 
 ## 6. Reliability for 24/7 operation
 
-- **Restartable, not resident.** A `wait` state can either block in-process *or* persist the next wake time and exit 0, to be re-armed by a `systemd` timer / cron.
-  Either way the journal is the source of truth, so a reboot loses nothing.
-- **Runaway guards.** The `[budget]` USD field and `[budget].max_transitions` stop the machine when crossed.
-  A machine that loops forever without a `wait` and without spending is still bounded by `max_transitions`.
-- **Single writer.** `machine.lock` (flock) guarantees one process per machine id; a second invocation refuses rather than double-acting.
-- **Health/visibility.** `agent6 machine status <id>` prints the current state, blackboard, last N events, spend, and next wake.
-  `agent6 attach <id>` (the unified watcher) follows a running instance live: the state overview with the current state marked, each transition as it lands, and the current agent state's reasoning streamed from its per-state log.
-  The `agent6 tui` Machines page wraps the same view: **Run** opens it on the instance it starts, and **Watch** (`w`) attaches to a selected machine's instance.
-  `agent6 machine graph <file>` emits a mermaid or Graphviz-DOT diagram (`--format`, reachability is already computed at load).
+- **Restartable, not resident**
+    - a `wait` blocks in-process or persists the next wake and exits 0, re-armed by a systemd timer / cron
+    - the journal is the source of truth either way: a reboot loses nothing
+- **Runaway guards**
+    - `[budget]` USD and `[budget].max_transitions` stop the machine when crossed
+    - a no-wait, no-spend loop is still bounded by `max_transitions`
+- **Single writer**: `machine.lock` (flock) guarantees one process per machine id; a second invocation refuses
+- **Health/visibility**
+    - `machine status <id>`: current state, blackboard, last N events, spend, next wake
+    - `agent6 attach <id>`: the unified watcher, live (state overview, each transition, the active agent state's reasoning)
+    - the TUI Machines page wraps the same view (**Run** opens it; **Watch** `w` attaches)
+    - `machine graph <file>`: mermaid or Graphviz DOT (`--format`)
 
 ---
 
