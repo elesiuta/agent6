@@ -1786,10 +1786,10 @@ class Workflow:
         # REPL hook. Default no-op returns "continue".
         if sha:
             directive = self.after_auto_commit(turn.iteration, sha)
-            if directive == "undo":
-                undone = self._steer_outcome("undo", turn.iteration, state)
-                if undone is not None:
-                    return undone
+            if directive in ("undo", "exit"):
+                ended = self._steer_outcome(directive, turn.iteration, state)
+                if ended is not None:
+                    return ended
             if directive == "stop":
                 self._log(f"LOOP: interactive stop at iter {turn.iteration}")
                 # An operator stop is deliberate, not verified success: the

@@ -63,6 +63,7 @@ The config page shows every setting, its effective value, and where that value c
 
 - the pause menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages
 - Ctrl-Z in a view, or `/detach` in the menu, hands the run to the background after its current step (`agent6 attach` reattaches)
+- `/exit` in the menu, the fallback prompt, or the `run -i` REPL stops the run and leaves without the follow-up prompt (`agent6 resume` continues it)
 - a viewer opened with `agent6 attach --tui` just closes
 - TUI/web-hub runs start detached; `agent6 attach` covers both kinds: conversation by default, `--raw` line tail, `--tui` full screen, `--json` one-shot snapshot
 

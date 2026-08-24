@@ -27,6 +27,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.budget import BudgetTracker
+from agent6.ui.cli._repl import REPL_HELP
 from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
 
 
@@ -105,6 +106,17 @@ def test_hook_quit_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr("builtins.input", lambda _p="": "/quit")
     hook = build_repl_hook(tmp_path, _budget())
     assert hook(3, "abc") == "stop"
+
+
+def test_hook_exit_is_the_loops_exit_directive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/exit` stops AND leaves: the loop ends the run `steer_exit`, which the
+    follow-up prompt skips, unlike `/quit`'s stop that re-opens "next:"."""
+    monkeypatch.setattr("builtins.input", lambda _p="": "/exit")
+    hook = build_repl_hook(tmp_path, _budget())
+    assert hook(3, "abc") == "exit"
+    assert "/exit" in REPL_HELP
 
 
 def test_hook_eof_stops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

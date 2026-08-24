@@ -29,8 +29,9 @@ RoleName = Literal["worker", "reviewer", "planner"]
 # The modes `agent6 resume` accepts. A narrower question than "is this a
 # known mode", which is what `session_kind` answers.
 ResumableMode = Literal["run", "plan", "ask"]
-# What the after-auto-commit hook (`run -i`'s REPL) tells the loop to do next.
-AutoCommitDirective = Literal["continue", "stop", "undo"]
+# What the after-auto-commit hook (`run -i`'s REPL) tells the loop to do next;
+# `exit` is /exit: stop AND leave (no follow-up prompt).
+AutoCommitDirective = Literal["continue", "stop", "undo", "exit"]
 
 
 @dataclass(frozen=True, slots=True)

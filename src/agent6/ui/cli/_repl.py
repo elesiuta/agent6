@@ -48,6 +48,7 @@ REPL_HELP = (
     "                              edited. Nothing is rewritten.\n"
     "  /help                    - show this help\n"
     "  /quit                    - stop the agent cleanly after this commit\n"
+    "  /exit                    - stop and leave (no follow-up prompt; resume later)\n"
 )
 
 
@@ -81,7 +82,7 @@ def build_repl_hook(
     def _prompt_loop(iteration: int, sha: str) -> AutoCommitDirective:
         print(
             f"\n[agent6] iter {iteration} committed {sha[:12]}. "
-            f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit",
+            f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit /exit",
             file=sys.stderr,
         )
         while True:
@@ -94,8 +95,10 @@ def build_repl_hook(
             cmd = raw.lower()
             if cmd in {"", "/continue", "/c"}:
                 return "continue"
-            if cmd in {"/quit", "/q", "/stop", "/exit"}:
+            if cmd in {"/quit", "/q", "/stop"}:
                 return "stop"
+            if cmd == "/exit":
+                return "exit"
             if cmd in {"/help", "/h", "?"}:
                 print(REPL_HELP, file=sys.stderr)
                 continue

@@ -5413,6 +5413,71 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: Path) -> None:
     assert ends[-1]["all_passed"] is False  # a stop is deliberate, never "passed"
 
 
+def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: Path) -> None:
+    """`/exit` from the REPL ends the run `steer_exit` (stop AND leave): the
+    listing reads stopped, all_passed=False, and the follow-up prompt skips it."""
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            return _tool_resp(
+                "apply_edit",
+                {"path": "a.py", "edits": [{"kind": "create", "new_string": "x = 1\n"}]},
+                tool_id="e1",
+            )
+
+    class DispatcherStub(_StubDispatcher):
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            return ExecResult(
+                returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
+            )
+
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="never",
+            verify_retries=2,
+            verify_command=(),
+            verify_infer=True,
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    events: list[dict[str, Any]] = []
+
+    class _Events:
+        def emit(self, event_type: str, /, **fields: Any) -> None:
+            events.append({"type": event_type, **fields})
+
+    def _exit_hook(_i: int, _sha: str) -> Literal["continue", "exit"]:
+        return "exit"
+
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        mode="run",
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_iterations=10,
+        events=_Events(),
+        after_auto_commit=_exit_hook,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nt"}]}]
+    with patch("agent6.workflows.loop.chain_commit", return_value="sha1"):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=Conversation.from_wire(messages),
+            tool_calls=0,
+            start_iteration=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert result.completed is False  # an operator exit is a stop, not a completion
+    assert result.reason == "steer_exit"
+    ends = [e for e in events if e["type"] == "session.end"]
+    assert ends and ends[-1]["reason"] == "steer_exit"
+    assert ends[-1]["all_passed"] is False  # a stop is deliberate, never "passed"
+
+
 def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: Path) -> None:
     """The REPL hook's "undo" is the loop's own /undo (fork back before the
     last message): the run ends `undone` naming the fork, exactly as a steer
