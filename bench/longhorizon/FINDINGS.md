@@ -281,3 +281,28 @@ miss), then the model corrupted `ledger/ops.py` with a broken docstring
 quote and finished over a red gate, so convert/report/import scored 0.0
 on an unimportable module. The measurement on the plan model is the next
 step: ledger x {baseline, fresh_state, poisoned}, paired reps.
+
+### Ledger campaign on the plan model (2026-08-23, gpt-5.6-sol, 3 reps x 3 conditions, 45 sessions)
+
+Score: 1.000 on every leg in every condition (baseline, fresh_state,
+poisoned); every component, including the rounding and regen traps, 1.00.
+The task has no headroom for this model, so the score axis says nothing
+about memory here.
+
+What the other axes say (means per leg; later legs 2-5 in brackets):
+- memory is written and read: 1.7 writes and 0.8 reads per leg with the
+  shared state (2.7 memory files by the end of a campaign), 1.5 writes and
+  0.2 reads under fresh_state (each leg starts empty);
+- memory does not make later legs cheaper on this task: tokens_in 37.9k vs
+  35.3k fresh [later legs], tool calls 33.7 vs 31.2, re-reads flat (0.4 vs
+  0.5); the injected index plus memory-file reads cost slightly more than
+  rediscovering the conventions, which this model does in a read or two;
+- poisoned: score unchanged (the model verified the repo over the stale
+  memory every time), tokens_in 43.4k on later legs (+15% vs baseline), and
+  the planted memories were rewritten in 1 of 12 poisoned legs, never
+  removed: it routes around a stale memory rather than correcting it.
+
+Reading: the harness measures what it was built to measure (cost, re-reads,
+memory traffic, the poison reaction); to see a score difference the
+campaign needs legs this model cannot solve from the repo alone in one
+read, or a weaker model. Results: `results/mem-ledger-gpt.jsonl`.
