@@ -418,33 +418,38 @@ name := an identifier declared in exactly one [vars.*] subtable
 key  := an identifier (a declared field of a record type)
 ```
 
-The first segment is always a declared variable; the validator checks it exists.
-Any further `.key` segments navigate into a record value as data: they are ordered dictionary lookups performed by agent6's own evaluator, not Python attribute access and never `getattr`.
-The worked example's `verdict.confidence` means "the `confidence` field of the `classification` record `verdict`", never a Python attribute.
-A `.key` segment is legal only when the value it navigates is a record type ([Record schemas](#46-record-schemas-schemas)): each segment is checked against the schema at load, so a misspelled field is a load error.
-Dotting an opaque `json` value, or a scalar, is a load error: `json` is wholesale-only by construction ([The blackboard](#42-the-blackboard-three-owners)), which is what keeps every navigable path statically checkable.
+- the first segment is a declared variable; the validator checks it exists
+- further `.key` segments are ordered dictionary lookups by agent6's own evaluator: never Python attribute access, never `getattr`
+- a `.key` is legal only into a record type ([Record schemas](#46-record-schemas-schemas)); each segment checks against the schema at load (a misspelled field is a load error)
+- dotting an opaque `json` or a scalar is a load error: `json` is wholesale-only, which keeps every navigable path statically checkable
 
-**Capture scope and `result`.** Inside a state's `capture` table the reserved name `result` denotes the structured output the state just produced, and is visible *only* there.
-`result` is not a blackboard variable, cannot be declared, and is invisible outside the capturing state.
-Whether `result` is navigable follows the same one rule as every other value ([The blackboard](#42-the-blackboard-three-owners)): it may be dotted only when it is typed by an `output_schema` record; for an `agent` state that schema is mandatory, for a `tool` state it is optional (declare it to read fields; omit it and `result` is opaque and whole-capture only).
+**Capture scope and `result`.**
+
+- inside a state's `capture` table, the reserved `result` denotes the structured output the state just produced, visible only there
+- not a blackboard variable, not declarable, invisible outside the capturing state
+- dottable only when typed by an `output_schema` record (mandatory for `agent` states; optional for `tool` states, which are otherwise whole-capture only)
+
 A `capture` has two forms of target:
 
 - a fixed source key (`stdout_json` for `tool`, `finish_json` for `agent`) naming one blackboard variable to receive the whole output;
 - a `set = { <var> = "<template>" }` table assigning rendered templates (which may read `result`/`result.<field>`) to blackboard variables.
 
-What a capture may write is the ownership wall ([The blackboard](#42-the-blackboard-three-owners)): a `tool` capture targets only `[vars.code]` names; an `agent` capture only `[vars.agent]` names; targeting a `[vars.operator]` name or an undeclared name is a load error.
-The captured value's runtime type must match the target variable's declared type, or the machine halts loudly.
+- what a capture may write is the ownership wall: `tool` -> `[vars.code]` only, `agent` -> `[vars.agent]` only; a `[vars.operator]` or undeclared target is a load error
+- the captured value's runtime type must match the target's declared type, or the machine halts loudly
 
-**State-name namespace.** State names (`[states.<name>]`) form a separate namespace from variables: they are referenced only by `initial`, `goto`, and `on` targets, never inside predicates or templates, so a state and a variable may share a name without ambiguity.
-Every `goto`/`on` target must name a declared state (load error otherwise), and every declared state must be reachable from `initial` (load error otherwise).
+**State-name namespace.**
+
+- state names are a separate namespace from variables: referenced only by `initial`, `goto`, and `on`, never in predicates or templates (a state and a variable may share a name)
+- every `goto`/`on` target names a declared state; every declared state is reachable from `initial` (each a load error otherwise)
 
 ### 4.6 Record schemas (`[schemas.*]`)
 
-A **record type** is a named, field-typed structure declared once under `[schemas.<name>]` and used in two places: as a variable's `type` (making the variable navigable, [The blackboard](#42-the-blackboard-three-owners)) and as an `agent` state's `output_schema` (validating the `finish_session` payload at the trust boundary).
-One mechanism serves both, so there is exactly one way to describe structured data in a machine.
+A **record type** is a named, field-typed structure declared once under `[schemas.<name>]`.
 
-The schema language is intentionally tiny: inline TOML, no JSON Schema, no new dependency (`tomllib` + `pydantic` only).
-Each entry is `field = "<type>"` or `field = { type = "<type>", ... }`:
+- used as a variable's `type` (navigability) and as an `agent` state's `output_schema` (payload validation at the trust boundary)
+- one mechanism for both: exactly one way to describe structured data
+- the schema language is tiny: inline TOML, no JSON Schema, no new dependency (`tomllib` + `pydantic`)
+- each entry is `field = "<type>"` or `field = { type = "<type>", ... }`:
 
 ```toml
 [schemas.classification]
@@ -464,9 +469,10 @@ Rules (all enforced at `machine check`):
 
 ### 4.7 Machine config overlay (`[config]`)
 
-A machine file may carry an optional top-level `[config]` table: an ordinary agent6 config fragment that layers on top of the effective config for the duration of the machine run.
-The full stack is defaults < global < repo < `--config FILE` < the machine `[config]` overlay, so the overlay is the highest-precedence layer and the global `agent6 --config FILE machine run ...` flag layers under it like any other config file.
-Most knobs `agent6 config show` lists are valid inside the overlay; the refusals are listed below.
+A machine file may carry an optional top-level `[config]` table: an agent6 config fragment layered on the effective config for the run.
+
+- the stack: defaults < global < repo < `--config FILE` < the machine overlay (highest)
+- most knobs `agent6 config show` lists are valid inside it; the refusals are below
 
 ```toml
 [config.workflow]
@@ -482,12 +488,13 @@ max_usd = 50.0
 Unset keys read straight through to the lower layers, so a machine only states what it wants to change.
 Two hard rules:
 
-- **No connections/secrets, no sandbox policy, no presets, no MCP servers, no host hooks.** A `[config.providers.*]`, `[config.sandbox.*]`, `[config.presets.*]`, or `[config.mcp.*]` block, or any of `git.run_repo_hooks`, `machine.notify`, `notify.on_complete`, is a *load-time* error.
-  Provider endpoints, api-key env names, and secret values live in the global config / secrets store; sandbox policy (`network`, `run_commands`, `.git` protection), the strategy presets that define it, the MCP servers that widen the tool surface, and every hook that runs an argv on the host outside the jail (the repo's `.git/hooks` on a `mode="run"` commit, the notify hooks) are operator decisions in the global/repo config.
-  A machine file may be LLM-drafted or shared, so it must not be able to widen its own egress, weaken its jail, or run host code through the overlay, directly or via a `[presets.<selected>]` preset the operator's selection would resolve.
-  The overlay can only *route to* a provider name that already exists in the effective config (and set benign knobs like commit identity).
-- Per-`agent`-state knobs ([State kinds](#43-state-kinds)) override the overlay for that one state.
-  Precedence for an agent loop is therefore: per-state knob > machine `[config]` > repo config > global config > built-in default.
+- **No connections/secrets, no sandbox policy, no presets, no MCP servers, no host hooks**
+    - `[config.providers.*]`, `[config.sandbox.*]`, `[config.presets.*]`, `[config.mcp.*]`, `git.run_repo_hooks`, `machine.notify`, `notify.on_complete`: each a load-time error
+    - endpoints, key-env names, and secrets live in the global config / secrets store; sandbox policy, presets, MCP servers, and host-argv hooks are operator decisions in the global/repo config
+    - a machine file may be LLM-drafted or shared: it must not widen its own egress, weaken its jail, or run host code through the overlay, directly or via a preset the operator's selection would resolve
+    - the overlay only routes to a provider name that already exists, and sets benign knobs (commit identity)
+- Per-`agent`-state knobs ([State kinds](#43-state-kinds)) override the overlay for that one state
+    - agent-loop precedence: per-state knob > machine `[config]` > repo > global > built-in default
 
 ---
 
