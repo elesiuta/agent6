@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import Field as PydanticField
 
 from agent6.machine._semantics import validate_record_payload
 from agent6.machine.journal import (
@@ -57,6 +58,7 @@ from agent6.machine.journal import (
 from agent6.machine.model import (
     AgentState,
     BranchState,
+    FieldSpec,
     MachineSpec,
     StateSpec,
     TerminalState,
@@ -161,6 +163,13 @@ class AgentRequest(BaseModel):
     # like a run. Empty/0 for the `machine create` authoring agent (no state).
     state_name: str = ""
     step_seq: int = 0
+    # The state's finish contract: the leg refuses a non-conforming
+    # finish_session `result` in-run (the model retries with the problems),
+    # and the engine's own validation stays the authority on the recorded
+    # fact. `schemas` is the spec's schema table verbatim, so nested records
+    # resolve leg-side with the same validator.
+    output_schema: str | None = None
+    schemas: dict[str, dict[str, FieldSpec]] = PydanticField(default_factory=dict)
 
 
 class AgentExecResult(BaseModel):
@@ -461,7 +470,7 @@ def _apply_capture(
     # shape, so there is nothing to check.
     if state.output_schema is not None:
         problems = validate_record_payload(
-            spec, state.output_schema, result_obj, where="tool stdout"
+            spec.schemas, state.output_schema, result_obj, where="tool stdout"
         )
         if problems:
             raise StateRuntimeError(
@@ -639,7 +648,7 @@ def _agent_outcome(
         return "timeout"
     if result.reason == "finish_session" and result.payload is not None:
         problems = validate_record_payload(
-            spec, state.output_schema, result.payload, where="finish_session payload"
+            spec.schemas, state.output_schema, result.payload, where="finish_session payload"
         )
         if not problems:
             return "ok"
@@ -715,6 +724,8 @@ def _execute(
                 # So the live World can give this execution its own watchable log.
                 state_name=state_name,
                 step_seq=seq,
+                output_schema=state.output_schema,
+                schemas=spec.schemas,
             )
         )
         outcome = _agent_outcome(spec, state, result)

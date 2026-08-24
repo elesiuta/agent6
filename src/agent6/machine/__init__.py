@@ -13,7 +13,12 @@ blocking) cover 24/7 use.
 
 from __future__ import annotations
 
-from agent6.machine._semantics import fixture_problems, load_machine, validate_semantics
+from agent6.machine._semantics import (
+    fixture_problems,
+    load_machine,
+    validate_record_payload,
+    validate_semantics,
+)
 from agent6.machine.authoring import (
     MACHINE_AUTHOR_GUIDE,
     SCRIPTS_PAYLOAD_KEY,
@@ -115,6 +120,7 @@ __all__ = [
     "render_dot",
     "render_mermaid",
     "stop_requested",
+    "validate_record_payload",
     "validate_semantics",
     "write_bundle",
     "write_source",

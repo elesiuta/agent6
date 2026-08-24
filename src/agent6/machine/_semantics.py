@@ -324,20 +324,21 @@ def _py_type(value: Any) -> str:
 
 
 def validate_record_payload(
-    spec: MachineSpec, schema_name: str, payload: Any, *, where: str
+    schemas: dict[str, dict[str, FieldSpec]], schema_name: str, payload: Any, *, where: str
 ) -> list[str]:
     """Strictly validate a captured *payload* against a record schema.
 
-    The one runtime capture gate for both an agent `finish_session` payload and a
-    `tool` state's parsed stdout (*where* names which, for the error text).
-    Stricter than the load-time placeholder check on variable defaults: every
-    non-optional field must be present, `enum` constraints are enforced, and
-    nested records recurse. Presumes *spec* already passed `validate_semantics`,
-    so its schema graph is well-formed. Returns an empty list when the payload
-    conforms, or a list of human-readable problems otherwise.
+    The one runtime capture gate for an agent `finish_session` payload (engine
+    side AND the leg's in-run contract check, which receives the same schemas
+    over the AgentRequest wire) and a `tool` state's parsed stdout (*where*
+    names which, for the error text). Stricter than the load-time placeholder
+    check on variable defaults: every non-optional field must be present,
+    `enum` constraints are enforced, and nested records recurse. Presumes the
+    schemas already passed `validate_semantics`, so the graph is well-formed.
+    Returns an empty list when the payload conforms, or a list of
+    human-readable problems otherwise.
     """
-    schema_names = frozenset(spec.schemas)
-    return _check_record_strict(payload, schema_name, spec.schemas, schema_names, where)
+    return _check_record_strict(payload, schema_name, schemas, frozenset(schemas), where)
 
 
 def _check_record_strict(

@@ -65,7 +65,7 @@ from agent6.git_ops import (
     render_commit_trailer,
 )
 from agent6.git_ops import status as git_status
-from agent6.machine import AgentExecResult, AgentRequest
+from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.jail import die_with_parent
 from agent6.sessions.ipc import (
@@ -135,6 +135,51 @@ def _machine_head_sha(root: Path) -> str | None:
         return git_status(root).head_sha or None
     except (GitError, OSError):
         return None
+
+
+def _finish_validator(r: AgentRequest) -> Callable[[dict[str, Any] | None], list[str]] | None:
+    """The state's finish contract as a loop-injectable check: the same
+    validator the engine judges the recorded fact with, over the schemas the
+    request carried."""
+    name = r.output_schema
+    if name is None:
+        return None
+
+    def check(payload: dict[str, Any] | None) -> list[str]:
+        return validate_record_payload(r.schemas, name, payload, where="finish_session payload")
+
+    return check
+
+
+def _task_with_contract(r: AgentRequest) -> str:
+    """The task the leg runs: the state prompt, plus the finish contract when
+    the state declares one, rendered as field: type lines (nested records
+    included) so the model needs no guess about the accepted shape."""
+    if r.output_schema is None:
+        return r.prompt
+    lines = [
+        f"{r.prompt}",
+        "",
+        "finish_session must include `result` as a JSON object matching schema"
+        f" {r.output_schema!r}:",
+    ]
+    seen: set[str] = set()
+    queue = [r.output_schema]
+    while queue:
+        name = queue.pop(0)
+        if name in seen or name not in r.schemas:
+            continue
+        seen.add(name)
+        parts = []
+        for fname, f in r.schemas[name].items():
+            t = f.type + (" (optional)" if f.optional else "")
+            if f.enum is not None:
+                t += " one of [" + ", ".join(f.enum) + "]"
+            parts.append(f"{fname}: {t}")
+            if f.type in r.schemas:
+                queue.append(f.type)
+        lines.append(f"  {name} = {{{'; '.join(parts)}}}")
+    return "\n".join(lines)
 
 
 def _result(
@@ -466,8 +511,9 @@ def run_one(
         steer_requested=bridges.steer_requested if bridges is not None else (lambda: False),
         steer_clear=bridges.steer_clear if bridges is not None else (lambda: None),
         steer_prompt=bridges.steer_prompt if bridges is not None else (lambda: None),
+        finish_validator=_finish_validator(r),
     )
-    result = wf.run(r.prompt)
+    result = wf.run(_task_with_contract(r))
     payload = result.finish_payload if result.reason == "finish_session" else None
     return _result(result.reason, payload, budget)
 

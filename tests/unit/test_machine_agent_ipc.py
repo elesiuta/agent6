@@ -18,6 +18,7 @@ from pathlib import Path
 from agent6.app.machine_agent import MachineAgentRequest
 from agent6.git_ops import CommitIdentity
 from agent6.machine import AgentExecResult, AgentRequest
+from agent6.machine.model import FieldSpec
 
 _REQUEST = MachineAgentRequest(
     cwd=Path("/work/repo"),
@@ -40,6 +41,10 @@ _REQUEST = MachineAgentRequest(
         mode="run",
         state_name="review",
         step_seq=2,
+        output_schema="verdict",
+        schemas={
+            "verdict": {"ok": FieldSpec(type="bool"), "note": FieldSpec(type="str", optional=True)}
+        },
     ),
 )
 
@@ -53,7 +58,9 @@ _REQUEST_BYTES = (
     '"request":{"prompt":"review the queue","timeout_s":600.0,"model":"claude-x",'
     '"provider":"anthropic","effort":"low","temperature":0.2,"max_usd":1.5,'
     '"max_tokens_fallback":200000,"mode":"run",'
-    '"state_name":"review","step_seq":2}}'
+    '"state_name":"review","step_seq":2,"output_schema":"verdict",'
+    '"schemas":{"verdict":{"ok":{"type":"bool","optional":false,"enum":null},'
+    '"note":{"type":"str","optional":true,"enum":null}}}}}'
 )
 
 _RESULT = AgentExecResult(
@@ -117,5 +124,6 @@ def test_defaulted_request_omits_nothing() -> None:
         '"events_log":null,"protect_paths":[],"commit_identity":null,'
         '"request":{"prompt":"p","timeout_s":1.0,"model":null,"provider":null,'
         '"effort":null,"temperature":null,"max_usd":null,'
-        '"max_tokens_fallback":null,"mode":"agent","state_name":"","step_seq":0}}'
+        '"max_tokens_fallback":null,"mode":"agent","state_name":"","step_seq":0,'
+        '"output_schema":null,"schemas":{}}}'
     )

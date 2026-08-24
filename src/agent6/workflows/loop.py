@@ -632,6 +632,12 @@ class Workflow:
     # workflow prompts the operator for an instruction or "abort". When unset
     # (the defaults) the loop runs without operator interaction.
     steer_requested: Callable[[], bool] = field(default=lambda: False)
+    # A machine agent state's finish contract: called on each finish_session
+    # payload, returning the problems (empty = conforms). Injected by the
+    # machine leg builder from the state's output_schema; None (every plain
+    # run) leaves finishes ungated. The engine's own validation of the
+    # recorded fact stays the authority.
+    finish_validator: Callable[[dict[str, Any] | None], list[str]] | None = None
     steer_clear: Callable[[], None] = field(default=lambda: None)
     steer_prompt: Callable[[], str | None] = field(default=lambda: None)
     # Called at each leg entry (run/resume): disarms a SIGINT stage the prior
@@ -1937,10 +1943,12 @@ class Workflow:
         self, state: _LoopState, turn: _TurnState, conversation: Conversation
     ) -> None:
         """Gates that can revoke this turn's finish_session, in precedence order:
-        review (before_finish), metric early-finish, open subtasks, verify
+        the finish contract (a machine state's output_schema), review
+        (before_finish), metric early-finish, open subtasks, verify
         green, memory backstop. Each clears `turn.finish_signal` and appends
         its nudge; later gates then see the finish as already revoked and stay
         quiet."""
+        self._gate_finish_contract(turn)
         self._gate_before_finish_review(state, turn, conversation)
         self._gate_metric_early_finish(state, turn)
         self._gate_task_finish(state, turn)
@@ -2101,6 +2109,35 @@ class Workflow:
         turn.finish_signal = None
         turn.finish_payload = None
         turn.tool_results.append(Notice(nudge))
+
+    def _gate_finish_contract(self, turn: _TurnState) -> None:
+        """A finish_session whose `result` does not satisfy the machine state's
+        output_schema returns to the model with the problems, so the retry
+        happens in-leg instead of the leg ending failed over correct work.
+        Unbounded on purpose: the budget and max_iterations backstops end a
+        model that never conforms, and the engine records that truthfully."""
+        if (
+            self.finish_validator is None
+            or turn.finish_signal is None
+            or turn.finish_kind != "finish_session"
+        ):
+            return
+        problems = self.finish_validator(turn.finish_payload)
+        if not problems:
+            return
+        turn.finish_signal = None
+        turn.finish_payload = None
+        turn.tool_results.append(
+            Notice(
+                "finish_session refused: "
+                + "; ".join(problems)
+                + ". Call finish_session again with a `result` that satisfies the schema."
+            )
+        )
+        self._log(
+            f"  finish_session returned: result violates the contract at iter {turn.iteration}"
+        )
+        self._emit("loop.finish_contract.refused", iteration=turn.iteration, problems=problems)
 
     def _gate_verify_finish(self, state: _LoopState, turn: _TurnState) -> None:
         """A finish over a tree the gate did not certify returns to the model

@@ -154,7 +154,7 @@ def _check_agent(
 ) -> StateCheck:
     payload = synthesize_record(spec, state.output_schema)
     problems = validate_record_payload(
-        spec, state.output_schema, payload, where="finish_session payload"
+        spec.schemas, state.output_schema, payload, where="finish_session payload"
     )
     if problems:  # pragma: no cover - synthesis is schema-valid by construction
         return StateCheck(name, "agent", False, "ok", None, "; ".join(problems))

@@ -90,7 +90,10 @@ def test_synthesize_record_is_schema_valid(tmp_path: Path) -> None:
     # enum field -> first member; scalar -> zero value.
     assert payload == {"label": "low", "score": 0}
     # And it passes the same strict check the live agent path uses.
-    assert validate_record_payload(spec, "review", payload, where="finish_session payload") == []
+    assert (
+        validate_record_payload(spec.schemas, "review", payload, where="finish_session payload")
+        == []
+    )
 
 
 def test_synthesize_handles_lists(tmp_path: Path) -> None:

@@ -18,7 +18,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 - **Written by:** workflows/loop
 - **Read by:** workflows/_compaction
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (12 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (13 test files exercise it)
 
 ## SessionManifest
 
@@ -142,7 +142,7 @@ Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 
 - **Written by:** machine/_semantics
 - **Read by:** machine/{__init__, dryrun, engine, graph, journal}, viewmodel/machine_state
-- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (4 test files exercise it)
+- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (6 test files exercise it)
 
 ## JournalEvent
 
