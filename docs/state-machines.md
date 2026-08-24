@@ -4,7 +4,7 @@ An agent state machine is a declarative, human-editable, machine-parseable progr
 It lets an operator compose small deterministic agents that run for a long time, and agent6 is the runner.
 
 This document specifies the format and its runtime.
-The runtime lives under `src/agent6/machine/`, driven by the `agent6 machine` subcommands: `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#7-cli-surface)).
+The runtime lives under `src/agent6/machine/`, driven by the `agent6 machine` subcommands: `list`, `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#7-cli-surface)).
 It changes neither the security model, the tool surface, nor the stability policy in [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md); [Security considerations](#9-security-considerations) records how each invariant holds.
 
 ---
@@ -175,6 +175,7 @@ An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript,
 
 - its only control-flow signal is the outcome label
 - its structured product is the `finish_session` payload, validated against `output_schema`, captured into the blackboard
+    - the state's task states the contract (the schema rendered field by field), and the loop refuses a non-conforming `finish_session` with the problems so the model retries in-run; the engine's own validation of the recorded payload stays the authority
 - the LLM cannot pick the next state; it populates variables a downstream `branch` reads
 
 `mode` chooses the tool surface.
@@ -556,7 +557,7 @@ Sizing for long-running machines:
 ### 5.4 Idempotency and crash recovery
 
 - a state runs, then exactly one fsync'd `StepEvent` records its outcome and captured fact: the commit point
-- the capture validates (`output_schema` for a tool's stdout, `finish_session` for an agent) *before* the StepEvent writes: a malformed output halts loudly, never journaling a fact a later `reduce` could not replay
+- the capture validates *before* the StepEvent writes, so the journal never holds a fact a later `reduce` could not replay: a tool's malformed stdout halts the machine loudly, and an agent's non-conforming `finish_session` is refused in-run (the model retries; a leg that never conforms lands outcome `failed` and routes on that edge)
 - on restart the engine rehydrates from the last StepEvent and continues
 - the crash window is side-effect-done to StepEvent-on-disk: a kill there loses the fact and the step re-runs on resume
 - the posture is at-least-once: a `tool` with an external side effect must be idempotent (the examples move a file or write `$AGENT6_MACHINE_DATA_DIR`, so a re-run is a no-op)
@@ -703,7 +704,7 @@ cursor  = "str"
 
 [states.poll]
 kind = "wait"
-every_secs = "{{ poll_secs }}"    # at most one of every_secs | until | cron
+every_secs = "{{ poll_secs }}"    # at most one of every_secs | until
 on = { tick = "scan", signal = "scan" }
 
 [states.scan]

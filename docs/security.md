@@ -30,7 +30,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `strict`, and push needs egress
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary
     - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
-    - every mount carries `nosuid` and `nodev`, except the five bound `/dev` character nodes (`null`, `zero`, `urandom`, `random`, `full`), which `nodev` would make unusable
+    - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable
     - `/tmp` allows exec (toolchain helpers)
     - children write inside the jail's mount namespace (`strict`) or the Landlock write grants (`hardened`)
     - nothing a command starts outlives it: `strict`'s PID namespace takes the tree down; `hardened` holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command (a `setsid` daemon included)
@@ -39,7 +39,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 **Does not hold**
 
 - The agent process's own egress is unbounded
-    - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus a chatgpt provider's `oauth_issuer` for token grants); nothing stops the process reaching elsewhere
+    - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus the fixed ChatGPT OAuth authority for token grants); nothing stops the process reaching elsewhere
     - a jailed command's egress is bounded ([Network](#5-network))
 - On `hardened`, a command can hand work to a user daemon already running (tmux, `systemd --user`): unix sockets have no Landlock hook and stay nameable without a mount namespace
     - `strict` does not expose them
@@ -171,6 +171,7 @@ Every path they take resolves through `Workspace`:
 
 Every command tool (`run_command`, `run_verify_command`, `stop_background`) answers to `[sandbox].run_commands` and runs jailed.
 `run_commands = "no"` withholds the verify gate too, and such a run starts gateless.
+Under `ask`, a denied gate is withheld the same way for the rest of the run (no retry loop can discharge a refusal), and the run ends unverified.
 
 The agent works within the environment it is given and cannot expand it:
 
