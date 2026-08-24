@@ -3491,7 +3491,10 @@ class Workflow:
         file. A miss is reported (log + event), never a block."""
         if self.state_dir is None or not state.decisions_recorded:
             return
-        text = decisions_text(self.state_dir)
+        try:
+            text = decisions_path(self.state_dir).read_text(encoding="utf-8")
+        except OSError:
+            text = ""
         missing = [e for e in state.decisions_recorded if e.strip() not in text]
         if missing:
             self._log(f"LOOP: {len(missing)} recorded decision(s) missing from DECISIONS.md")

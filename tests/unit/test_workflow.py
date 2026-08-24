@@ -6647,6 +6647,10 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
     assert "Q: Drop the modal or keep it?\n  A: Use the inline item.\n" in text
     assert "unrelated instruction" not in text
     assert len(st.decisions_recorded) == 3
+    # The check reads the file, not the capped injection view: a leg whose
+    # rulings outgrow the cap still finds every one of them on disk.
+    with decisions_path(state_dir).open("a", encoding="utf-8") as fh:
+        fh.write("- 2026-08-23T00:00:00Z [other] Q: pad\n  A: " + "x" * 5000 + "\n")
     wf._check_decisions_recorded(st)  # pyright: ignore[reportPrivateUsage]
     assert not any(
         c.kwargs.get("missing")

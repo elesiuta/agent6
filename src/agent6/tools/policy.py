@@ -47,7 +47,7 @@ def workspace_for(config: Config, root: Path, *, memory_dir: Path | None = None)
         read_roots=(*(Path(p).resolve() for p in sb.extra_read_paths), *writable, *mem),
         write_roots=(*writable, *mem),
         exempt=mem,
-        read_only=(memory_dir / DECISIONS_NAME,) if memory_dir is not None else (),
+        read_only=(memory_dir.resolve() / DECISIONS_NAME,) if memory_dir is not None else (),
     )
 
 

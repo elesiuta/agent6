@@ -111,3 +111,12 @@ def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: Path) -> 
     ws.resolve_write(str(mem / "MEMORY.md"))
     with pytest.raises(ToolError, match="harness-owned"):
         ws.resolve_write(str(mem / "DECISIONS.md"))
+    # The state dir reached through a symlink (a relocated XDG_STATE_HOME):
+    # the guard compares resolved paths, so the grant must be resolved too.
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "state", target_is_directory=True)
+    ws = workspace_for(Config(), tmp_path, memory_dir=link / "memory")
+    with pytest.raises(ToolError, match="harness-owned"):
+        ws.resolve_write(str(link / "memory" / "DECISIONS.md"))
+    with pytest.raises(ToolError, match="harness-owned"):
+        ws.resolve_write(str(mem / "DECISIONS.md"))
