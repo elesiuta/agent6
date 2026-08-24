@@ -44,6 +44,7 @@ from agent6.machine.model import (
     edges,
     parse_type,
     reachable_states,
+    type_decl,
     type_str,
 )
 from agent6.machine.predicate import (
@@ -634,11 +635,10 @@ def _validate_capture(
         problems.extend(_check_capture_target(name, whole_target, owner, var_owner))
         target_type = var_types.get(whole_target)
         if target_type is not None and whole_type is not None and target_type != whole_type:
-            decl = whole_type.name if isinstance(whole_type, RecordT) else type_str(whole_type)
             problems.append(
                 f"state {name!r}: capture target {whole_target!r} has type"
                 f" {type_str(target_type)} but the captured value is {type_str(whole_type)};"
-                f' declare it as type = "{decl}"'
+                f' declare it as type = "{type_decl(whole_type)}"'
             )
     if capture.set is not None:
         for target, template in capture.set.items():
@@ -700,7 +700,8 @@ def _validate_set_assignment(
         if target_type is not None and source_type is not None and source_type != target_type:
             return [
                 f"{where}: assigns {type_str(source_type)} to {target!r} of type"
-                f" {type_str(target_type)}"
+                f" {type_str(target_type)};"
+                f' declare it as type = "{type_decl(source_type)}"'
             ]
         return []
     # Otherwise the assignment renders to a string, so the target must be str.
@@ -715,7 +716,8 @@ def _validate_set_assignment(
     if target_type is not None and target_type != ScalarT("str"):
         problems.append(
             f"{where}: a rendered template yields a string but {target!r} has type"
-            f" {type_str(target_type)}"
+            f' {type_str(target_type)}; declare it as type = "str"'
+            " (only a lone {{ var }} keeps a value's type)"
         )
     return problems
 

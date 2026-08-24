@@ -227,6 +227,29 @@ def test_capture_type_mismatch_names_the_type_to_declare(tmp_path: Path) -> None
     assert any('declare it as type = "classification"' in p for p in problems)
 
 
+def test_set_assignment_type_mismatch_names_the_type_to_declare(tmp_path: Path) -> None:
+    """The lone-ref set mismatch states the declaration that would fit."""
+    body = VALID_MACHINE.replace(
+        'pending = { type = "list[str]", default = [] }',
+        'pending = { type = "int", default = 0 }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any('declare it as type = "list[str]"' in p for p in problems)
+
+
+def test_template_set_into_non_str_names_the_str_declaration(tmp_path: Path) -> None:
+    """The rendered-template mismatch states the str declaration and the lone-ref out."""
+    body = VALID_MACHINE.replace(
+        'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
+        'capture = { set = { pending = "c={{ result.cursor }}" } }',
+    )
+    problems = _problems(tmp_path, body)
+    assert any(
+        'declare it as type = "str" (only a lone {{ var }} keeps a value\'s type)' in p
+        for p in problems
+    )
+
+
 def test_capture_cannot_write_operator_var(tmp_path: Path) -> None:
     body = VALID_MACHINE.replace(
         'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',

@@ -123,6 +123,11 @@ def type_str(t: TypeRef) -> str:
     return f"record {t.name!r}"
 
 
+def type_decl(t: TypeRef) -> str:
+    """The value an author writes in a type = "..." declaration."""
+    return t.name if isinstance(t, RecordT) else type_str(t)
+
+
 # --------------------------------------------------------------------------
 # Pydantic parse models (trust boundary)
 # --------------------------------------------------------------------------
