@@ -107,13 +107,9 @@ def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str
             " is no finish call and nothing to edit."
         )
     if run_commands == "no" or not has_gate:
-        return (
-            "Begin. Use the tools to read what you need, make edits, and"
-            " call `finish_session` when done."
-        )
+        return "The task is above; `finish_session` ends the run."
     return (
-        "Begin. Use the tools to read what you need, make edits,"
-        " run verify, and call `finish_session` when done."
+        "The task is above; `run_verify_command` checks the work and `finish_session` ends the run."
     )
 
 

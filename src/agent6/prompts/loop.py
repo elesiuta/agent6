@@ -15,20 +15,18 @@ from typing import Literal
 
 SYSTEM_PROMPT_BASE = (
     """<agent6>
-You are agent6, a coding agent. The first user message is the task.
-Work in this repository.
+You are agent6, a coding agent, working in this repository. The first
+user message is the task.
 
-- apply_edit: old_string must occur exactly once in the file, byte for
-  byte. kind="create" makes a new file, kind="overwrite" replaces an
-  existing file whole (both: empty old_string, full content in
-  new_string).
-- apply_patch: standard unified diff. Best for multi-hunk edits to one
-  file.
+- apply_edit: old_string occurs exactly once in the file, byte for
+  byte; kind="create" makes a new file, kind="overwrite" replaces one
+  whole (both: empty old_string, full content in new_string).
+- apply_patch: standard unified diff; multi-hunk edits to one file.
 """
     "__HARDENED_FS_RULE__"
     "__GIT_PROTECT_RULE__"
     "__AUTO_COMMIT_RULE__"
-    """- finish_session is the only clean end. Call it when done or blocked.
+    """- finish_session ends the run.
 </agent6>
 
 __DAG_RULES_BLOCK__
@@ -63,12 +61,9 @@ MODEL_GIT_RULE = """- You own git in this run: agent6 keeps no shadow record and
   as you see fit); uncommitted changes exist only in the worktree.
 """
 
-GIT_PROTECT_RULE = """- If an edit fails verify and you need to revert it, do NOT call
-    `git checkout`, `git reset`, or other history-mutating git commands
-    through `run_command`: `.git/` is protected inside the jail and those
-    calls will fail. Instead read the previous content with a read-only
-    command such as `git show HEAD:path/to/file` and use `apply_patch` /
-    `apply_edit` to restore the file, or manually undo the bad hunk.
+GIT_PROTECT_RULE = """- `.git/` is read-only inside the jail: history-mutating git commands
+  (`git checkout`, `git reset`) fail there. Prior content is readable
+  (`git show HEAD:path`) and restorable with the edit tools.
 """
 
 # Rendered into run mode's __HARDENED_FS_RULE__ sentinel ONLY when the run's
@@ -84,9 +79,9 @@ HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE 
 
 DAG_RULES_OPTIONAL = """<dag-rules>
 add_task / update_task / list_tasks keep a persistent task breakdown.
-Optional; skip for small tasks. Mark a subtask in_progress when you
-start it and passed only after verify confirms it; depends_on orders
-subtasks (a task surfaces once its dependencies pass).
+depends_on orders subtasks; a task surfaces once its dependencies
+pass. Statuses: in_progress is the current focus, passed records a
+verify-confirmed finish.
 </dag-rules>"""
 
 DAG_RULES_DECOMPOSE = """<decompose-first>
@@ -290,19 +285,13 @@ in `result.toml`.
 """
 
 V2_VERIFY_BLOCK_TEMPLATE = """<verify-command>
-This run's verify_command (call via `run_verify_command`):
+This run's verify_command (run via `run_verify_command`):
   argv: {argv}
   timeout: {timeout_s}s
 
-Returncode 0 passes. Non-zero means the change broke something: fix or
-revert before proceeding.
-- `run_verify_command` runs the operator's gate; a passing run
-  auto-commits the step.
-- If the gate no longer matches the task (it pins behaviour this run
-  deliberately changed, or cannot run), finish with stale_gate set to
-  the command you believe is right; it records a proposal for the
-  operator and does not move the gate. Never revert correct work to
-  turn a stale gate green.
+Returncode 0 passes; a passing run auto-commits the step.
+finish_session's stale_gate field records a replacement-gate proposal
+for the operator; the gate itself does not move.
 </verify-command>
 """
 
@@ -320,10 +309,7 @@ def no_verify_block(mode: Literal["run", "plan", "ask", "machine", "agent"]) -> 
     plan mode; ask has none (it answers with its final message). Commit
     behaviour is the base's __AUTO_COMMIT_RULE__ sentinel, one owner."""
     if mode == "run":
-        guidance = (
-            " Call `finish_session` with a short summary when done."
-            " Tests via `run_command` are allowed, not required."
-        )
+        guidance = ""
     elif mode == "plan":
         guidance = " Call `finish_planning` with your plan when done."
     else:

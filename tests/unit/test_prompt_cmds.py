@@ -99,7 +99,7 @@ def test_prompt_show_prints_the_tools_and_the_first_message(
     assert _cmd_prompt_show(None, mode="run") == 0
     out = capsys.readouterr().out
     assert "=== tools (" in out and "--- run_command" in out and "--- finish_session" in out
-    assert "=== first user message ===" in out and "call `finish_session` when done" in out
+    assert "=== first user message ===" in out and "`finish_session` ends the run" in out
 
     assert _cmd_prompt_show(None, mode="ask", as_json=True) == 0
     exchange = json.loads(capsys.readouterr().out)

@@ -22,24 +22,24 @@ from agent6.workflows._prompt_blocks import initial_instructions
 def test_ask_gets_direct_answer_instructions() -> None:
     text = initial_instructions("ask", "ask", has_gate=True)
     assert "answer" in text.lower()
-    for phantom in ("finish_session", "make edits", "run verify"):
+    for phantom in ("finish_session", "make edits", "run_verify_command"):
         assert phantom not in text
 
 
 def test_a_no_commands_run_is_not_told_to_run_verify() -> None:
     """`run_commands = "no"` withholds the command tools and the verify gate
     with them (the config field's own contract)."""
-    assert "run verify" not in initial_instructions("run", "no", has_gate=True)
+    assert "run_verify_command" not in initial_instructions("run", "no", has_gate=True)
     assert "finish_session" in initial_instructions("run", "no", has_gate=True)
-    assert "run verify" in initial_instructions("run", "ask", has_gate=True)
-    assert "run verify" in initial_instructions("run", "yes", has_gate=True)
+    assert "run_verify_command" in initial_instructions("run", "ask", has_gate=True)
+    assert "run_verify_command" in initial_instructions("run", "yes", has_gate=True)
 
 
 def test_a_gateless_run_is_not_told_to_run_verify() -> None:
     """A gateless run has no verify gate however commands are configured;
-    its header said "run verify" anyway and the no-verify block had to
+    its header said "run_verify_command" anyway and the no-verify block had to
     disarm it. The header keys on the gate."""
-    assert "run verify" not in initial_instructions("run", "yes", has_gate=False)
+    assert "run_verify_command" not in initial_instructions("run", "yes", has_gate=False)
     assert "finish_session" in initial_instructions("run", "yes", has_gate=False)
 
 

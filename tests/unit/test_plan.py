@@ -283,7 +283,7 @@ def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: Path) -
     )
     assert "git checkout" in text
     assert ".git/" in text
-    assert "git show HEAD:path/to/file" in text
+    assert "git show HEAD:path" in text
 
 
 def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> None:

@@ -78,9 +78,9 @@ def test_system_prompt_switches_verify_block(tmp_path: Path) -> None:
 
 
 def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
-    """The gateless block must name the mode's real terminal tool and must not
-    claim auto-commits in the read-only modes: plan finishes via
-    `finish_planning`, ask has no terminal tool at all, and neither can edit."""
+    """The gateless block claims no commits in any mode. Run mode's terminal
+    tool is the base prompt's fact (`finish_session ends the run`), not the
+    block's; plan finishes via `finish_planning`; ask has no terminal tool."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=False)
     run = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
@@ -92,7 +92,7 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: Path) -> None:
         return text[start : text.index("</no-verify-command>", start)]
 
     run_block, plan_block, ask_block = block(run), block(plan), block(ask)
-    assert "finish_session" in run_block
+    assert "finish_session" not in run_block and "finish_session ends the run" in run
     assert "finish_planning" in plan_block
     assert "finish_session" not in plan_block and "commits" not in plan_block
     assert "finish_session" not in ask_block and "finish_planning" not in ask_block
@@ -426,7 +426,7 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: Path) -> N
     off = Config.model_validate(
         {"workflow": {"verify_command": ["true"]}, "sandbox": {"protect_git": False}}
     )
-    marker = ".git/` is protected inside the jail"
+    marker = ".git/` is read-only inside the jail"
     for isolation, cfg, expect in (
         ("strict", on, True),
         ("strict", off, False),
@@ -485,7 +485,7 @@ def test_prompt_git_rules_match_git_control(tmp_path: Path) -> None:
     )
     start = gateless.index("<no-verify-command>")
     block = gateless[start : gateless.index("</no-verify-command>", start)]
-    assert "finish_session" in block
+    assert "finish_session" not in block and "finish_session ends the run" in gateless
     assert "commits each editing step" not in block
 
 

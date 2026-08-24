@@ -35,8 +35,8 @@ class ReadFileInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a UTF-8 text file. `path` is repo-root-relative (absolute only"
         " inside granted directories). start_line (1-based) and limit select a"
-        " range. Very large files truncate (truncated: true); narrow the range"
-        " to reach the rest. outline shows structure without content."
+        " range; very large files truncate (truncated: true). outline shows"
+        " structure without content."
     )
 
     path: str = Field(min_length=1)
@@ -73,12 +73,11 @@ class ApplyEditInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "apply_edit"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Edit one file. `edits` is an array of {old_string, new_string, kind?}."
-        " Each old_string must occur exactly once in the file, byte for byte;"
-        " expand it with surrounding context if not unique, and re-read the"
-        ' file if not found. kind="create" makes a new file and kind="overwrite"'
-        " replaces an existing file whole (a rewrite from a stub): for both,"
-        " empty old_string, the full content in new_string, the only edit in"
-        " the array. preview=true returns the would-be diff without touching disk."
+        " Each old_string occurs exactly once in the file, byte for byte."
+        ' kind="create" makes a new file and kind="overwrite" replaces an'
+        " existing file whole: for both, empty old_string, the full content in"
+        " new_string, the only edit in the array. preview=true returns the"
+        " would-be diff without touching disk."
     )
 
     path: str = Field(min_length=1)
@@ -172,9 +171,10 @@ class RunCommandInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Run a command in the sandbox. argv is an array of strings, no shell."
         " Requires the run_commands capability; 'ask' prompts the operator."
-        " Under jailed isolation PATH is minimal; prefer absolute paths like"
-        " /usr/bin/python3. A command still running at the check-in is handed"
-        " back with returncode null, still_running true, and a background_id,"
+        " Under jailed isolation PATH is minimal; absolute paths like"
+        " /usr/bin/python3 resolve regardless. A command still running at the"
+        " check-in is handed back with returncode null, still_running true,"
+        " and a background_id,"
         " and keeps running: poll with read_background, stop with"
         " stop_background, or continue working; output printed so far comes"
         " with the hand-back. background=true returns the handle at once."
@@ -201,8 +201,7 @@ class FetchInput(_ToolInput):
 class ReadSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read another session's transcript summary by id; with no id, list"
-        " the sessions. Use to continue or review earlier work; read-only."
+        "Read another session's transcript summary by id; with no id, list the sessions. Read-only."
     )
 
     id: str = ""
@@ -247,10 +246,9 @@ class RunMetricInput(_ToolInput):
 class FinishSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "finish_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "End the run cleanly. Call when the task is done and verify passes,"
-        " the metric has plateaued, or you are blocked. summary: one"
-        " paragraph for the operator on what was done and left undone. Call"
-        " no tools after it."
+        "End the run cleanly. summary: one paragraph for the operator on"
+        " what was done and left undone. Tool calls after it are not"
+        " executed."
     )
 
     summary: str = Field(min_length=1)
@@ -325,7 +323,7 @@ class FinishPlanningInput(_ToolInput):
 class DagAddTaskInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "add_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Add a subtask to the persistent task graph; skip for one-shot work."
+        "Add a subtask to the persistent task graph."
         " parent_id attaches under an existing task (default the root). title"
         " is a short imperative; acceptance the verifiable condition. after"
         " inserts directly after that sibling. depends_on lists task ULIDs"
@@ -375,8 +373,7 @@ class DagListTasksInput(_ToolInput):
 class UseSkillInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "use_skill"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Load an installed skill's full instructions by name (from the"
-        " <skills> index) and follow them."
+        "Load an installed skill's full instructions by name (from the <skills> index)."
     )
 
     name: str = Field(min_length=1, max_length=100)
