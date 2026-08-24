@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent6.config.layer import load_effective
-from agent6.directive import parse_btw
+from agent6.directive import STEER_COMMANDS, parse_btw
 from agent6.paths import data_dir
 from agent6.sessions.ipc import request_compact
 from agent6.sessions.layout import LOGS_NAME
@@ -65,6 +65,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/tasks": "the task graph with statuses",
     "/pin": "list pinned instructions (pin one with `/pin <text>`)",
     "/compact": "compact the context now; `/compact <focus>` steers the summary",
+    "/parallel": STEER_COMMANDS["/parallel"],
     "/btw": "ask a question beside the run: `/btw <question>` (answers inline, later)",
     "/shells": "background commands this run started, and how they ended",
     "/restate": "restate the conversation since your last message",
@@ -222,7 +223,6 @@ def _print_help(offered: dict[str, str]) -> None:
     for cmd, what in offered.items():
         print(f"  {cmd:<{width}}  {what}")
     print("  anything else is sent to the run as a steering instruction")
-    print("  /parallel [N|models] <task>  fan out lanes for <task> (repeat to queue more)")
     print("  Up recalls this session's messages · Ctrl-R searches them · Tab previews commands")
 
 
@@ -283,6 +283,8 @@ def _run_info_command(
             print("[agent6] compaction requested; applies before the next model call")
         else:
             print("[agent6] could not write the compaction request; nothing was requested")
+    elif cmd == "/parallel":
+        print("[agent6] fan out needs a task: `/parallel [N|models] <task>`")
     elif cmd == "/shells":
         _print_shells(session_dir)
     elif cmd == "/restate":

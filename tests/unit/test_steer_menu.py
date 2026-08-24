@@ -139,6 +139,20 @@ def test_pause_menu_help_names_parallel(tmp_path: Path, capsys: pytest.CaptureFi
     assert "/parallel" in capsys.readouterr().out
 
 
+def test_pause_menu_bare_parallel_explains_and_reprompts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`/parallel` is a menu command like the other directives (listed,
+    completed from a unique prefix); bare, it names the missing task and
+    re-prompts instead of reaching the loop as an empty directive."""
+    from agent6.ui.cli._steer_menu import MENU_COMMANDS, pause_menu
+
+    assert "/parallel" in MENU_COMMANDS
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+    assert pause_menu(tmp_path, input_fn=_feed(["/para", "go"])) == "go"
+    assert "needs a task" in capsys.readouterr().out
+
+
 def test_pause_menu_parallel_directive_passes_through_verbatim(tmp_path: Path) -> None:
     """`/parallel <task>` has a space, so the pause menu sends it to the run
     verbatim (the loop's _maybe_handle_steer parses it); it is never swallowed as
