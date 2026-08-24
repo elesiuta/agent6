@@ -220,24 +220,27 @@ timeout_secs = 60
 on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 ```
 
-A single command, argv-style (never a shell string), run through the existing `run_in_jail`.
-`nonzero` is any non-zero exit.
-A `tool`'s stdout is parsed as JSON and bound to the capture-scope name `result` (see [Names, references, and namespaces](#45-names-references-and-namespaces-normative)).
-Its capture has two modes, and a state uses at most one:
+A single command, argv-style (never a shell string), through the existing `run_in_jail`.
 
-- **Opaque whole-capture**: `capture = { stdout_json = "<var>" }` binds the entire parsed stdout to one variable.
-  No `output_schema` is needed; `result` is then opaque and may not be dotted.
-- **Typed field-capture**: declare `output_schema = "<record>"` (a `[schemas.*]` type, see [Record schemas](#46-record-schemas-schemas)) to type `result`, then pull fields with `set = { <var> = "{{ result.<field> }}" }`.
-  Because `result` is typed, every `result.<field>` is statically checked, mirroring how an `agent` state validates `finish_session`.
+- `nonzero` is any non-zero exit
+- stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#45-names-references-and-namespaces-normative))
+- capture has two modes; a state uses at most one:
 
-A `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands in place to one argument per element (see [Templating and list-splicing](#44-templating-and-list-splicing)).
-`scan-inbox` here is an illustrative stand-in; a `tool` state runs whatever audited command the operator names.
+- **Opaque whole-capture**: `capture = { stdout_json = "<var>" }` binds the entire parsed stdout to one variable
+    - no `output_schema` needed; `result` is opaque and may not be dotted
+- **Typed field-capture**: `output_schema = "<record>"` types `result`; pull fields with `set = { <var> = "{{ result.<field> }}" }`
+    - every `result.<field>` is statically checked, mirroring how an `agent` state validates `finish_session`
 
-**Network (opt-in, host network off by default).** A `tool`'s `network` is one of `"auto"` (default: a network of its own where the host can give one, degrading to the host's with a warning on `hardened`), `"none"` (the same, *required*: refuses on `hardened`, which can't isolate a single tool), or `"host"`.
-A tool reaches the host network only when it sets `network = "host"`.
-Because the machine engine is a host-netns *supervisor* (each `agent` state runs in its own subprocess; see [Security considerations](#9-security-considerations)), an opt-in `tool` can reach the host network while every other jailed command stays offline.
-A `tool` command is fixed and operator-reviewed, so it is not a free exfiltration channel the way a networked `run_command` would be.
-Whether the opt-in is honored is the operator's call via `sandbox.network` (read from the global/repo config, never the machine overlay):
+- a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element ([Templating and list-splicing](#44-templating-and-list-splicing))
+- `scan-inbox` is an illustrative stand-in: a `tool` state runs whatever audited command the operator names
+
+**Network (opt-in, host network off by default).**
+
+- a `tool`'s `network`: `"auto"` (default: its own network where the host can give one, degrading to the host's with a warning on `hardened`), `"none"` (the same, required: refuses on `hardened`, which cannot isolate a single tool), `"host"`
+- only `network = "host"` reaches the host network
+- the engine is a host-netns supervisor (each `agent` state is its own subprocess; [Security considerations](#9-security-considerations)), so one opt-in `tool` can be networked while every other jailed command stays offline
+- a `tool` command is fixed and operator-reviewed: not the free exfiltration channel a networked `run_command` would be
+- honoring the opt-in is the operator's call via `sandbox.network` (global/repo config, never the machine overlay):
 
 | `sandbox.network` | jailed commands | `tool` w/ `network="host"` |
 |---|---|---|
@@ -246,19 +249,22 @@ Whether the opt-in is honored is the operator's call via `sandbox.network` (read
 | `only_explicit_states` | no host network | **host network** |
 | `host` | host network | host network (and `run_command`) |
 
-So the headline setup (offline commands + one operator-reviewed networked tool) is `sandbox.network = "only_explicit_states"` and `network = "host"` on that one state.
-`only_explicit_states` (and `session`) need `strict` isolation; a networked tool under `sandbox.network = "session"`, or a tool-network config the isolation level can't honor, refuses to run at startup naming the state.
-A machine's tool states each get their own network when offline: they are separate launchers, so there is no run-wide session network for them to share.
+- the headline setup (offline commands + one networked reviewed tool): `sandbox.network = "only_explicit_states"` + `network = "host"` on that state
+- `only_explicit_states` and `session` need `strict`; an unhonorable tool-network config refuses at startup naming the state
+- offline tool states each get their own network (separate launchers; no run-wide session network to share)
 
-**Script bundles.** A machine is a *bundle*: the `.asm.toml` file plus an optional sibling `scripts/` directory holding operator-reviewed helper scripts (the kind `machine create` may draft).
-A `tool` references one by a relative path whose first segment is `scripts/`, e.g. `command = ["bash", "scripts/fetch.sh"]`; it resolves against the jail's mounted cwd at run time, so keep the bundle at (or under) the directory you run `agent6` from.
-A bare binary in `command[0]` resolves against the jail PATH (the baseline plus standard bin dirs, the same set `machine check` probes and `run_command` uses), never the host `PATH`; use an absolute path for anything installed elsewhere.
-`machine check` validates the bundle: every entry under `scripts/` must resolve *inside* the bundle (symlinks that escape via `..`/absolute are rejected) and every static `scripts/...` command reference must exist and stay inside the bundle.
-Under strict isolation the bundle (the `.asm.toml` + `scripts/`) is RO-bound in every jail, so a tool or agent cannot rewrite its own machine logic or bundled scripts mid-run.
-On hardened the cwd is blanket read-write (no mount namespace to carve), so the bundle is writable there and the surrounding container bounds the damage.
+**Script bundles.** A machine is a bundle: the `.asm.toml` plus an optional sibling `scripts/` of operator-reviewed helpers (the kind `machine create` may draft).
 
-A `tool` script that needs to persist data across iterations writes to `$AGENT6_MACHINE_DATA_DIR`, a per-machine writable directory under the per-repo state dir (`<state-dir>/<repo-id>/machines/<id>/data/`, out of the workspace) granted RW in every tool jail.
-Under `hardened` isolation the repo cwd is also blanket read-write, so the persisted-data dir is just the durable home for cross-iteration state; the journal records every transition either way.
+- a `tool` references one by a relative path starting `scripts/` (`command = ["bash", "scripts/fetch.sh"]`), resolved against the jail's mounted cwd: keep the bundle at or under the directory you run `agent6` from
+- a bare binary in `command[0]` resolves against the jail PATH (the set `machine check` probes and `run_command` uses), never the host `PATH`; absolute paths for anything elsewhere
+- `machine check` validates the bundle: every `scripts/` entry and static command reference resolves inside it (escaping symlinks rejected)
+- `strict`: the bundle is RO-bound in every jail; a tool or agent cannot rewrite its own machine logic mid-run
+- `hardened`: the cwd is blanket read-write (no mount namespace to carve); the surrounding container bounds the damage
+
+Cross-iteration persistence: `$AGENT6_MACHINE_DATA_DIR`.
+
+- a per-machine writable dir under the per-repo state dir (`<state-dir>/<repo-id>/machines/<id>/data/`, out of the workspace), RW in every tool jail
+- under `hardened` the repo cwd is also read-write; the data dir is the durable home either way, and the journal records every transition
 
 #### `wait`
 
@@ -270,9 +276,11 @@ on = { tick = "scan", signal = "scan" }
 ```
 
 `wait` is what makes a machine long-running without burning CPU or tokens.
-A state declares at most one of `every_secs` or `until` (an absolute ISO-8601 instant); both at once is a load error.
-On entry the engine computes the absolute next-wake instant and journals it as a fact *before* sleeping, so a replay re-reads that instant and never actually sleeps.
-In v1 the process blocks in-process until the instant (or an external `signal`, a file/IPC poke, arrives first); because the wake is journaled absolutely, the `--exit-on-wait` persisted-wake driver (see [Reliability for 24/7 operation](#6-reliability-for-247-operation)) runs the identical file with no format change.
+
+- at most one of `every_secs` or `until` (an absolute ISO-8601 instant); both is a load error
+- on entry the engine journals the absolute next-wake instant *before* sleeping: replay re-reads it and never sleeps
+- v1 blocks in-process until the instant or an external `signal` (a file/IPC poke)
+- the wake being journaled absolutely lets the `--exit-on-wait` persisted-wake driver ([Reliability](#6-reliability-for-247-operation)) run the identical file, no format change
 
 **Wait-forever (no timer).** Declare *zero* timers to park indefinitely until an operator `signal` poke:
 
@@ -282,12 +290,13 @@ kind = "wait"
 on = { signal = "handle" }        # no timer: a forever wait declares `signal`
 ```
 
-A no-timer wait can never `tick`, so it declares only `signal`; declaring a `tick` edge is a load error (an unreachable edge).
-Under `--exit-on-wait` the engine persists a signal-only pending wait (no wake instant) and resumes when poked.
+- a no-timer wait can never `tick`: it declares only `signal` (a `tick` edge is a load error, unreachable)
+- under `--exit-on-wait` the engine persists a signal-only pending wait (no wake instant) and resumes when poked
 
 **Poke payloads.** `agent6 machine poke <id> [--data <json> | --message <text>]` carries an optional payload to the waking `wait`.
-One signal is pending at a time: a second poke before the machine wakes replaces the first, payload included: the signal is a wake, and never a queue.
-The payload is journaled on the `signal` `WaitFact` (replay-safe) and materialized to `$AGENT6_MACHINE_DATA_DIR/poke.json`, where the next `tool` reads it.
+
+- one signal pending at a time: a second poke replaces the first, payload included (a wake, never a queue)
+- the payload is journaled on the `signal` `WaitFact` (replay-safe) and materialized to `$AGENT6_MACHINE_DATA_DIR/poke.json` for the next `tool`
 No capture is added to `wait`: the payload flows through the existing tool -> capture -> branch pattern (a tool reads `poke.json`, emits JSON captured into `[vars.code]`, and a `branch` routes on it).
 On replay the journaled payload reproduces the identical input.
 
