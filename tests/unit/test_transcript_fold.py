@@ -354,7 +354,7 @@ def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
 def test_log_lines_carry_no_terminal_controls() -> None:
     """format_log_line embeds model-authored fields (args, summaries, output
     tails) into every skin's log pane; the finished line is scrubbed."""
-    from agent6.viewmodel.state import format_log_line
+    from agent6.viewmodel.log_line import format_log_line
 
     line = format_log_line(
         {

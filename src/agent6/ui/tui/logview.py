@@ -44,7 +44,8 @@ from agent6.ui.tui.menubar import (
     menu_bindings,
 )
 from agent6.ui.tui.screen_chrome import ScreenChrome
-from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS, format_log_line
+from agent6.viewmodel.log_line import format_log_line
+from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS
 from agent6.viewmodel.tail import LogTail
 
 

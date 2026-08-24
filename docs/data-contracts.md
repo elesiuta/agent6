@@ -118,7 +118,7 @@ Typed read model for the logs.jsonl event families the SessionState fold consume
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** ui/cli/{_console_view, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, state, transcript}
+- **Read by:** ui/cli/{_console_view, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, log_line, state, transcript}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (4 test files exercise it)
 
 ## MachineSpec
@@ -197,4 +197,4 @@ Pure event-fold: list[event_dict] -> SessionState.
 
 - **Written by:** viewmodel/{machine_state, state}
 - **Read by:** ui/cli/{_repl, _steer_menu}, ui/tui/{app, conversation, dashboard, logview, modals, prompts}, viewmodel/{__init__, snapshot}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (6 test files exercise it)

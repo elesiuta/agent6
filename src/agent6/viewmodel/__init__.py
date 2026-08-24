@@ -47,6 +47,7 @@ from agent6.viewmodel.listing import (
     summarize_session_dir,
     task_snippet,
 )
+from agent6.viewmodel.log_line import format_log_line
 from agent6.viewmodel.machine_state import (
     MachineEndView,
     MachineState,
@@ -90,7 +91,6 @@ from agent6.viewmodel.state import (
     apply_event,
     approval_parts,
     fold_session,
-    format_log_line,
     initial_state,
     session_state_as_dict,
     session_status_label,
