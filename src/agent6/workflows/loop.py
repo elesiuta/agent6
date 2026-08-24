@@ -4355,14 +4355,17 @@ class Workflow:
     ) -> SessionResult | None:
         """Map a _maybe_handle_steer result to a terminal SessionResult, or None to keep
         going (empty steer, or an instruction injected into messages)."""
-        if steer_result == "abort":
-            self._emit("session.end", reason="steer_abort", iterations=iteration, all_passed=False)
+        if steer_result in ("abort", "exit"):
+            # "exit" is /exit at the pause menu: the same stop, but the end
+            # reason tells the CLI to skip the follow-up prompt and leave.
+            reason: SessionEndReason = "steer_exit" if steer_result == "exit" else "steer_abort"
+            self._emit("session.end", reason=reason, iterations=iteration, all_passed=False)
             return SessionResult(
                 completed=False,
-                reason="steer_abort",
+                reason=reason,
                 summary=(
-                    f"operator aborted at iter {iteration} via steering prompt"
-                    f"{self._dirty_tree_note()}"
+                    f"operator {'exited' if steer_result == 'exit' else 'aborted'}"
+                    f" at iter {iteration} via steering prompt{self._dirty_tree_note()}"
                 ),
                 iterations=iteration,
                 tool_calls=state.tool_calls,
@@ -4434,6 +4437,10 @@ class Workflow:
             self._emit("loop.steer.aborted")
             self._log("  abort - halting the run")
             return "abort"
+        if steer_text.lower() == "exit":
+            self._emit("loop.steer.exited")
+            self._log("  exit - halting the run and leaving the terminal")
+            return "exit"
         if steer_text.lower() == "/undo":
             self._emit("loop.steer.undo")
             self._log("  /undo - forking back before the last message")

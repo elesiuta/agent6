@@ -510,3 +510,18 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
         assert "pausing after this step" in printed[0]
     finally:
         state.restore()
+
+
+def test_exit_maps_to_exit_and_stop_stays_abort(tmp_path: Path) -> None:
+    """`/exit` is stop-AND-leave: the menu returns the distinct 'exit' action
+    (the loop ends the run `steer_exit` and the CLI skips the follow-up
+    prompt), while /stop keeps returning 'abort'. Before, an operator had to
+    /stop and then type /exit at the "next:" prompt to actually leave."""
+    from agent6.ui.cli._steer_menu import pause_menu
+
+    assert normalize_steer_choice("exit") == "exit"
+    assert normalize_steer_choice(" EXIT ") == "exit"
+    # a sentence starting with the word stays an instruction
+    assert normalize_steer_choice("exit the retry loop early") == "exit the retry loop early"
+    assert pause_menu(tmp_path, input_fn=_feed(["/exit"])) == "exit"
+    assert pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"

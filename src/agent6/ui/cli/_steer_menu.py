@@ -71,6 +71,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/continue": "resume the run unchanged (same as Enter)",
     "/stop": "stop the run now (resume later with `agent6 resume`)",
+    "/exit": "stop the run and leave (no follow-up prompt; resume later)",
     "/detach": "keep the run going in the background",
     "/help": "this list",
 }
@@ -118,13 +119,16 @@ def skill_steer_payload(name: str, text: str, args: str) -> str:
 
 def normalize_steer_choice(line: str | None) -> str | None:
     """Map a mid-run menu line to a canonical action: None/'' continue,
-    'abort' stop, 'detach' keep-running-in-background, else the instruction."""
+    'abort' stop, 'exit' stop-and-leave, 'detach' keep-running-in-background,
+    else the instruction."""
     if line is None:
         return None
     choice = line.strip()
     low = choice.lower()
     if low in ("q", "quit", "stop", "abort"):
         return "abort"
+    if low == "exit":
+        return "exit"
     if low in ("d", "detach"):
         return "detach"
     return choice
@@ -252,6 +256,7 @@ def _start_btw(cmd: str, session_dir: Path, runner: BtwRunner | None) -> str:
 _ACTIONS: dict[str, str] = {
     "/continue": "",
     "/stop": "abort",
+    "/exit": "exit",
     "/detach": "detach",
     # Verbatim: the loop parses the directive itself (fork + session.undone).
     "/undo": "/undo",
@@ -294,7 +299,8 @@ def pause_menu(  # noqa: PLR0911, PLR0912
     config_path: Path | None = None,
 ) -> str | None:
     """The interactive pause menu. Returns the canonical steer action: None/''
-    continue, 'abort' stop now, 'detach' background, else the instruction sent
+    continue, 'abort' stop now, 'exit' stop-and-leave, 'detach' background,
+    else the instruction sent
     verbatim. A command must be the whole line (unique prefixes fire, ambiguous
     ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues."""
     skills = skill_menu_table(config_path)

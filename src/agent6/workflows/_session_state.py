@@ -39,6 +39,7 @@ SessionEndReason = Literal[
     "interrupted",  # KeyboardInterrupt; emitted by the app layer, not the loop
     "crashed",  # the loop escaped with a fault; also app-layer only
     "steer_abort",
+    "steer_exit",  # /exit at the pause menu: stop AND leave (no follow-up prompt)
     "undone",  # /undo forked back before the last message; the fork continues
     "detached",
     "prompt_revision_failed",

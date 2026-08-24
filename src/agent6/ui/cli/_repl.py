@@ -94,7 +94,7 @@ def build_repl_hook(
             cmd = raw.lower()
             if cmd in {"", "/continue", "/c"}:
                 return "continue"
-            if cmd in {"/quit", "/q", "/stop"}:
+            if cmd in {"/quit", "/q", "/stop", "/exit"}:
                 return "stop"
             if cmd in {"/help", "/h", "?"}:
                 print(REPL_HELP, file=sys.stderr)

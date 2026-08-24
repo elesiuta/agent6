@@ -47,9 +47,10 @@ def follow_up_on_offer(session_dir: Path) -> bool:
     """Whether the run in *session_dir* can take a follow-up leg from here: its
     last leg ended (a detached run went on in the background; its reattach line
     was printed) and not by /undo (the fork it named is the continuation; its
-    resume line was printed)."""
+    resume line was printed) or /exit (the operator asked to stop AND leave;
+    asking "next:" would re-open exactly what they closed)."""
     scan = scan_session_log(session_dir / LOGS_NAME)
-    return scan.finished and scan.end_reason != "undone"
+    return scan.finished and scan.end_reason not in ("undone", "steer_exit")
 
 
 def end_of_session_prompt(

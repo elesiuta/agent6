@@ -6430,3 +6430,53 @@ def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
     assert turn_replay_allowed(tmp_path, 5, _yes) is True  # matching + accept
     assert not marker.exists()  # asks once
     assert asked == [(5, ("run_command",)), (5, ("run_command",))]
+
+
+def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
+    """The pause menu's /exit stops the run with its own end reason: the
+    listing reads "stopped" and `follow_up_on_offer` skips the "next:"
+    prompt (stop-then-type-/exit was the only way to leave before)."""
+    import json
+
+    from agent6.ui.cli._session_prompt import follow_up_on_offer
+    from agent6.viewmodel.listing import status_word
+
+    ev = _EventCapture()
+    wf = _wf(
+        mode="run",
+        events=ev,
+        steer_requested=lambda: True,
+        steer_prompt=lambda: "exit",
+    )
+    result = wf._maybe_handle_steer(  # pyright: ignore[reportPrivateUsage]
+        Conversation(), 3, _state()
+    )
+    assert result == "exit"
+    out = wf._steer_outcome("exit", 3, _state())  # pyright: ignore[reportPrivateUsage]
+    assert out is not None and out.reason == "steer_exit" and out.completed is False
+    ends = [e for e in ev.events if e["type"] == "session.end"]
+    assert ends and ends[-1]["reason"] == "steer_exit"
+    assert status_word(finished=True, all_passed=False, end_reason="steer_exit") == ("stopped", "")
+
+    # The log-derived follow-up gate: steer_exit never re-opens the prompt.
+    import tempfile
+    from pathlib import Path as _P
+
+    with tempfile.TemporaryDirectory() as td:
+        d = _P(td)
+        (d / "logs.jsonl").write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+            + "\n"
+            + json.dumps({"type": "session.end", "reason": "steer_exit", "all_passed": False})
+            + "\n",
+            encoding="utf-8",
+        )
+        assert follow_up_on_offer(d) is False
+        (d / "logs.jsonl").write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+            + "\n"
+            + json.dumps({"type": "session.end", "reason": "steer_abort", "all_passed": False})
+            + "\n",
+            encoding="utf-8",
+        )
+        assert follow_up_on_offer(d) is True

@@ -185,7 +185,7 @@ def status_word(*, finished: bool, all_passed: bool | None, end_reason: str) -> 
     """
     if not finished:
         return "running", ""
-    if end_reason in ("steer_abort", "interrupted", "interactive_stop", "undone"):
+    if end_reason in ("steer_abort", "steer_exit", "interrupted", "interactive_stop", "undone"):
         return "stopped", ""  # each is the operator's own act, not a failure
     # A clean exit that verified nothing gets its own word, never "passed": a
     # plan pass ends via finish_planning, an ask by answering, and a gateless

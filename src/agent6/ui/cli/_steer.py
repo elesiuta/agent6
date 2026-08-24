@@ -351,7 +351,8 @@ def install_steer_sigint(
                     return pause_menu(session_dir, btw_runner=btw_runner, config_path=config_path)
                 return normalize_steer_choice(
                     tty_prompt(
-                        "[agent6] paused: [enter] continue · type to steer · q stop · d detach: "
+                        "[agent6] paused: [enter] continue · type to steer"
+                        " · q stop · exit leave · d detach: "
                     )
                 )
         finally:
