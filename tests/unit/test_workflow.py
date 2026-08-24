@@ -6480,3 +6480,74 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
             encoding="utf-8",
         )
         assert follow_up_on_offer(d) is True
+
+
+def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: Path) -> None:
+    """Shape (b) of the adoption probe: the first adopted-verify run whose
+    failure is an unrunnable signature (exit 127, or the adopted `-m` module
+    missing) drops the gate again, tells the model, re-pins the manifest
+    gateless, and never re-adopts that argv; a configured gate stays red."""
+    from agent6.config import Config
+    from agent6.workflows.loop import VERIFY_UNADOPTED_NOTICE  # pyright: ignore[reportPrivateUsage]
+
+    argv = ("python3", "-m", "pytest", "-q")
+    events: list[dict[str, Any]] = []
+
+    def emit(kind: str, **kw: Any) -> None:
+        events.append({"type": kind, **kw})
+
+    dispatcher = MagicMock()
+    wf = _wf(
+        root=tmp_path,
+        config=Config().with_verify_command(argv),
+        provider=MagicMock(),
+        dispatcher=dispatcher,
+        events=MagicMock(emit=emit),
+    )
+    st = _state()
+    st.verify.adopted = argv
+    turn = _turn(iteration=4)
+    wf._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+        st,
+        turn,
+        ExecResult(
+            returncode=1,
+            stdout="",
+            stderr="/usr/bin/python3: No module named pytest",
+            duration_s=0.03,
+            exec_failed=False,
+        ),
+    )
+    assert wf.config.workflow.verify_command == ()
+    dispatcher.drop_verify_command.assert_called_once()
+    assert st.verify.adopted == () and argv in st.verify.unadoptable
+    texts = [it.text for it in turn.tool_results if isinstance(it, Notice)]
+    assert any(t.startswith(VERIFY_UNADOPTED_NOTICE[:30]) for t in texts)
+    assert not st.verify.broken_warned
+    assert any(
+        e.get("command") == [] and e.get("source") == "unadopted" and e.get("adopted_at") == 4
+        for e in events
+    )
+
+    # A configured (not adopted) gate with the same failure stays a red
+    # verify: the broken nudge fires, nothing is un-adopted.
+    wf2 = _wf(
+        root=tmp_path,
+        config=Config().with_verify_command(argv),
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+    )
+    st2 = _state()
+    turn2 = _turn(iteration=2)
+    wf2._note_verify_result(  # pyright: ignore[reportPrivateUsage]
+        st2,
+        turn2,
+        ExecResult(
+            returncode=1,
+            stdout="",
+            stderr="No module named pytest",
+            duration_s=0.03,
+            exec_failed=False,
+        ),
+    )
+    assert wf2.config.workflow.verify_command == argv and st2.verify.broken_warned

@@ -362,3 +362,17 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: Path) -> None
     quiet = [ln for ln in lines if "went_quiet at iter" in ln]
     assert quiet and "128 output tokens spent on it" in quiet[0], quiet
     assert "billed" not in quiet[0]
+
+
+def test_unrunnable_signature_names_only_the_adopted_runner() -> None:
+    """Exit 127 and the adopted `-m` module missing are the unrunnable
+    signatures; a different missing module or an ordinary red (exit 1 with
+    test output) is not."""
+    from agent6.workflows._nudges import unrunnable_signature
+
+    argv = ("python3", "-m", "pytest", "-q")
+    assert unrunnable_signature(argv, 127, "", "") == "exit 127, the command is not found"
+    assert unrunnable_signature(argv, 1, "", "No module named pytest") == "no module named pytest"
+    assert unrunnable_signature(argv, 1, "", "No module named numpy") == ""
+    assert unrunnable_signature(argv, 1, "3 failed, 2 passed", "") == ""
+    assert unrunnable_signature(("pytest",), 1, "", "No module named pytest") == ""

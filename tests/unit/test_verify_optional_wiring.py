@@ -572,6 +572,6 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
         logger=lambda _line: None,
     )
     turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
-    wf._maybe_adopt_verify(turn)  # pyright: ignore[reportPrivateUsage]
+    wf._maybe_adopt_verify(MagicMock(), turn)  # pyright: ignore[reportPrivateUsage]
     dispatcher.adopt_verify_command.assert_not_called()
     assert wf.config.workflow.verify_command == ()

@@ -750,6 +750,10 @@ class ToolDispatcher:
         self._config = self._config.with_verify_command(argv)
         return True
 
+    def drop_verify_command(self) -> None:
+        """Un-adopt: the gate proved unrunnable, the run is gateless again."""
+        self._config = self._config.with_verify_command(())
+
     def _approve_mcp_call(self, name: str, raw_input: dict[str, Any]) -> None:
         """Gate one MCP tool call on its server's `approve`, or raise ToolDenied.
 

@@ -218,7 +218,8 @@ def pin_gate(
 
     def _repin_adopted_gate(event: dict[str, Any]) -> None:
         if event.get("type") == "loop.verify_inferred" and event.get("adopted_at") is not None:
-            _stamp(tuple(event.get("command", ())), "adopted")
+            command = tuple(event.get("command", ()))
+            _stamp(command, "adopted" if command else "unadopted")
 
     # EventSink swallows a listener's exceptions so a UI consumer cannot break
     # the run; _stamp reports for itself rather than relying on that.

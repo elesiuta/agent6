@@ -81,8 +81,9 @@ class WorkflowConfig(BaseModel):
         description=(
             "Infer a verify command when `verify_command` is unset (AGENTS.md fence, repo "
             "signals, a model call), and adopt one mid-run when a gateless run materializes a "
-            "recognizable project. false: such a run stays gateless, no inference and no "
-            "adoption; a set `verify_command` is unaffected."
+            "recognizable project; an adopted gate that cannot run (exit 127, or the module "
+            "its `-m` names is missing) is dropped again, never re-adopted. false: such a run "
+            "stays gateless, no inference and no adoption; a set `verify_command` is unaffected."
         ),
     )
     # per-call timeout for verify_command (and metric_command) in

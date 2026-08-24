@@ -67,6 +67,28 @@ _VERIFY_DEAD_SIGNATURES = (
     "importerror while loading conftest",
 )
 
+
+def unrunnable_signature(argv: tuple[str, ...], rc: int | None, stdout: str, stderr: str) -> str:
+    """Why an ADOPTED gate cannot run here, or "" for an ordinary red: exit
+    127 (no such executable), or "No module named <mod>" naming exactly the
+    module the adopted `-m <mod>` runs. A failing suite exits 1 or 2 with
+    test output and matches neither."""
+    if rc == 127:
+        return "exit 127, the command is not found"
+    if "-m" in argv:
+        mod = argv[argv.index("-m") + 1] if argv.index("-m") + 1 < len(argv) else ""
+        blob = f"{stdout}\n{stderr}".lower()
+        if mod and f"no module named {mod.lower()}" in blob:
+            return f"no module named {mod}"
+    return ""
+
+
+VERIFY_UNADOPTED_NOTICE = (
+    "[harness] The adopted verify command `{cmd}` cannot run here ({why});"
+    " the run is gateless again: run_verify_command is not available and"
+    " the harness commits each editing step."
+)
+
 BASELINE_RED_NOTICE = (
     "[harness] That verify ran on an unmodified tree: the gate was already"
     " failing before your changes; those failures predate the task."

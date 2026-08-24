@@ -11,7 +11,7 @@ so the streak/reset rules cannot drift apart across call sites.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
@@ -38,6 +38,10 @@ class VerifyVerdict:
     edited_since: bool = False
     ever_passed: bool = False
     ever_failed: bool = False
+    # The gate adopted mid-run (`()` when the gate is configured or absent),
+    # and every adopted argv that proved unrunnable, never re-adopted.
+    adopted: tuple[str, ...] = ()
+    unadoptable: set[tuple[str, ...]] = field(default_factory=set)
 
     def note_pass(self) -> None:
         """A green verify: the tree as of now is verified; streaks reset."""

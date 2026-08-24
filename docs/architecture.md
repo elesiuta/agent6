@@ -323,7 +323,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `session.start` | `user_task` |
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
-| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`agents_md` / manifest / `llm` / `none`), and `adopted_at` when a gateless run adopts one mid-run |
+| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`agents_md` / manifest / `llm` / `none` / `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
 | `role.call` / `.result` | `role`, `model`, `tokens_in`, `tokens_out` |
 | `role.text_delta` | streamed assistant text chunk |
 | `role.thinking_delta` | streamed reasoning chunk |

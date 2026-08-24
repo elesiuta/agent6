@@ -165,10 +165,12 @@ from agent6.workflows._nudges import (
     VERIFY_SETTLED_NUDGE,
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
+    VERIFY_UNADOPTED_NOTICE,
     ends_with_question,
     standing_fruitless_nudge,
     standing_resume_nudge,
     tool_error_signature,
+    unrunnable_signature,
     verify_did_not_run,
     verify_failure_signature,
 )
@@ -1410,6 +1412,26 @@ class Workflow:
             turn.edit_since_verify_pass = False
         else:
             turn.verify_just_failed = True
+            if verdict.adopted and (
+                why := unrunnable_signature(verdict.adopted, rc, result.stdout, result.stderr)
+            ):
+                # An ADOPTED gate that cannot run here: un-adopt (the run is
+                # gateless again, the argv never re-adopted) and say so. A
+                # configured gate stays a loud red.
+                cmd = " ".join(verdict.adopted)
+                verdict.unadoptable.add(verdict.adopted)
+                verdict.adopted = ()
+                self.config = self.config.with_verify_command(())
+                self.dispatcher.drop_verify_command()
+                self._log(f"LOOP: verify un-adopted ({why}): {cmd}")
+                self._emit(
+                    "loop.verify_inferred",
+                    command=[],
+                    source="unadopted",
+                    adopted_at=turn.iteration,
+                )
+                turn.tool_results.append(Notice(VERIFY_UNADOPTED_NOTICE.format(cmd=cmd, why=why)))
+                return
             # A verify that exited instantly without running any tests (runner
             # absent) is a broken verify, not a real failure: flag it once so
             # the model does not "fix" working code or finish unchecked.
@@ -1578,7 +1600,7 @@ class Workflow:
                         error=str(exc),
                     )
 
-    def _maybe_adopt_verify(self, turn: _TurnState) -> None:
+    def _maybe_adopt_verify(self, state: _LoopState, turn: _TurnState) -> None:
         """A gateless run that commits has just materialized project files the
         preflight inference never saw (an empty repo infers nothing, then the
         run creates a pyproject two minutes later and finishes ungated). Re-run
@@ -1592,7 +1614,7 @@ class Workflow:
         if not self.config.workflow.verify_infer:
             return
         inferred = infer_verify_command(self.root, read_agents_md(self.root), llm_call=None)
-        if inferred is None:
+        if inferred is None or inferred.argv in state.verify.unadoptable:
             return
         if not self.dispatcher.adopt_verify_command(inferred.argv):
             # An inferred runner the jail cannot execute: adopting it would
@@ -1601,6 +1623,7 @@ class Workflow:
             self._log(f"LOOP: verify inference declined; {inferred.argv[0]} not on the jail PATH")
             return
         self.config = self.config.with_verify_command(inferred.argv)
+        state.verify.adopted = inferred.argv
         cmd = " ".join(inferred.argv)
         self._log(f"LOOP: verify adopted from {inferred.source}: {cmd}")
         self._emit(
@@ -1663,7 +1686,7 @@ class Workflow:
                 # Seed the idle-stop net for gateless runs (no green verify
                 # ever fires); see the verify-settled bookkeeping.
                 state.gateless_ever_committed = True
-                self._maybe_adopt_verify(turn)
+                self._maybe_adopt_verify(state, turn)
             if sha:
                 # Surface "what the worker just changed" to a live viewer
                 # (the TUI diff panel). Capped; best-effort.

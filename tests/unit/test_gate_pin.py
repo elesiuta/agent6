@@ -61,6 +61,19 @@ def test_a_gate_adopted_mid_leg_re_pins(tmp_path: Path) -> None:
     assert pinned.verify_origin == "adopted"
 
 
+def test_an_un_adopted_gate_re_pins_gateless(tmp_path: Path) -> None:
+    """The un-adopt rides the same event with an empty command: the manifest
+    reads gateless again, labelled as such."""
+    layout = _layout(tmp_path)
+    events = _sink(tmp_path)
+    reporter, _said = _quiet()
+    pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
+    events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
+    events.emit("loop.verify_inferred", command=[], source="unadopted", adopted_at=5)
+    pinned = read_manifest(layout.session_dir).workflow
+    assert pinned.verify_command == () and pinned.verify_origin == "unadopted"
+
+
 def test_a_preflight_inference_is_not_an_adoption(tmp_path: Path) -> None:
     """The same event fires at run start with no `adopted_at`; re-pinning on it
     would relabel a configured gate."""
