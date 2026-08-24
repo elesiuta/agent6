@@ -200,7 +200,7 @@ Where a run state's work lands:
 - a machine spawned from the web or TUI hub parks each approval and question for the front-end (the spawn carries the detached `wait` away-mode), so the answer never depends on when the viewer attached
 - grant per invocation with `--auto-approve` (ask upgrades to yes; a withheld `no` stays no), or set `sandbox.run_commands = "yes"` in the repo config
 - a machine `[config]` overlay cannot grant it (sandbox policy is operator-only)
-- edits, verify, and the auto-commit need no approval: prefer `tool` states or the verify slot over shelling out
+- edits and the auto-commit need no approval; `run_verify_command` and the `verify_when` certification share the same gate: prefer `tool` states over shelling out
 
 The optional per-state knobs tune how that loop runs.
 

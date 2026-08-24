@@ -289,7 +289,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             " sandbox.run_commands='ask'; an unattended machine auto-denies"
             " run_command. Approve for this invocation with --auto-approve, or"
             " set `agent6 config set --repo sandbox.run_commands yes` to always"
-            " allow. Edits, verify, and the auto-commit need no approval."
+            " allow. Edits and the auto-commit need no approval; verify shares"
+            " run_command's gate, so an unattended leg ends unverified."
         )
     snapshot_keep = cfg.machine.snapshot_keep
     # One clone base for every state of a machine that writes: the agent
