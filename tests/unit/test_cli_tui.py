@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -516,7 +517,10 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
     monkeypatch.setattr(interactmod, "tty_prompt", _capture)
     assert interactmod.default_stdin_approver("Allow run_command: git log --stat -5") == "yes"
     rendered = seen[0]
-    assert rendered.startswith("Allow run_command:\n\n    git log --stat -5\n\n  [y/N/a/d]")
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", rendered)
+    assert plain.startswith("? Allow run_command:\n\n    git log --stat -5\n\n  [y/N/a/d]")
+    # The console vocabulary: a bold yellow ? marks the question.
+    assert "\x1b[1m\x1b[33m?" in rendered
     # A prompt without the "<head>: <payload>" shape keeps the one-line form.
     seen.clear()
     interactmod.default_stdin_approver("Proceed?", standing=False)

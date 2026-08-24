@@ -72,12 +72,18 @@ def default_stdin_approver(prompt: str, *, standing: bool = True) -> str:
 
     Every dispatch prompt is "Allow <tool>: <payload>"; the payload renders on
     its own indented lines with a blank line before the answer line, so the
-    input point stands clear of a long or wrapped command."""
+    input point stands clear of a long or wrapped command. The console's
+    vocabulary marks it: a bold yellow `?` and bold header (the question),
+    the command plain (the thing under judgment), the answer line dim --
+    the sibling of the `->` call line that follows an allow."""
     suffix = "[y/N/a/d]  (a = allow all, d = deny all, this session): " if standing else "[y/N]: "
+    bold, dim, yellow, reset = "\033[1m", "\033[2m", "\033[33m", "\033[0m"
     head, sep, payload = prompt.partition(": ")
     if sep and payload.strip():
         body = "\n".join(f"    {ln}" for ln in payload.splitlines())
-        rendered = f"{head}:\n\n{body}\n\n  {suffix}"
+        rendered = (
+            f"{bold}{yellow}?{reset} {bold}{head}:{reset}\n\n{body}\n\n  {dim}{suffix}{reset}"
+        )
     else:
         rendered = f"{prompt} {suffix}"
     ans = tty_prompt(rendered)
