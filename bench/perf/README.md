@@ -117,6 +117,15 @@ $5 budget each via `AGENT6_PERF_MAX_USD=5`):
 ² Runnable on consumer hardware (30B, 3B active MoE; fits a 24GB GPU
 at 4-bit).
 
+**agent6 + gpt-5.6-sol (effort max) on the ChatGPT plan, one run with a
+standing goal** (`run_perf_chatgpt.sh`, official `score.sh`, 2026-08-20):
+
+| runner / model | final | speedup | speed tiers | wall | tokens in / out | valid |
+|---|---|---|---|---|---|---|
+| agent6 · gpt-5.6-sol max, standing goal | 1270 | 116.33× | 8 | 87 min | 215k / 116k | yes |
+
+Plan-metered, $0; the best of every prior run here is 26.1×.
+
 > **Update (per-call output cap, 32768 → 65536).** Three fresh kimi-k2.6
 > runs all landed at 1.0×, but with two distinct failure modes, both
 > diagnosed turn-by-turn:

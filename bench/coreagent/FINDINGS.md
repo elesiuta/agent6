@@ -451,3 +451,19 @@ Cost per run unchanged (the block is a small share of the context).
   baseline arms.
 - Methodology: `--reps 8` was needed; the wave-1 n=4 cells disagreed with
   the pooled cells on bugs for qwen (+0.17 → −0.02).
+
+### gpt-5.6-sol effort tiers on the dev slice (2026-08-20)
+
+Three arms of the same 20 instances (bugs and ledger tasks, the ChatGPT
+plan, $0), differing only in `[models.worker].effort`:
+
+| arm | n | score | wall per run | iterations | output tokens per run |
+|---|---|---|---|---|---|
+| low | 20 | 1.000 | 25 s | 4.0 | 886 |
+| medium | 20 | 1.000 | 29 s | 4.0 | 1041 |
+| max | 20 | 1.000 | 46 s | 4.3 | 1919 |
+
+Every arm solves every instance; max costs +84% wall and +117% output
+tokens over low. The slice has no headroom for this model, so effort is
+a cost axis here, not a score axis.
+
