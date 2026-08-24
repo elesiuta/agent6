@@ -187,7 +187,7 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
     from textual.widgets import Select
 
     from agent6.ui.tui import new_work
-    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.composer import SteerInput
     from agent6.ui.tui.home import Agent6HomeApp
     from agent6.ui.tui.new_work import NewWorkScreen
 
@@ -234,7 +234,7 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
     from textual.widgets import Static
 
     from agent6.ui.tui import new_work
-    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.composer import SteerInput
     from agent6.ui.tui.home import Agent6HomeApp
     from agent6.ui.tui.new_work import NewWorkScreen
 

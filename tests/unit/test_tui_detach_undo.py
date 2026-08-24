@@ -12,7 +12,7 @@ from textual.app import App, ComposeResult
 
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.conversation import SteerInput
+from agent6.ui.tui.composer import SteerInput
 
 
 def _session_dir(tmp_path: Path) -> Path:

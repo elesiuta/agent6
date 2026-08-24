@@ -22,7 +22,7 @@ from textual.app import App
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.conversation import ApprovalRow
+from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.modals import (
     ApprovalModal,
     QuestionModal,
@@ -290,7 +290,7 @@ def test_render_and_modals(tmp_path: Path) -> None:
 
             # An external steer request routes to the docked composer bar (no
             # popup): the bar takes focus, typing + Enter answers over the bridge.
-            from agent6.ui.tui.conversation import SteerInput
+            from agent6.ui.tui.composer import SteerInput
 
             app._handle_event(_ev(type="session.steer_requested", source="sigint"))
             app._tick()
@@ -651,7 +651,7 @@ def test_dashboard_bar_is_default_focus_and_steers(tmp_path: Path) -> None:
     import os
 
     from agent6.sessions.ipc import steer_request_pending, write_worker_pid
-    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.composer import SteerInput
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
@@ -678,7 +678,7 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
     steer file would be wiped by resume's stale-state clear) and is injected at
     the resumed session's first boundary -- the claude-code follow-up flow."""
     from agent6.ui.tui import app as app_mod
-    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.composer import SteerInput
 
     spawned: list[tuple[str, str]] = []
 
@@ -812,7 +812,7 @@ def test_stop_after_step_drops_the_marker(tmp_path: Path) -> None:
 def test_context_pct_readout_in_top_line_and_bar(tmp_path: Path, monkeypatch: Any) -> None:
     """With the model's context window known, the dashboard's top line shows
     `ctx: NN%` and the composer bar's subtitle carries the same readout."""
-    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.composer import SteerInput
 
     def _window(_provider: str, _model: str) -> int:
         return 100_000
@@ -933,7 +933,7 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: Path) -> None:
     # contains the quoted literal (a grep of the source for the event name) must
     # not inflate the baseline, or the NEXT real steer is silently swallowed
     # while the run blocks awaiting an instruction.
-    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.composer import SteerInput
 
     (tmp_path / "logs.jsonl").write_text(
         "".join(
@@ -974,7 +974,7 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: Path) 
     # A CLI Ctrl-C that DETACHED leaves session.steer_requested in the log. Opening the
     # TUI must not treat that stale (already-handled) request as live -- only one
     # that arrives AFTER the TUI is watching should route to the composer bar.
-    from agent6.ui.tui.conversation import SteerInput
+    from agent6.ui.tui.composer import SteerInput
 
     (tmp_path / "logs.jsonl").write_text(
         "".join(
@@ -1031,7 +1031,7 @@ def test_toggle_and_log_viewer_keys(tmp_path: Path) -> None:
             await pilot.press("ctrl+d")  # show the dashboard
             await pilot.pause()
             assert isinstance(app.screen, DashboardScreen)
-            from agent6.ui.tui.conversation import SteerInput
+            from agent6.ui.tui.composer import SteerInput
 
             assert isinstance(app.focused, SteerInput)  # the bar is the default focus
             depth = len(app.screen_stack)
@@ -1449,7 +1449,7 @@ def test_the_composer_title_shows_its_brackets(tmp_path: Path) -> None:
     from rich.markup import escape
 
     from agent6.sessions.ipc import write_worker_pid
-    from agent6.ui.tui.conversation import SteerInput, composer_labels
+    from agent6.ui.tui.composer import SteerInput, composer_labels
 
     async def scenario() -> None:
         (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")

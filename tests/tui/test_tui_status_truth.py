@@ -23,7 +23,7 @@ from typing import Any
 from textual.widgets import Static
 
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.conversation import ApprovalRow, SteerInput
+from agent6.ui.tui.composer import ApprovalRow, SteerInput
 from agent6.ui.tui.modals import ApprovalModal
 from agent6.viewmodel.state import apply_event
 
@@ -208,7 +208,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
     from textual.widgets import Select
 
     from agent6.ui.tui import app as app_mod
-    from agent6.ui.tui.conversation import ResumePreset
+    from agent6.ui.tui.composer import ResumePreset
 
     spawned: list[tuple[str, str, str]] = []
 

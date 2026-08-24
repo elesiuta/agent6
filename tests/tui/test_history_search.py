@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.conversation import SteerInput
+from agent6.ui.tui.composer import SteerInput
 from agent6.ui.tui.modals import HistorySearchModal
 
 

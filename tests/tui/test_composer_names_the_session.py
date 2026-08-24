@@ -9,7 +9,7 @@ other surface.
 
 from __future__ import annotations
 
-from agent6.ui.tui.conversation import composer_labels
+from agent6.ui.tui.composer import composer_labels
 
 
 def test_a_finished_session_offers_to_continue_the_session() -> None:

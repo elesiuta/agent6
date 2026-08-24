@@ -16,7 +16,7 @@ from textual.widgets import Static
 
 from agent6.ui.tui import app as app_mod
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.conversation import SteerInput
+from agent6.ui.tui.composer import SteerInput
 
 
 def _undone_run(d: Path) -> None:
@@ -119,7 +119,7 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
 
 @pytest.mark.parametrize("continue_as", ["", "fork-child-AAAAAA"])
 def test_composer_labels_name_the_fork(continue_as: str) -> None:
-    from agent6.ui.tui.conversation import composer_labels
+    from agent6.ui.tui.composer import composer_labels
 
     title, _ = composer_labels("resume", continue_as=continue_as)
     assert title == ("continue as fork-child-AAAAAA" if continue_as else "continue this session")

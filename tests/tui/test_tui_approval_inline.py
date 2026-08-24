@@ -15,7 +15,7 @@ from pathlib import Path
 from textual.widgets import Static
 
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.conversation import ApprovalRow
+from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.modals import ApprovalModal
 
 

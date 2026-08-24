@@ -63,10 +63,8 @@ from agent6.ui.spawn import (
     spawn_and_locate,
     spawn_detached_resume,
 )
-from agent6.ui.tui.conversation import (
-    ConversationScreen,
-    SteerInput,
-)
+from agent6.ui.tui.composer import SteerInput
+from agent6.ui.tui.conversation import ConversationScreen
 from agent6.ui.tui.dashboard import DashboardScreen
 from agent6.ui.tui.modals import (
     ConfirmModal,

@@ -43,7 +43,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.ui.tui import clipboard
-from agent6.ui.tui.conversation import (
+from agent6.ui.tui.composer import (
     RUN_MENU,
     ComposerMode,
     ResumePreset,

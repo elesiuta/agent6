@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 from agent6.ui.tui.app import Agent6TUI
-from agent6.ui.tui.conversation import (
+from agent6.ui.tui.composer import (
     SteerInput,
     SteerSuggest,
     complete_steer,

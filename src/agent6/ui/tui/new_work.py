@@ -31,7 +31,7 @@ from agent6.directive import spec_fragment
 from agent6.models.validate import known_models
 from agent6.types import OPERATOR_MODES
 from agent6.ui.spawn import spawn_new_work
-from agent6.ui.tui.conversation import SteerInput, SteerSuggest
+from agent6.ui.tui.composer import SteerInput, SteerSuggest
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 
