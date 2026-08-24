@@ -431,3 +431,17 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
     assert "commits each editing step automatically" in block("finish")
     assert "commits automatically after each passing verify" in block("never")
     assert "a passing run auto-commits the step" not in block("never")
+
+
+def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
+    """`step`: the model runs the gate green, then edits later in the same
+    turn; the turn's final tree is unjudged, so the harness runs the gate.
+    Self-review 2026-08-23: the turn-wide boolean skipped it."""
+    wf, dispatcher = _harness_wf("step")
+    dispatcher.run_verify.return_value = _exec(0)
+    state = _LoopState(original_task="t", tool_calls=0)
+    turn = _turn(edited=True)
+    turn.verify_just_passed = True  # the model's own green, then the edit
+    turn.edit_since_verify_pass = True
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_called_once_with()

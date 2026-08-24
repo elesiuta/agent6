@@ -1707,7 +1707,12 @@ class Workflow:
                 and bool(self.config.workflow.verify_command)
                 and self.dispatcher.command_policy() != "no"
             ),
-            verified_this_turn=turn.verify_just_passed or turn.verify_just_failed,
+            # An edit after the turn's own verify un-verifies it: the gate
+            # judged a tree that no longer exists.
+            verified_this_turn=(
+                (turn.verify_just_passed or turn.verify_just_failed)
+                and not turn.edit_since_verify_pass
+            ),
             changed_this_turn=turn.edit_since_verify_pass,
             finishing=ending
             or (turn.finish_signal is not None and turn.finish_kind == "finish_session"),
