@@ -642,24 +642,30 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 
 ## 9. Security considerations
 
-- **No new LLM tool surface.** The fixed set in `tools/schema.py` is unchanged.
-  Machines orchestrate *existing* capabilities; the LLM inside an `agent` state sees the same tools it always did.
-  `machine create` is no exception: the drafting agent runs the same fixed toolset and returns its `.asm.toml` through the existing `finish_session` payload, with no new file-writing tool.
-- **No arbitrary code execution from a file.** Predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`.
-  Dotted references are agent6-interpreted json data navigation ([Names and references](#45-names-references-and-namespaces-normative)), not Python attribute resolution.
-  A `.asm.toml` file is data, not code.
-- **All side effects stay jailed.** `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, its commands jailed like any run's.
-  A machine with `mode = "run"` states additionally never touches the operator's checkout: every state works a fresh clone of it, run-state commits arrive on `agent6/machine-<id>`, and tool-state tree writes are discarded with the clone.
-  The per-state network model and its refusals are specified in [security.md, Network](security.md#5-network).
-- **Spend bounds.** `[budget].max_transitions` is required and always binds.
-  `max_usd` (optional) caps the machine's cumulative metered spend (reported cost when available, else cached price times tokens); a state whose model has no price data is bounded per state by the effective config's `[budget].max_tokens_fallback` instead (`0` there refuses unmetered models outright).
-  A supervisor crash mid-state cannot re-grant its slice: the resuming supervisor books the orphaned per-state log's totals as an `attempt.spend` journal event, counted by `max_usd` and every spend surface.
-- **Machines are operator artifacts, never LLM-authored.** The threat model assumes the file is written by the operator and reviewed like code.
-  An LLM proposing a machine is fine, and `agent6 machine create` ([CLI surface](#7-cli-surface)) explicitly *drafts* one, but running one requires the operator to review and commit it.
-  `machine create` writes only into the working tree and never auto-runs; `machine run` operates on a committed bundle (`.asm.toml` + `scripts/`), records that bundle under the instance directory at first run, and refuses a continuation whose working bundle drifted from the recorded bytes; a live instance runs the logic it recorded, and an edit takes effect on a new instance (archive the old one).
-  Drafting is assistance; authorization stays human.
-- **External-world tools remain out of scope.** Adding any tool that reaches the network or an external service is a separate change requiring the `tools/schema.py` security-review trailer and a network/jail audit.
-  The examples in this document use illustrative stand-in tools only.
+- **No new LLM tool surface**
+    - the fixed set in `tools/schema.py` is unchanged; machines orchestrate existing capabilities
+    - `machine create` is no exception: the drafting agent runs the same toolset and returns the `.asm.toml` through `finish_session`, no new file-writing tool
+- **No arbitrary code execution from a file**
+    - predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`
+    - dotted references are agent6-interpreted data navigation, not Python attribute resolution
+    - a `.asm.toml` is data, not code
+- **All side effects stay jailed**
+    - `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, commands jailed like any run's
+    - `mode = "run"` machines never touch the operator's checkout: fresh clones per state, commits on `agent6/machine-<id>`, tool-state tree writes discarded with the clone
+    - per-state network and refusals: [security.md, Network](security.md#5-network)
+- **Spend bounds**
+    - `[budget].max_transitions` is required and always binds
+    - `max_usd` (optional) caps cumulative metered spend; an unpriced model is bounded per state by `[budget].max_tokens_fallback` (`0` refuses unmetered models outright)
+    - a supervisor crash mid-state cannot re-grant its slice: the resume books the orphaned per-state totals as an `attempt.spend` journal event, counted everywhere
+- **Machines are operator artifacts, never LLM-authored**
+    - the threat model assumes the file is operator-written and reviewed like code; an LLM may propose (`machine create` drafts), running requires operator review + commit
+    - `create` writes only into the working tree and never auto-runs
+    - `run` operates on a committed bundle, records it under the instance dir at first run, and refuses a continuation whose bundle drifted from the recorded bytes
+    - a live instance runs the logic it recorded; an edit takes effect on a new instance
+    - drafting is assistance; authorization stays human
+- **External-world tools remain out of scope**
+    - adding a tool that reaches the network or an external service is a separate change: the `tools/schema.py` security-review note plus a network/jail audit
+    - the examples here use illustrative stand-in tools only
 
 ---
 
