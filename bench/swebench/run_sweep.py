@@ -120,6 +120,7 @@ def run_one(
         for k in (
             "AGENT6_SB_VERIFY",
             "AGENT6_SB_VERIFY_WHEN",
+            "AGENT6_SB_TESTFIRST",
             "AGENT6_SB_EFFORT",
             "AGENT6_SB_MAX_PERCENT",
             "AGENT6_SB_STRUCTURAL_PRIORS",

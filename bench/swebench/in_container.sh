@@ -189,6 +189,20 @@ this checkout: never spend turns recalling or fetching the canonical
 upstream commit. Anything remembered about the upstream fix is an
 unverified hint, not a source.
 AEOF
+  # AGENT6_SB_TESTFIRST=1: the executed test-first arm. A probe test the
+  # model writes OUTSIDE the repo and runs is real feedback on the issue's
+  # expected behaviour; it never enters the diff (outside the tree) and the
+  # repo's own tests stay untouched.
+  if [ "${AGENT6_SB_TESTFIRST:-}" = "1" ]; then
+    cat >> AGENTS.md <<'AEOF'
+
+Before the first edit, write a test at /tmp/probe_test.py that fails on
+this checkout by reproducing the issue's expected behaviour (run it with
+`python -m pytest /tmp/probe_test.py` or directly), then change the code
+until it passes. /tmp/probe_test.py stays outside the repo: never copy it
+in, and never modify or add tests inside the repo.
+AEOF
+  fi
   git add AGENTS.md && git commit -q -m "bench scaffolding" 2>/dev/null
 fi
 BASE=$(git rev-parse HEAD)
