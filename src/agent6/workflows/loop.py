@@ -68,7 +68,7 @@ from agent6.providers import (
     output_cap_truncated,
 )
 from agent6.sessions.ipc import emit_session_start
-from agent6.skills import ResolvedSkills
+from agent6.skills import ResolvedSkills, skill_command, skill_steer_payload
 from agent6.task_text import operator_task_text
 from agent6.tools.dispatch import (
     OperatorCommandUnexecutable,
@@ -4531,8 +4531,10 @@ class Workflow:
             self._emit("loop.steer.detached")
             self._log("  detach - stopping to resume in the background")
             return "detach"
-        if self._steer_directive(conversation, iteration, state, steer_text) or self._steer_pin(
-            conversation, state, steer_text
+        if (
+            self._steer_directive(conversation, iteration, state, steer_text)
+            or self._steer_pin(conversation, state, steer_text)
+            or self._steer_skill(conversation, steer_text)
         ):
             return None
         self._log(f"  injecting steering instruction ({len(steer_text)} chars)")
@@ -4546,6 +4548,25 @@ class Workflow:
             f"{steer_text}"
         )
         return None
+
+    def _steer_skill(self, conversation: Conversation, steer_text: str) -> bool:
+        """Handle a `/<skill> [args]` steer from any composer: the skill's
+        full text is injected as the instruction (the same payload on every
+        surface). Returns True when handled; False when *steer_text* names no
+        enabled skill."""
+        if not steer_text.startswith("/"):
+            return False
+        found = skill_command(steer_text, self._load_skills())
+        if found is None:
+            return False
+        skill, args = found
+        self._log(f"  skill steer: {skill.name}")
+        self._emit("loop.steer.skill", name=skill.name, args=args)
+        conversation.notice(
+            "OPERATOR STEERING (mid-run instruction; incorporate this into your next step):\n"
+            + skill_steer_payload(skill.name, skill.text, args)
+        )
+        return True
 
     def _steer_pin(self, conversation: Conversation, state: _LoopState, steer_text: str) -> bool:
         """Handle a steer that is a `/pin` directive. A recorded pin is injected

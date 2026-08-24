@@ -108,16 +108,6 @@ def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, st
     }
 
 
-def skill_steer_payload(name: str, text: str, args: str) -> str:
-    """The steer message a `/skill-name [args]` menu line injects."""
-    args_line = f"\nSkill arguments: {args}" if args else ""
-    return (
-        f"Apply the operator-installed skill {name!r} for the rest of this run."
-        f"{args_line}\n\n"
-        f'<skill name="{name}">\n{text.rstrip()}\n</skill>'
-    )
-
-
 def normalize_steer_choice(line: str | None) -> str | None:
     """Map a mid-run menu line to a canonical action: None/'' continue,
     'abort' stop, 'exit' stop-and-leave, 'detach' keep-running-in-background,
@@ -351,7 +341,9 @@ def pause_menu(  # noqa: PLR0911, PLR0912
                 print(_start_btw(stripped, session_dir, btw_runner))
                 continue
             if len(smatches) == 1 and not builtin:
-                return skill_steer_payload(smatches[0][1:], skills[smatches[0]][1], args.strip())
+                # A skill command travels as typed; the loop expands it (the
+                # one owner, so every composer's `/<skill>` means the same).
+                return f"{smatches[0]} {args.strip()}"
             return stripped
         if word in MENU_COMMANDS or word in skills:  # exact match (never both: the
             # table builder drops skills that collide with a built-in)
@@ -369,6 +361,6 @@ def pause_menu(  # noqa: PLR0911, PLR0912
         elif matches[0] in _ACTIONS:
             return _ACTIONS[matches[0]]
         elif matches[0] in skills:
-            return skill_steer_payload(matches[0][1:], skills[matches[0]][1], "")
+            return matches[0]
         else:
             _run_info_command(matches[0], session_dir, btw_runner, config_path)

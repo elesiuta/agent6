@@ -319,20 +319,16 @@ def test_skill_command_whole_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     from agent6.ui.cli._steer_menu import pause_menu
 
     _skill_env(tmp_path, monkeypatch, "caveman")
-    out = pause_menu(tmp_path, input_fn=_feed(["/caveman"]))
-    assert out is not None
-    assert "GRUNT caveman" in out
-    assert '<skill name="caveman">' in out
+    # The menu passes a skill command through as typed; the loop expands it
+    # (one owner for every composer).
+    assert pause_menu(tmp_path, input_fn=_feed(["/caveman"])) == "/caveman"
 
 
 def test_skill_command_with_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from agent6.ui.cli._steer_menu import pause_menu
 
     _skill_env(tmp_path, monkeypatch, "caveman")
-    out = pause_menu(tmp_path, input_fn=_feed(["/caveman lite"]))
-    assert out is not None
-    assert "Skill arguments: lite" in out
-    assert "GRUNT caveman" in out
+    assert pause_menu(tmp_path, input_fn=_feed(["/caveman lite"])) == "/caveman lite"
 
 
 def test_non_skill_line_with_spaces_stays_verbatim(

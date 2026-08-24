@@ -6603,3 +6603,38 @@ def test_operator_answers_become_recorded_rulings(tmp_path: Path) -> None:
         for c in events.emit.call_args_list
         if c.args[:1] == ("loop.decision.unrecorded",)
     )
+
+
+def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
+    """`/<skill> [args]` from any composer: the loop injects the skill's full
+    text as the instruction (the CLI menu passes the line through), so every
+    surface means the same thing; a slash word that is no skill stays an
+    ordinary steer."""
+    from agent6.skills import ResolvedSkills, Skill
+
+    skill = Skill(name="caveman", description="Use when grunting.", dir=tmp_path, text="GRUNT")
+    prompts = iter(["/caveman lite", "/nosuch thing"])
+    dispatcher = MagicMock()
+    dispatcher.resolved_skills.return_value = ResolvedSkills(
+        enabled=(skill,), always=(), warnings=()
+    )
+    wf = _wf(
+        root=tmp_path,
+        provider=MagicMock(),
+        dispatcher=dispatcher,
+        steer_requested=lambda: True,
+        steer_prompt=lambda: next(prompts),
+        steer_clear=lambda: None,
+    )
+    wf.mode = "run"
+    st = _state()
+    conv = MagicMock()
+    assert wf._maybe_handle_steer(conv, 1, st) is None  # pyright: ignore[reportPrivateUsage]
+    injected = conv.notice.call_args.args[0]
+    assert "Apply the operator-installed skill 'caveman'" in injected
+    assert (
+        "Skill arguments: lite" in injected
+        and '<skill name="caveman">\nGRUNT\n</skill>' in injected
+    )
+    assert wf._maybe_handle_steer(conv, 2, st) is None  # pyright: ignore[reportPrivateUsage]
+    assert "/nosuch thing" in conv.notice.call_args.args[0]

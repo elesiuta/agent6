@@ -177,3 +177,28 @@ def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> Resolve
     enabled = tuple(s for s in skills if state.get(s.name, "enabled") == "enabled")
     always = tuple(s for s in skills if state.get(s.name) == "always")
     return ResolvedSkills(enabled=enabled, always=always, warnings=tuple(warnings))
+
+
+def skill_steer_payload(name: str, text: str, args: str) -> str:
+    """The instruction a `/<skill> [args]` steer injects: the skill applied
+    for the rest of the run, its full text inline, the arguments named."""
+    args_line = f"\nSkill arguments: {args}" if args else ""
+    return (
+        f"Apply the operator-installed skill {name!r} for the rest of this run."
+        f"{args_line}\n\n"
+        f'<skill name="{name}">\n{text.rstrip()}\n</skill>'
+    )
+
+
+def skill_command(text: str, skills: ResolvedSkills | None) -> tuple[Skill, str] | None:
+    """The skill a `/<name> [args]` steer names and its arguments, or None
+    when *text* is not a skill command (no leading slash, or a name that is
+    not an enabled or always-on skill)."""
+    stripped = text.strip()
+    if not stripped.startswith("/") or skills is None:
+        return None
+    word, _, args = stripped[1:].partition(" ")
+    for skill in (*skills.enabled, *skills.always):
+        if skill.name == word:
+            return skill, args.strip()
+    return None
