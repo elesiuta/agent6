@@ -534,3 +534,22 @@ the large behaviour shift and the 16% wall drop (fewer 240s gate
 stacks) -- the gateless-default precedent's shape. The prompt change
 is one bullet, reverted in one commit if the larger-n picture ever
 disagrees.
+
+### The verify rule: advice adds nothing over the fact (2026-08-22)
+
+Third paired hard-30 arm, one bullet apart from the targeted-fine
+wheel: the bare world-state bullet ("run_verify_command runs the
+operator's gate; a passing run auto-commits the step").
+
+| arm | resolved | self-tests | gate runs | wall |
+|---|---|---|---|---|
+| never-rule | 17/30 | 103 | 65 | 2:23 |
+| targeted-fine | 19/30 | 206 | 40 | 2:01 |
+| world-state fact | 19/30 | 177 | 39 | 1:58 |
+
+Identical resolve (aware-vs-fine churn +2/-2, noise), identical gate
+load and wall. The permission sentence is inert once the "never" rule
+is gone: the model self-tests by default when nothing forbids it.
+SHIPPED the bare fact (less-is-a-win on a measured null). First
+confirmation of the world-state-everything direction; the full recast
+of all model-facing text is the queued P5 arm.
