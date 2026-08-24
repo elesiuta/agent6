@@ -181,6 +181,8 @@ def steer_problem(text: str) -> str | None:
         return f"/btw {live_only}"
     if _RESTATE_TOKEN.match(text):
         return f"/restate {live_only}"
+    if _SHELLS_TOKEN.match(text):
+        return f"/shells {live_only}"
     try:
         parse_pin(text)
         parse_directive(text)
@@ -190,6 +192,7 @@ def steer_problem(text: str) -> str | None:
 
 
 _RESTATE_TOKEN = re.compile(r"\A\s*/restate(?=\s|\Z)")
+_SHELLS_TOKEN = re.compile(r"\A\s*/shells(?=\s|\Z)")
 
 
 def parse_directive(text: str) -> list[Segment] | None:

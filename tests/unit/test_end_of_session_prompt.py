@@ -380,3 +380,23 @@ def test_an_undone_run_is_not_followed_by_the_prompt(
     monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
     assert cli._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == []
+
+
+def test_a_lone_slash_word_is_refused_not_sent_as_a_task(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`/shells` typed here spent a model call answering the literal text as a
+    new leg's task; a live-run command re-prompts with steer_problem's pointer,
+    an unknown lone slash word (a typo, a REPL verb) with the prompt's own.
+    Multi-word slash input still rides as the leg's instruction (directives
+    like `/pin <text>` are the loop's to parse)."""
+    calls = _seen_resumes(monkeypatch)
+    answers = iter(["/shells", "/cost", "now add the tests", "/exit"])
+    rc = prompt_mod.end_of_session_prompt(
+        rc=0, session_id="runny-one-AAAAAA", ask=lambda _p: next(answers)
+    )
+    assert rc == 0
+    assert calls == [("runny-one-AAAAAA", "now add the tests")]
+    err = capsys.readouterr().err
+    assert "/shells acts on a live run" in err
+    assert "'/cost' is not sent as a task" in err

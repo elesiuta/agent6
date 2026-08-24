@@ -87,6 +87,17 @@ def end_of_session_prompt(
         if (problem := steer_problem(answer)) is not None:
             print(f"[agent6] {problem}", file=sys.stderr)
             continue
+        if answer.startswith("/") and len(answer.split()) == 1 and answer != "/undo":
+            # A lone slash word (other than /undo, a verb the leg honours) is a
+            # composer command or a typo, not a follow-up task: sending it
+            # would spend a model call answering the literal text.
+            print(
+                f"[agent6] {answer!r} is not sent as a task: this prompt takes a"
+                " follow-up instruction (a new leg), /undo, or /exit; slash"
+                " commands work in the pause menu and the TUI/web composers.",
+                file=sys.stderr,
+            )
+            continue
         rc = _cmd_resume(
             config_path,
             session_id,
