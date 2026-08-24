@@ -50,6 +50,7 @@ from agent6.memory import index_text as memory_index_text
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT,
+    CONTRACT_SYSTEM_PROMPT,
     GIST_DISTILL_SYSTEM_PROMPT,
     PINS_NO_RESTATE_CLAUSE,
     PROMPT_REVISION_SYSTEM_PROMPT,
@@ -679,6 +680,7 @@ class Workflow:
     # "off". It never receives tools and never iterates.
     prompt_reviser_provider: Provider | None = None
     revise_prompt: Literal["off", "auto", "interactive"] = "off"
+    contract_examples: bool = False
     prompt_reviser_temperature: float | None = 0.0
     prompt_revision_max_tokens: int = 2048
     prompt_revision_selector: Callable[[str, str, tuple[str, ...]], str | None] | None = None
@@ -812,7 +814,7 @@ class Workflow:
         )
 
         try:
-            effective_task = self._maybe_revise_prompt(user_task, repo)
+            effective_task = self._maybe_derive_contract(self._maybe_revise_prompt(user_task, repo))
         except PromptRevisionError as exc:
             self._log(f"LOOP: prompt revision failed: {exc}")
             self._emit(
@@ -4035,6 +4037,37 @@ class Workflow:
         )
 
     # ---- prompt revision and provider retry ------------------------------------
+
+    def _maybe_derive_contract(self, task: str) -> str:
+        """One worker call before the first turn: the expected behaviour as
+        input -> output examples from the task's own words, appended as a
+        <contract> block the worker verifies against the code. A failed call
+        leaves the task as it was."""
+        if not self.contract_examples:
+            return task
+        self._emit("loop.contract.call")
+        try:
+            resp = self.provider.call(
+                system=CONTRACT_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": f"TASK:\n{task}"}],
+                tools=[],
+                max_tokens=1024,
+                temperature=self.temperature,
+            )
+        except (ProviderError, BudgetExceeded) as exc:
+            self._emit("loop.contract.failed", error=str(exc)[:200])
+            return task
+        examples = clip_text((resp.text or "").strip(), 3000)
+        if not examples:
+            self._emit("loop.contract.failed", error="empty")
+            return task
+        self._emit("loop.contract.result", chars=len(examples))
+        self._log(f"CONTRACT\n{examples}")
+        return (
+            f"{task}\n\n<contract>\nExpected behaviour derived from the task before any edit; "
+            "verify each example against the code, and the task text wins where they "
+            f"disagree:\n{examples}\n</contract>"
+        )
 
     def _maybe_revise_prompt(self, user_task: str, repo: RepoSummary) -> str:
         if self.revise_prompt == "off":

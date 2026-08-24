@@ -310,6 +310,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             base_sha=inputs.base_sha,
             prompt_reviser_provider=prompt_reviser_provider,
             revise_prompt=effective_revise_prompt,
+            contract_examples=cfg.prompt.contract_examples,
             temperature=role_temperature(cfg, role),
             prompt_reviser_temperature=role_temperature(cfg, "reviewer"),
             prompt_revision_selector=(

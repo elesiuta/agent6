@@ -334,6 +334,15 @@ class PromptConfig(BaseModel):
     # start via `with_decompose`, and the engine treats any value other than
     # "on" as off. No effect on plan/ask/machine/agent modes. See
     # docs/config.md for the measured per-model effect.
+    contract_examples: bool = Field(
+        default=False,
+        description=(
+            "Before the first model turn, one worker-model call derives the expected behaviour "
+            "from the task as concrete input -> output examples, appended to the task as a "
+            "<contract> block the worker verifies against the code. Off by default: an "
+            "experiment knob, measured on SWE-rebench before any default moves."
+        ),
+    )
     decompose: Literal["auto", "on", "off"] = Field(
         default="auto",
         description=(
