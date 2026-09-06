@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from agent6.sandbox.jail import BackgroundJob, locate_jail_binary, run_in_jail
-from agent6.tools.background import BackgroundError, BackgroundShells
+from agent6.tools.background import BackgroundError, BackgroundShells, roster_from_dir
 from agent6.types import IsolationLevel, JailPolicy
 
 pytestmark = pytest.mark.needs_namespaces
@@ -656,3 +656,17 @@ def test_an_unsandboxed_background_command_survives_a_siblings_stop(
         assert states[second.id] == "running", f"a sibling's stop took it down: {states}"
     finally:
         shells.stop_all()
+
+
+def test_stopping_an_already_exited_command_still_reads_exited(tmp_path: Path) -> None:
+    """The state word says HOW a command ended, so a stop over one that already
+    exited leaves it "exited": `stop_all` guarded on the job's liveness, `stop`
+    did not, and the run's own roster then disagreed with the on-disk one."""
+    shells = BackgroundShells(tmp_path / "shells")
+    view = shells.start(("/bin/sh", "-c", "exit 7"), _policy_for(tmp_path, "none"))
+    assert _wait_state(shells, view.id, "exited") == "exited"
+
+    stopped = shells.stop(view.id)
+    assert (stopped.state, stopped.returncode) == ("exited", 7), stopped
+    assert [v.state for v in shells.roster()] == ["exited"]
+    assert any(f"[{view.id}] exited 7" in line for line in roster_from_dir(tmp_path / "shells"))

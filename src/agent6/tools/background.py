@@ -318,8 +318,7 @@ class BackgroundShells:
 
     def stop(self, shell_id: str) -> ShellView:
         shell = self._get(shell_id)
-        shell.stop_error = shell.job.stop()
-        shell.stopped = True
+        self._stop(shell)
         return self._view(shell)
 
     def stop_all(self) -> list[ShellView]:
@@ -331,12 +330,18 @@ class BackgroundShells:
         """
         stopped: list[ShellView] = []
         for shell in self._shells.values():
-            was_running = shell.job.status().running
-            shell.stop_error = shell.job.stop()
-            if was_running:
-                shell.stopped = True
+            if self._stop(shell):
                 stopped.append(self._view(shell))
         return stopped
+
+    def _stop(self, shell: _Shell) -> bool:
+        """Kill *shell* and sweep what it left behind; True when it was still
+        running. "stopped" is the true word only then: a command that had
+        already exited keeps its own ending."""
+        was_running = shell.job.status().running
+        shell.stop_error = shell.job.stop()
+        shell.stopped = shell.stopped or was_running
+        return was_running
 
     def _get(self, shell_id: str) -> _Shell:
         shell = self._shells.get(shell_id)
