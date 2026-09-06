@@ -930,23 +930,6 @@ class ConfigScreen(ScreenChrome, Screen[None]):
             modal = EditModal(setting)
         self.app.push_screen(modal, _done)
 
-    def _refuse_unset(self, setting: ConfigSetting) -> bool:
-        """Notify-and-True when the setting cannot be unset here. "Already at
-        its default" is only truthful when it IS the default; a leaf from any
-        other layer (a preset's synthesized [presets.<name>], a `--config`
-        file) is modified but outside the two files an unset writes."""
-        if not setting.modified:
-            self.notify(f"{setting.key} is already at its default.")
-            return True
-        if setting.source not in ("global", "repo"):
-            self.notify(
-                f"{setting.key} comes from the {setting.source} layer;"
-                " unset edits only the global and repo config.",
-                severity="warning",
-            )
-            return True
-        return False
-
     def action_reset(self) -> None:
         setting = self._current_setting()
         if setting is None:
@@ -956,7 +939,18 @@ class ConfigScreen(ScreenChrome, Screen[None]):
 
     def _unset(self, setting: ConfigSetting) -> None:
         """Reset *setting* to its default in the layer that set it, and say so."""
-        if self._refuse_unset(setting):
+        # "Already at its default" is only truthful when it IS the default; a
+        # leaf from any other layer (a preset's synthesized [presets.<name>], a
+        # `--config` file) is modified but outside the two files an unset writes.
+        if not setting.modified:
+            self.notify(f"{setting.key} is already at its default.")
+            return
+        if setting.source not in ("global", "repo"):
+            self.notify(
+                f"{setting.key} comes from the {setting.source} layer;"
+                " unset edits only the global and repo config.",
+                severity="warning",
+            )
             return
         try:
             err = unset_config_value(
