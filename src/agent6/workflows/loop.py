@@ -4131,24 +4131,29 @@ class Workflow:
         if not completed and not new_tasks:
             return
         passed = queued = 0
-        try:
-            for cid in completed:
+        # One try per write: a refusal (a container with open children, a
+        # retired task) or a write error skips that item, never the rest.
+        for cid in completed:
+            try:
                 self.curator.update_status(
                     UpdateStatusIntent(id=cid, new_status="passed", note="compaction check-off")
                 )
-                passed += 1
-            if new_tasks:
-                root_id = self._first_root_id()
-                for title in new_tasks[:8]:  # cap: a runaway summary can't flood the DAG
-                    self.curator.add_subtask(
-                        AddSubtaskIntent(
-                            parent_id=root_id,
-                            draft=TaskNodeDraft(title=title, created_by="planner"),
-                        )
+            except Exception as exc:  # a curator error must not break the run
+                self._log(f"LOOP: compaction check-off skipped {cid} ({exc})")
+                continue
+            passed += 1
+        for title in new_tasks[:8]:  # cap: a runaway summary can't flood the DAG
+            try:
+                self.curator.add_subtask(
+                    AddSubtaskIntent(
+                        parent_id=self._first_root_id(),
+                        draft=TaskNodeDraft(title=title, created_by="planner"),
                     )
-                    queued += 1
-        except Exception as exc:  # a curator write error must not break the run
-            self._log(f"LOOP: compaction check-off partial ({exc})")
+                )
+            except Exception as exc:  # a curator error must not break the run
+                self._log(f"LOOP: compaction check-off could not queue {title[:60]!r} ({exc})")
+                continue
+            queued += 1
         if passed or queued:
             # What LANDED, not what the summariser asked for: the cap above and
             # a refused status (a container with open children) both make the

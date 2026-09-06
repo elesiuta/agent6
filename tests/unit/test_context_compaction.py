@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from agent6.workflows._compaction import (
@@ -695,3 +696,48 @@ def test_restart_notice_re_shows_the_operator_rulings() -> None:
     assert "pin one" in head and rulings and "- Q: modal?\n  A: no" in summary
     assert summary.index("A: no") < summary.index("PROGRESS SUMMARY")
     assert "OPERATOR RULINGS" not in context_restart_notice("run")
+
+
+def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: Path) -> None:
+    """The summariser named a container (a subtask with an open child), which
+    the curator refuses to pass, before a finished task and a new one. One
+    `try` around the whole check-off dropped every id after the refusal and
+    every newly discovered task with it."""
+    from unittest.mock import MagicMock
+
+    from agent6.config import Config
+    from agent6.graph.curator import GraphCurator
+    from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
+    from agent6.sessions.layout import SessionLayout
+    from agent6.workflows.loop import Workflow
+
+    def draft(title: str) -> TaskNodeDraft:
+        return TaskNodeDraft(title=title, depends_on=(), created_by="planner")
+
+    curator = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
+    root = curator.add_subtask(AddSubtaskIntent(parent_id=None, draft=draft("run root")))
+    container = curator.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=draft("container")))
+    curator.add_subtask(AddSubtaskIntent(parent_id=container.id, draft=draft("open child")))
+    done = curator.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=draft("finished")))
+    wf = Workflow(
+        root=tmp_path,
+        config=Config(),
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+        logger=lambda _m: None,
+        mode="run",
+        curator=curator,
+    )
+    valid = {nid for nid, node in curator.nodes().items() if node.parent_id is not None}
+    summary = (
+        "progress so far\n\n```checkoff\n"
+        f'{{"completed_ids": ["{container.id}", "{done.id}"],'
+        ' "new_tasks": ["a newly discovered task"]}\n```\n'
+    )
+
+    wf._apply_compaction_checkoff(summary, valid_ids=valid)  # pyright: ignore[reportPrivateUsage]
+
+    nodes = curator.nodes()
+    assert nodes[container.id].status != "passed"  # the container refusal stands
+    assert nodes[done.id].status == "passed"
+    assert "a newly discovered task" in {node.title for node in nodes.values()}
