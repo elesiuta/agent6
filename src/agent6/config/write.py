@@ -405,8 +405,12 @@ def _model_members(annotation: object) -> tuple[type[BaseModel], ...]:
 def names_a_section(dotted_key: str) -> bool:
     """Whether *dotted_key* names a `[table]` in the Config schema rather than a
     leaf. A section's dict value is written leaf by leaf so its siblings
-    survive; a dict-typed leaf (`providers.<name>.extra_body`) is one value and
-    is written whole. A name-keyed entry (`providers.<name>`) is a section."""
+    survive; a dict-typed leaf (`providers.<name>.extra_body`, `skills.state`)
+    is one value and is written whole.
+
+    A name-keyed table is a section at both levels: `providers.<name>` is one
+    entry, and `providers` is the table of them -- written whole it replaced
+    every provider the operator had, with their keys and comments."""
     models: tuple[type[BaseModel], ...] = (Config,)
     keyed = False  # the previous part was a name-keyed table, so this part is a name
     for part in dotted_key.split("."):
@@ -422,7 +426,7 @@ def names_a_section(dotted_key: str) -> bool:
             if part in model.model_fields
         )
         models = tuple(resolved)
-    return not keyed
+    return True
 
 
 def set_config_value(

@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config import ConfigError, OpenAIProviderEntry, load_config
+from agent6.config import (
+    AnthropicProviderEntry,
+    ConfigError,
+    OpenAIProviderEntry,
+    load_config,
+)
 from agent6.config.layer import (
     load_effective,
     materialize,
@@ -802,6 +807,30 @@ def test_an_optional_section_is_written_leaf_by_leaf(repo: Path) -> None:
     assert "[models.worker]" in text
     assert 'model = "gpt-y"' in text
     assert 'provider = "anthropic"' in text, "a section's other leaves survive"
+
+
+def test_a_name_keyed_table_is_written_entry_by_entry(repo: Path) -> None:
+    """`providers` and `mcp.servers` are tables of entries, not one value:
+    written whole, a `config set providers '{...}'` replaced every provider the
+    operator had, with their keys and their comments, at exit 0."""
+    rcfg = repo_config_path_for(repo)
+    rcfg.write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "A"\n', encoding="utf-8"
+    )
+
+    err = set_config_value(
+        repo,
+        "providers",
+        '{ ollama = { api_format = "openai", base_url = "http://localhost:11434/v1" } }',
+        to_repo=True,
+    )
+
+    assert err is None
+    providers = load_effective(repo).config.providers
+    assert set(providers) >= {"anthropic", "ollama"}
+    kept = providers["anthropic"]
+    assert isinstance(kept, AnthropicProviderEntry)
+    assert kept.api_key_env == "A"
 
 
 def test_a_table_valued_leaf_replaces_the_block_it_already_has(repo: Path) -> None:
