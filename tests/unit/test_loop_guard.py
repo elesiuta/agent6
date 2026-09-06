@@ -12,6 +12,7 @@ followed by went_quiet.
 
 from __future__ import annotations
 
+import itertools
 import subprocess as _sp
 from pathlib import Path
 from types import SimpleNamespace
@@ -517,7 +518,23 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     assert result.completed is True
     notices = _stagnation_blocks(_final_messages(provider))
     assert len(notices) == 1, notices
-    assert "no edit and no verify" in notices[0]
+    # This harness configures no verify command, so the notice names no gate:
+    # sending a gateless run after `run_verify_command` names a tool the same
+    # run's prompt says it does not have.
+    assert "nothing edited yet" in notices[0]
+    assert "verify" not in notices[0]
+
+    # With a gate, the same notice names it.
+    gated = MagicMock()
+    gated.call.side_effect = itertools.chain(
+        [_resp_with_tool("read_file", {"path": "x.txt"}, tu_id="g1")],
+        itertools.repeat(_resp_text("ok")),
+    )
+    wf2 = _build_wf(repo, gated, dispatcher)
+    wf2.config.workflow.verify_command = ("true",)
+    wf2.stagnation_notice_after_s = 1e-9
+    wf2.run("investigate")
+    assert "no edit and no verify" in _stagnation_blocks(_final_messages(gated))[0]
 
 
 def test_stagnation_ignores_time_blocked_on_the_operator(tmp_path: Path) -> None:

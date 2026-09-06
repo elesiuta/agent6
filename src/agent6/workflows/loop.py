@@ -168,6 +168,8 @@ from agent6.workflows._nudges import (
     RUN_BUDGET_NUDGE_GATELESS,
     SILENT_NO_WORK_NUDGE,
     SILENT_NO_WORK_PATIENCE,
+    STAGNATION_NUDGE,
+    STAGNATION_NUDGE_GATELESS,
     TASK_FINISH_PATIENCE,
     TOOL_DENIED_NUDGE,
     TOOL_ERROR_ESCALATE_AFTER,
@@ -2184,15 +2186,9 @@ class Workflow:
         if attemptless and elapsed >= self.stagnation_notice_after_s:
             state.stagnation_nudged = True
             minutes = max(1, int(elapsed // 60))
-            turn.tool_results.append(
-                Notice(
-                    f"[stagnation] {minutes} minutes in, no edit and no verify"
-                    " yet. The budget is finite: stop researching, derive the"
-                    " best fix you can from this checkout, apply it, and run"
-                    " the verify. If truly blocked, call `finish_session` and"
-                    " say why."
-                )
-            )
+            gated = bool(self.config.workflow.verify_command)
+            notice = STAGNATION_NUDGE if gated else STAGNATION_NUDGE_GATELESS
+            turn.tool_results.append(Notice(notice.format(minutes=minutes)))
             self._emit("loop.stagnation.nudged", iteration=turn.iteration, elapsed_s=int(elapsed))
             self._log(f"  stagnation: {minutes}m with no attempt - injecting notice")
 

@@ -177,6 +177,23 @@ VERIFY_SETTLED_NUDGE = (
     " run ends on its own."
 )
 
+# Injected once when a run has spent `stagnation_notice_after_s` with no edit
+# and no verify. The gateless variant drops the verify step: there is no gate
+# to run, and naming one sends the model after a tool it does not have.
+STAGNATION_NUDGE = (
+    "[stagnation] {minutes} minutes in, no edit and no verify yet. The budget"
+    " is finite: stop researching, derive the best fix you can from this"
+    " checkout, apply it, and run the verify. If truly blocked, call"
+    " `finish_session` and say why."
+)
+
+STAGNATION_NUDGE_GATELESS = (
+    "[stagnation] {minutes} minutes in and nothing edited yet. The budget is"
+    " finite: stop researching, derive the best fix you can from this"
+    " checkout, and apply it. If truly blocked, call `finish_session` and say"
+    " why."
+)
+
 # A non-metric `run` injects a one-shot wrap-up directive when the budget gets
 # low: a worker that solves the task but never re-runs verify leaves the
 # settled detector unable to engage (it needs a green verify) and burns the
