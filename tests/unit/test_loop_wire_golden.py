@@ -60,13 +60,17 @@ class _StubDispatcher:
         return ()
 
     def metric_configured(self) -> bool:
-        return True  # the stub's config carries whatever the test set
+        return True
 
     def skills_available(self) -> bool:
         return False
 
     def command_policy(self) -> str:
         return "ask"
+
+    def tool_is_withheld(self, name: str) -> bool:
+        """ "ask" withholds nothing: the operator is asked at call time."""
+        return False
 
     def settle_background(self) -> None:
         """The turn boundary observes background commands; this scenario starts

@@ -51,6 +51,8 @@ def tool_definitions(
             # the task tools, ask_user, use_skill) are always exposed even
             # though they're not in ALL_TOOLS.
             continue
+        if dispatcher.tool_is_withheld(cls.TOOL_NAME):
+            continue
         if cls.TOOL_NAME == RunMetricInput.TOOL_NAME and not dispatcher.metric_configured():
             # No [workflow.metric]: the tool can only answer "no metric
             # configured", which the model cannot fix. Hidden like use_skill

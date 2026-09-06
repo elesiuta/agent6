@@ -446,11 +446,16 @@ class ToolDispatcher:
         `available_tool_names`, so it asks this instead."""
         return self._config.workflow.metric is not None
 
+    def tool_is_withheld(self, name: str) -> bool:
+        """Whether the model is denied *name*, extras included. The tool list is
+        built from the mode's surface, which carries tools that are not in
+        ALL_TOOLS (`run_metric_command`), so `available_tool_names` cannot
+        answer for them and one was offered under `run_commands = "no"` with
+        nothing but a refusal behind it."""
+        return name in _COMMAND_TOOLS and self.command_policy() == "no"
+
     def available_tool_names(self) -> tuple[str, ...]:
-        names = list(self._available)
-        # `no` withholds every command tool, run_verify_command included.
-        if self.command_policy() == "no":
-            names = [n for n in names if n not in _COMMAND_TOOLS]
+        names = [n for n in self._available if not self.tool_is_withheld(n)]
         # No verify_command (and none inferred) -> a gateless run: hide
         # run_verify_command rather than offer a tool that would error.
         if not self._config.workflow.verify_command:

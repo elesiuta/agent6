@@ -155,6 +155,9 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
         def metric_configured(self) -> bool:
             return True
 
+        def tool_is_withheld(self, _name: str) -> bool:
+            return False
+
         def skills_available(self) -> bool:
             return False
 

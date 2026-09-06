@@ -627,6 +627,7 @@ class Workflow:
             decisions_path=str(decisions_path(self.state_dir)) if self.state_dir else "",
             skills=self._load_skills(),
             isolation=self.dispatcher.isolation,
+            commands_allowed=self.dispatcher.command_policy() != "no",
         )
 
         try:

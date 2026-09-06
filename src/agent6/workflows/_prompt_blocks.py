@@ -246,6 +246,7 @@ def build_system_prompt(
     decisions_path: str = "",
     skills: ResolvedSkills | None,
     isolation: IsolationLevel = "strict",
+    commands_allowed: bool | None = None,
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
 
@@ -295,10 +296,12 @@ def build_system_prompt(
         isolation != "none" and (repo.root / ".git").is_file()
     )
     base = base.replace("__GIT_PROTECT_RULE__", GIT_PROTECT_RULE if git_read_only else "")
-    # The gate a plan pass can actually run: `run_commands = "no"` withholds
-    # every command tool, and with no verify command the same prompt's
-    # `<no-verify-command>` says the tool is not there.
-    has_gate = bool(config.workflow.verify_command) and config.sandbox.run_commands != "no"
+    # `run_commands = "no"` withholds every command tool, the gate included, so
+    # a run under it is gateless whatever is configured: every block and rule
+    # below reads the ONE answer, and the caller's (a resumed run whose
+    # operator denied commands for the session) wins over the configured value.
+    allowed = config.sandbox.run_commands != "no" if commands_allowed is None else commands_allowed
+    has_gate = bool(config.workflow.verify_command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", PLAN_VERIFY_RULE if has_gate else "")
     # Auto-commit is the agent6-control chain; under [git].control = "model"
     # nothing commits automatically and the model owns the record. Under
@@ -307,7 +310,7 @@ def build_system_prompt(
     # gateless run, or a gate the harness runs at finish).
     if config.git.control == "model":
         commit_rule = MODEL_GIT_RULE
-    elif config.workflow.verify_command and config.workflow.verify_when != "finish":
+    elif has_gate and config.workflow.verify_when != "finish":
         commit_rule = AUTO_COMMIT_RULE
     else:
         commit_rule = AUTO_COMMIT_RULE_GATELESS
@@ -352,11 +355,7 @@ def build_system_prompt(
         )
         return "\n".join(parts)
 
-    # `run_commands = "no"` withholds every command tool, the gate included, so
-    # a run under it is gateless whatever is configured: the block that names
-    # `run_verify_command` would describe a tool the model does not have.
-    commands_allowed = config.sandbox.run_commands != "no"
-    verify_argv = list(config.workflow.verify_command) if commands_allowed else []
+    verify_argv = list(config.workflow.verify_command) if has_gate else []
     if verify_argv:
         parts.append(
             V2_VERIFY_BLOCK_TEMPLATE.format(
@@ -376,7 +375,7 @@ def build_system_prompt(
     # "harness automatically runs this metric" behaviour is the run loop's.
     # `run_commands = "no"` withholds the tool, and a block describing a tool
     # the model does not have is one it cannot act on.
-    if mode == "run" and config.workflow.metric is not None and commands_allowed:
+    if mode == "run" and config.workflow.metric is not None and allowed:
         m = config.workflow.metric
         parts.append(
             V2_METRIC_BLOCK_TEMPLATE.format(

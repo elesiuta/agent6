@@ -29,6 +29,7 @@ from agent6.tools.schema import (
     FinishSessionInput,
     ReadFileInput,
     RunCommandInput,
+    RunMetricInput,
 )
 from agent6.types import RepoSummary
 from agent6.workflows import loop as loopmod
@@ -319,6 +320,48 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> N
         )
         assert "<metric-command>" not in other, mode
         assert "run_metric_command" not in other, mode
+
+
+def test_run_commands_no_withholds_the_command_tools_and_every_rule_about_them(
+    tmp_path: Path,
+) -> None:
+    """One answer per run: `run_commands = "no"` withholds every command tool,
+    so the gate does not exist -- and the tool list, the verify block, the
+    metric block and the auto-commit rule all say so. The metric tool is an
+    EXTRA, outside ALL_TOOLS, so the offer side could not see the policy and
+    handed the model a tool with only a refusal behind it, while the commit
+    rule went on naming a verify the same prompt called absent."""
+    p = tmp_path / "agent6.toml"
+    p.write_text(
+        _VALID_TOML.replace(  # carries run_commands = "no" and a verify_command
+            'verify_command = ["true"]', 'verify_command = ["true"]\nverify_when = "step"'
+        )
+        + '\n[workflow.metric]\ncommand = ["python3", "bench.py"]\n'
+        + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
+        encoding="utf-8",
+    )
+    cfg = load_config(p)
+    repo = RepoSummary(
+        root=tmp_path,
+        branch="main",
+        head_sha="0" * 40,
+        file_count=0,
+        top_level=(),
+        agents_md="",
+        recent_log="",
+    )
+
+    text = loopmod.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+        config=cfg, repo=repo, mode="run", skills=None
+    )
+    assert "<no-verify-command>" in text
+    assert "<metric-command>" not in text
+    assert "after each passing verify" not in text
+    assert "commits each editing step" in text
+
+    names = {t.name for t in loopmod.tool_definitions(ToolDispatcher(root=tmp_path, config=cfg))}  # pyright: ignore[reportPrivateUsage]
+    assert RunMetricInput.TOOL_NAME not in names
+    assert RunCommandInput.TOOL_NAME not in names
 
 
 def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: Path) -> None:
