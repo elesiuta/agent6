@@ -168,9 +168,25 @@ def test_gist_longer_than_content_stays_bare() -> None:
     _add_read(conv, "b.py", "x" * 500)
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"a.md": "g" * 3000})  # clipped to GIST_MAX_CHARS, still fits
-    stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
+    stats = compact_old_tool_results(conv, max_total_bytes=2000, keep_recent=2, gister=gister)
     assert stats.gisted == 1
     assert len(_contents(conv)[0]) < 2100
+
+
+def test_a_gist_the_budget_cannot_hold_is_never_reported_as_kept() -> None:
+    """A gist costing more than the plan's headroom was applied, demoted back
+    to the bare marker in the same pass, and still counted: the run line read
+    "1 kept as distilled gists" over a marker holding none."""
+    conv = Conversation()
+    _add_call(conv, "read_file", {"path": "a.md"}, "z" * 2100)
+    _add_read(conv, "b.py", "x" * 500)
+    _add_read(conv, "c.py", "y" * 500)
+    gister = _SpyGister({"a.md": "g" * 3000})
+
+    stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
+
+    assert (stats.gisted, stats.demoted) == (0, 0)
+    assert not _contents(conv)[0].startswith(ELISION_GIST_PREFIX)
 
 
 def test_elision_gist_placeholder_shares_the_elision_prefix() -> None:

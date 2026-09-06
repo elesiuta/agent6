@@ -684,6 +684,7 @@ class _Tier1Pass:
     last_tool_result_idx: int
     total: int
     victims: list[tuple[int, int, int]] = field(default_factory=list)
+    gist_headroom: int = 0
     gists: dict[tuple[int, int], str] = field(default_factory=dict)
     elided: int = 0
     gisted: int = 0
@@ -715,6 +716,8 @@ class _Tier1Pass:
                 continue
             self.victims.append((turn_idx, item_idx, size))
             planned -= size - len(placeholder)
+        # What a gist may add back on top of the bare-placeholder plan.
+        self.gist_headroom = self.max_total_bytes - planned
 
     def distill(self, gister: Gister) -> None:
         """One batched distiller call over the eligible victims: large
@@ -760,8 +763,14 @@ class _Tier1Pass:
             if gist is not None and isinstance(call.input, dict):
                 path = str(call.input.get("path", ""))
                 candidate = elision_gist_placeholder(call_label(call.name, call.input), gist)
-                if len(candidate) < size:  # a gist longer than the content is useless
+                extra = len(candidate) - len(placeholder)
+                # A gist longer than the content is useless, and one that costs
+                # more than the plan's headroom is demoted again before this
+                # same pass returns. A gist SHORTER than the bare marker costs
+                # nothing, so it always lands.
+                if len(candidate) < size and extra <= max(self.gist_headroom, 0):
                     placeholder = candidate
+                    self.gist_headroom -= extra
                     self.gisted += 1
                     self.gist_paths.append(path)
             self.conversation.set_result_content(turn_idx, item_idx, placeholder)
