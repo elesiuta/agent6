@@ -365,6 +365,18 @@ def _cmd_config_set(
     return 0
 
 
+def _not_a_leaf(key: str, config_path: Path | None) -> str:
+    """Why *key* cannot be unset. A `[mcp.servers.<name>]` entry is a table,
+    and one that is valid only whole, so the message names the verb that
+    removes it instead of the generic pointer."""
+    name = key.removeprefix("mcp.servers.")
+    if name != key and "." not in name:
+        cfg = load_effective(Path.cwd(), config_path).config
+        if name in cfg.mcp.servers:
+            return f"{key!r} is an MCP server entry; remove it with `agent6 mcp remove {name}`."
+    return f"{key!r} is not a config leaf (see `agent6 config show`)."
+
+
 def _cmd_config_unset(
     key: str, *, repo: bool, machine: Path | None, config_path: Path | None = None
 ) -> int:
@@ -373,7 +385,7 @@ def _cmd_config_unset(
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
     if effective_leaf(load_effective(Path.cwd(), config_path), key) is None:
-        print(f"ERROR: {key!r} is not a config leaf (see `agent6 config show`).", file=sys.stderr)
+        print(f"ERROR: {_not_a_leaf(key, config_path)}", file=sys.stderr)
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     if not target.is_file():

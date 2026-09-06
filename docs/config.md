@@ -428,7 +428,10 @@ The model chooses the arguments, so each call is approved like a command (`appro
 agent6 mcp connect files -- npx -y @modelcontextprotocol/server-filesystem .
 agent6 mcp connect browser --url http://127.0.0.1:8931/mcp --token-env PW_TOKEN
 agent6 mcp list
+agent6 mcp remove files
 ```
+
+`agent6 mcp remove <name>` drops the entry from the global config (`--repo` for the per-repo one): an entry is valid only whole, so `config unset` on one of its keys is refused and names this verb.
 
 A spawned server's `[sandbox]` block names what it needs on top of the sandbox a `run_command` gets.
 

@@ -33,6 +33,7 @@ from agent6.config.io import (
     parse_cli_value,
     read_toml_file,
     remove_toml_leaf,
+    remove_toml_table,
     upsert_toml_leaf,
     upsert_toml_table,
 )
@@ -456,6 +457,29 @@ class UnsetResult:
 
     removed: bool
     error: str | None = None
+
+
+def unset_config_table(repo_root: Path, table: str, *, to_repo: bool = False) -> UnsetResult:
+    """Remove a whole `[table]` (header, body, subtables) from the target file.
+
+    The table twin of :func:`unset_config_value`, for a name-keyed entry that
+    is only valid whole: dropping one of a `[mcp.servers.<name>]` entry's keys
+    leaves an invalid config, so the entry goes as a unit. Re-validates and
+    rolls back exactly as the leaf path does.
+    """
+    target = _write_target(repo_root, to_repo=to_repo)
+    if not target.is_file():
+        return UnsetResult(removed=False)
+    with writing_config(target) as held:
+        prior = read_operator_file(target)
+        read_toml_file(target)  # refuse line surgery on a file that does not parse
+        was_valid = merged_config_error(repo_root) is None
+        if not remove_toml_table(target, table):
+            return UnsetResult(removed=False)
+        return UnsetResult(
+            removed=True,
+            error=revalidate_write(repo_root, target, prior, was_valid=was_valid, held=held),
+        )
 
 
 def unset_config_value(repo_root: Path, dotted_key: str, *, to_repo: bool = False) -> UnsetResult:

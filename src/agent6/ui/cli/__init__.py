@@ -732,7 +732,11 @@ def _dispatch_review(args: argparse.Namespace) -> int:
 
 def _dispatch_mcp(args: argparse.Namespace) -> int:
     from agent6.ui.cli.mcp_cmds import _cmd_mcp_serve  # noqa: PLC0415
-    from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list  # noqa: PLC0415
+    from agent6.ui.cli.mcp_connect import (  # noqa: PLC0415
+        cmd_mcp_connect,
+        cmd_mcp_list,
+        cmd_mcp_remove,
+    )
 
     if args.mcp_command == "serve":
         return _cmd_mcp_serve(args.config)
@@ -746,6 +750,8 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
             to_repo=args.to_repo,
             config_path=args.config,
         )
+    if args.mcp_command == "remove":
+        return cmd_mcp_remove(args.name, to_repo=args.to_repo, config_path=args.config)
     return cmd_mcp_list(args.config)
 
 

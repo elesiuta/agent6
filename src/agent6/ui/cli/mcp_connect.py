@@ -27,7 +27,7 @@ from agent6.config import (
     mcp_server_name_refusal,
 )
 from agent6.config.layer import EffectiveConfig, load_effective
-from agent6.config.write import ConfigLeafValue, set_config_leaves
+from agent6.config.write import ConfigLeafValue, set_config_leaves, unset_config_table
 from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec, MCPToolDescriptor, tool_count
@@ -230,14 +230,24 @@ def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLe
     return None
 
 
-def _written_line(effective: EffectiveConfig, name: str, to_repo: bool) -> str:
-    """Where the entry went, and what that means beside an entry the other
-    layer holds: the repo layer wins over the global one."""
-    holders = {
+def _repo_flag(to_repo: bool) -> str:
+    """The `--repo ` a command line needs to target the repo config, or ""."""
+    return "--repo " if to_repo else ""
+
+
+def _layers_holding(effective: EffectiveConfig, name: str) -> set[str]:
+    """The config layers whose own file declares `[mcp.servers.<name>]`."""
+    return {
         layer.name
         for layer in effective.layers
         if name in layer.data.get("mcp", {}).get("servers", {})
     }
+
+
+def _written_line(effective: EffectiveConfig, name: str, to_repo: bool) -> str:
+    """Where the entry went, and what that means beside an entry the other
+    layer holds: the repo layer wins over the global one."""
+    holders = _layers_holding(effective, name)
     target, other = ("repo", "global") if to_repo else ("global", "repo")
     if target in holders:
         note = f", replacing {name}"
@@ -251,7 +261,35 @@ def _written_line(effective: EffectiveConfig, name: str, to_repo: bool) -> str:
 
 
 def _enable_command(to_repo: bool) -> str:
-    return f"agent6 config set {'--repo ' if to_repo else ''}mcp.enabled true"
+    return f"agent6 config set {_repo_flag(to_repo)}mcp.enabled true"
+
+
+def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None = None) -> int:
+    """Drop `[mcp.servers.<name>]` from the global (or `--repo`) config.
+
+    The inverse of `connect`, and the only way to drop a server: an entry is
+    valid only whole, so `config unset` on one of its keys leaves a config that
+    does not load.
+    """
+    effective = load_effective(Path.cwd(), config_path)
+    holders = _layers_holding(effective, name)
+    target, other = ("repo", "global") if to_repo else ("global", "repo")
+    if target not in holders:
+        elsewhere = (
+            f"the {other} config declares it: agent6 mcp remove {_repo_flag(not to_repo)}{name}"
+            if other in holders
+            else "agent6 mcp list shows the configured servers"
+        )
+        print(f"ERROR: no {name!r} in the {target} config ({elsewhere}).", file=sys.stderr)
+        return 2
+    res = unset_config_table(Path.cwd(), f"mcp.servers.{name}", to_repo=to_repo)
+    if res.error is not None:
+        print(f"ERROR: removing {name} left an invalid config:\n{res.error}", file=sys.stderr)
+        return 2
+    print(f"removed {name} from the {target} config")
+    if other in holders:
+        print(f"note: the {other} config's entry for {name} applies now")
+    return 0
 
 
 def cmd_mcp_list(config_path: Path | None = None) -> int:

@@ -40,7 +40,7 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "history": ("search", frozenset({"search"})),
     "skills": ("list", frozenset({"install", "update", "list", "enable", "disable", "remove"})),
     "memory": ("list", frozenset({"add", "list", "show", "rm", "decisions"})),
-    "mcp": ("list", frozenset({"connect", "list", "serve"})),
+    "mcp": ("list", frozenset({"connect", "list", "remove", "serve"})),
     "config": (
         "show",
         frozenset(

@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import load_effective
-from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list
+from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list, cmd_mcp_remove
 
 # The interpreter a jailed probe can reach: the run's sandbox grants /usr,
 # not the venv (a server there needs `read_paths`, which is the point).
@@ -505,3 +505,45 @@ def test_connect_probes_a_spawned_server_under_the_runs_sandbox(
     spawned, connected = seen
     assert spawned.policy is not None and spawned.policy.cwd == tmp_path
     assert connected.policy is None
+
+
+def test_remove_drops_the_entry_from_the_layer_that_declares_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`mcp remove` is the inverse of connect: the entry goes as a unit."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    assert (
+        cmd_mcp_connect(
+            "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=False
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert cmd_mcp_remove("browser") == 0
+
+    assert "browser" not in load_effective(tmp_path).config.mcp.servers
+    assert "removed browser from the global config" in capsys.readouterr().out
+
+
+def test_remove_names_the_other_layer_rather_than_removing_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A global-only entry is not in the repo config: the refusal says which
+    command reaches it, instead of "nothing to remove"."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    assert (
+        cmd_mcp_connect(
+            "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=False
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert cmd_mcp_remove("browser", to_repo=True) == 2
+
+    err = capsys.readouterr().err
+    assert "agent6 mcp remove browser" in err
+    assert "browser" in load_effective(tmp_path).config.mcp.servers, "nothing was removed"

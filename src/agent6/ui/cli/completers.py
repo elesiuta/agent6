@@ -83,6 +83,13 @@ def _complete_skills(prefix: str, **_kw: object) -> list[str]:
 
 
 @_never_raises
+def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
+    """argcomplete: the configured MCP server names."""
+    cfg = load_effective(Path.cwd(), _explicit_config(kw)).config
+    return sorted(n for n in cfg.mcp.servers if n.startswith(prefix))
+
+
+@_never_raises
 def _complete_models(
     prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
 ) -> list[str]:

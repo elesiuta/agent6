@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 
 from agent6.ui.cli._common import _sub
+from agent6.ui.cli.completers import _complete_mcp_servers
 
 
 def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -61,6 +62,20 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         dest="to_repo",
         action="store_true",
         help="Write to the per-repo config instead of the global one.",
+    )
+
+    remove = _sub(
+        mcp_sub,
+        "remove",
+        help="Drop a configured MCP server (the inverse of connect).",
+    )
+    remove_name = remove.add_argument("name", help="The server to remove, as `mcp list` names it.")
+    remove_name.completer = _complete_mcp_servers  # type: ignore[attr-defined]
+    remove.add_argument(
+        "--repo",
+        dest="to_repo",
+        action="store_true",
+        help="Remove from the per-repo config instead of the global one.",
     )
 
     _sub(mcp_sub, "list", help="The configured MCP servers and how each is reached.")

@@ -843,3 +843,38 @@ def test_a_machine_overlay_refusal_reads_like_every_other_writer() -> None:
         "workflow.verify_retries: Input should be greater than or equal to 0"
     )
     assert _leaf_problems("machine file unreadable") == "machine file unreadable"
+
+
+def test_config_unset_on_an_mcp_server_names_the_verb_that_removes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`[mcp.servers.<name>]` is valid only whole, so unsetting a key of it
+    leaves a config that does not load; the refusal names `mcp remove`."""
+    monkeypatch.chdir(tmp_path)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[agent6]\nconfig_version = 1\n\n[mcp.servers.calc]\ncommand = ["true"]\n',
+        encoding="utf-8",
+    )
+
+    rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
+        "mcp.servers.calc", repo=False, machine=None, config_path=cfg
+    )
+
+    assert rc == 2
+    assert "agent6 mcp remove calc" in capsys.readouterr().err
+
+
+def test_config_unset_on_an_unknown_key_keeps_the_generic_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[agent6]\nconfig_version = 1\n", encoding="utf-8")
+
+    rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
+        "mcp.servers.nope", repo=False, machine=None, config_path=cfg
+    )
+
+    assert rc == 2
+    assert "is not a config leaf" in capsys.readouterr().err
