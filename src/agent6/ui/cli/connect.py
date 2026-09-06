@@ -87,8 +87,7 @@ def _prompt_api_key(name: str) -> str:
     except EOFError:
         return ""
     if api_key and not masked:
-        tail = f", ending …{api_key[-4:]}" if len(api_key) >= 8 else ""
-        print(f"Captured key: {len(api_key)} chars{tail}.")
+        print(f"Captured key: {len(api_key)} chars.")
     return api_key
 
 

@@ -178,7 +178,8 @@ def test_connect_prints_post_entry_key_summary(
     rc = main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "Captured key: 21 chars, ending …wxyz" in out
+    assert "Captured key: 21 chars." in out
+    assert "wxyz" not in out  # no fragment of the key reaches the terminal
     # The key itself is never echoed in full.
     assert "sk-ant-0123456789wxyz" not in out
 
