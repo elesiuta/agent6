@@ -117,6 +117,22 @@ def _status_state(
     return word, cell, detail
 
 
+def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
+    """The state line's worker suffix: alive, recycled, or not running."""
+    if alive:
+        return f"  (worker pid {pid} alive)"
+    if pid is None or finished:
+        return ""
+    # Liveness matches the recorded start time, so a pid the OS has since
+    # handed to something else reads dead -- correctly. Saying "not running"
+    # about a number the operator can look up is still false.
+    return (
+        f"  (worker pid {pid} was recycled)"
+        if pid_alive(pid)
+        else f"  (worker pid {pid} not running)"
+    )
+
+
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     """One-shot liveness + progress summary for a run, then exit (no follower).
 
@@ -176,6 +192,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                 {
                     "session_id": target.name,
                     "mode": mode_display,
+                    "task": manifest.user_task or scan.task,
                     "model": model,
                     "status": status,
                     "label": status_cell,
@@ -207,19 +224,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         )
         return 0
 
-    pid_note = ""
-    if alive:
-        pid_note = f"  (worker pid {pid} alive)"
-    elif pid is not None and not scan.finished:
-        # Liveness matches the recorded start time, so a pid the OS has since
-        # handed to something else reads dead -- correctly. Saying "not running"
-        # about a number the operator can look up is still false.
-        pid_note = (
-            f"  (worker pid {pid} was recycled)"
-            if pid_alive(pid)
-            else f"  (worker pid {pid} not running)"
-        )
+    pid_note = _pid_note(pid, alive=alive, finished=scan.finished)
     print(f"session:    {target.name}  (mode={mode_display or '?'})")
+    if task := (manifest.user_task or scan.task).strip():
+        print(f"task:       {task.splitlines()[0]}")
     _print_fork_lineage(manifest)
     _print_parallel_compare(manifest)
     print(f"model:      {model}")
@@ -244,6 +252,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(f"usage:      {tokens}{leg_s}{cost_s}")
     if changes.line:
         print(f"changes:    {changes.line}")
+    if mode_display == "plan":
+        print(f"plan:       agent6 plan show {target.name}")
     for i, pin in enumerate(scan.pins):
         print(f"{'pins:' if i == 0 else '':<12}{pin}")
     _print_listening_ports(target)

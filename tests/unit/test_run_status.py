@@ -770,3 +770,26 @@ def test_show_json_label_matches_the_listing_cell(
     s = summarize_session_dir(d)
     assert obj["label"] == listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged)
     assert obj["label"] == "plan · running", "the mode is folded in, as the listing folds it"
+
+
+def test_status_prints_the_task_and_names_a_plans_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The listing shows the task and the drill-down dropped it, on the text
+    render and in --json; a plan's show ended without the plan or the way to
+    it."""
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [{"ts": _ts(5), "type": "session.start", "mode": "run", "user_task": "add a flag\nmore"}],
+    )
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert "task:       add a flag\n" in out and "more" not in out
+    assert "plan:" not in out
+    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["task"] == "add a flag\nmore"
+
+    (d / "manifest.json").write_text(json.dumps({"mode": "plan"}))
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert "plan:       agent6 plan show winsome-dawn-YWH5ZS" in capsys.readouterr().out
