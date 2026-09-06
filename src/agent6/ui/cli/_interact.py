@@ -199,7 +199,7 @@ def build_approver(
             # front-end attaches and answers, rather than deny. Deny discards the
             # run's work; wait pauses cleanly and is resumable (the default).
             tty_message(
-                f"[agent6] parked: an approval awaits a front-end; answer it with:"
+                f"[agent6] waiting: an approval awaits a front-end; answer it with:"
                 f" agent6 attach {session_dir.name}\n"
             )
             reply = await_frontend_reply(
@@ -261,7 +261,7 @@ def build_questioner(
         if answers is None and away_mode(session_dir) == "wait":
             # Detached 'wait', nothing attached: block until a front-end answers.
             tty_message(
-                f"[agent6] parked: a question awaits a front-end; answer it with:"
+                f"[agent6] waiting: a question awaits a front-end; answer it with:"
                 f" agent6 attach {session_dir.name}\n"
             )
             reply = await_frontend_reply(
