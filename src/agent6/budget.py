@@ -157,9 +157,9 @@ class ModelUsage:
     # never discards reported dollars and never prices a call twice.
     unreported_input_tokens: int = 0
     unreported_output_tokens: int = 0
-    percent_metered: bool = False
     unreported_cache_read_tokens: int = 0
     unreported_cache_creation_tokens: int = 0
+    percent_metered: bool = False
 
 
 @dataclass(frozen=True, slots=True)

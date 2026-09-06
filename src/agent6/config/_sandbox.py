@@ -234,7 +234,7 @@ class SandboxConfig(BaseModel):
     @classmethod
     def _check_extra_device_paths(cls, v: tuple[str, ...]) -> tuple[str, ...]:
         for p in v:
-            if not p.startswith("/dev/") or "/.." in p:
+            if not p.startswith("/dev/") or ".." in Path(p).parts:
                 raise ValueError(f"sandbox.extra_device_paths must live under /dev: {p!r}")
         return v
 

@@ -88,8 +88,8 @@ class GitCommitConfig(BaseModel):
             "joined with `, `). Empty: no trailer."
         ),
     )
-    checkpoint: GitCommitCheckpointConfig = GitCommitCheckpointConfig()
-    squash: GitCommitSquashConfig = GitCommitSquashConfig()
+    checkpoint: GitCommitCheckpointConfig = Field(default_factory=GitCommitCheckpointConfig)
+    squash: GitCommitSquashConfig = Field(default_factory=GitCommitSquashConfig)
 
     @field_validator("trailer")
     @classmethod

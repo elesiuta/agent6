@@ -996,10 +996,10 @@ def test_extra_device_paths_must_live_under_dev() -> None:
     device hat (extra_read/write_paths own those), and traversal is refused."""
     from agent6.config import SandboxConfig
 
-    ok = SandboxConfig(extra_device_paths=("/dev/nvidia0", "/dev/nvidiactl"))
-    assert ok.extra_device_paths == ("/dev/nvidia0", "/dev/nvidiactl")
+    ok = SandboxConfig(extra_device_paths=("/dev/nvidia0", "/dev/nvidiactl", "/dev/..x"))
+    assert ok.extra_device_paths == ("/dev/nvidia0", "/dev/nvidiactl", "/dev/..x")
     assert SandboxConfig().extra_device_paths == ()
-    for bad in ("/etc/passwd", "dev/null", "/dev/../etc"):
+    for bad in ("/etc/passwd", "dev/null", "/dev/../etc", "/dev/..", "/dev/x/../y"):
         with pytest.raises(ValueError, match="must live under /dev"):
             SandboxConfig(extra_device_paths=(bad,))
 
