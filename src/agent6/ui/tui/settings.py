@@ -30,7 +30,7 @@ from agent6.paths import (
     mkdir_for_real_user,
     ui_settings_path,
 )
-from agent6.portable import atomic_write
+from agent6.portable import atomic_write, toml_basic_string
 
 DEFAULT_THEME = "agent6-dark"
 DEFAULT_COPY_METHOD = "auto"
@@ -94,10 +94,6 @@ def save_copy_method(name: str, user: RealUser | None = None) -> None:
     _save_ui_key("copy_method", name, user)
 
 
-def _toml_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
 def _render_ui_toml(data: dict[str, Any]) -> str:
     """Render the flat `[ui]` table back to TOML (no `tomli_w` dependency)."""
     lines = ["# agent6 UI preferences (theme, etc.). Written by the TUI.", ""]
@@ -109,7 +105,7 @@ def _render_ui_toml(data: dict[str, Any]) -> str:
             if isinstance(value, bool):
                 lines.append(f"{key} = {'true' if value else 'false'}")
             elif isinstance(value, str):
-                lines.append(f'{key} = "{_toml_escape(value)}"')
+                lines.append(f"{key} = {toml_basic_string(value)}")
             elif isinstance(value, int):
                 lines.append(f"{key} = {value}")
         lines.append("")

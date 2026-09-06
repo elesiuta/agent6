@@ -54,3 +54,15 @@ def test_save_does_not_follow_a_planted_tmp_symlink(cfg: Path) -> None:
     save_theme("nord")
     assert secret.read_text(encoding="utf-8") == "do-not-truncate"  # untouched
     assert get_theme() == "nord"  # the real save still landed
+
+
+def test_a_control_character_in_a_ui_value_round_trips(tmp_path: Path) -> None:
+    """The TUI's own TOML writer escaped only backslash and quote, the drift
+    `toml_basic_string`'s docstring forbids: a newline in a value wrote a file
+    that failed to parse on read after the write reported success."""
+    import tomllib
+
+    from agent6.ui.tui.settings import _render_ui_toml  # pyright: ignore[reportPrivateUsage]
+
+    text = _render_ui_toml({"ui": {"copy_method": "osc52\nrogue", "theme": "dark"}})
+    assert tomllib.loads(text)["ui"]["copy_method"] == "osc52\nrogue"
