@@ -35,7 +35,13 @@ def _make_branch(repo: Path, session_id: str, fname: str) -> None:
 
 
 def _manifest(
-    repo: Path, session_id: str, base: str, *, merged: bool, merged_tip: str = ""
+    repo: Path,
+    session_id: str,
+    base: str,
+    *,
+    merged: bool,
+    merged_tip: str = "",
+    merged_sha: str = "0" * 40,
 ) -> None:
     layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
     layout.ensure()
@@ -49,7 +55,7 @@ def _manifest(
     }
     if merged:
         tip = merged_tip or _git(repo, "rev-parse", f"agent6/{session_id}", check=False)
-        data["merged"] = {"into": "main", "sha": "0" * 40, "tip": tip}
+        data["merged"] = {"into": "main", "sha": merged_sha, "tip": tip}
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
 
 
@@ -356,7 +362,7 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
     text = "".join(capsys.readouterr())
     assert _branch_exists(tmp_path, "agent6/pretip1")  # unconfirmed: kept
-    assert "no recorded merge tip" in text
+    assert "no merge tip was recorded" in text
     assert "git branch -D agent6/pretip1" in text
     # It must NOT tell the operator to re-run the command that just skipped it.
     assert "--delete-squashed, or:" not in text
@@ -402,7 +408,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
 
     assert main(["sessions", "prune"]) == 0
     plain = "".join(capsys.readouterr())
-    assert "no recorded merge tip" in plain
+    assert "no merge tip was recorded" in plain
     assert "git branch -D agent6/pretip2" in plain
     assert "--delete-squashed, or:" not in plain
 
@@ -1064,3 +1070,172 @@ def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
     # And the count says why it stayed: "squash-merged" reads as an invitation
     # to run the flag the operator just ran.
     assert "1 base feature is gone" in out
+
+
+def test_delete_squashed_keeps_a_branch_whose_merge_commit_the_base_lost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The squash commit reset out of the base (`git reset --hard HEAD~1`)
+    leaves the run branch as the content's only holder, yet the stamp still
+    read as confirmed (base exists, tip recorded) and `branch -D` fired: the
+    one sanctioned force-delete destroyed the only ref to the work."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "lost22", "l.txt")
+    _git(tmp_path, "merge", "--squash", "agent6/lost22")
+    _git(tmp_path, "commit", "-q", "-m", "squash lost22")
+    squash = _git(tmp_path, "rev-parse", "HEAD")
+    _manifest(tmp_path, "lost22", base, merged=True, merged_sha=squash)
+    _git(tmp_path, "reset", "-q", "--hard", base)
+
+    rc = main(["sessions", "prune", "--delete-squashed"])
+    text = capsys.readouterr().out
+    assert rc == 0
+    assert _branch_exists(tmp_path, "agent6/lost22")
+    assert (
+        f"kept agent6/lost22 (squash-merged into main at {squash[:12]}, but main no longer"
+        " holds the merge commit" in text
+    )
+
+
+def test_delete_squashed_counts_a_chain_ref_whose_merge_commit_the_base_lost_by_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The ref half applied the reachability proof but filed a refused ref
+    under "squash-merged", the count that invites the flag the operator
+    just ran; the branch half names the lost commit. The count names it too."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "reflost1", "r.txt")
+    tip = _git(tmp_path, "rev-parse", "agent6/reflost1")
+    _git(tmp_path, "update-ref", chain_ref_for("reflost1"), tip)
+    _git(tmp_path, "branch", "-D", "agent6/reflost1")
+    _git(tmp_path, "merge", "--squash", tip)
+    _git(tmp_path, "commit", "-q", "-m", "squash reflost1")
+    _manifest(
+        tmp_path,
+        "reflost1",
+        base,
+        merged=True,
+        merged_tip=tip,
+        merged_sha=_git(tmp_path, "rev-parse", "HEAD"),
+    )
+    _git(tmp_path, "reset", "-q", "--hard", base)
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("reflost1"))
+    assert "1 main no longer holds the merge commit" in out
+    assert "1 squash-merged" not in out
+
+
+def test_rm_says_why_a_worktree_it_could_not_remove_stays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The removal note is a predicate on both surfaces: prune's "kept X's
+    worktree (...)" and rm's "its worktree stays: it ..." (which read "it not
+    this repository's linked worktree" after the note was reworded)."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    wt = _fork_with_worktree(tmp_path, "fork-stuck001", merged=True)
+    wt.chmod(0o500)  # clean, and no file in it will unlink
+    try:
+        assert main(["sessions", "rm", "fork-stuck001"]) == 0
+    finally:
+        wt.chmod(0o700)
+    out = capsys.readouterr().out
+    assert wt.is_dir()
+    assert (
+        "its worktree stays: it could not be removed: not a linked worktree of this"
+        " repository, or a file in it would not delete" in out
+    )
+
+
+def test_prune_names_a_chain_ref_that_advanced_since_its_squash_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With `--delete-squashed`, a ref the run moved past the merged tip (a
+    resumed run committing on after the merge) was counted as "squash-merged",
+    the word that invites the flag just given; the branch half already says
+    "advanced since the merge", and the ref half says the same."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "moved1", "m.txt")
+    tip = _git(tmp_path, "rev-parse", "agent6/moved1")
+    later = _git(tmp_path, "commit-tree", f"{tip}^{{tree}}", "-p", tip, "-m", "a later leg")
+    _git(tmp_path, "update-ref", chain_ref_for("moved1"), later)
+    _git(tmp_path, "branch", "-D", "agent6/moved1")
+    _git(tmp_path, "merge", "--squash", tip)
+    _git(tmp_path, "commit", "-q", "-m", "squash moved1")
+    _manifest(
+        tmp_path,
+        "moved1",
+        base,
+        merged=True,
+        merged_tip=tip,
+        merged_sha=_git(tmp_path, "rev-parse", "HEAD"),
+    )
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("moved1"))
+    assert "1 advanced since the merge" in out
+    assert "squash-merged" not in out
+
+
+def test_delete_squashed_names_a_chain_ref_whose_merge_tip_was_never_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stamp with no merged tip has nothing to compare the ref against; the
+    ref half filed it as "advanced since the merge" under the flag, and as
+    "squash-merged" without it, an invitation to a flag that refuses it. The
+    proof names it either way, as the branch half does."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "notip1", "n.txt")
+    tip = _git(tmp_path, "rev-parse", "agent6/notip1")
+    _git(tmp_path, "update-ref", chain_ref_for("notip1"), tip)
+    _git(tmp_path, "branch", "-D", "agent6/notip1")
+    _git(tmp_path, "merge", "--squash", tip)
+    _git(tmp_path, "commit", "-q", "-m", "squash notip1")
+    _manifest(tmp_path, "notip1", base, merged=True, merged_sha=_git(tmp_path, "rev-parse", "HEAD"))
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="notip1")
+    data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    data["merged"]["tip"] = ""
+    layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+
+    for argv in (["sessions", "prune"], ["sessions", "prune", "--delete-squashed"]):
+        assert main(argv) == 0
+        out = capsys.readouterr().out
+        assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("notip1"))
+        assert "1 no merge tip was recorded" in out, argv
+        assert "advanced" not in out and "squash-merged" not in out, argv

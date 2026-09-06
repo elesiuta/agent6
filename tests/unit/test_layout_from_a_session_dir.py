@@ -74,7 +74,7 @@ def test_prune_can_confirm_a_forked_plans_branch(tmp_path: Path) -> None:
     "never merged", so the branch was kept forever."""
     from agent6.ui.cli import sessions_merge
 
-    _manifest_merged_into = sessions_merge._manifest_merged_into  # pyright: ignore[reportPrivateUsage]
+    _merge_stamp = sessions_merge._merge_stamp  # pyright: ignore[reportPrivateUsage]
 
     layout = SessionLayout(state_dir=tmp_path, session_id="brave-oak-AAAAAA", subdir="plans")
     layout.ensure()
@@ -91,7 +91,8 @@ def test_prune_can_confirm_a_forked_plans_branch(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    assert _manifest_merged_into(tmp_path, "agent6/brave-oak-AAAAAA") == "master"
+    stamp = _merge_stamp(tmp_path, "agent6/brave-oak-AAAAAA")
+    assert stamp is not None and stamp.into == "master"
 
 
 def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:

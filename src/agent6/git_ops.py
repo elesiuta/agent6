@@ -779,8 +779,11 @@ def remove_worktree(path: Path, dest: Path) -> bool:
     admin = admin.resolve()
     if admin.parent != git_common_dir(path) / "worktrees":
         return False
-    shutil.rmtree(dest, ignore_errors=True)
-    shutil.rmtree(admin, ignore_errors=True)
+    try:
+        shutil.rmtree(dest)
+    except OSError:
+        return False  # what stayed keeps its record, so git and the caller both still see it
+    shutil.rmtree(admin, ignore_errors=True)  # a stale record after the tree went is git's to prune
     return True
 
 

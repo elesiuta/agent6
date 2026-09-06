@@ -38,7 +38,9 @@ from agent6.git_ops import status as git_status
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
 from agent6.sessions.manifest import (
+    NO_MERGE_COMMIT,
     ManifestError,
+    MergeStamp,
     SessionManifest,
     manifest_for_branch,
     read_manifest,
@@ -246,33 +248,42 @@ def _cmd_merge(
     return 0
 
 
-def _manifest_merged_into(state_dir: Path, branch: str) -> str:
-    """The base branch the run owning *branch* (agent6/<session_id>) was merged into, or
-    "" if there is no (readable) manifest or it was never recorded as merged.
+def _merge_stamp(state_dir: Path, branch: str) -> MergeStamp | None:
+    """The merge the manifest of the run owning *branch* (agent6/<session_id>)
+    records, None when there is no readable manifest or no recorded merge.
 
-    Frozen semantics: `sessions prune --delete-squashed` force-deletes a branch ONLY
-    when this returns a base name (a manifest-confirmed merge with a recorded sha).
-    An unreadable/corrupt/unmerged manifest returns "" -> the branch is KEPT, never
-    force-deleted (fail-safe). Only the nested `merged` stamp counts (superseded
-    keys are dropped on read), and any parse failure raises ManifestError -> ""."""
+    Frozen semantics: `sessions prune --delete-squashed` force-deletes a branch
+    ONLY on a stamp this returns (a manifest-confirmed merge with a recorded
+    sha). An unreadable, corrupt or unmerged manifest returns None -> the
+    branch is KEPT, never force-deleted (fail-safe). Only the nested `merged`
+    stamp counts (superseded keys are dropped on read), and any parse failure
+    raises ManifestError -> None."""
     manifest = manifest_for_branch(state_dir, branch)
-    if manifest is None:
-        return ""
-    return manifest.merged.into if (manifest.merged and manifest.merged.sha) else ""
+    if manifest is None or not (manifest.merged and manifest.merged.sha):
+        return None
+    return manifest.merged
 
 
-def _merged_tip(state_dir: Path, branch: str) -> str:
-    """The run-branch tip recorded when the merge happened, or "" when none was
-    recorded (a pre-`tip` manifest, or no readable manifest)."""
-    manifest = manifest_for_branch(state_dir, branch)
-    if manifest is None:
-        return ""
-    return manifest.merged.tip if manifest.merged else ""
+def _base_gone(into: str) -> str:
+    return f"base {into} is gone"
 
 
-def _prune_squash_merged(
-    cwd: Path, br: str, merged_into: str, *, state_dir: Path, delete_squashed: bool
-) -> bool:
+def _squash_unconfirmed(cwd: Path, stamp: MergeStamp) -> str:
+    """Why a squash-merge stamp does not prove a force-delete content-safe,
+    "" when it does: the merged tip must be recorded, the base must still
+    exist, and the merge commit it records (when the merge made one) must
+    still be reachable from that base, since a reset or rewrite of the base
+    after the merge leaves the branch as the content's only holder."""
+    if not stamp.tip:
+        return "no merge tip was recorded"
+    if not branch_exists(cwd, stamp.into):
+        return _base_gone(stamp.into)
+    if stamp.sha != NO_MERGE_COMMIT and not is_ancestor(cwd, stamp.sha, stamp.into):
+        return f"{stamp.into} no longer holds the merge commit"
+    return ""
+
+
+def _prune_squash_merged(cwd: Path, br: str, stamp: MergeStamp, *, delete_squashed: bool) -> bool:
     """Handle one squash-merged run branch: force-delete it when that is
     provably content-safe, else keep it and say exactly why. Returns whether it
     was deleted.
@@ -281,35 +292,32 @@ def _prune_squash_merged(
     merge left it: a resumed run keeps committing on the same branch under the
     same merge stamp, and those commits are in no other ref."""
     sha = branch_tip_sha(cwd, br)
-    recorded_tip = _merged_tip(state_dir, br)
-    if sha is not None and recorded_tip and recorded_tip != sha:
+    if sha is not None and stamp.tip and stamp.tip != sha:
         print(
-            f"[agent6] kept {br} (squash-merged into {merged_into}, but the branch"
+            f"[agent6] kept {br} (squash-merged into {stamp.into}, but the branch"
             f" advanced since the merge; review, then: git branch -D {br})"
         )
         return False
-    # Confirmable = the manifest recorded the merged tip AND the base it went
-    # into still exists. Both are needed to prove the delete is content-safe,
-    # so both decide the advice: pointing at --delete-squashed for a branch it
-    # will skip is a loop, whether or not the operator already ran it.
-    confirmable = bool(recorded_tip) and branch_exists(cwd, merged_into)
-    if delete_squashed and confirmable and sha is not None:
+    # The proof decides the advice too: pointing at --delete-squashed for a
+    # branch it will skip is a loop, whether or not the operator already ran it.
+    why = _squash_unconfirmed(cwd, stamp)
+    if delete_squashed and not why and sha is not None:
         if force_delete_squash_merged_branch(cwd, br):
-            print(f"[agent6] deleted {br} (squash-merged into {merged_into})")
+            print(f"[agent6] deleted {br} (squash-merged into {stamp.into})")
             # A faded undelete hint: the commit survives in the reflog until GC.
             print(sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
             return True
-        print(f"[agent6] kept {br} (squash-merged into {merged_into}; git refused the delete)")
+        print(f"[agent6] kept {br} (squash-merged into {stamp.into}; git refused the delete)")
         return False
-    if not confirmable:
-        missing = "no recorded merge tip" if not recorded_tip else f"no {merged_into} branch"
+    if why:
+        at = "" if stamp.sha == NO_MERGE_COMMIT else f" at {stamp.sha[:12]}"
         print(
-            f"[agent6] kept {br} (squash-merged into {merged_into}, but there is"
-            f" {missing} to confirm it; review, then: git branch -D {br})"
+            f"[agent6] kept {br} (squash-merged into {stamp.into}{at}, but {why};"
+            f" review, then: git branch -D {br})"
         )
         return False
     print(
-        f"[agent6] kept {br} (squash-merged into {merged_into}, unreachable; "
+        f"[agent6] kept {br} (squash-merged into {stamp.into}, unreachable; "
         f"remove with: sessions prune --delete-squashed, or: git branch -D {br})"
     )
     return False
@@ -349,11 +357,12 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
             deleted += 1
             print(f"[agent6] deleted {br} (merged)")
             continue
-        merged_into = _manifest_merged_into(state_dir, br)
-        if not merged_into:
+        stamp = _merge_stamp(state_dir, br)
+        if stamp is None:
             unmerged_kept += 1
             print(f"[agent6] kept {br} (NOT merged; review, then: git branch -D {br})")
             continue
+        merged_into = stamp.into
         reachable = branch_exists(cwd, merged_into) and is_ancestor(cwd, br, merged_into)
         if reachable:
             # Reachable-merged into its base, so `git branch -d` only refused because
@@ -366,9 +375,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
             continue
         # Squash-merged into its base: content is in the base commit but the
         # branch is unreachable, so `git branch -d` refuses it.
-        if _prune_squash_merged(
-            cwd, br, merged_into, state_dir=state_dir, delete_squashed=delete_squashed
-        ):
+        if _prune_squash_merged(cwd, br, stamp, delete_squashed=delete_squashed):
             squashed_deleted += 1
         else:
             merged_kept += 1
@@ -460,16 +467,24 @@ def _prune_chain_refs(
         if not branch_exists(cwd, into):
             # The stamp is only evidence while the branch it names still holds
             # the content; without it the ref is the run's only anchor.
-            kept[f"base {into} is gone"] += 1
+            kept[_base_gone(into)] += 1
             continue
         if is_ancestor(cwd, sha, into):
             delete_ref(cwd, ref)
             refs_deleted += 1
             print(f"[agent6] deleted {ref} (merged into {into})")
-        elif delete_squashed and manifest.merged.tip == sha:
+        elif manifest.merged.tip and manifest.merged.tip != sha:
+            # A resumed run committing on after the merge: those commits are in
+            # no other ref. "squash-merged" would read as an invitation to a
+            # flag that refuses it, so each refusal is its own count, with or
+            # without the flag (as the branch half counts).
+            kept["advanced since the merge"] += 1
+        elif why := _squash_unconfirmed(cwd, manifest.merged):
+            kept[why] += 1
+        elif not delete_squashed:
+            kept["squash-merged"] += 1
+        else:
             delete_ref(cwd, ref)
             refs_deleted += 1
             print(f"[agent6] deleted {ref} (squash-merged into {into})")
-        else:
-            kept["squash-merged"] += 1
     return refs_deleted, kept

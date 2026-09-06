@@ -701,8 +701,8 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
     `git_ops.remove_worktree`) and the checkout lock its legs took under the
     worktree's own state dir, unless it holds work none of *tips* (the commits
     its sessions landed) has. Returns `(removed, note)`: removed is False when
-    *worktree* is not one, or when it holds such work -- the note then names
-    it. On success the note names the state dir when it holds more than the
+    *worktree* is not one, could not be deleted, or holds such work -- the
+    note then says which. On success the note names the state dir when it holds more than the
     lock (a session the operator ran inside the worktree) and so stays, ""
     otherwise.
 
@@ -714,7 +714,10 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
         return False, dirt
     state_dir = resolved_state_dir(worktree)
     if not remove_worktree(repo, worktree):
-        return False, ""
+        return False, (
+            "could not be removed: not a linked worktree of this repository,"
+            " or a file in it would not delete"
+        )
     return True, _drop_checkout_lock(state_dir)
 
 
@@ -822,9 +825,10 @@ def sweep_fork_worktrees(
         if gone:
             removed.extend((d.name, note) for d, _ in sessions)
         elif note:
-            # Merged, but the tree carries work no commit has: keeping it is
-            # the only safe answer, and the operator has to see why.
-            kept.extend((d.name, f"its worktree {note}") for d, _ in sessions)
+            # Merged, but the tree carries work no commit has, or would not
+            # delete: keeping it is the only safe answer, and the operator
+            # has to see why.
+            kept.extend((d.name, note) for d, _ in sessions)
     return removed, kept
 
 

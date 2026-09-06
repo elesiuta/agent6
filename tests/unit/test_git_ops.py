@@ -1733,3 +1733,25 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
     monkeypatch.setattr(git_ops, "_run", old_git)
     with pytest.raises(GitError, match=r"git version 2\.39\.0.*git 2\.40 or newer"):
         plumb_merge(tmp_path, "main", theirs, strategy="merge", message=None, merge_base=base)
+
+
+def test_remove_worktree_reports_a_tree_it_could_not_delete(tmp_path: Path) -> None:
+    """`rmtree(ignore_errors=True)` swallowed every failure and the function
+    said True over a directory still on disk, so prune printed "removed" and
+    dropped the checkout lock of a live tree."""
+    from agent6.git_ops import add_worktree, remove_worktree
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    base = _rev(repo, "HEAD")
+    wt = tmp_path / "wt"
+    add_worktree(repo, wt, base)
+    held = wt / "held"
+    held.mkdir()
+    (held / "f").write_text("x\n", encoding="utf-8")
+    held.chmod(0o500)
+    try:
+        assert remove_worktree(repo, wt) is False
+        assert held.is_dir()
+    finally:
+        held.chmod(0o700)
