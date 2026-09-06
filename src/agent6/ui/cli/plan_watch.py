@@ -231,6 +231,12 @@ def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
     return f"{ts_str} {event:30s} {' '.join(pairs)}"
 
 
+def _standing(event: dict[str, object]) -> bool:
+    """Whether an `approval.prompt` offers a session-wide answer; absent means
+    it does, since only the scopeless gates journal False."""
+    return bool(event.get("standing", True))
+
+
 class _CliFrontEnd:
     """Makes an interactive `agent6 attach` a real run FRONT-END, not just a
     reader. When the streamed log surfaces an unanswered `run_command` approval
@@ -257,11 +263,11 @@ class _CliFrontEnd:
         # always arrive first.
         self._replayed: int = 0
 
-    def open_prompts_at_attach(self, events_path: Path) -> list[tuple[str, str, object]]:
-        """Pre-scan the existing log: seed `_answered` and return the prompts
-        that are open right now (emitted, not answered) so a run already waiting
-        at an approval when you attach is handled at once."""
-        open_prompts: dict[str, tuple[str, str, object]] = {}
+    def open_prompts_at_attach(self, events_path: Path) -> list[dict[str, object]]:
+        """Pre-scan the existing log: seed `_answered` and return the prompt
+        events that are open right now (emitted, not answered) so a run already
+        waiting at an approval when you attach is handled at once."""
+        open_prompts: dict[str, dict[str, object]] = {}
         scanned = 0
         for ev in tail_events(events_path, follow=False):
             scanned += 1
@@ -270,30 +276,35 @@ class _CliFrontEnd:
             if etype in SESSION_START_EVENTS:
                 self._new_session()
                 open_prompts.clear()
-            if etype == "approval.prompt":
-                open_prompts[pid] = ("approval", pid, ev.get("prompt", ""))
-            elif etype == "question.prompt":
-                open_prompts[pid] = ("question", pid, ev.get("questions", []))
+            if etype in ("approval.prompt", "question.prompt"):
+                open_prompts[pid] = ev
             elif etype in ("approval.answer", "question.answer"):
                 self._answered.add(pid)
                 open_prompts.pop(pid, None)
         self._replayed = scanned
         return list(open_prompts.values())
 
-    def handle(self, kind: str, prompt_id: str, content: object) -> None:
-        """Prompt on the terminal (spinner paused) and write the answer over the
-        bridge. Marks the id handled so the follow-loop replay won't re-ask it."""
-        if kind == "approval":
+    def handle(self, event: dict[str, object]) -> None:
+        """Prompt on the terminal (spinner paused) for an open `approval.prompt`
+        or `question.prompt` event and write the answer over the bridge. Marks
+        the id handled so the follow-loop replay won't re-ask it. An approval's
+        journaled `standing` rides along: False is a gate with no scope to
+        grant (`fetch`), so the prompt offers no session choice."""
+        prompt_id = str(event.get("id", ""))
+        if event.get("type") == "approval.prompt":
             with self._view.pause():
-                answer = default_stdin_approver(str(content))
+                answer = default_stdin_approver(
+                    str(event.get("prompt", "")), standing=_standing(event)
+                )
             write_answer(self._session_dir, prompt_id, answer or "no")
         else:
+            raw_questions = event.get("questions", [])
             questions = tuple(
                 UserQuestion(
                     question=str(q.get("question", "")),
                     options=tuple(str(o) for o in q.get("options", [])),
                 )
-                for q in (content if isinstance(content, list) else [])
+                for q in (raw_questions if isinstance(raw_questions, list) else [])
             )
             with self._view.pause():
                 answers = default_stdin_questioner(questions)
@@ -337,10 +348,8 @@ class _CliFrontEnd:
             return
         if pid in self._handled or pid in self._answered:
             return
-        if etype == "approval.prompt":
-            self.handle("approval", pid, event.get("prompt", ""))
-        elif etype == "question.prompt":
-            self.handle("question", pid, event.get("questions", []))
+        if etype in ("approval.prompt", "question.prompt"):
+            self.handle(event)
 
 
 def _print_crashed_line(target: Path) -> None:
@@ -431,8 +440,8 @@ def _watch_transcript(target: Path) -> int:
     interrupted = False
     try:
         if front_end is not None:
-            for kind, prompt_id, content in front_end.open_prompts_at_attach(events_path):
-                front_end.handle(kind, prompt_id, content)  # a prompt already pending at attach
+            for event in front_end.open_prompts_at_attach(events_path):
+                front_end.handle(event)
         for event in tail_events(
             events_path, follow=True, stop_when_finished=True, should_stop=worker_dead
         ):
