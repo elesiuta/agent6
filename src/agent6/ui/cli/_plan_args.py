@@ -93,12 +93,12 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             "Q&A in prose: no edit tools, no commits, no repo required."
             ' A configured `run_commands = "yes"` clamps to `"ask"`.'
-            " `ask list` shows saved asks."
+            " `sessions list` lists saved asks with every session."
         ),
     )
-    # `ask <question>` runs a Q&A; `ask list` enumerates saved asks. `query` is
-    # the implicit default verb injected by `_inject_default_verb` when the first
-    # token isn't a known ask verb, so `ask "why ..."` == `ask query "why ..."`.
+    # `ask <question>` runs a Q&A. `query` is the implicit default verb injected
+    # by `_inject_default_verb` when the first token isn't a known ask verb, so
+    # `ask "why ..."` == `ask query "why ..."`.
     ask_sub = ask_p.add_subparsers(dest="ask_command", required=True, metavar="<subcommand>")
     ask_query = _sub(ask_sub, "query", help="Ask a question (the default verb).")
     ask_profile = ask_query.add_argument(
