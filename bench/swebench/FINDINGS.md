@@ -988,3 +988,18 @@ Mechanisms observed:
   pinned on the branch; a 4-leg re-run of the 124 ids on the final wheel
   is the field test (rpl124).
 - Empties stay solved: 1/54 vs the gate-on era's recurring walls.
+
+### Scoped-verify field smoke: 2/2 firings, exact selections (2026-08-25)
+
+The 4 pilot ids whose gates timed out, re-run on the final wheel (rpl124).
+Both legs that hit a 124 fired the full mechanism, event-verified
+(verify.end 124 -> loop.verify_scoped -> scoped verify.start/end):
+graphistry scoped to graphistry/tests/compute/gfql/cypher/test_lowering.py
+(the exact P2P test of the original miss), green in 179s; pandas scoped to
+3 files including pandas/tests/indexes/datetimes/test_indexing.py (the
+exact F2P test of the original miss), green in 7s against the 240s wall.
+The two koxudaxi legs saw no timeout this attempt. 0/4 resolved in the
+rerun: the mechanism is proven, conversion is a separate question. Note
+for graders of run.log: harness notices do not render there; the
+logs.jsonl events are the truth (two earlier "never fired" reads were
+grep-of-the-wrong-surface errors).
