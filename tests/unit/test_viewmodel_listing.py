@@ -619,6 +619,29 @@ def test_summary_ask_task_comes_from_transcript(tmp_path: Path) -> None:
     assert task_snippet(s.task) == "what is the default port?"
 
 
+def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
+    tmp_path: Path,
+) -> None:
+    """Skipping every line that starts with `#` skipped the question itself,
+    so the row showed the answer."""
+    rd = _write_run(
+        tmp_path,
+        "asks",
+        "a2",
+        [
+            {"type": "session.start", "mode": "ask", "user_task": "q"},
+            {"type": "session.end", "all_passed": True},
+        ],
+    )
+    (rd / "transcript.md").write_text(
+        "# agent6 ask\n\n## Question\n\n#include <stdio.h> fails to compile, why?\n\n"
+        "## Answer\n\nThe header search path is wrong.\n",
+        encoding="utf-8",
+    )
+    s = summarize_session_dir(rd)
+    assert task_snippet(s.task) == "#include <stdio.h> fails to compile, why?"
+
+
 def test_summary_no_logs(tmp_path: Path) -> None:
     rd = tmp_path / "sessions" / "runs" / "empty"
     rd.mkdir(parents=True)

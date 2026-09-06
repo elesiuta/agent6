@@ -693,14 +693,14 @@ def summarize_session_dir(
             transcript = (session_dir / "transcript.md").read_text(
                 encoding="utf-8", errors="replace"
             )
-            asked = next(
-                (
-                    ln.strip()
-                    for ln in transcript.splitlines()
-                    if ln.strip() and not ln.startswith("#")
-                ),
-                "",
-            )
+            # The question is the first line under the transcript's first `##`
+            # heading (`## Question`, or `## Q1` from the REPL form). Taking
+            # the first non-heading line instead showed the ANSWER whenever the
+            # question began with `#`.
+            lines = transcript.splitlines()
+            heading = next((i for i, ln in enumerate(lines) if ln.startswith("## ")), None)
+            body = lines[heading + 1 :] if heading is not None else []
+            asked = next((ln.strip() for ln in body if ln.strip()), "")
             task = asked[:200] or transcript.strip()[:200]
     unmerged = False
     if branch_tips is not None and manifest is not None and word != "undone":
