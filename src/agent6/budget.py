@@ -652,16 +652,18 @@ def format_plan_usage(snap: BudgetSnapshot) -> str:
     assert plan is not None
     minutes = plan.window_minutes
     if minutes >= 1440:
-        window = f"{minutes / 1440:g}-day"
+        window = f"{minutes / 1440:g}-day "
     elif minutes >= 60:
-        window = f"{minutes / 60:g}-hour"
+        window = f"{minutes / 60:g}-hour "
+    elif minutes > 0:
+        window = f"{minutes}-minute "
     else:
-        window = f"{minutes}-minute"
+        window = ""  # the backend reported the window with no length
     cap = "" if snap.max_percent == -1 else f" of max_percent {snap.max_percent:g}"
     resets_h = max(0.0, (plan.resets_at - time.time()) / 3600)
     which = "" if plan.binding.name == "primary" else f" ({plan.binding.name})"
     return (
-        f"plan usage: {plan.used_percent:g}% of the {window} window{which}"
+        f"plan usage: {plan.used_percent:g}% of the {window}window{which}"
         f" (this run ~{snap.plan_consumed:g} points{cap}; resets in {resets_h:.0f}h)"
         + (
             f"; purchased credits balance {plan.credits_balance or 'present'}"

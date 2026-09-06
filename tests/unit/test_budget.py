@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from agent6.budget import BudgetExceeded, BudgetTracker, PlanUsage
+from agent6.budget import BudgetExceeded, BudgetTracker, PlanUsage, format_plan_usage
 
 
 @pytest.fixture(autouse=True)
@@ -441,3 +441,20 @@ def test_credits_balance_units_convert_to_usd() -> None:
     assert usd("$12.50") == 12.50
     assert usd("") is None
     assert usd("n/a") is None
+
+
+def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:
+    """The backend reports a `secondary` window with `window_minutes` 0; when
+    it binds, the line names the window without inventing a length."""
+    from agent6.budget import PlanWindow
+
+    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    _record_plan(
+        t,
+        PlanUsage(
+            windows=(PlanWindow("primary", 1.0, 10080, 2e9), PlanWindow("secondary", 3.0, 0, 2e9))
+        ),
+    )
+    line = format_plan_usage(t.snapshot())
+    assert "3% of the window (secondary)" in line
+    assert "0-minute" not in line
