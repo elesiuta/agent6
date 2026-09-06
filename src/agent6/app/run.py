@@ -275,10 +275,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         return undo_fork(None, effective_session_id, cwd=cwd, reporter=reporter)
 
     try:
-        # Drop stale approve/ask/steer answers from a prior session (the
-        # id counters reset on resume, so an old answer must not be read instead of
-        # re-prompting; dead front-end claims are pruned by the liveness probe).
-        clear_pending_answers(layout.session_dir)
+        # A reused dir (an ask under its id again, a parked run) carries the
+        # previous leg's bridge state; a marker written since that leg's last
+        # journal line is this run's (an editor's cancel while it came up).
+        clear_pending_answers(layout.session_dir, before=layout.previous_leg_end())
         if initial_steer.strip():
             submit_steer(layout.session_dir, initial_steer.strip())
         settle_away_mode(layout.session_dir, cfg)

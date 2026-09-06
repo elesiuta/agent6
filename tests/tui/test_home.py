@@ -102,7 +102,7 @@ def test_clear_pending_answers_wipes_stale_state(tmp_path: Path) -> None:
     write_answer(tmp_path, "approval-1", "yes")
     write_question_answers(tmp_path, "question-1", ["stale"])
     register_frontend(tmp_path, 12345)
-    clear_pending_answers(tmp_path)
+    clear_pending_answers(tmp_path, before=time.time() + 60)
     assert not (approvals_dir(tmp_path) / "approval-1.answer").exists()
     assert not (questions_dir(tmp_path) / "question-1.answer").exists()
 

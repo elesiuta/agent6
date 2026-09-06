@@ -394,10 +394,9 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     assert called["initial_steer"] == "also update the docs"
 
 
-def test_run_task_seeds_initial_steer_after_its_stale_state_clear(repo: Path) -> None:
-    """run_task's initial_steer lands on the bridge AFTER clear_pending_answers,
-    so the loop's first boundary poll finds it (a pre-seeded file would be
-    wiped by that same clear)."""
+def test_run_task_seeds_initial_steer_on_the_bridge(repo: Path) -> None:
+    """run_task's initial_steer lands on the bridge before the loop starts, so
+    its first boundary poll finds it."""
     from agent6.app.run import run_task
     from agent6.sessions.ipc import read_steer_answer, steer_request_pending
 
@@ -450,3 +449,95 @@ def test_teardown_raise_still_releases_both_writer_locks(
     fd2 = acquire_single_writer(SessionLayout(state_dir=state, session_id="run-TD").session_dir)
     assert fd2 is not None
     release_single_writer(fd2)
+
+
+def test_resume_keeps_a_stop_request_pending_after_the_previous_leg_ended(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """resume_task's sweep of the previous leg's bridge state dropped a stop
+    marker written after that leg ended (an editor's cancel while this leg was
+    coming up); a marker older than the journal's last line is the stale one."""
+    import os
+
+    from agent6.app import resume as resume_mod
+    from agent6.sessions.ipc import request_stop, stop_request_pending
+
+    state = resolved_state_dir(repo)
+    layout = SessionLayout(state_dir=state, session_id="run-C")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": "run-C",
+                "mode": "run",
+                "base_sha": "",
+                "base_branch": "main",
+                "run_branch": "agent6/run-C",
+                "user_task": "t",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    layout.logs_path.write_text(
+        '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
+        '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
+        encoding="utf-8",
+    )
+    leg_end = layout.logs_path.stat().st_mtime
+    (layout.session_dir / "steer.request").write_text("", encoding="utf-8")
+    os.utime(layout.session_dir / "steer.request", (leg_end - 10, leg_end - 10))
+    request_stop(layout.session_dir)
+    os.utime(layout.session_dir / "stop.request", (leg_end + 1, leg_end + 1))
+    holder_fd = acquire_repo_writer(state, "run-A")
+    try:
+        rc = resume_mod.resume_task(None, "run-C", frontend=MagicMock(), force=False)
+    finally:
+        release_single_writer(holder_fd)
+    assert rc == 2  # the checkout is busy: refused after the sweep
+    assert "run-A" in capsys.readouterr().err
+    assert stop_request_pending(layout.session_dir)
+    assert not (layout.session_dir / "steer.request").exists()
+
+
+def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ask session reuses its dir under the same id (transient Q&A), so a
+    run_task that sweeps nothing starts the second leg on the first leg's
+    leftover stop marker and ends at its first boundary. A bridge file older
+    than the journal's last write is the previous leg's; a younger one was
+    written for this leg."""
+    import os
+
+    from agent6.app import run as run_mod
+    from agent6.app._leg import LegEnd
+    from agent6.sessions.ipc import request_stop, steer_request_pending, stop_request_pending
+
+    state = resolved_state_dir(repo)
+    layout = SessionLayout(state_dir=state, session_id="chat", subdir="asks")
+    layout.ensure()
+    layout.logs_path.write_text(
+        '{"type": "session.start", "mode": "ask", "user_task": "q"}\n'
+        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        encoding="utf-8",
+    )
+    leg_end = layout.logs_path.stat().st_mtime
+    (layout.session_dir / "steer.request").write_text("", encoding="utf-8")
+    os.utime(layout.session_dir / "steer.request", (leg_end - 10, leg_end - 10))
+    request_stop(layout.session_dir)
+    os.utime(layout.session_dir / "stop.request", (leg_end + 1, leg_end + 1))
+    seen: list[tuple[bool, bool]] = []
+
+    def _leg(*_a: object, **_k: object) -> LegEnd:
+        d = layout.session_dir
+        seen.append((steer_request_pending(d), stop_request_pending(d)))
+        return LegEnd(rc=0)
+
+    monkeypatch.setattr(run_mod, "run_leg", _leg)
+    rc = run_mod.run_task(
+        _load_cfg(), "again?", frontend=MagicMock(), session_id="chat", mode="ask"
+    )
+    assert rc == 0
+    assert seen == [(False, True)]

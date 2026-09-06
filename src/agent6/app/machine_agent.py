@@ -32,6 +32,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -250,7 +251,7 @@ def _build_machine_bridges(
     # counters restart at 1, so an answer file left by the aborted attempt would
     # satisfy this execution's first prompt unseen. Drop the stale bridge state
     # first (front-end claims live on the instance dir, so this touches none).
-    clear_pending_answers(state_dir)
+    clear_pending_answers(state_dir, before=time.time())
 
     def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
         if frontend_is_live(instance_dir):

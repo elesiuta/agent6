@@ -326,9 +326,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.refuse(needs_new_work_refusal(session_id))
         release_single_writer(worker_lock_fd)
         return 2
-    # Drop a prior session's stale answer files (the id counters reset
-    # on resume, an old answer must not be read instead of re-prompting).
-    clear_pending_answers(layout.session_dir)
+    # Drop the previous leg's stale bridge state (its answer files: the id
+    # counters reset on resume, an old answer must not be read instead of
+    # re-prompting). A marker written after that leg's last journal line is
+    # this leg's (an editor's cancel during startup) and stays.
+    clear_pending_answers(layout.session_dir, before=layout.previous_leg_end())
     if steer.strip():
         # --steer: queue the operator's follow-up as the first steering
         # instruction. Seeded AFTER the stale-state clear (which drops steer
@@ -412,9 +414,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                     if (not preset and manifest.workflow.preset_from_flag)
                     else None
                 ),
-                # Hand --steer through: run_task's stale-state clear wipes
-                # the bridge files seeded above, so a parked resume's follow-up
-                # only survives as an argument.
+                # Hand --steer through: run_task seeds its own initial steer.
+                # The files seeded above survive its sweep (younger than the
+                # parked attempt's journal), and it writes the same text over
+                # them.
                 initial_steer=steer,
                 reporter=reporter,
             )

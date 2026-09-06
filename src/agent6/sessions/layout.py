@@ -81,6 +81,15 @@ class SessionLayout:
     def cursor_path(self) -> Path:
         return self.session_dir / "cursor.json"
 
+    def previous_leg_end(self) -> float:
+        """The journal's last write, 0.0 with no journal yet. A bridge file
+        older than it is a previous leg's leftover; a younger one was written
+        for the leg that is starting (an editor's cancel while it came up)."""
+        try:
+            return self.logs_path.stat().st_mtime
+        except FileNotFoundError:
+            return 0.0
+
     @property
     def lock_path(self) -> Path:
         return self.session_dir / ".lock"

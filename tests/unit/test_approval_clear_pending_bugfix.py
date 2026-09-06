@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from agent6.sessions.ipc import (
@@ -28,7 +29,7 @@ def test_clear_pending_drops_leftover_steer_request(tmp_path: Path) -> None:
     request_steer(session_dir)
     assert steer_request_pending(session_dir)
 
-    clear_pending_answers(session_dir)
+    clear_pending_answers(session_dir, before=time.time() + 60)
 
     # The phantom steer marker must be gone so resume doesn't stall.
     assert not steer_request_pending(session_dir)
@@ -41,7 +42,7 @@ def test_clear_pending_preserves_live_frontend_claims(tmp_path: Path) -> None:
     register_frontend(session_dir, os.getpid())
     assert frontend_is_live(session_dir)
 
-    clear_pending_answers(session_dir)
+    clear_pending_answers(session_dir, before=time.time() + 60)
 
     # A live watcher's claim must survive so its modals stay wired up.
     assert frontend_is_live(session_dir)
@@ -87,3 +88,30 @@ def _find_dead_pid() -> int:
             continue
     # Fallback: very unlikely to be reached.
     return 2_000_000
+
+
+def test_clear_pending_keeps_what_was_written_since_the_previous_leg(tmp_path: Path) -> None:
+    """The sweep dropped every marker, including a stop an editor requested
+    while the leg was still coming up (the run then ran on, spending budget,
+    while the turn reported "cancelled"). With `before`, only files older than
+    it are stale."""
+    import os
+
+    from agent6.sessions.ipc import request_stop, stop_request_pending, write_answer
+
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    leg_end = 1_700_000_000.0
+    write_answer(session_dir, "approval-1", "yes")
+    old = session_dir / "approvals" / "approval-1.answer"
+    assert old.is_file()
+    os.utime(old, (leg_end - 10, leg_end - 10))
+    request_stop(session_dir)
+    os.utime(session_dir / "stop.request", (leg_end + 1, leg_end + 1))
+
+    clear_pending_answers(session_dir, before=leg_end)
+
+    assert not old.exists()
+    assert stop_request_pending(session_dir)
+    clear_pending_answers(session_dir, before=time.time() + 60)
+    assert not stop_request_pending(session_dir)
