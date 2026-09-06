@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO
 
@@ -199,13 +201,22 @@ class ACPServer:
         slot.arrived.set()
         return True
 
-    def request(self, method: str, params: dict[str, Any], *, timeout_s: float) -> dict[str, Any]:
+    def request(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        timeout_s: float,
+        until: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
         """Ask the CLIENT something and wait for its answer.
 
         Called from a worker thread, never from the read loop -- the loop is
         what delivers the answer, so waiting on it there would deadlock. A
         timeout answers with nothing rather than wedging the turn: an editor
-        that never replies must not cost the session.
+        that never replies must not cost the session. So does *until*
+        holding (polled every 0.2 s): the question was answered by another
+        route, and the editor's reply, if one comes, answers nothing.
         """
         with self._pending_lock:
             self._next_id += 1
@@ -213,10 +224,12 @@ class ACPServer:
             slot = _Pending()
             self._pending[req_id] = slot
         self.notify_raw({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
-        if not slot.arrived.wait(timeout=timeout_s):
-            with self._pending_lock:
-                self._pending.pop(req_id, None)
-            return {}
+        deadline = time.monotonic() + timeout_s
+        while not slot.arrived.wait(timeout=min(0.2, max(0.0, deadline - time.monotonic()))):
+            if time.monotonic() >= deadline or (until is not None and until()):
+                with self._pending_lock:
+                    self._pending.pop(req_id, None)
+                return {}
         answer = slot.answer or {}
         result = answer.get("result")
         return result if isinstance(result, dict) else {}

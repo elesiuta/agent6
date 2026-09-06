@@ -204,6 +204,7 @@ class RunBridge:
         options: tuple[str, ...],
         standing: bool | None,
         call_id: int | None,
+        until: Callable[[], bool] | None = None,
     ) -> str | None:
         """Put one approval or question to the editor.
 
@@ -268,6 +269,7 @@ class RunBridge:
                 ],
             },
             timeout_s=PERMISSION_TIMEOUT_S,
+            until=until,
         )
         chosen = _selected(answer, options)
         if call_id is None:
@@ -289,8 +291,8 @@ class RunBridge:
 
     def _frontend(self, session: Session, announced: Announced) -> SessionFrontend:
         return acp_frontend(
-            ask=lambda prompt, options, standing, call_id: self.ask(
-                session, announced, prompt, options, standing, call_id
+            ask=lambda prompt, options, standing, call_id, until=None: self.ask(
+                session, announced, prompt, options, standing, call_id, until
             ),
             # `initialize` has not landed if this is None, and nothing is
             # known about the client; the cautious answer is that it can do

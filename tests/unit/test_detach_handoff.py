@@ -32,7 +32,7 @@ def _frontend(calls: list[tuple[str, Any]], *, spawn_err: str = "") -> SessionFr
         calls.append(("ask", scopes))
 
     front = acp_frontend(
-        ask=lambda _p, _o, _s, _c: None,
+        ask=lambda _p, _o, _s, _c, _u=None: None,
         capabilities=FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=_spawn,

@@ -17,11 +17,19 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
+from typing import Protocol
 
 from agent6.app.frontend import FrontendCapabilities, SessionFacts, SessionFrontend, SteerHooks
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.sessions.ipc import (
+    answer_written,
+    question_answers_written,
+    read_answer,
+    read_question_answers,
+    record_answer,
+)
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.operator_prompts import (
     ApprovalAnswer,
@@ -35,6 +43,7 @@ from agent6.types import AutoCommitDirective, IsolationLevel
 from agent6.ui.steer import file_bridge_steer
 from agent6.workflows.loop import SessionResult, Workflow
 
+
 # What the client is asked, and what an unaskable client is assumed to have
 # said. Every one of these is the CAUTIOUS answer: a session that cannot ask
 # is a session that does less, never one that does something unwatched.
@@ -44,8 +53,19 @@ from agent6.workflows.loop import SessionResult, Workflow
 # the editor may remember. `call_id` is the dispatcher's stamp on the tool
 # call the prompt gates (the `call_id` its journaled prompt carries), or None
 # for a prompt that gates no call (a pre-run question, a verify the harness
-# runs itself).
-Asker = Callable[[str, tuple[str, ...], bool | None, int | None], str | None]
+# runs itself). The keyword `until`, polled while the editor's answer is
+# pending, ends the wait with None: the question was answered by another
+# route (the session's answer file, which every other seat writes).
+class Asker(Protocol):
+    def __call__(
+        self,
+        prompt: str,
+        options: tuple[str, ...],
+        standing: bool | None,
+        call_id: int | None,
+        until: Callable[[], bool] | None = None,
+        /,
+    ) -> str | None: ...
 
 
 def acp_frontend(
@@ -57,7 +77,16 @@ def acp_frontend(
 ) -> SessionFrontend:
     """Wire the lifecycle to one ACP client."""
 
-    def _approve(prompt: str, /, *, scope: str | None = None, call_id: int | None = None) -> bool:
+    def _approve(
+        prompt: str,
+        /,
+        *,
+        scope: str | None = None,
+        call_id: int | None = None,
+        until: Callable[[], bool] | None = None,
+    ) -> bool | None:
+        """The editor's verdict; None when it gave none (a timeout, or *until*
+        held first)."""
         if not capabilities.can_ask:
             return False  # nobody to ask, so the answer is no
         # No scope means an "always allow" the editor remembers must NOT cover
@@ -66,31 +95,54 @@ def acp_frontend(
         # offers "always" needs something to key that decision on.
         standing = scope is not None
         options = ("allow", "deny") if standing else ("allow once", "deny")
-        answer = ask(prompt, options, standing, call_id)
-        return bool(answer) and answer.startswith("allow")
+        answer = ask(prompt, options, standing, call_id, until)
+        return None if answer is None else answer.startswith("allow")
 
-    def _build_approver(_session_dir: Path) -> Approver:
+    def _build_approver(session_dir: Path) -> Approver:
         def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
             # A client that cannot be asked denies as a headless run does, and
             # the journal names that: nobody answered.
             if not capabilities.can_ask:
                 return ApprovalAnswer(False, "headless")
-            approved = _approve(request.prompt, scope=request.scope, call_id=request.call_id)
+            approved = _approve(
+                request.prompt,
+                scope=request.scope,
+                call_id=request.call_id,
+                until=lambda: answer_written(session_dir, request.id),
+            )
+            if approved is None:
+                # The answer file: `agent6 answer`, the web, an attached TUI.
+                filed = read_answer(session_dir, request.id, timeout_s=0.0)
+                if filed is not None:
+                    return ApprovalAnswer(
+                        record_answer(session_dir, filed, request.scope), "frontend"
+                    )
+                return ApprovalAnswer(False, "acp")
             return ApprovalAnswer(approved, "acp")
 
         return approve
 
-    def _build_questioner(_session_dir: Path) -> Questioner:
+    def _build_questioner(session_dir: Path) -> Questioner:
         def ask_questions(request: QuestionRequest, /) -> QuestionAnswer:
             if not capabilities.can_ask:
                 return QuestionAnswer(tuple("" for _ in request.questions), "headless")
             # An unanswered question becomes an empty string, which the loop
             # already treats as "the operator said nothing", not as a value.
-            answers = tuple(
-                ask(question.question, question.options, None, request.call_id) or ""
-                for question in request.questions
-            )
-            return QuestionAnswer(answers, "acp")
+            answers: list[str] = []
+            for question in request.questions:
+                answer = ask(
+                    question.question,
+                    question.options,
+                    None,
+                    request.call_id,
+                    lambda: question_answers_written(session_dir, request.id),
+                )
+                if answer is None:
+                    filed = read_question_answers(session_dir, request.id, timeout_s=0.0)
+                    if filed is not None:
+                        return QuestionAnswer(filed, "frontend")
+                answers.append(answer or "")
+            return QuestionAnswer(tuple(answers), "acp")
 
         return ask_questions
 
@@ -107,7 +159,7 @@ def acp_frontend(
         # No scope: docs/security.md documents this as a ONE-TIME gate, and
         # ACP's `allow_always` is exactly the button that would let one click
         # silence it for every later session.
-        return _approve("Run commands UNSANDBOXED on this host, with no per-command prompt?")
+        return bool(_approve("Run commands UNSANDBOXED on this host, with no per-command prompt?"))
 
     def _steer(
         _events: EventSink, session_dir: Path, _facts: Callable[[], SessionFacts]
@@ -149,13 +201,15 @@ def acp_frontend(
         build_questioner=_build_questioner,
         make_steer_state=_steer,
         confirm_unconfined_autorun=_confirm_unconfined,
-        confirm_run_on_run_branch=lambda branch: _approve(
-            f"Continue this run on {branch!r}, which is already a run branch?"
+        confirm_run_on_run_branch=lambda branch: bool(
+            _approve(f"Continue this run on {branch!r}, which is already a run branch?")
         ),
-        confirm_replay_after_crash=lambda iteration, tools: _approve(
-            f"The previous run died mid-turn (iteration {iteration};"
-            f" {', '.join(tools) or 'unknown tools'}). Its tools may have partially"
-            " applied; replaying can repeat a non-idempotent effect. Re-run the turn?"
+        confirm_replay_after_crash=lambda iteration, tools: bool(
+            _approve(
+                f"The previous run died mid-turn (iteration {iteration};"
+                f" {', '.join(tools) or 'unknown tools'}). Its tools may have partially"
+                " applied; replaying can repeat a non-idempotent effect. Re-run the turn?"
+            )
         ),
         prompt_detach_away_mode=lambda _session_dir, _scopes: None,
         select_revised_prompt=lambda _original, _revised, _notes: None,

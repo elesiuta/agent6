@@ -9,6 +9,7 @@ does less, never one that does something unwatched.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,11 @@ def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
     asked: list[tuple[str, tuple[str, ...], bool | None]] = []
 
     def _ask(
-        prompt: str, options: tuple[str, ...], standing: bool | None, _call_id: int | None
+        prompt: str,
+        options: tuple[str, ...],
+        standing: bool | None,
+        _call_id: int | None,
+        until: Callable[[], bool] | None = None,
     ) -> str | None:
         asked.append((prompt, options, standing))
         return reply
@@ -207,7 +212,11 @@ def test_a_request_names_the_call_the_prompt_carries(tmp_path: Path) -> None:
     calls: list[int | None] = []
 
     def _ask(
-        prompt: str, options: tuple[str, ...], standing: bool | None, call_id: int | None
+        prompt: str,
+        options: tuple[str, ...],
+        standing: bool | None,
+        call_id: int | None,
+        until: Callable[[], bool] | None = None,
     ) -> str | None:
         calls.append(call_id)
         return options[0]

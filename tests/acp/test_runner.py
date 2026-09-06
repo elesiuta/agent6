@@ -10,6 +10,8 @@ import os
 import select
 import subprocess
 import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -249,7 +251,11 @@ def _acp_front(*, reply: str | None):
     asked: list[tuple[str, tuple[str, ...], bool | None]] = []
 
     def _ask(
-        prompt: str, options: tuple[str, ...], standing: bool | None, _call_id: int | None
+        prompt: str,
+        options: tuple[str, ...],
+        standing: bool | None,
+        _call_id: int | None,
+        until: Callable[[], bool] | None = None,
     ) -> str | None:
         asked.append((prompt, options, standing))
         return reply
@@ -1061,3 +1067,50 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
         assert pending == [announced[0]], "only the gated call waits"
     finally:
         wire.close()
+
+
+def test_an_answer_file_ends_the_editors_pending_request(tmp_path: Path) -> None:
+    """An editor over ACP is asked through a request that blocks until it
+    replies; `agent6 answer` and the web write the session's answer file,
+    which nothing in that wait read, so they reported "answered" to a run
+    that kept waiting on the editor."""
+    from agent6.app.frontend import FrontendCapabilities
+    from agent6.sessions.ipc import write_answer, write_question_answers
+    from agent6.tools.operator_prompts import ApprovalRequest, QuestionRequest
+    from agent6.tools.schema import UserQuestion
+    from agent6.ui.acp.frontend import acp_frontend
+
+    def _editor_never_replies(
+        prompt: str,
+        options: tuple[str, ...],
+        standing: bool | None,
+        call_id: int | None,
+        until: Callable[[], bool] | None = None,
+    ) -> str | None:
+        assert until is not None
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if until():
+                return None
+            time.sleep(0.05)
+        pytest.fail("the wait never looked at the answer file")
+
+    front = acp_frontend(
+        ask=_editor_never_replies,
+        capabilities=FrontendCapabilities(can_ask=True),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _rid, _flags: "",
+    )
+    write_answer(tmp_path, "approval-1", "yes")
+    approver = front.build_approver(tmp_path)
+    verdict = approver(
+        ApprovalRequest(id="approval-1", prompt="Allow run_command: ls", scope="command", call_id=1)
+    )
+    assert (verdict.approved, verdict.source) == (True, "frontend")
+
+    write_question_answers(tmp_path, "question-1", ["9090"])
+    questioner = front.build_questioner(tmp_path)
+    answer = questioner(
+        QuestionRequest(id="question-1", questions=(UserQuestion(question="port?"),), call_id=2)
+    )
+    assert (answer.answers, answer.source) == (("9090",), "frontend")
