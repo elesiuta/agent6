@@ -96,8 +96,9 @@ def no_session_network_reason(layout: SessionLayout) -> str:
         return f"{layout.session_id} is {word}; a session network exists only while its run does."
     return (
         f"{layout.session_id} has no network of its own to reach into. A run only makes one"
-        " under strict isolation with sandbox.network other than host; with network = host"
-        " its commands are already on this machine's."
+        " under strict isolation, for commands with sandbox.network other than host or for"
+        " an MCP server scoped to the session; otherwise its commands are already on this"
+        " machine's."
     )
 
 
