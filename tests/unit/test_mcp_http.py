@@ -164,7 +164,7 @@ def test_an_oversized_body_is_refused_rather_than_buffered() -> None:
     able to buffer an unbounded body into the agent."""
     url, _seen, httpd = _serve(None, body=b"x" * (MAX_BODY_BYTES + 64))
     try:
-        with pytest.raises(MCPHttpError, match="more than"):
+        with pytest.raises(MCPHttpError, match="larger than"):
             HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=10.0)
     finally:
         httpd.shutdown()
@@ -249,7 +249,7 @@ def test_a_body_is_capped_while_it_arrives_not_after() -> None:
     try:
         tracemalloc.start()
         try:
-            with pytest.raises(MCPHttpError, match="more than"):
+            with pytest.raises(MCPHttpError, match="larger than"):
                 HttpTransport(name="s", url=url).send({"jsonrpc": "2.0", "id": 1}, timeout_s=30.0)
             peak = tracemalloc.get_traced_memory()[1]
         finally:

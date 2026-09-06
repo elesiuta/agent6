@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from collections import Counter
 from datetime import UTC, datetime
@@ -42,6 +43,7 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
+from agent6.tools.http_body import BodyRefused, read_capped
 from agent6.ui.cli._common import home_contracted, sgr, warn
 from agent6.ui.cli._steer_menu import MENU_COMMANDS
 
@@ -113,11 +115,9 @@ def _read_origin(skill_dir: Path) -> dict[str, str] | None:
 
 
 def _fetch_url(url: str) -> str:
-    """The body of *url* as UTF-8 text, refused past `_FETCH_MAX_BYTES` while
-    it arrives: a buffered `.content` would hold the whole response first.
-    Compression is declined and refused if sent anyway, since a decoded
-    stream expands past the cap before any check."""
-    body = bytearray()
+    """The body of *url* as UTF-8 text through the one capped streaming read:
+    refused past `_FETCH_MAX_BYTES` while it arrives, past `_FETCH_TIMEOUT_S`
+    from its first byte, or under a content-encoding other than identity."""
     try:
         with httpx2.stream(
             "GET",
@@ -127,17 +127,16 @@ def _fetch_url(url: str) -> str:
             headers={"Accept-Encoding": "identity"},
         ) as resp:
             resp.raise_for_status()
-            encoding = resp.headers.get("content-encoding", "")
-            if encoding.lower() not in ("", "identity"):
-                raise OperatorError(f"{url}: refusing content-encoding {encoding!r}")
-            for chunk in resp.iter_raw():
-                body += chunk
-                if len(body) > _FETCH_MAX_BYTES:
-                    raise OperatorError(f"{url}: remote file exceeds {_FETCH_MAX_BYTES} bytes")
+            deadline = time.monotonic() + _FETCH_TIMEOUT_S
+            body = read_capped(
+                resp, cap=_FETCH_MAX_BYTES, deadline=deadline, timeout_s=_FETCH_TIMEOUT_S
+            )
+    except BodyRefused as exc:
+        raise OperatorError(f"{url}: {exc}") from exc
     except httpx2.HTTPError as exc:
         raise OperatorError(f"could not fetch {url}: {exc}") from exc
     try:
-        return bytes(body).decode("utf-8")
+        return body.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise OperatorError(f"{url}: not UTF-8 text: {exc}") from exc
 

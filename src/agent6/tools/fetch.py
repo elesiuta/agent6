@@ -27,6 +27,8 @@ from urllib.parse import urlsplit
 
 import httpx2
 
+from agent6.tools.http_body import BodyRefused, read_capped
+
 # A body is context the operator pays for, and a fetch is meant to answer one
 # question. Beyond this the read is refused, never silently truncated.
 MAX_BYTES = 1 << 20
@@ -168,7 +170,6 @@ def fetch(checked: Checked) -> Fetched:
         raise FetchRefused(f"{checked.host} resolves to nothing")
     literal = f"[{address}]" if ":" in address else address
     dialled = parts._replace(netloc=f"{literal}:{port}").geturl()
-    deadline = time.monotonic() + TIMEOUT_S
     try:
         with (
             httpx2.Client(follow_redirects=False, timeout=TIMEOUT_S, verify=True) as client,
@@ -185,28 +186,16 @@ def fetch(checked: Checked) -> Fetched:
             content_type = response.headers.get("content-type", "")
             if not content_type.startswith(_TEXTUAL):
                 raise FetchRefused(f"not a text response: content-type {content_type!r}")
-            encoding = response.headers.get("content-encoding", "")
-            if encoding.lower() not in ("", "identity"):
-                # The RESPONSE header picks the decoder, whatever was asked
-                # for; honouring it hands a hostile server a decompression
-                # bomb that expands ahead of the cap below.
-                raise FetchRefused(f"refusing content-encoding {encoding!r}: only identity is read")
-            body = bytearray()
-            for chunk in response.iter_raw():
-                body += chunk
-                if len(body) > MAX_BYTES:
-                    raise FetchRefused(f"response is larger than {MAX_BYTES} bytes")
-                if time.monotonic() > deadline:
-                    # A total deadline, not httpx's per-read one: a server
-                    # dribbling a byte every 15s never trips a read timeout and
-                    # held the run for as long as it liked.
-                    raise FetchRefused(f"response was still arriving after {TIMEOUT_S:g}s")
+            deadline = time.monotonic() + TIMEOUT_S
+            body = read_capped(response, cap=MAX_BYTES, deadline=deadline, timeout_s=TIMEOUT_S)
             return Fetched(
                 url=checked.url,
                 status=response.status_code,
                 content_type=content_type,
-                body=bytes(body).decode(response.encoding or "utf-8", errors="replace"),
+                body=body.decode(response.encoding or "utf-8", errors="replace"),
                 location=response.headers.get("location", ""),
             )
+    except BodyRefused as exc:
+        raise FetchRefused(str(exc)) from exc
     except httpx2.HTTPError as exc:
         raise FetchRefused(f"could not fetch {checked.url}: {exc}") from exc

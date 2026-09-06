@@ -25,6 +25,8 @@ from typing import Any
 
 import httpx2
 
+from agent6.tools.http_body import BodyRefused, read_capped
+
 # The same bound the stdio reader applies, and applied the same way: while the
 # body arrives, not after. `response.content` materializes first, so a 400 MiB
 # body reached 849 MiB of RSS before the check, and a 1 MiB gzip bomb reached
@@ -129,8 +131,6 @@ class HttpTransport:
         server received nothing. `[mcp.servers.<name>].httpx_trust_env` opts a
         server in (one reachable only through the environment's proxy).
         """
-        deadline = time.monotonic() + timeout_s
-        body = bytearray()
         try:
             with (
                 httpx2.Client(
@@ -157,29 +157,13 @@ class HttpTransport:
                 assigned = _clean_session_id(response.headers.get("mcp-session-id", ""))
                 if assigned:
                     self.session_id = assigned
-                encoding = response.headers.get("content-encoding", "")
-                if encoding.lower() not in ("", "identity"):
-                    # The RESPONSE header picks the decoder, whatever was asked
-                    # for; honouring it hands a compromised server a
-                    # decompression bomb that expands ahead of the cap below.
-                    raise MCPHttpError(
-                        f"server {self.name!r} answered with content-encoding {encoding!r};"
-                        " only identity is read"
+                deadline = time.monotonic() + timeout_s
+                try:
+                    body = read_capped(
+                        response, cap=MAX_BODY_BYTES, deadline=deadline, timeout_s=timeout_s
                     )
-                for chunk in response.iter_raw():
-                    body += chunk
-                    if len(body) > MAX_BODY_BYTES:
-                        raise MCPHttpError(
-                            f"server {self.name!r} sent more than {MAX_BODY_BYTES} bytes"
-                        )
-                    if time.monotonic() > deadline:
-                        # A total deadline, not the per-operation one httpx
-                        # applies: a server dribbling a byte at a time never
-                        # trips a read timeout and held the run for as long as
-                        # it liked.
-                        raise MCPHttpError(
-                            f"server {self.name!r} was still answering after {timeout_s:g}s"
-                        )
+                except BodyRefused as exc:
+                    raise MCPHttpError(f"server {self.name!r}: {exc}") from exc
         except MCPHttpError:
             raise
         except Exception as exc:
@@ -191,7 +175,7 @@ class HttpTransport:
             raise MCPHttpError(f"server {self.name!r} unreachable ({type(exc).__name__})") from None
         if not body.strip():
             return None  # an accepted notification
-        message = _parse(bytes(body), name=self.name)
+        message = _parse(body, name=self.name)
         return message
 
 

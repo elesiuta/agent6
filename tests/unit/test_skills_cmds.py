@@ -530,7 +530,7 @@ def test_a_remote_skill_is_capped_while_it_arrives_not_after() -> None:
     try:
         tracemalloc.start()
         try:
-            with pytest.raises(OperatorError, match="exceeds"):
+            with pytest.raises(OperatorError, match="larger than"):
                 _fetch_url(url)
             peak = tracemalloc.get_traced_memory()[1]
         finally:
@@ -539,6 +539,37 @@ def test_a_remote_skill_is_capped_while_it_arrives_not_after() -> None:
         httpd.shutdown()
     assert peak < 4 << 20, f"buffered {peak} bytes of an 8 MiB body"
     assert seen["accept-encoding"] == "identity", "a decoded stream expands past the cap"
+
+
+def test_the_skill_fetch_clock_starts_with_the_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The total deadline was set before the connection opened, so DNS, TLS
+    and a redirect chain spent the body's budget and the refusal blamed a
+    body still arriving; the clock starts with the body's first byte."""
+    import time
+    from collections.abc import Generator, Iterator
+    from typing import ClassVar
+
+    from agent6.ui.cli import skills_cmds
+
+    clock = [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+
+    class _Body:
+        headers: ClassVar[dict[str, str]] = {}
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_raw(self) -> Iterator[bytes]:
+            yield b"# skill\n"
+
+    @contextlib.contextmanager
+    def slow_open(*_a: object, **_k: object) -> Generator[_Body]:
+        clock[0] += skills_cmds._FETCH_TIMEOUT_S + 1  # pyright: ignore[reportPrivateUsage]
+        yield _Body()
+
+    monkeypatch.setattr(skills_cmds.httpx2, "stream", slow_open)
+    assert skills_cmds._fetch_url("https://example.invalid/SKILL.md") == "# skill\n"  # pyright: ignore[reportPrivateUsage]
 
 
 def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrades(
