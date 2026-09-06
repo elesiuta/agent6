@@ -16,7 +16,7 @@ from agent6.config import (
     Config,
 )
 from agent6.config.layer import load_effective
-from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, git_hardening_flags
+from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, chain_tip, git_hardening_flags
 from agent6.paths import state_dir
 from agent6.providers import (
     ProviderError,
@@ -89,10 +89,31 @@ def _collect_review_diff(
             )
 
 
+def _is_checked_out(git: str, root: Path, rev: str) -> bool:
+    """True when the checkout at *root* IS *rev*: that commit, with nothing
+    uncommitted on top. An explore-tier seat's read-only tools read the
+    checkout, so anything else answers `read_file` from a tree the diff does
+    not describe."""
+    checked_out = chain_tip(root, "HEAD")
+    if checked_out is None or chain_tip(root, rev) != checked_out:
+        return False
+    status = subprocess.run(
+        [git, *git_hardening_flags(root), "status", "--porcelain", "--untracked-files=no"],
+        cwd=root,
+        capture_output=True,
+        errors="replace",
+        check=False,
+    )
+    return status.returncode == 0 and not status.stdout.strip()
+
+
 def _run_review_panel(
     cfg: Config,
     *,
+    git: str,
+    root: Path,
     base: str,
+    head: str,
     diff: str,
     agents_md: str,
     reviewers: int,
@@ -128,7 +149,15 @@ def _run_review_panel(
     tools = None
     dispatch = None
     if any(s.tier == "explore" for s in seats):
-        disp = ToolDispatcher(root=Path.cwd(), config=cfg)
+        if base and not _is_checked_out(git, root, head):
+            error(
+                "review.tier = 'explore' reads the checkout, but the checkout is not"
+                f" --head {head!r} (another commit, or uncommitted changes on top): a"
+                " seat's read_file would answer from a tree the diff does not describe."
+                " Check it out clean, or set review.tier = 'diff'."
+            )
+            return 2
+        disp = ToolDispatcher(root=root, config=cfg)
         tools, dispatch = build_readonly_review_tools(disp)
     print(
         f"[agent6] review panel: {len(seats)} seats"
@@ -247,7 +276,10 @@ def _cmd_review(  # noqa: PLR0911
     if reviewers >= 1:
         return _run_review_panel(
             cfg,
+            git=git,
+            root=root,
             base=base,
+            head=head,
             diff=diff,
             agents_md=agents_md,
             reviewers=reviewers,

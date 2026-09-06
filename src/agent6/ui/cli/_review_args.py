@@ -71,7 +71,11 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     review_p.add_argument(
         "--head",
         default="HEAD",
-        help="Head ref (default: HEAD). Only used when --base is set.",
+        help=(
+            "Head ref (default: HEAD). Only used when --base is set. With"
+            " [review].tier = 'explore' it must be the checked-out commit, clean,"
+            " which the seats read."
+        ),
     )
     review_p.add_argument(
         "--path",

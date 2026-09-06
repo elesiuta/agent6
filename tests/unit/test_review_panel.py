@@ -11,6 +11,7 @@ gaps, and uncited claims are mechanically downgraded and can never stall a run.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from agent6.workflows._panel import (
@@ -394,7 +395,10 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(monkeypatch: Any, capsys
     monkeypatch.setattr(review_cmds, "run_panel", _fake_panel)
     rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
         Config(),
+        git="git",
+        root=Path.cwd(),
         base="",
+        head="HEAD",
         diff="d",
         agents_md="",
         reviewers=3,
@@ -450,7 +454,10 @@ def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys
         monkeypatch.setattr(review_cmds, "run_panel", _panel)
         rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
             Config(),
+            git="git",
+            root=Path.cwd(),
             base="",
+            head="HEAD",
             diff="d",
             agents_md="",
             reviewers=1,

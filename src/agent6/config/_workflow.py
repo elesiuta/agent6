@@ -506,7 +506,8 @@ class ReviewConfig(BaseModel):
         description=(
             "How much a seat reads: `diff` (one call over the diff, the task, and the verify "
             "result) or `explore` (a read-only tool-using reviewer that also reads the repo around "
-            "the diff to catch cross-file impact; several calls per seat)."
+            "the diff to catch cross-file impact; several calls per seat, and it reads the "
+            "checkout, so the reviewed head must be checked out with a clean tree)."
         ),
     )
 
