@@ -135,6 +135,37 @@ def test_loop_guard_fires_on_three_identical_calls(tmp_path: Path) -> None:
     assert "3 times" in notices[0]
 
 
+def test_polling_a_growing_result_is_not_a_spiral(tmp_path: Path) -> None:
+    """`run_command`'s own description tells the model to poll a background
+    job with `read_background`, whose args never change and whose tail grows
+    every call. The guard counted the calls and killed the run for following
+    the instruction, under a notice claiming the result had not changed."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+
+    provider = MagicMock()
+    provider.call.side_effect = [
+        *(_resp_with_tool("read_background", {"id": "bg-1"}, tu_id=f"t{i}") for i in range(1, 10)),
+        _resp_text("ok"),
+    ]
+    dispatcher = MagicMock(operator_wait_s=0.0)
+    tail = iter(f"line {i}\n" * i for i in range(1, 20))
+
+    def _growing_tail(*_args: object, **_kwargs: object) -> RawResult:
+        return RawResult({"output": next(tail)})
+
+    dispatcher.dispatch.side_effect = _growing_tail
+
+    wf = _build_wf(repo, provider, dispatcher)
+    result = wf.run("watch the build")
+
+    assert result.completed is True, result.reason
+    assert result.reason != "loop_guard_killed"
+    last_args = provider.call.call_args_list[-1]
+    final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
+    assert _loop_guard_blocks(final_messages) == []
+
+
 def test_loop_guard_does_not_fire_when_args_change(tmp_path: Path) -> None:
     """Different args every turn -> no loop-guard notice."""
     repo = tmp_path / "repo"

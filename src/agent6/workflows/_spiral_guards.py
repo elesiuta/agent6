@@ -53,7 +53,14 @@ class SpiralGuard:
 
     def note_success(self, content: str) -> None:
         """A successful dispatch is progress: remember what was served and
-        clear the WHOLE error spiral."""
+        clear the WHOLE error spiral.
+
+        A repeat that answered something NEW breaks the repeat streak too: the
+        guard's notice says "the tool result has not changed", and polling
+        `read_background` -- which `run_command`'s own description tells the
+        model to do, and whose tail grows every call -- was killed for it."""
+        if content != self.last_served_content:
+            self.call_streak = 1
         self.last_served_content = content
         self.error_sig = None
         self.error_streak = 0
