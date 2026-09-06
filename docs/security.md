@@ -266,7 +266,7 @@ Under `none` isolation nothing is enforced or refused.
 - The `fetch` off-list host prompt and the sandbox-off gate take no standing answer; both say so, and no front-end shows the button
 - `isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue?
   [y/N]` interactively, a warning in CI and `machine run`.
-- A prompt with no operator to answer it denies.
+- A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny) or `wait` (park it for a front-end); an unattended machine auto-denies.
 
 ### 7. Git
 

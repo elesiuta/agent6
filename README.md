@@ -95,7 +95,7 @@ See [usage](https://agent6.dev/usage/) for the full command tour, [the web UI](h
 
 The general rules, which the rest of agent6 follows:
 
-- Commands need your approval: under the default `run_commands = "ask"`, each command the model proposes waits for your yes, once or for the session; a headless run auto-denies, and a hub-spawned one parks the prompt for a front-end
+- Commands need your approval: under the default `run_commands = "ask"`, each command the model proposes waits for your yes, once or for the session; a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny) or `wait` (park the prompt for a front-end), and a hub-spawned one parks it
 - A run never touches your checkout: its work lands as per-step commits on its own chain (a visible `agent6/<id>` branch by default), and `agent6 sessions merge` lands them when you are ready
 - Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (state dir, never committed), then `--config FILE`
 - Nothing is hidden: `agent6 config show` prints every effective value and the layer that set it; every field has a default, and security-sensitive fields default safe (`network = "auto"`, `run_commands = "ask"`, `protect_git = true`)
