@@ -21,16 +21,9 @@ from agent6.sessions.ipc import (
     worker_is_alive,
     write_question_answers,
 )
-from agent6.sessions.layout import LOGS_NAME, SessionLayout
+from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli._common import resolve_session_layout
-from agent6.viewmodel import QuestionPrompt, fold_session, tail_events
-
-
-def _open_question(session_dir: Path) -> QuestionPrompt | None:
-    """The run's unanswered `ask_user` prompt, oldest first; None when none is
-    open."""
-    state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
-    return next((q for q in state.pending_questions if not q.answered), None)
+from agent6.viewmodel import QuestionPrompt, open_question
 
 
 def _print_question(session_id: str, prompt: QuestionPrompt) -> None:
@@ -81,7 +74,7 @@ def _answer_resolved(layout: SessionLayout, answers: tuple[str, ...]) -> int:
         return _refuse(
             f"session {layout.session_id} is not running; only a live run holds a question open."
         )
-    prompt = _open_question(layout.session_dir)
+    prompt = open_question(layout.session_dir)
     if prompt is None:
         return _refuse(
             f"{layout.session_id} is not waiting on a question (an approval is answered"

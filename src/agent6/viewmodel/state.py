@@ -24,6 +24,7 @@ from typing import Any, Literal
 
 from agent6.models.registry import context_window
 from agent6.sessions.ipc import listening_ports
+from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
@@ -640,6 +641,17 @@ def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
     for event in events:
         state = apply_event(state, event)
     return state
+
+
+def open_question(session_dir: Path) -> QuestionPrompt | None:
+    """The run's unanswered `ask_user` prompt, oldest first; None when none is
+    open. Every surface that writes an answer file checks it against this, so
+    an answer list of the wrong length is refused instead of consumed and
+    thrown away by the asking side."""
+    from agent6.viewmodel.tail import tail_events  # noqa: PLC0415 -- cycle at import time
+
+    state = fold_session(tail_events(session_dir / LOGS_NAME, follow=False))
+    return next((q for q in state.pending_questions if not q.answered), None)
 
 
 def fold_until_commit(events: Iterable[dict[str, Any]], sha: str) -> SessionState | None:

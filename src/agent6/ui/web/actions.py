@@ -50,7 +50,12 @@ from agent6.ui.spawn import (
     spawn_detached_resume,
 )
 from agent6.ui.web import model
-from agent6.viewmodel import machine_verb_refusal, newest_state_log, session_is_live
+from agent6.viewmodel import (
+    machine_verb_refusal,
+    newest_state_log,
+    open_question,
+    session_is_live,
+)
 from agent6.viewmodel.listing import finished_needs_new_work
 from agent6.viewmodel.machine_state import MachineVerb
 
@@ -132,6 +137,14 @@ def answer_question(
         return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
         return False, "the session is not live"  # see approve()
+    prompt = open_question(session_dir)
+    if prompt is None or prompt.id != question_id:
+        return False, "that question is no longer open"
+    if len(answers) != len(prompt.questions):
+        # Answers align to the prompt's questions by index, and the asking side
+        # raises on a mismatch AFTER consuming the file: the operator's text
+        # would be gone and the model would get an error instead.
+        return False, f"that prompt has {len(prompt.questions)} question(s)"
     write_question_answers(session_dir, question_id, answers)
     return True, "answered"
 

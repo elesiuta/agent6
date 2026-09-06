@@ -355,17 +355,44 @@ def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Pat
     assert (session_dir / "approvals" / "p1.answer").read_text(encoding="utf-8") == "yes"
 
 
+def _run_asking_one_question(tmp_path: Path, session_id: str) -> Path:
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / session_id
+    session_dir.mkdir(parents=True)
+    events = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which one?"}]},
+    ]
+    (session_dir / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+    )
+    write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    return session_dir
+
+
 def test_answer_writes_question_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "q-run"
-    session_dir.mkdir(parents=True)
-    (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
-    write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    session_dir = _run_asking_one_question(tmp_path, "q-run")
     status, body = _post(port, "/api/session/q-run/answer", {"id": "q1", "answers": ["option B"]})
     assert status == 200 and body["ok"] is True
     assert (session_dir / "questions" / "q1.answer").read_text(encoding="utf-8") == json.dumps(
         ["option B"]
     )
+
+
+def test_answer_refuses_a_list_that_does_not_match_the_prompt(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """The asking side raises on a mismatch after consuming the answer file, so
+    an unchecked write lost the operator's answers and handed the model an
+    error instead."""
+    _srv, port = server
+    session_dir = _run_asking_one_question(tmp_path, "q-run2")
+    status, body = _post(
+        port, "/api/session/q-run2/answer", {"id": "q1", "answers": ["a", "b", "c"]}
+    )
+    assert status == 422 and body["ok"] is False
+    assert "1 question" in str(body["error"])
+    assert not (session_dir / "questions" / "q1.answer").exists()
 
 
 def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path: Path) -> None:
