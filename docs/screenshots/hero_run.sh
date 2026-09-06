@@ -47,7 +47,7 @@ network = "session"
 run_commands = "ask"
 protect_git = true
 [git]
-require_clean_worktree = true
+dirty_tree = "ask"
 branch_per_run = true
 [git.commit]
 name = "agent6 demo"

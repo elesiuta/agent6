@@ -176,8 +176,7 @@ run_commands = "yes"
 protect_git = true
 
 [git]
-require_clean_worktree = true
-auto_stash = false
+dirty_tree = "ask"
 branch_per_run = true
 
 [workflow]
@@ -221,7 +220,7 @@ EOF
 # `config show` loads the same merged layers the run will.
 ( cd "$WORKDIR" && "$AGENT6_BIN" --config agent6.toml config show >/dev/null ) || exit 1
 
-# Ignore the bench-only files so agent6's require_clean_worktree is happy.
+# Ignore the bench-only files so agent6's dirty-tree question does not fire.
 {
   echo "agent6.toml"
   echo "TASK.md"

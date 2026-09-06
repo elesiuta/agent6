@@ -669,7 +669,7 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     def writer_b() -> None:
         a_in_revalidate.wait(timeout=5)
         b_attempted.set()
-        results["b"] = set_config_value(repo, "git.auto_stash", "true", to_repo=True)
+        results["b"] = set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
 
     ta = threading.Thread(target=writer_a, daemon=True)
     tb = threading.Thread(target=writer_b, daemon=True)
@@ -680,7 +680,7 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     assert results["a"] is not None  # the invalid write was rejected
     assert results["b"] is None  # ...without taking B's valid write down with it
     eff = load_effective(repo)
-    assert eff.config.git.auto_stash is True  # B's update survived A's rollback
+    assert eff.config.git.dirty_tree == "stash"  # B's update survived A's rollback
     assert eff.config.sandbox.run_commands == "yes"  # A rolled back to the prior value
 
 
@@ -734,7 +734,7 @@ def test_config_write_hands_the_dir_over_before_writing(
 
     monkeypatch.setattr(write_mod, "upsert_toml_leaf", killed)
     with pytest.raises(KeyboardInterrupt):
-        set_config_value(repo, "git.auto_stash", "true", to_repo=True)
+        set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
     assert handed[0] == repo_config_path_for(repo).parent  # before the write, not after it
 
 

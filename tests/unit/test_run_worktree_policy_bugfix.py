@@ -4,12 +4,12 @@ clean.
 
 Untracked files are the operator's: a run starts on them without a word,
 records them as `untracked-at-start`, and never commits them (an earlier
-shape refused every such tree as "dirty" and, with `require_clean_worktree`
-off, swept them into the first auto-commit). Uncommitted changes to tracked
+shape refused every such tree as "dirty" and, when told not to ask, swept
+them into the first auto-commit). Uncommitted changes to tracked
 files ask the operator (stash / include / cancel) over the same channel as
 `ask_user`; a run nobody can answer refuses BEFORE any session dir exists,
-`auto_stash` stashes without asking, and `require_clean_worktree = false`
-includes without asking.
+`dirty_tree = "stash"` stashes without asking, and `"include"` includes
+without asking.
 """
 
 from __future__ import annotations
@@ -177,7 +177,7 @@ def test_modified_tracked_files_refuse_when_nobody_can_answer(
     err = capsys.readouterr().err
     assert "REFUSING: 1 tracked file has uncommitted changes:\n- seed.txt" in err
     assert "no terminal and no front-end" in err
-    assert "[git].auto_stash = true" in err and "[git].require_clean_worktree = false" in err
+    assert '[git].dirty_tree = "stash"' in err and '"include"' in err
     # The operator's edit is untouched and no session dir survives the refusal.
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
     assert _session_dirs(app_run_mod.resolved_state_dir(repo)) == []
@@ -261,7 +261,7 @@ def test_auto_stash_stashes_without_asking(tmp_path: Path, monkeypatch: pytest.M
     _init_repo(repo)
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    _patch_common(monkeypatch, _runnable_cfg(GitConfig(auto_stash=True)), stop_after_policy=True)
+    _patch_common(monkeypatch, _runnable_cfg(GitConfig(dirty_tree="stash")), stop_after_policy=True)
     asked = _answering_frontend(monkeypatch, "cancel")
 
     with pytest.raises(_Stop):
@@ -274,7 +274,7 @@ def test_auto_stash_stashes_without_asking(tmp_path: Path, monkeypatch: pytest.M
     assert "agent6 auto-stash before run" in _git(repo, "stash", "list")
 
 
-def test_require_clean_worktree_off_includes_without_asking(
+def test_dirty_tree_include_includes_without_asking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
@@ -282,7 +282,7 @@ def test_require_clean_worktree_off_includes_without_asking(
     _init_repo(repo)
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    cfg = _runnable_cfg(GitConfig(require_clean_worktree=False))
+    cfg = _runnable_cfg(GitConfig(dirty_tree="include"))
     _patch_common(monkeypatch, cfg, stop_after_policy=True)
     asked = _answering_frontend(monkeypatch, "cancel")
 

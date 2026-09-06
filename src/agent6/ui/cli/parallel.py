@@ -104,7 +104,7 @@ def dispatch_parallel(
     except GitError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    if modified and cfg.git.require_clean_worktree:
+    if modified and cfg.git.dirty_tree == "ask":
         listed = "\n".join(f"    {p}" for p in modified[:10])
         more = f"\n    ... {len(modified) - 10} more" if len(modified) > 10 else ""
         n = len(modified)
@@ -112,7 +112,7 @@ def dispatch_parallel(
             f"REFUSING: {n} tracked {'file has' if n == 1 else 'files have'} uncommitted"
             f" changes:\n{listed}{more}\n"
             "Lanes clone committed HEAD, so those changes would not reach them. Commit or"
-            " stash them first, or set [git].require_clean_worktree = false to fan out"
+            ' stash them first, or set [git].dirty_tree to "stash" or "include" to fan out'
             " without them.",
             file=sys.stderr,
         )

@@ -142,3 +142,37 @@ def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
     # No pins: nothing rides along.
     plain = segment_lanes(Segment(spec="", task="do it"), limit=4)
     assert plain[0].task == "do it" and plain[0].pins == ()
+
+
+def test_a_dirty_origin_fans_out_under_stash_and_include(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--parallel` read `require_clean_worktree` alone, so the documented
+    stash-without-asking setup refused to fan out and named a key the run
+    path ignored. One knob decides for both."""
+    from agent6.config import Config
+    from agent6.ui.cli import parallel as cli_parallel
+
+    def _dirty(_origin: Path) -> list[str]:
+        return ["a.py"]
+
+    def _clear(_cfg: Config) -> None:
+        return None
+
+    monkeypatch.setattr(cli_parallel, "modified_paths", _dirty)
+    monkeypatch.setattr(cli_parallel, "budget_preflight", _clear)
+    monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
+    fanned: list[str] = []
+
+    def _fake_run_parallel(task: str, *_a: object, **_kw: object) -> int:
+        fanned.append(task)
+        return 0
+
+    monkeypatch.setattr(cli_parallel, "run_parallel", _fake_run_parallel)
+    ask = Config.model_validate({"git": {"dirty_tree": "ask"}})
+    assert cli_parallel.dispatch_parallel(ask, "t", "2", cwd=tmp_path) == 2
+    assert "dirty_tree" in capsys.readouterr().err and fanned == []
+    for choice in ("stash", "include"):
+        cfg = Config.model_validate({"git": {"dirty_tree": choice}})
+        assert cli_parallel.dispatch_parallel(cfg, "t", "2", cwd=tmp_path) == 0, choice
+    assert fanned == ["t", "t"]

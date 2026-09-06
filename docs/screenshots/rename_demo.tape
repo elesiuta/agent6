@@ -33,7 +33,7 @@ Hide
 Type "cd ${AGENT6_DEMO_REPO:-.}" Enter
 Type "export PS1='$ '" Enter
 # Don't let the pre-show test write __pycache__ (it would dirty the worktree and
-# the run would refuse to start under require_clean_worktree).
+# the run would refuse to start under dirty_tree = "ask").
 Type "export PYTHONDONTWRITEBYTECODE=1" Enter
 Type "clear" Enter
 Show

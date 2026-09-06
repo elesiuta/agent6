@@ -308,9 +308,8 @@ def dirty_tree_refusal(paths: Sequence[str], *, unmerged_run: str = "") -> str:
     return (
         f"{_dirty_tree_listing(paths, unmerged_run=unmerged_run)}\n"
         "This run has no terminal and no front-end to ask how to treat them."
-        f"{settle} decide in config: [git].auto_stash = true"
-        " stashes them for the run; [git].require_clean_worktree = false lets the run's"
-        " first commit record them."
+        f'{settle} decide in config: [git].dirty_tree = "stash" stashes them for the run;'
+        ' "include" lets the run\'s first commit record them.'
     )
 
 

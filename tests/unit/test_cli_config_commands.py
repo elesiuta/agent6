@@ -94,17 +94,17 @@ def test_unset_last_leaf_drops_the_empty_table(iso: Path) -> None:
     # header accreting in the file; a sibling key keeps the section.
     from agent6.paths import global_config_path
 
-    _run(["config", "set", "git.auto_stash", "true"])
+    _run(["config", "set", "git.dirty_tree", "stash"])
     _run(["config", "set", "sandbox.run_commands", "yes"])
     assert _run(["config", "unset", "sandbox.run_commands"]) == 0
     text = global_config_path().read_text(encoding="utf-8")
     assert "[sandbox]" not in text
     assert "[git]" in text  # untouched sibling section survives
     _run(["config", "set", "git.run_repo_hooks", "true"])
-    assert _run(["config", "unset", "git.auto_stash"]) == 0
+    assert _run(["config", "unset", "git.dirty_tree"]) == 0
     text = global_config_path().read_text(encoding="utf-8")
     assert "[git]" in text  # still holds run_repo_hooks
-    assert "run_repo_hooks" in text and "auto_stash" not in text
+    assert "run_repo_hooks" in text and "dirty_tree" not in text
 
 
 # --- top-level `preset` (the one section-less leaf) -------------------------

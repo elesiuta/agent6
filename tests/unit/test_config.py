@@ -41,8 +41,7 @@ run_commands = "ask"
 protect_git = true
 
 [git]
-require_clean_worktree = true
-auto_stash = false
+dirty_tree = "ask"
 branch_per_run = true
 
 [workflow]
@@ -551,8 +550,7 @@ max_tokens_fallback = 100000
     cfg = load_config(_write(tmp_path, body))
     # Defaulted fields:
     assert cfg.agent6.config_version == 1
-    assert cfg.git.require_clean_worktree is True
-    assert cfg.git.auto_stash is False
+    assert cfg.git.dirty_tree == "ask"
     assert cfg.git.branch_per_run is True
     assert cfg.git.merge_strategy == "squash"
     assert cfg.workflow.verify_timeout_s == 600.0
@@ -619,10 +617,10 @@ def test_compaction_summarise_must_exceed_the_verbatim_tail(tmp_path: Path) -> N
         load_config(_write(tmp_path, body))
 
 
-def test_auto_stash_pop_requires_auto_stash(tmp_path: Path) -> None:
+def test_auto_stash_pop_requires_the_stash_choice(tmp_path: Path) -> None:
     # The same dependent-knob rule as auto_merge/auto_prune: a pop with nothing
     # ever stashed is inert, so reject it with a pointer instead of loading it.
-    body = _VALID_TOML.replace("auto_stash = false", "auto_stash = false\nauto_stash_pop = true")
+    body = _VALID_TOML.replace('dirty_tree = "ask"', 'dirty_tree = "ask"\nauto_stash_pop = true')
     with pytest.raises(ConfigError, match="auto_stash_pop"):
         load_config(_write(tmp_path, body))
 
@@ -1043,3 +1041,15 @@ def test_cleartext_rejection_is_scheme_case_insensitive(tmp_path: Path) -> None:
         d.mkdir()
         with pytest.raises(ConfigError, match="https"):
             load_config(_write(d, body))
+
+
+def test_auto_stash_pop_needs_the_stash_choice() -> None:
+    """One knob for the dirty tree: the two booleans encoded a three-valued
+    answer with a dead fourth row, and `--parallel` read only one of them."""
+    import pytest
+
+    from agent6.config._git import GitConfig
+
+    assert GitConfig(dirty_tree="stash", auto_stash_pop=True).auto_stash_pop
+    with pytest.raises(ValueError, match='dirty_tree = "stash"'):
+        GitConfig(dirty_tree="include", auto_stash_pop=True)

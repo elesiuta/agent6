@@ -279,8 +279,8 @@ def status_style(status: str) -> str:
 class PlainNotify:
     """Mix into an App (before App in the bases): notifications carry text,
     never markup. Every toast here relays a message assembled elsewhere (a
-    refusal naming `[git].auto_stash`, a path, an error), and textual's
-    default markup parse ate the bracketed parts ("set .auto_stash=true")."""
+    refusal naming `[git].dirty_tree`, a path, an error), and textual's
+    default markup parse ate the bracketed parts ("set .dirty_tree=stash")."""
 
     def notify(
         self,

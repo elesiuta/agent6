@@ -303,7 +303,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # A run that would have to ask about them but cannot refuses BEFORE
         # anything is created (see the approval refusal above).
         modified = modified_paths(cwd) if mode == "run" else []
-        must_ask = bool(modified) and not cfg.git.auto_stash and cfg.git.require_clean_worktree
+        must_ask = bool(modified) and cfg.git.dirty_tree == "ask"
         answerable = frontend.capabilities.can_ask or away_mode(layout.session_dir) == "wait"
         unmerged_run = (
             unmerged_run_holding_the_tree(
@@ -394,9 +394,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # operator is asked over the same channel as `ask_user`.
             if modified:
                 choice: DirtyTreeChoice
-                if cfg.git.auto_stash:
+                if cfg.git.dirty_tree == "stash":
                     choice = "stash"
-                elif not cfg.git.require_clean_worktree:
+                elif cfg.git.dirty_tree == "include":
                     choice = "include"
                 else:
                     question = dirty_tree_question(modified, unmerged_run=unmerged_run)

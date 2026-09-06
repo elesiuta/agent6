@@ -87,8 +87,7 @@ run_commands = "yes"
 protect_git = true
 
 [git]
-require_clean_worktree = true
-auto_stash = false
+dirty_tree = "ask"
 branch_per_run = true
 
 [workflow]
@@ -175,7 +174,7 @@ for b in task.get("break", []):
         raise SystemExit(f"break.find not unique in {b['path']}; refine the task definition")
     p.write_text(src.replace(b["find"], b["replace"]))
 
-# Commit the broken state so agent6's require_clean_worktree is satisfied.
+# Commit the broken state so agent6's dirty-tree question does not fire.
 # Also pick up any pre-staged files (agent6.toml, TASK.md, .gitignore tweaks).
 # Skip when there's nothing staged (self-contained tasks with no
 # `break` entries — the seed commit already captured everything).

@@ -63,7 +63,7 @@ verify_command = ["bash", "verify.sh"]
 [sandbox]
 run_commands = "yes"
 [git]
-require_clean_worktree = false
+dirty_tree = "include"
 CFG
     if [ -n "$A6_MODEL" ]; then
       for role in worker planner reviewer; do

@@ -361,7 +361,7 @@ Under `none` isolation nothing is enforced or refused.
 - Lane git plumbing (clone, fetch, merge) goes through `git_ops.py` and lane spawning through `ui/spawn.py`, both already on the [subprocess allowlist](#12-host-side-subprocess-allowlist).
 - A lane starts from committed state only
     - the fan-out clones HEAD; a coordinator dispatch cuts lanes at the run's chain tip after chain-committing changes
-    - `--parallel` refuses an origin with uncommitted tracked changes under `git.require_clean_worktree`
+    - `--parallel` refuses an origin with uncommitted tracked changes under `git.dirty_tree = "ask"`
 
 ### 11. State machines
 

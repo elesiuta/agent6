@@ -228,7 +228,7 @@ def test_a_mistyped_verb_after_a_bare_group_names_the_choices(
         (["memory"], "memory_command", "list"),
         (["mcp"], "mcp_command", "list"),
         (["config"], "config_command", "show"),
-        (["config", "git.auto_stash"], "config_command", "show"),
+        (["config", "git.dirty_tree"], "config_command", "show"),
         (["prompt"], "prompt_command", "show"),
         (["prompt", "--json"], "prompt_command", "show"),
     ],

@@ -149,8 +149,7 @@ protect_git = false
 extra_read_paths = ["/opt/miniconda3", "/opt/conda"]
 
 [git]
-require_clean_worktree = true
-auto_stash = false
+dirty_tree = "ask"
 branch_per_run = false
 
 [workflow]
@@ -181,7 +180,7 @@ git config user.name "agent6" 2>/dev/null
 # issues tempt the model into recalling the upstream fix; steer to
 # derivation. Committed BEFORE the base capture: part of base state, so it
 # never enters the prediction diff and the worktree stays clean (untracked
-# scaffolding tripped require_clean_worktree and refused every run).
+# scaffolding tripped the dirty-tree question and refused every run).
 if [ ! -f AGENTS.md ]; then
   cat > AGENTS.md <<'AEOF'
 If the task matches a known public issue, still derive the fix from

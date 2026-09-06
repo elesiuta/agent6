@@ -226,7 +226,7 @@ Plan and ask expose no edit tools and spawn freely; `--parallel` lanes work in i
 
 The working tree at start is the run's next gate, in the same shape.
 Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt.
-Uncommitted changes to tracked files are asked about over the `ask_user` channel (stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes"); `[git].auto_stash` and `require_clean_worktree = false` answer without asking, and a run nobody can answer refuses before its dir exists.
+Uncommitted changes to tracked files are asked about over the `ask_user` channel (stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes"); `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before its dir exists.
 
 ## Session state on disk
 

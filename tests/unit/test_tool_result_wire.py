@@ -48,8 +48,7 @@ isolation = "auto"
 run_commands = "yes"
 protect_git = true
 [git]
-require_clean_worktree = true
-auto_stash = false
+dirty_tree = "ask"
 branch_per_run = true
 [workflow]
 verify_command = ["true"]

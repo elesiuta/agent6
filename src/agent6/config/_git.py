@@ -117,25 +117,20 @@ class GitConfig(BaseModel):
     # Untracked files are never in question: a run records the ones present
     # at its start (`untracked-at-start`) and leaves them out of every commit
     # and dirty check.
-    require_clean_worktree: bool = Field(
-        default=True,
+    dirty_tree: Literal["ask", "stash", "include"] = Field(
+        default="ask",
         description=(
-            "When tracked files have uncommitted changes at start, ask how the run treats them "
-            "(`stash` them for the run, `include` them in its commits, or `cancel`, which parks "
-            "the run for a later resume); a run nobody can answer refuses to start. `false`: start "
-            "without asking, the run's first commit records them. Untracked files never count and "
-            "are never committed."
+            "What a run does with tracked files' uncommitted changes at start. `ask`: ask over the "
+            "ask_user channel (`stash` them for the run, `include` them in its commits, or "
+            "`cancel`, which parks the run for a later resume); a run nobody can answer refuses "
+            "to start. `stash`: stash them without asking; at the end the stash is applied back "
+            "per `auto_stash_pop`, else its `git stash apply <sha>` line is printed. `include`: "
+            "start without asking, the run's first commit records them. Untracked files never "
+            "count and are never committed. `--parallel` fans out under `stash` or `include` and "
+            "refuses under `ask`."
         ),
     )
-    auto_stash: bool = Field(
-        default=False,
-        description=(
-            "Stash the tracked files' uncommitted changes at start without asking; at the end the "
-            "stash is applied back per `auto_stash_pop`, else its `git stash apply <sha>` line is "
-            "printed."
-        ),
-    )
-    # When auto_stash stashed pre-run changes, restore them at run end. Default
+    # When `dirty_tree = "stash"` stashed pre-run changes, restore them at run end. Default
     # off (safe): the run-end reporter always prints how to pop the stash; with
     # this on, agent6 also pops it for you when it can do so cleanly (a clean
     # tree: a run that edited leaves its unmerged work in the tree, so this
@@ -146,7 +141,7 @@ class GitConfig(BaseModel):
         description=(
             "Apply the pre-run stash back when the run ends and the tree is clean (a clean apply, "
             "no conflicts). On any doubt the stash stays and the apply line is printed. Never "
-            "`reset --hard`. Requires `auto_stash`."
+            '`reset --hard`. Requires `dirty_tree = "stash"`.'
         ),
     )
     # Per-step commits land on the run's own detached chain
@@ -267,9 +262,9 @@ class GitConfig(BaseModel):
 
     @model_validator(mode="after")
     def _check_auto_merge(self) -> GitConfig:
-        if self.auto_stash_pop and not self.auto_stash:
+        if self.auto_stash_pop and self.dirty_tree != "stash":
             raise ValueError(
-                "git.auto_stash_pop requires git.auto_stash: with nothing stashed "
+                'git.auto_stash_pop requires git.dirty_tree = "stash": with nothing stashed '
                 "pre-run there is nothing to restore at run end."
             )
         if self.auto_prune and not self.auto_merge:
