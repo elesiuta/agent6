@@ -444,9 +444,13 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = actions.merge_run(
                 self.cwd, session_id, mb.strategy, config_path=self.config_path
             )
-        elif verb == "undo":
+        elif verb in ("undo", "fork"):
             self._read_body()  # no parameters; drain the (empty) body
-            payload, err = actions.undo_session(self.cwd, session_id)
+            payload, err = (
+                actions.undo_session(self.cwd, session_id)
+                if verb == "undo"
+                else actions.fork_run(self.cwd, session_id, self.config_path)
+            )
             self._ok_or_err(payload is not None, payload or {}, err)
             return
         elif verb == "resume":

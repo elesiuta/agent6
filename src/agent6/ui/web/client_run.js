@@ -109,7 +109,18 @@ async function renderRun(id, opts, gen) {
         location.hash = '#session/' + encodeURIComponent(d.run_id);
       } catch (e) { toast(e.message, true); }
     };
-    for (const b of [stopBtn, stepBtn, compactBtn, planBtn, mergeBtn, rmBtn]) actions.appendChild(b);
+    // A new run from the latest checkpoint, unstarted (the CLI's `fork --no-run`,
+    // the TUI's Run > Fork): the new session's composer takes the instruction
+    // that starts it, the way /undo hands over its fork.
+    const forkBtn = el('button', null, 'Fork');
+    forkBtn.onclick = async () => {
+      try {
+        const d = await postJSON(base + '/fork', {});
+        toast('forked to ' + d.new_session_id + '; type what it should do');
+        location.hash = '#session/' + encodeURIComponent(d.new_session_id);
+      } catch (e) { toast(e.message, true); }
+    };
+    for (const b of [stopBtn, stepBtn, compactBtn, planBtn, forkBtn, mergeBtn, rmBtn]) actions.appendChild(b);
     cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
     cards._rm_btn = rmBtn; // paintRun gates it the other way: the server refuses a live run
     cards._plan_btn = planBtn;

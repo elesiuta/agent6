@@ -1714,3 +1714,28 @@ def test_the_machine_stream_error_frame_is_typed_like_the_run_streams(tmp_path: 
     stream_machine(chan, tmp_path / "no-such-machine")
     assert len(sent) == 1
     assert sent[0]["type"] == "error" and sent[0]["error"]
+
+
+def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The CLI has `fork` and the TUI Run > Fork; the web run view had only
+    /undo. The verb forks through the same lifecycle call and answers with the
+    new session's id, which the page opens so its composer can start it."""
+    from agent6.ui.web import actions
+
+    _srv, port = server
+    _make_run(tmp_path, "run-f", [{"type": "session.start"}])
+    calls: list[tuple[str, Path]] = []
+
+    def _fake_fork(config_path: object, source: str, *, cwd: Path, **_k: object) -> tuple[str, int]:
+        calls.append((source, cwd))
+        return "run-f-child", 0
+
+    monkeypatch.setattr(actions, "create_fork", _fake_fork)
+    status, data = _post(port, "/api/session/run-f/fork", {})
+    assert status == 200 and data["ok"] is True
+    assert data["new_session_id"] == "run-f-child"
+    assert calls == [("run-f", tmp_path)]
+    status, data = _post(port, "/api/session/run-nope/fork", {})
+    assert status == 404

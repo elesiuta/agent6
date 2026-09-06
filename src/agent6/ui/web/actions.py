@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from agent6.app.fork import undo_fork
+from agent6.app.fork import create_fork, undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import resolved_state_dir
 from agent6.directive import parse_btw, parse_compact, parse_now
@@ -184,6 +184,24 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
         if urgent == ""
         else ("steer requested now" if urgent else "steer requested")
     )
+
+
+def fork_run(
+    cwd: Path, session_id: str, config_path: Path | None = None
+) -> tuple[dict[str, str] | None, str]:
+    """Fork a run at its latest checkpoint into a NEW run, unstarted (the CLI's
+    `agent6 fork --no-run`, the TUI's Run > Fork): the new session's composer
+    starts it with its instruction. Returns ({new_session_id}, "") or (None,
+    why)."""
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return None, f"no session {session_id!r}"
+    said: list[str] = []
+    reporter = Reporter(out=said.append, err=said.append)
+    child, rc = create_fork(config_path, session_dir.name, cwd=cwd, reporter=reporter)
+    if rc != 0:
+        return None, (capture_message(said[-1]) if said else "fork failed")
+    return {"new_session_id": child}, ""
 
 
 def undo_session(cwd: Path, session_id: str) -> tuple[dict[str, str] | None, str]:
