@@ -3,7 +3,7 @@
 """ChatGPT-subscription provider (the Codex Responses backend).
 
 Speaks the Responses API at `chatgpt.com/backend-api/codex/responses`,
-authorized by the OAuth credential from `agent6 connect chatgpt` plus the
+authorized by the OAuth credential from `agent6 connect <name>` plus the
 `chatgpt-account-id` header. The backend accepts streaming only, so every
 call runs over SSE; the delta callbacks stay optional. `instructions`
 carries agent6's own system prompt; with `store=false` the model's

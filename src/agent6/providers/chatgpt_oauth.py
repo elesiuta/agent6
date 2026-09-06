@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """ChatGPT sign-in: PKCE authorization-code OAuth and a refreshing credential.
 
-`agent6 connect chatgpt` owns the interaction (browser, local callback,
+`agent6 connect <name>` owns the interaction (browser, local callback,
 paste fallback); this module owns the protocol: the authorize URL, the code
 exchange, the refresh grant, and the :class:`ChatGPTCredential` the provider
 holds per call. The issuer, the client id, and the redirect
@@ -177,11 +177,11 @@ def _scrub(text: str, secrets: tuple[str, ...]) -> str:
 
 
 def _token_error(
-    resp: httpx2.Response, *, operation: str, secrets: tuple[str, ...] = ()
+    resp: httpx2.Response, *, operation: str, provider: str, secrets: tuple[str, ...] = ()
 ) -> ProviderError:
     """A classified error for a non-2xx token response. The body's error code
     decides permanence: a dead refresh token names the repair (`agent6
-    connect chatgpt`); anything else keeps its status for the retry policy.
+    connect <provider>`); anything else keeps its status for the retry policy.
     *secrets* are the request's credential values, scrubbed from any echoed
     body text."""
     body = _scrub(resp.text[:2000], secrets)
@@ -194,7 +194,7 @@ def _token_error(
     if resp.status_code == 401 or code in _PERMANENT_REFRESH_CODES:
         return ProviderError(
             f"ChatGPT sign-in is no longer valid ({code or f'HTTP {resp.status_code}'});"
-            " run `agent6 connect chatgpt` to sign in again.",
+            f" run `agent6 connect {provider}` to sign in again.",
             status_code=401,
         )
     return ProviderError(
@@ -209,6 +209,7 @@ def exchange_code(
     *,
     code: str,
     verifier: str,
+    provider: str,
     redirect_uri: str = REDIRECT_URI,
     timeout_s: float = _TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
@@ -231,7 +232,7 @@ def exchange_code(
     except httpx2.HTTPError as exc:
         raise ProviderError(f"could not reach {url}: {exc}") from exc
     if resp.status_code >= 400:
-        raise _token_error(resp, operation="exchange", secrets=(code, verifier))
+        raise _token_error(resp, operation="exchange", provider=provider, secrets=(code, verifier))
     return _grant_from_response(resp, operation="exchange")
 
 
@@ -272,6 +273,7 @@ def poll_device_auth(
     client_id: str,
     device: DeviceAuth,
     *,
+    provider: str,
     timeout_s: float = _DEVICE_TIMEOUT_S,
     sleep: Callable[[float], None] = time.sleep,
 ) -> TokenGrant:
@@ -306,6 +308,7 @@ def poll_device_auth(
                 client_id,
                 code=code,
                 verifier=verifier,
+                provider=provider,
                 redirect_uri=f"{issuer.rstrip('/')}{_DEVICE_REDIRECT_PATH}",
             )
         detail = _error_code_of(resp)
@@ -336,6 +339,7 @@ def refresh_grant(
     client_id: str,
     refresh_token: str,
     *,
+    provider: str,
     timeout_s: float = _TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
     """Trade a refresh token for a fresh grant (tokens rotate)."""
@@ -353,7 +357,7 @@ def refresh_grant(
     except httpx2.HTTPError as exc:
         raise ProviderError(f"could not reach {url}: {exc}") from exc
     if resp.status_code >= 400:
-        raise _token_error(resp, operation="refresh", secrets=(refresh_token,))
+        raise _token_error(resp, operation="refresh", provider=provider, secrets=(refresh_token,))
     return _grant_from_response(resp, operation="refresh")
 
 
@@ -509,14 +513,14 @@ class ChatGPTCredential:
         if claimed and tokens.account_id and claimed != tokens.account_id:
             raise ProviderError(
                 f"The stored ChatGPT sign-in for {self._provider!r} carries an account id"
-                " that does not match its own token; run `agent6 connect chatgpt` to sign"
-                " in again.",
+                f" that does not match its own token; run `agent6 connect {self._provider}`"
+                " to sign in again.",
                 status_code=401,
             )
         return self._same_account(tokens)
 
     def _same_account(self, tokens: OAuthTokens) -> OAuthTokens:
-        """Pin on first sight; refuse a grant bound to another account."""
+        """Pin on the first account id seen; refuse a grant bound to another."""
         account = tokens.account_id
         if not self._account:
             self._account = account
@@ -524,7 +528,7 @@ class ChatGPTCredential:
             raise ProviderError(
                 f"The stored ChatGPT sign-in for {self._provider!r} now belongs to a"
                 f" different account than this run started under;"
-                " run `agent6 connect chatgpt` to sign in again.",
+                f" run `agent6 connect {self._provider}` to sign in again.",
                 status_code=401,
             )
         return tokens
@@ -561,17 +565,12 @@ class ChatGPTCredential:
                 fresh_enough = time.time() < stored.expires_at - _REFRESH_SKEW_S
                 if fresh_enough and stored.access_token != self._last_returned:
                     return self._adopt(stored)
-                tokens = stored
-                if not tokens.refresh_token:
-                    raise ProviderError(
-                        f"Stored ChatGPT sign-in for {self._provider!r} has no refresh token;"
-                        " run `agent6 connect chatgpt`.",
-                        status_code=401,
-                    )
+                tokens = stored  # a stored sign-in always carries its refresh token
                 try:
-                    grant = refresh_grant(self._issuer, self._client_id, tokens.refresh_token)
+                    grant = refresh_grant(
+                        self._issuer, self._client_id, tokens.refresh_token, provider=self._provider
+                    )
                 except ProviderError as exc:
-                    grant = None
                     if "refresh_token_reused" not in str(exc):
                         raise
                     # Another HOST may have rotated (the flock covers only this

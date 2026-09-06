@@ -143,7 +143,7 @@ def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
         if load_oauth_tokens(provider) is None:
             print(
                 f"note: provider {provider!r} has no ChatGPT sign-in;"
-                " run `agent6 connect chatgpt` before using it.",
+                f" run `agent6 connect {provider}` before using it.",
                 file=sys.stderr,
             )
         return

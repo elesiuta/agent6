@@ -113,14 +113,16 @@ def test_exchange_and_refresh_post_the_right_grants(monkeypatch: pytest.MonkeyPa
         )
 
     monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_post)
-    grant = exchange_code("https://auth.example", "app_X", code="C0", verifier="V0")
+    grant = exchange_code(
+        "https://auth.example", "app_X", code="C0", verifier="V0", provider="chatgpt"
+    )
     assert grant == TokenGrant("AT", "RT", 1200.0, id_token="IT")
     url, data = calls[0]
     assert url == "https://auth.example/oauth/token"
     assert data["grant_type"] == "authorization_code"
     assert data["code_verifier"] == "V0" and data["redirect_uri"] == REDIRECT_URI
 
-    refresh_grant("https://auth.example", "app_X", "RT")
+    refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
     _, data = calls[1]
     assert data == {"grant_type": "refresh_token", "refresh_token": "RT", "client_id": "app_X"}
 
@@ -134,7 +136,7 @@ def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", dead)
     with pytest.raises(ProviderError) as exc:
-        refresh_grant("https://auth.example", "app_X", "RT")
+        refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
     assert "agent6 connect chatgpt" in str(exc.value) and exc.value.status_code == 401
 
     def down(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
@@ -142,8 +144,32 @@ def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", down)
     with pytest.raises(ProviderError) as exc:
-        refresh_grant("https://auth.example", "app_X", "RT")
+        refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
     assert exc.value.status_code == 503
+
+
+def test_every_remedy_names_the_provider_it_diagnosed(
+    gcfg: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A chatgpt-format provider under another name was told `agent6 connect
+    chatgpt` by four of its five remedies, which signs in a different
+    provider and leaves the broken one untouched."""
+
+    def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(400, {"error": {"code": "refresh_token_expired"}})
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", dead)
+    cred = ChatGPTCredential("codex", issuer="https://auth.example", client_id="app_X")
+    with pytest.raises(ProviderError, match="agent6 connect codex"):
+        cred.token()  # nothing stored
+    save_oauth_tokens("codex", OAuthTokens("AT0", "RT1", time.time() + 3600, "acct-1"))
+    assert cred.token() == "AT0"
+    save_oauth_tokens("codex", OAuthTokens("AT1", "RT1", time.time() + 3600, "acct-2"))
+    cred.invalidate()
+    with pytest.raises(ProviderError, match="agent6 connect codex"):
+        cred.token()  # the stored sign-in moved to another account
+    with pytest.raises(ProviderError, match="agent6 connect codex"):
+        refresh_grant("https://auth.example", "app_X", "RT", provider="codex")  # dead grant
 
 
 def test_tokens_from_grant_keeps_previous_on_partial_refresh() -> None:
@@ -239,7 +265,9 @@ def test_device_auth_start_and_poll(monkeypatch: pytest.MonkeyPatch) -> None:
 
     device = start_device_auth("https://auth.example", "app_X")
     assert device is not None and device.user_code == "AB-12" and device.interval_s == 5.0
-    grant = poll_device_auth("https://auth.example", "app_X", device, sleep=naps.append)
+    grant = poll_device_auth(
+        "https://auth.example", "app_X", device, provider="chatgpt", sleep=naps.append
+    )
     assert grant.access_token == "AT"
     assert posts[0] == (
         "https://auth.example/api/accounts/deviceauth/usercode",
@@ -273,7 +301,7 @@ def test_refresh_error_scrubs_an_echoed_refresh_token(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(chatgpt_oauth, "_post_form", echoing_post)
     with pytest.raises(ProviderError) as ei:
-        chatgpt_oauth.refresh_grant("https://auth.openai.com", "cid", secret)
+        chatgpt_oauth.refresh_grant("https://auth.openai.com", "cid", secret, provider="chatgpt")
     assert secret not in str(ei.value)
     assert "<REDACTED>" in str(ei.value)
 

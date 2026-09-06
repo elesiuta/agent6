@@ -292,7 +292,7 @@ class ChatGPTProviderEntry(_ProviderBase):
     """`api_format = "chatgpt"` -- the ChatGPT-subscription Codex backend.
 
     The Responses wire format at `chatgpt.com/backend-api/codex`, authorized
-    by the OAuth tokens `agent6 connect chatgpt` stores in `secrets.toml`
+    by the OAuth tokens `agent6 connect <name>` stores in `secrets.toml`
     (no API key). Usage draws on the account's ChatGPT plan limits.
     This provider dials only `base_url` and OpenAI's fixed OAuth authority
     (the issuer and client id are constants, not config).
@@ -337,7 +337,7 @@ class ChatGPTProviderEntry(_ProviderBase):
             named = "api_key_env" if self.api_key_env else "token_command"
             raise ValueError(
                 f"api_format 'chatgpt' authenticates with the OAuth tokens"
-                f" `agent6 connect chatgpt` stores, so {named} would never be used;"
+                f" `agent6 connect <name>` stores, so {named} would never be used;"
                 " drop it"
             )
         if self.auth_style != "bearer":

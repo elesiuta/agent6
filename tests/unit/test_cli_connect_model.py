@@ -688,7 +688,8 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
     def fake_start(issuer: str, client_id: str) -> DeviceAuth:
         return DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
 
-    def fake_poll(issuer: str, client_id: str, device: DeviceAuth) -> TokenGrant:
+    def fake_poll(issuer: str, client_id: str, device: DeviceAuth, *, provider: str) -> TokenGrant:
+        assert provider == "chatgpt"
         return TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
     monkeypatch.setattr("agent6.ui.cli.connect.start_device_auth", fake_start)
@@ -707,6 +708,45 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
     assert tokens is not None and tokens.refresh_token == "RT9"
     out = capsys.readouterr().out
     assert "enter the code:  AB-12" in out and "/codex/device" in out
+
+
+def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
+    iso: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A chatgpt-format provider under another name is told to the device
+    poll by that name, so every remedy the credential later prints points
+    back at the provider that broke, and its tokens are stored under it."""
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setattr("sys.platform", "linux")
+
+    from agent6.providers.chatgpt_oauth import DeviceAuth, TokenGrant
+
+    def fake_start(issuer: str, client_id: str) -> DeviceAuth:
+        return DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
+
+    told: list[str] = []
+
+    def fake_poll(issuer: str, client_id: str, device: DeviceAuth, *, provider: str) -> TokenGrant:
+        told.append(provider)
+        return TokenGrant(_grant_jwt(), "RT9", 3600.0)
+
+    monkeypatch.setattr("agent6.ui.cli.connect.start_device_auth", fake_start)
+    monkeypatch.setattr("agent6.ui.cli.connect.poll_device_auth", fake_poll)
+
+    def api_format(prompt: str = "") -> str:
+        return "chatgpt"
+
+    def no_browser(_url: str) -> None:
+        return
+
+    monkeypatch.setattr("builtins.input", api_format)
+    monkeypatch.setattr("webbrowser.open", no_browser)
+
+    assert main(["connect", "codex"]) == 0
+    assert told == ["codex"]
+    tokens = secrets.load_oauth_tokens("codex")
+    assert tokens is not None and tokens.refresh_token == "RT9"
 
 
 def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(

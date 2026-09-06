@@ -274,7 +274,7 @@ def _code_via_callback_server(url: str, state: str) -> str | None:
         server.close()
 
 
-def _grant_via_device_code(issuer: str, client_id: str) -> TokenGrant | None:
+def _grant_via_device_code(issuer: str, client_id: str, provider: str) -> TokenGrant | None:
     """The no-display path: show a short code, poll while the person enters
     it at the issuer's device page from any browser (nothing to forward over
     SSH). None when the issuer has the flow disabled, on refusal, or on
@@ -290,7 +290,7 @@ def _grant_via_device_code(issuer: str, client_id: str) -> TokenGrant | None:
     print(f"and enter the code:  {device.user_code}")
     print("(waiting; Ctrl-C to paste the callback URL by hand instead)")
     try:
-        return poll_device_auth(issuer, client_id, device)
+        return poll_device_auth(issuer, client_id, device, provider=provider)
     except KeyboardInterrupt:
         print()
         return None
@@ -320,7 +320,7 @@ def _chatgpt_sign_in(name: str) -> int:
     if sys.stdin.isatty() and _gui_browser_available():
         code = _code_via_callback_server(url, state)
     elif sys.stdin.isatty():
-        grant = _grant_via_device_code(issuer, client_id)
+        grant = _grant_via_device_code(issuer, client_id, name)
     if grant is None and code is None:
         try:
             pasted = input("Paste the callback URL the browser landed on: ").strip()
@@ -336,7 +336,7 @@ def _chatgpt_sign_in(name: str) -> int:
     if grant is None:
         assert code is not None
         try:
-            grant = exchange_code(issuer, client_id, code=code, verifier=verifier)
+            grant = exchange_code(issuer, client_id, code=code, verifier=verifier, provider=name)
         except ProviderError as exc:
             error(f"{exc}")
             return 2

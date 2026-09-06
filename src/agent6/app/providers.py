@@ -181,7 +181,7 @@ def _provider_from_entry(
         if not account:
             raise ProviderError(
                 f"The stored ChatGPT sign-in for {provider_name!r} carries no account id;"
-                " run `agent6 connect chatgpt` to sign in again."
+                f" run `agent6 connect {provider_name}` to sign in again."
             )
         return ChatGPTProvider(
             model=model,
