@@ -75,3 +75,13 @@ def test_the_run_crumb_carries_the_state_word() -> None:
     assert "setCrumb(runState(s) + ' · ' + cards._crumb)" in client
     # One owner for the word: the state row reads the same helper.
     assert "add('state', runState(s))" in client
+
+
+def test_the_run_card_shows_the_task_as_sessions_show_prints_it() -> None:
+    """A task seeded from a plan carries the whole plan below its title, and
+    the card printed all of it into one cell (`# Plan: ...  ## Original task
+    ...` inline). `sessions show` prints the first line; the card does the
+    same."""
+    client = CLIENT_JS
+    assert "add('task', (s.user_task || '').split('\\n')[0] || '(none)')" in client
+    assert "add('task', s.user_task || '(none)')" not in client

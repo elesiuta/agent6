@@ -401,7 +401,9 @@ function paintRun(cards, s) {
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
-  add('task', s.user_task || '(none)');
+  // The first line, as `sessions show` prints it: a task seeded from a plan
+  // carries the whole plan below its title.
+  add('task', (s.user_task || '').split('\n')[0] || '(none)');
   add('id', s.session_id || cards._id || ''); // older logs carry no session_id in session.start
   add('state', runState(s));
   // Where the run's work lives and where Merge lands: consecutive spawns chain
