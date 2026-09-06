@@ -843,3 +843,35 @@ def test_machines_page_lists_instances_with_their_files(
             assert never[1] == "" and never[2] == "-" and never[3] == "-"
 
     asyncio.run(scenario())
+
+
+def test_watch_screen_stop_on_a_parked_machine_says_why(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """`x` on a machine with no live worker prints the CLI's refusal. Disabling
+    the binding made it a silent no-op that Help still listed."""
+    from agent6.config.layer import resolved_state_dir
+    from agent6.machine import load_machine
+    from agent6.ui.cli import main as cli_main
+
+    monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
+    f = _write(tmp_path / "waiter.asm.toml")
+    assert cli_main(["machine", "run", str(f), "--exit-on-wait"]) == 0  # parks, worker gone
+    instance = resolved_state_dir(tmp_path) / "machines" / "waiter_demo"
+    spec = load_machine(f)
+
+    class _WatchHost(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(MachineWatchScreen(instance, spec))
+
+    async def scenario() -> None:
+        app = _WatchHost()
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("x")
+            await pilot.pause()
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("not running" in n for n in notes), notes
+            assert not (instance / "stop").exists()
+
+    asyncio.run(scenario())

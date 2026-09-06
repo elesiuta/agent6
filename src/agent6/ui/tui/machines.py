@@ -243,9 +243,11 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         # An ended machine takes no input: dim Steer/Message so the footer never
         # offers a control that would drop into a dead instance dir (matches the
-        # web, which disables both buttons once the machine has ended).
+        # web, which disables both buttons once the machine has ended). Stop
+        # keeps its key: on a machine that cannot stop, the action prints the
+        # refusal the CLI prints (Help lists the key either way).
         del parameters
-        if action in ("steer", "poke", "stop"):
+        if action in ("steer", "poke"):
             return not machine_verb_refusal(self._root, self._root.name, action)
         return True
 
