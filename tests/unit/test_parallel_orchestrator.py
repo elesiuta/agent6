@@ -696,6 +696,42 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
     )
 
 
+def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """The harness nudges a lane to write memory like any run, and the import
+    carried only its rulings before tearing the lane's state dir down: every
+    memory file the lane wrote, and its index line, went with it."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    cfg = Config()
+    memory.add(origin_state, "repo-fact", "The build needs BUILD_ID set.")
+    lanes = _specs(tmp_path, cfg, "fan", "1")
+    lane_state = state_dir(lanes[0].workdir, cfg.agent6.state_dir)
+    memory.add(lane_state, "lane-fact", "The flaky test is test_clock.")
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+
+    assert (
+        run_parallel(
+            "do the task",
+            lanes,
+            cfg=cfg,
+            origin=origin,
+            origin_state=origin_state,
+            runtime=runtime,
+            spawner=spawner,
+            fanout_id="fan",
+        )
+        == 0
+    )
+    assert "The flaky test is test_clock." in memory.show(origin_state, "lane-fact")
+    assert "lane-fact" in memory.index_text(origin_state)
+    assert (
+        memory.index_text(origin_state).count("repo-fact") == 1
+    )  # the seeded copy is not a second line
+
+
 def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:

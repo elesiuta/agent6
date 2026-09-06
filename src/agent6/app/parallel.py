@@ -59,7 +59,7 @@ from agent6.git_ops import (
     run_branch_for,
 )
 from agent6.git_ops import status as git_status
-from agent6.memory import merge_decisions, seed_store
+from agent6.memory import merge_decisions, merge_memory, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, repo_id, state_dir
 from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
@@ -949,13 +949,19 @@ def _import_lanes(
             failed.append((res, str(exc)))
             continue
         imported.append(res.spec)
-        # A lane's operator rulings outlive its state dir (torn down after import).
-        carried, known = merge_decisions(state_dir(res.spec.workdir, state_base), origin_state)
+        # A lane's operator rulings and memories outlive its state dir (torn
+        # down after import); the harness nudges a lane to write memory like
+        # any run, so what it wrote must land somewhere that survives.
+        lane_state = state_dir(res.spec.workdir, state_base)
+        carried, known = merge_decisions(lane_state, origin_state)
         if carried or known:
             already = f", {known} already recorded" if known else ""
             reporter.note(
                 f"lane {res.spec.lane}: {carried} recorded decision(s) carried over{already}"
             )
+        facts, _held = merge_memory(lane_state, origin_state)
+        if facts:
+            reporter.note(f"lane {res.spec.lane}: {facts} memory file(s) carried over")
         summary = summarize_session_dir(dest)
         if not produced_result(summary.status):
             # Imported (its branch is safe in the origin) but not a candidate:
