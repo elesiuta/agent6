@@ -723,13 +723,19 @@ def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
     the chain, so `git status` there reports the whole run as dirt: the
     comparison is against the run's own tips (HEAD when it has none, a run
     whose commits the model makes itself)."""
+    if not worktree.is_dir():
+        return ""  # a worktree prune already removed is not dirt to keep
     tips = tips or ("HEAD",)
     try:
         for tip in tips:
             if not chain_dirty(worktree, tip, None):
                 return ""
         held = chain_dirty_paths(worktree, tips[-1], None, 5)
-    except GitError:
+    except (GitError, OSError):
+        # git runs WITH cwd=worktree, so a directory that vanished between the
+        # check above and here is an OSError, not a GitError: unreadable is not
+        # dirt, and crashing here wedged `sessions rm` on the record that names
+        # a worktree `prune` had already swept.
         return ""
     if not held:
         return ""

@@ -947,6 +947,28 @@ def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
     assert "no commit has" in out
 
 
+def test_rm_removes_a_record_whose_worktree_is_already_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`prune` removes a merged fork's worktree and leaves the record naming
+    it. The dirt probe runs git WITH cwd=worktree, so the missing directory
+    raised FileNotFoundError -- before the record was deleted, which wedged
+    `sessions rm` on that record forever under a "report it" crash line."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    worktree = _fork_with_worktree(tmp_path, "fork-swept11", merged=True)
+    _git(tmp_path, "worktree", "remove", "--force", str(worktree))
+    assert not worktree.exists()
+
+    assert main(["sessions", "rm", "fork-swept11"]) == 0
+
+    assert "removed fork-swept11" in capsys.readouterr().out
+    assert not (resolved_state_dir(tmp_path) / "sessions" / "runs" / "fork-swept11").exists()
+
+
 def test_rm_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
