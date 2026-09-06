@@ -181,11 +181,10 @@ _ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
 def pending_prompt(session_dir: Path) -> str:
     """ "approval" / "a question" if the lane is blocked on an unanswered prompt,
     else "". The worker emits `approval.prompt`/`question.prompt` then BLOCKS on
-    its `*.answer` (lanes run with AGENT6_DETACHED_AWAY=wait, so a prompt with no
-    hub attached waits rather than denies), so the LAST prompt/answer event in
-    logs.jsonl decides it -- a cheap trailing scan, no `*.request` marker exists
-    for approvals/questions. Deliberately not the heavyweight SessionState fold; the
-    fan-out status line needs only this one bit."""
+    its `*.answer` while its away-mode is `wait`, so the LAST prompt/answer event
+    in logs.jsonl decides it -- a cheap trailing scan, no `*.request` marker
+    exists for approvals/questions. Deliberately not the heavyweight SessionState
+    fold; the fan-out status line needs only this one bit."""
     try:
         lines = (session_dir / LOGS_NAME).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:

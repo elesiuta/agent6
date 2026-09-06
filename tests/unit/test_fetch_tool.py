@@ -242,7 +242,7 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
         shown.append(prompt)
         return "a"  # "allow all", on a prompt that offers no such thing
 
-    monkeypatch.setattr(interactmod, "_has_controlling_tty", lambda: True)
+    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: True)
     monkeypatch.setattr(interactmod, "tty_prompt", _typed)
     approve = OperatorPrompts(
         approver=interactmod.build_approver(session_dir),

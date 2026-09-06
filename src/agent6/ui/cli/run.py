@@ -45,6 +45,7 @@ from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import (
     build_approver,
     build_questioner,
+    lane_away_mode,
     prompt_detach_away_mode,
 )
 from agent6.ui.cli._live import (
@@ -199,6 +200,7 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
                     runtime=lane_runtime(),
                     max_usd=max_usd,
                     auto_approve=auto_approve,
+                    lane_away=lane_away_mode(),
                 )
             )
         ),

@@ -31,6 +31,7 @@ from agent6.paths import state_dir
 from agent6.sessions.id import friendly_token
 from agent6.ui.cli._common import error, refuse, warn
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
+from agent6.ui.cli._interact import lane_away_mode
 from agent6.ui.spawn import agent6_exe, spawn_and_locate
 
 
@@ -132,6 +133,12 @@ def dispatch_parallel(
         return 2
     if verdict.warned:
         warn(f"{warning_message(verdict)}")
+    lane_away = lane_away_mode()
+    if lane_away == "deny":
+        warn(
+            "no terminal to attach from: a lane's questions get empty answers and its"
+            " fetch and MCP approvals are denied"
+        )
     return run_parallel(
         task,
         lanes,
@@ -142,6 +149,7 @@ def dispatch_parallel(
         max_usd=max_usd,
         fanout_id=fanout_id,
         auto_approve=auto_approve,
+        lane_away=lane_away,
         pins=pins,
         spec=spec,
     )

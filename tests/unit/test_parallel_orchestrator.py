@@ -304,7 +304,7 @@ def test_dispatch_parallel_unknown_model_no_cache_warns_and_proceeds(
     rc = parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
     assert rc == 0
     assert reached == ["fix the bug"]  # not blocked offline
-    assert "WARNING" in capsys.readouterr().err
+    assert "WARNING: unvalidated model" in capsys.readouterr().err
 
 
 def test_dispatch_parallel_forwards_auto_approve_to_run_parallel(
@@ -325,6 +325,38 @@ def test_dispatch_parallel_forwards_auto_approve_to_run_parallel(
     parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
 
     assert captured == [True, False]
+
+
+def test_dispatch_parallel_gives_the_lanes_the_coordinators_away_mode(
+    origin: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One owner decides a lane's away-mode: a hub's marker on the coordinator
+    (a hub-spawned fan-out has no terminal but a hub that answers), else a
+    terminal to attach from means `wait`, else `deny` with a warning that
+    names what a lane loses."""
+    from agent6.ui.cli import _interact as interactmod
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    captured: list[object] = []
+
+    def _fake_run(task: str, lanes: object, **kw: object) -> int:
+        captured.append(kw.get("lane_away"))
+        return 0
+
+    monkeypatch.setattr(parallel_cmd, "run_parallel", _fake_run)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: True)
+    parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
+    monkeypatch.setattr(interactmod, "has_controlling_tty", lambda: False)
+    parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
+    parallel_cmd.dispatch_parallel(_provider_cfg(), "fix the bug", "made-up/model", cwd=origin)
+    assert captured == ["wait", "deny", "wait"]
+    err = capsys.readouterr().err
+    assert err.count("fetch and MCP approvals are denied") == 1
 
 
 def test_dispatch_parallel_forwards_pins_to_run_parallel(
@@ -1835,6 +1867,36 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: Path) -> None:
     )
     assert outcome.ranked_by == "mechanical"
     assert [b.max_usd for b in seen] == [0.25]  # the lane cap, not the $10 config budget
+
+
+def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """Every lane ran with the away-mode `wait`, so an unattended fan-out (a
+    pipe, a cron) with a model that asks a question parked every lane until
+    someone attached, which nobody could. `bridge_spawner` stamps the lane
+    with the away-mode it is given."""
+    captured: list[dict[str, str]] = []
+
+    def fake_spawn(argv: list[str], workdir: Path, **kw: object) -> tuple[Path, str]:
+        env = kw.get("env")
+        assert isinstance(env, dict)
+        captured.append(env)
+        return workdir, ""
+
+    for lane, away in enumerate(("wait", "deny"), start=1):
+        spec = LaneSpec(
+            lane=lane,
+            session_id=f"fan-l{lane}",
+            workdir=tmp_path / "work" / f"lane-{lane}",
+            model=None,
+        )
+        result = parallel.bridge_spawner(
+            spec, "do it", cfg=Config(), origin=origin, max_usd=None, lane_away=away,
+            fanout_id="fan", coordinator="co", runtime=replace(runtime, spawn=fake_spawn),
+        )  # fmt: skip
+        assert result.ok, result.error
+        assert captured[-1]["AGENT6_DETACHED_AWAY"] == away
 
 
 def test_lane_is_self_describing_from_birth(

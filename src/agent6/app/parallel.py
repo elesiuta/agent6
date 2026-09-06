@@ -72,6 +72,7 @@ from agent6.memory import merge_decisions, merge_memory, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, mkdir_for_real_user, repo_id, state_dir
 from agent6.sessions.ipc import (
+    AwayMode,
     clear_stop_request,
     clear_worker_pid,
     emit_session_start,
@@ -330,6 +331,7 @@ def bridge_spawner(
     origin: Path,
     max_usd: float | None,
     auto_approve: bool = False,
+    lane_away: AwayMode = "wait",
     at: str | None = None,
     fanout_id: str,
     coordinator: str,
@@ -339,7 +341,9 @@ def bridge_spawner(
     LaneResult once its run dir is located (the run keeps going in the
     background). `ok=False` when the clone or spawn fails; the orchestrator
     records it and moves on. `auto_approve` forwards the coordinator/fan-out's
-    own `--auto-approve` to the lane's argv, same as `max_usd`. The detached
+    own `--auto-approve` to the lane's argv, same as `max_usd`; `lane_away` is
+    the lane's away-mode, "wait" (a question parks for `agent6 attach`) or
+    "deny" (nobody attends: a question gets empty answers). The detached
     spawn + run-dir locate is *runtime*.spawn (the front-end's primitive)."""
     branch = run_branch_for(spec.session_id)
     try:
@@ -392,7 +396,7 @@ def bridge_spawner(
     # for both the CLI fan-out and the coordinator's `/parallel` groups).
     markers = {
         "AGENT6_STREAM_TO_LOG": "1",
-        "AGENT6_DETACHED_AWAY": "wait",
+        "AGENT6_DETACHED_AWAY": lane_away,
         "AGENT6_SUBRUN": "1",
         # The lane is self-describing from birth: its own manifest records the
         # fan-out lineage (the coordinator every listing nests it under, the
@@ -427,6 +431,7 @@ def run_lane_to_completion(
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
+    lane_away: AwayMode = "wait",
     spawner: LaneSpawner | None = None,
     at: str | None = None,
     import_lock: threading.Lock | None = None,
@@ -461,6 +466,7 @@ def run_lane_to_completion(
             origin=origin,
             max_usd=max_usd,
             auto_approve=auto_approve,
+            lane_away=lane_away,
             at=at,
             fanout_id=group,
             coordinator=coordinator,
@@ -539,6 +545,7 @@ def build_lane_spawner(
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
+    lane_away: AwayMode = "wait",
     reporter: Reporter = STDIO_REPORTER,
 ) -> GroupLaneSpawner:
     """Build the coordinator's group dispatcher: the `GroupLaneSpawner` the loop
@@ -618,6 +625,7 @@ def build_lane_spawner(
                 runtime=runtime,
                 max_usd=max_usd,
                 auto_approve=auto_approve,
+                lane_away=lane_away,
                 import_lock=import_lock,
                 reporter=reporter,
                 should_stop=should_stop,
@@ -664,6 +672,7 @@ def build_coordinator_spawner(
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
+    lane_away: AwayMode = "wait",
     reporter: Reporter = STDIO_REPORTER,
 ) -> GroupLaneSpawner | None:
     """The `/parallel` group dispatcher to wire into a run's loop, or None when
@@ -683,6 +692,7 @@ def build_coordinator_spawner(
         runtime=runtime,
         max_usd=max_usd,
         auto_approve=auto_approve,
+        lane_away=lane_away,
         reporter=reporter,
     )
 
@@ -928,6 +938,7 @@ def run_parallel(
     max_usd: float | None = None,
     fanout_id: str | None = None,
     auto_approve: bool = False,
+    lane_away: AwayMode = "wait",
     pins: Sequence[str] = (),
     spec: str = "",
     reporter: Reporter = STDIO_REPORTER,
@@ -945,7 +956,8 @@ def run_parallel(
     lane had a gate, 1 nothing rankable, 4 gates ran and none passed), 2 with
     no lanes or an unreadable origin, 130 on Ctrl+C or a stop request.
     *spawner* defaults to the real bridge spawner; tests inject a fake.
-    `auto_approve` forwards to every lane's argv, same as `max_usd`.
+    `auto_approve` forwards to every lane's argv, same as `max_usd`, and
+    `lane_away` is every lane's away-mode (see `bridge_spawner`).
     """
     if not lanes:
         reporter.error("no lanes to run")
@@ -960,6 +972,7 @@ def run_parallel(
             origin=origin,
             max_usd=max_usd,
             auto_approve=auto_approve,
+            lane_away=lane_away,
             fanout_id=fanout_id,
             coordinator=fanout_id,
             runtime=runtime,

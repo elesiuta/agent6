@@ -13,6 +13,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from agent6.sessions.ipc import (
+    AWAY_MODES,
+    AwayMode,
     answer_written,
     await_frontend_reply,
     away_mode,
@@ -51,7 +53,7 @@ def _pause(cv: ConsoleView | None) -> contextlib.AbstractContextManager[None]:
     return cv.pause() if cv is not None else contextlib.nullcontext()
 
 
-def _has_controlling_tty() -> bool:
+def has_controlling_tty() -> bool:
     """True iff a controlling terminal exists (so the stdin approver can actually
     prompt). A foreground run has one; a web/hub-spawned or fully headless run
     does not, and there falls back to waiting for a front-end rather than a
@@ -62,6 +64,17 @@ def _has_controlling_tty() -> bool:
         return False
     os.close(fd)
     return True
+
+
+def lane_away_mode() -> AwayMode:
+    """The away-mode a fan-out's lanes run with: the coordinator's own marker
+    when a hub set one, else `wait` with a terminal to attach from, else
+    `deny` (nobody attends: a question gets empty answers, an approval is
+    refused)."""
+    marker = os.environ.get("AGENT6_DETACHED_AWAY", "")
+    if marker in AWAY_MODES:
+        return marker
+    return "wait" if has_controlling_tty() else "deny"
 
 
 def default_stdin_approver(
@@ -184,7 +197,7 @@ def build_approver(
         away = away_mode(session_dir)
         if away == "deny":
             return ApprovalAnswer(False, "away-deny")
-        wait_for_frontend = away == "wait" or not _has_controlling_tty()
+        wait_for_frontend = away == "wait" or not has_controlling_tty()
         if wait_for_frontend:
             # away="wait", OR an unattended run with no away-mode and no terminal
             # (a web/hub-spawned run whose viewers have all left): block until a

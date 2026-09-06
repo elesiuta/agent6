@@ -35,7 +35,7 @@ import subprocess
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from agent6.events import EventSink
 from agent6.paths import mkdir_for_real_user
@@ -563,7 +563,8 @@ AWAY_MODE_FILE = "away.mode"
 # scope. Anything else is a typo, and a typo must not read as "an absent
 # operator's intent is known", which would lift the preflight refusal and
 # leave the run waiting forever at the first approval.
-AWAY_MODES = ("wait", "deny", "approve")
+AwayMode = Literal["wait", "deny", "approve"]
+AWAY_MODES: tuple[AwayMode, ...] = ("wait", "deny", "approve")
 
 
 def set_away_mode(session_dir: Path, mode: str) -> None:
