@@ -266,7 +266,8 @@ class MCPServer:
                 name="run_verify",
                 description=(
                     "Run the workspace's configured verify command inside the agent6"
-                    " jail. Returns {returncode, stdout, stderr, duration_s}."
+                    " jail. Returns {command, returncode, stdout, stderr,"
+                    " duration_s, exec_failed}."
                 ),
                 input_schema={
                     "type": "object",
@@ -279,9 +280,9 @@ class MCPServer:
                 name="run_in_sandbox",
                 description=(
                     "Run an arbitrary argv inside the agent6 jail (Landlock + seccomp"
-                    " + user namespace). Requires [sandbox].run_commands = 'auto' or"
-                    " 'yes' in your config; 'ask' and 'no' modes are refused at the"
-                    " MCP boundary because there is no operator to prompt."
+                    " + user namespace). Requires [sandbox].run_commands = 'yes' in"
+                    " your config; 'ask' and 'no' are refused at the MCP boundary"
+                    " because there is no operator to prompt."
                 ),
                 input_schema={
                     "type": "object",

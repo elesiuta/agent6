@@ -21,6 +21,7 @@ from agent6.config import Config
 from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
 from agent6.tools.fetch import MAX_BYTES, FetchRefused, check_url, fetch, host_allowed
 from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
+from agent6.types import IsolationLevel
 
 
 class _Body(httpx2.SyncByteStream):
@@ -266,7 +267,7 @@ def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("isolation", ["hardened", "none"])
 def test_fetch_is_hidden_wherever_a_command_reaches_the_network(
-    tmp_path: Path, isolation: str
+    tmp_path: Path, isolation: IsolationLevel
 ) -> None:
     """Only strict has network namespaces, so every other level puts a command
     on the host network whatever the config says. Reading the config value

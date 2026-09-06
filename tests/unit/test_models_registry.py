@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,15 @@ def test_compaction_thresholds_adaptive_from_window(cache_home: Path) -> None:
     assert drop < summarise  # tier-2 escalates above tier-1
 
 
+def _window(tokens: int) -> Callable[[str, str], int]:
+    """A stand-in for the live model listing's context window."""
+
+    def window(_provider: str, _model: str) -> int:
+        return tokens
+
+    return window
+
+
 def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     cache_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -69,7 +79,7 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     from agent6.app.providers import resolve_compaction_thresholds
     from agent6.config import Config, RoleModel
 
-    monkeypatch.setattr(models_registry, "context_window", lambda _p, _m: 32_768)
+    monkeypatch.setattr(models_registry, "context_window", _window(32_768))
     logs: list[str] = []
 
     drop, summarise, keep = resolve_compaction_thresholds(
@@ -81,7 +91,7 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     assert any("keep_recent_chars 80,000 ->" in line for line in logs), logs
 
     # A window the default already fits inside keeps the operator's number.
-    monkeypatch.setattr(models_registry, "context_window", lambda _p, _m: 262_144)
+    monkeypatch.setattr(models_registry, "context_window", _window(262_144))
     assert resolve_compaction_thresholds(Config(), RoleModel(provider="p", model="m"))[2] == 80_000
 
 

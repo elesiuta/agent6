@@ -219,7 +219,9 @@ class FetchInput(_ToolInput):
 class ReadSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read another session's transcript summary by id; with no id, list the sessions. Read-only."
+        "Read another session's transcript summary by id; with no id, list the"
+        " sessions. `query` keeps the parts that match it, `max_chars` bounds"
+        " the summary. Read-only."
     )
 
     id: str = ""
@@ -391,7 +393,9 @@ class DagListTasksInput(_ToolInput):
 class UseSkillInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "use_skill"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Load an installed skill's full instructions by name (from the <skills> index)."
+        "Load an installed skill's full instructions by name (from the <skills>"
+        " index). `file` reads one of that skill's own supplementary files"
+        " instead, by its path inside the skill's directory."
     )
 
     name: str = Field(min_length=1, max_length=100)
