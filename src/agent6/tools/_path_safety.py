@@ -317,6 +317,21 @@ def list_contained(sp: SafePath) -> list[ContainedEntry]:
         os.close(fd)
 
 
+def unlink_contained(sp: SafePath) -> None:
+    """Remove the file through a descriptor walk of its parents (the walk
+    :func:`open_contained` does), unlinking the leaf by name relative to the
+    parent's descriptor: a component swapped for a symlink cannot redirect a
+    delete any more than a write."""
+    if not sp.rel_path.name:
+        raise ToolError(f"Not a file: {sp.rel_path}")
+    parent = SafePath(sp.base, sp.rel_path.parent, sp.abs_path.parent)
+    fd = open_contained(parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.unlink(sp.rel_path.name, dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
 def write_contained(sp: SafePath, content: str) -> None:
     """Replace the file's text through a descriptor walked from its base, adding
     any missing parent directories along the same walk."""

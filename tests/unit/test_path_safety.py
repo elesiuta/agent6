@@ -120,3 +120,28 @@ def test_a_harness_owned_file_is_readable_but_never_writable(tmp_path: Path) -> 
         ws.resolve_write(str(link / "memory" / "DECISIONS.md"))
     with pytest.raises(ToolError, match="harness-owned"):
         ws.resolve_write(str(mem / "DECISIONS.md"))
+
+
+def test_unlink_walks_to_the_parent_like_a_write(tmp_path: Path) -> None:
+    """The patch delete was the one mutation that unlinked by full path: a
+    component swapped for a symlink between staging and the write loop sent
+    the delete outside the workspace, where the write walk refuses it."""
+    from agent6.tools._path_safety import unlink_contained, write_contained
+
+    root = tmp_path / "root"
+    outside = tmp_path / "outside"
+    (root / "sub").mkdir(parents=True)
+    outside.mkdir()
+    (root / "sub" / "victim.txt").write_text("in repo\n", encoding="utf-8")
+    (outside / "victim.txt").write_text("operator file\n", encoding="utf-8")
+    sp = Workspace(root=root).resolve_write("sub/victim.txt")
+    # A jailed command swaps the parent component after staging.
+    (root / "sub" / "victim.txt").unlink()
+    (root / "sub").rmdir()
+    (root / "sub").symlink_to(outside)
+
+    with pytest.raises(ToolError, match="symlink"):
+        write_contained(sp, "x")
+    with pytest.raises(ToolError, match="symlink"):
+        unlink_contained(sp)
+    assert (outside / "victim.txt").read_text(encoding="utf-8") == "operator file\n"

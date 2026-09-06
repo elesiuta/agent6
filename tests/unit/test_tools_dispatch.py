@@ -2206,3 +2206,27 @@ def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
     ) * 2
     with pytest.raises(ToolError, match=r"pkg/m\.py appears in 2 sections"):
         d.dispatch("apply_patch", {"patch": nested})
+
+
+def test_a_patch_write_that_fails_part_way_names_what_changed(tmp_path: Path) -> None:
+    """Staging is all-or-nothing; the writes were not, and a second file the
+    process could not write reported a failure over a first file it had
+    already rewritten, with nothing telling the model so."""
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root writes through a read-only mode")
+    cfg = _config(tmp_path)
+    (tmp_path / "one.txt").write_text("original one\n", encoding="utf-8")
+    (tmp_path / "locked.txt").write_text("locked original\n", encoding="utf-8")
+    (tmp_path / "locked.txt").chmod(0o444)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    patch = (
+        "diff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n"
+        "@@ -1,1 +1,1 @@\n-original one\n+PATCHED ONE\n"
+        "diff --git a/locked.txt b/locked.txt\n--- a/locked.txt\n+++ b/locked.txt\n"
+        "@@ -1,1 +1,1 @@\n-locked original\n+PATCHED LOCKED\n"
+    )
+    with pytest.raises(ToolError, match=r"locked\.txt.*already changed: one\.txt"):
+        d.dispatch("apply_patch", {"patch": patch})
+    assert (tmp_path / "one.txt").read_text(encoding="utf-8") == "PATCHED ONE\n"

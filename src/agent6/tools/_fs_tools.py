@@ -30,6 +30,7 @@ from agent6.tools._path_safety import (
     list_contained,
     path_within,
     read_contained,
+    unlink_contained,
     write_contained,
 )
 from agent6.tools.errors import ToolError
@@ -427,15 +428,24 @@ def apply_patch(
             truncated=any(pv.truncated for pv in previews),
             files=tuple(pv.path for pv in previews),
         )
+    # Staging was all-or-nothing; the writes are not, so a write that fails
+    # part way names what already changed rather than reporting a failure
+    # over a tree it altered.
+    landed: list[str] = []
     for sp, _target, new_content in staged:
-        if new_content is None:
-            sp.abs_path.unlink()
-            if index is not None:
-                index.mark_deleted(sp.abs_path)
-            continue
-        write_contained(sp, new_content)
-        if index is not None:
-            index.mark_changed(sp.abs_path)
+        try:
+            if new_content is None:
+                unlink_contained(sp)
+                if index is not None:
+                    index.mark_deleted(sp.abs_path)
+            else:
+                write_contained(sp, new_content)
+                if index is not None:
+                    index.mark_changed(sp.abs_path)
+        except OSError as exc:
+            changed = f"; already changed: {', '.join(landed)}" if landed else ""
+            raise ToolError(f"apply_patch: {sp.rel_path}: {exc.strerror or exc}{changed}") from exc
+        landed.append(str(sp.rel_path))
     rows = tuple((str(sp.rel_path), len(new)) for sp, _t, new in staged if new is not None)
     deleted = tuple(str(sp.rel_path) for sp, _t, new in staged if new is None)
     return PatchResult(
