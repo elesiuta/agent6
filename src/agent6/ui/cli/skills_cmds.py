@@ -112,15 +112,31 @@ def _read_origin(skill_dir: Path) -> dict[str, str] | None:
 
 
 def _fetch_url(url: str) -> str:
+    """The body of *url* as UTF-8 text, refused past `_FETCH_MAX_BYTES` while
+    it arrives: a buffered `.content` would hold the whole response first.
+    Compression is declined and refused if sent anyway, since a decoded
+    stream expands past the cap before any check."""
+    body = bytearray()
     try:
-        resp = httpx2.get(url, timeout=_FETCH_TIMEOUT_S, follow_redirects=True)
-        resp.raise_for_status()
+        with httpx2.stream(
+            "GET",
+            url,
+            timeout=_FETCH_TIMEOUT_S,
+            follow_redirects=True,
+            headers={"Accept-Encoding": "identity"},
+        ) as resp:
+            resp.raise_for_status()
+            encoding = resp.headers.get("content-encoding", "")
+            if encoding.lower() not in ("", "identity"):
+                raise OperatorError(f"{url}: refusing content-encoding {encoding!r}")
+            for chunk in resp.iter_raw():
+                body += chunk
+                if len(body) > _FETCH_MAX_BYTES:
+                    raise OperatorError(f"{url}: remote file exceeds {_FETCH_MAX_BYTES} bytes")
     except httpx2.HTTPError as exc:
         raise OperatorError(f"could not fetch {url}: {exc}") from exc
-    if len(resp.content) > _FETCH_MAX_BYTES:
-        raise OperatorError(f"{url}: remote file exceeds {_FETCH_MAX_BYTES} bytes")
     try:
-        return resp.content.decode("utf-8")
+        return bytes(body).decode("utf-8")
     except UnicodeDecodeError as exc:
         raise OperatorError(f"{url}: not UTF-8 text: {exc}") from exc
 

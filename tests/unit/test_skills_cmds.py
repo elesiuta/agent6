@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -490,3 +493,49 @@ def test_enable_clears_a_state_leaf_whose_skill_is_gone(
     # A name with no leaf and no skill is still a typo, not cleanup.
     with pytest.raises(OperatorError, match="unknown skill"):
         _cmd_skills_enable("nonexistent", always=False, repo=False)
+
+
+def _serve_bytes(body: bytes) -> tuple[str, dict[str, str], ThreadingHTTPServer]:
+    """A loopback server answering every GET with *body*: (url, seen headers, server)."""
+    seen: dict[str, str] = {}
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.update({k.lower(): v for k, v in self.headers.items()})
+            self.send_response(200)
+            self.send_header("content-type", "text/markdown")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+                self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{httpd.server_address[1]}/SKILL.md", seen, httpd
+
+
+def test_a_remote_skill_is_capped_while_it_arrives_not_after() -> None:
+    """`httpx2.get` buffered the whole body before the 1 MiB check ran, so a
+    hostile SKILL.md host had `skills install` (and the unattended `skills
+    update`) allocate the response first: a 1 MiB gzip on the wire reached
+    2 GiB of RSS before the refusal."""
+    import tracemalloc
+
+    from agent6.ui.cli.skills_cmds import _fetch_url  # pyright: ignore[reportPrivateUsage]
+
+    url, seen, httpd = _serve_bytes(b"x" * (8 << 20))
+    try:
+        tracemalloc.start()
+        try:
+            with pytest.raises(OperatorError, match="exceeds"):
+                _fetch_url(url)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+    finally:
+        httpd.shutdown()
+    assert peak < 4 << 20, f"buffered {peak} bytes of an 8 MiB body"
+    assert seen["accept-encoding"] == "identity", "a decoded stream expands past the cap"
