@@ -259,8 +259,20 @@ def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost
 
 
 @dataclass(frozen=True, slots=True)
+class PlanSpend:
+    """One subscription plan's latest reading and this run's consumption on
+    its binding window, in percentage points."""
+
+    usage: PlanUsage
+    consumed: float
+
+
+@dataclass(frozen=True, slots=True)
 class BudgetSnapshot:
-    """A point-in-time copy of a BudgetTracker's counters."""
+    """A point-in-time copy of a BudgetTracker's counters.
+
+    `plans` holds one entry per provider entry that reported a subscription
+    plan, the most recently reported last."""
 
     input_total: int
     output_total: int
@@ -270,11 +282,21 @@ class BudgetSnapshot:
     max_usd: float
     max_tokens_fallback: int
     max_percent: float
-    plan_latest: PlanUsage | None
-    plan_consumed: float
+    plans: dict[str, PlanSpend]
     exhausted: bool
     exhausted_reason: str
     per_model: dict[str, ModelUsage]
+
+    @property
+    def plan_latest(self) -> PlanUsage | None:
+        """The last plan reading any provider reported."""
+        return next(reversed(self.plans.values())).usage if self.plans else None
+
+    @property
+    def plan_consumed(self) -> float:
+        """This run's consumption on the plan that moved most: what
+        `max_percent` caps."""
+        return max((spend.consumed for spend in self.plans.values()), default=0.0)
 
 
 @dataclass(slots=True)
@@ -316,10 +338,12 @@ class BudgetTracker:
     _cache_creation_total: int = 0
     _unmetered_tokens: int = 0
     _exceeded_reason: str = ""
-    _plan_latest: PlanUsage | None = None
-    # Per window: the last reading, and this run's consumption sawtooth.
-    _plan_last_percent: dict[str, float] = field(default_factory=dict)
-    _plan_consumed_by_window: dict[str, float] = field(default_factory=dict)
+    # Provider entry -> its latest plan reading, most recently reported last.
+    _plans: dict[str, PlanUsage] = field(default_factory=dict)
+    # Per (provider entry, window): the last reading, and this run's
+    # consumption sawtooth.
+    _plan_last_percent: dict[tuple[str, str], float] = field(default_factory=dict)
+    _plan_consumed_by_window: dict[tuple[str, str], float] = field(default_factory=dict)
     # Purchased credits observed leaving the account during this run, in
     # dollars (the balance header read as dollars); folds into the USD meter.
     _credits_last_usd: float | None = None
@@ -377,7 +401,7 @@ class BudgetTracker:
                 # price table never invents API-rate dollars for these calls.
                 totals.reported_calls += 1
                 totals.percent_metered = True
-                self._note_plan_usage(plan_usage)
+                self._note_plan_usage(self._routes.get(model, model), plan_usage)
             elif cost_usd > 0.0:
                 totals.reported_cost_usd += cost_usd
                 totals.reported_calls += 1
@@ -421,15 +445,23 @@ class BudgetTracker:
                     f" tokens >= {self.max_tokens_fallback}"
                 )
 
-    @property
-    def _plan_consumed(self) -> float:
+    def _plan_consumed(self, route: str = "") -> float:
         """This run's consumption on its binding window: the most any one
-        window moved, since the cap is "no more than N points of the plan"."""
-        return max(self._plan_consumed_by_window.values(), default=0.0)
+        window moved, since the cap is "no more than N points of the plan".
+        *route* narrows it to one provider entry's plan."""
+        return max(
+            (
+                points
+                for (entry, _window), points in self._plan_consumed_by_window.items()
+                if not route or entry == route
+            ),
+            default=0.0,
+        )
 
-    def _note_plan_usage(self, plan: PlanUsage) -> None:
-        """Fold one reading into the per-window consumption sawtooth (lock
-        held), and the credit balance into the USD meter.
+    def _note_plan_usage(self, route: str, plan: PlanUsage) -> None:
+        """Fold one reading from provider entry *route* into the per-window
+        consumption sawtooth (lock held), and the credit balance into the USD
+        meter.
 
         A rise since the last reading is this run's consumption (plus any
         concurrent run's -- account-global, over-counting is the safe side);
@@ -438,19 +470,21 @@ class BudgetTracker:
         contributes 0. A credit balance that fell since the last reading is
         money this run (or a concurrent one) spent."""
         for w in plan.windows:
-            last = self._plan_last_percent.get(w.name)
+            key = (route, w.name)
+            last = self._plan_last_percent.get(key)
             if last is not None:
                 delta = w.used_percent - last
-                self._plan_consumed_by_window[w.name] = self._plan_consumed_by_window.get(
-                    w.name, 0.0
-                ) + (delta if delta >= 0 else w.used_percent)
-            self._plan_last_percent[w.name] = w.used_percent
+                self._plan_consumed_by_window[key] = self._plan_consumed_by_window.get(key, 0.0) + (
+                    delta if delta >= 0 else w.used_percent
+                )
+            self._plan_last_percent[key] = w.used_percent
         balance = plan.credits_usd
         if balance is not None:
             if self._credits_last_usd is not None and balance < self._credits_last_usd:
                 self._credits_spent_usd += self._credits_last_usd - balance
             self._credits_last_usd = balance
-        self._plan_latest = plan
+        self._plans.pop(route, None)
+        self._plans[route] = plan
 
     def _check_plan_ceilings(self, model: str, plan_usage: PlanUsage) -> None:
         """The plan-metered ceilings, most binding first: the paid-credit
@@ -476,9 +510,9 @@ class BudgetTracker:
                 f" (model {model!r} draws on a subscription plan;"
                 " raise [budget].max_percent)"
             )
-        elif self.max_percent > 0.0 and self._plan_consumed >= self.max_percent:
+        elif self.max_percent > 0.0 and self._plan_consumed() >= self.max_percent:
             self._exceeded_reason = (
-                f"plan budget exhausted: this run consumed ~{self._plan_consumed:.1f}"
+                f"plan budget exhausted: this run consumed ~{self._plan_consumed():.1f}"
                 f" percentage points >= max_percent {self.max_percent:g}"
                 f" (account at {plan_usage.used_percent:g}% on its"
                 f" {plan_usage.binding.name} window)"
@@ -497,7 +531,7 @@ class BudgetTracker:
         first look, so a run that would draw on purchased credits refuses at
         its first call instead of after it."""
         with self._lock:
-            self._note_plan_usage(plan)
+            self._note_plan_usage(self._routes.get(model, model), plan)
             self._check_plan_ceilings(model, plan)
 
     def check(self) -> None:
@@ -537,7 +571,7 @@ class BudgetTracker:
             if self.max_tokens_fallback > 0:
                 used = max(used, self._unmetered_tokens / self.max_tokens_fallback)
             if self.max_percent > 0.0:
-                used = max(used, self._plan_consumed / self.max_percent)
+                used = max(used, self._plan_consumed() / self.max_percent)
         return max(0.0, 1.0 - used)
 
     def snapshot(self) -> BudgetSnapshot:
@@ -553,8 +587,10 @@ class BudgetTracker:
                 max_usd=self.max_usd,
                 max_tokens_fallback=self.max_tokens_fallback,
                 max_percent=self.max_percent,
-                plan_latest=self._plan_latest,
-                plan_consumed=self._plan_consumed,
+                plans={
+                    route: PlanSpend(plan, self._plan_consumed(route))
+                    for route, plan in self._plans.items()
+                },
                 exhausted=bool(self._exceeded_reason),
                 exhausted_reason=self._exceeded_reason,
                 per_model=per_model,
@@ -670,20 +706,20 @@ class BudgetTracker:
         if any_unknown:
             budget_line += " (some models unpriced; figure is a lower bound)"
         lines.append(budget_line)
-        if snap.plan_latest is not None:
-            lines.append("  " + format_plan_usage(snap))
+        for route, spend in snap.plans.items():
+            lines.append("  " + format_plan_usage(route, spend, snap.max_percent))
         if snap.exhausted:
             lines.append(f"  STATUS: BUDGET EXCEEDED ({snap.exhausted_reason})")
         return "\n".join(lines)
 
 
-def format_plan_usage(snap: BudgetSnapshot) -> str:
-    """The one plan-usage line every surface prints for subscription spend.
+def format_plan_usage(route: str, spend: PlanSpend, max_percent: float) -> str:
+    """The one plan-usage line every surface prints for subscription spend,
+    one per provider entry.
 
-    Names the account's reported percent, the window, this run's consumed
-    points against `max_percent`, and the reset."""
-    plan = snap.plan_latest
-    assert plan is not None
+    Names the provider entry, the account's reported percent, the window,
+    this run's consumed points against *max_percent*, and the reset."""
+    plan = spend.usage
     minutes = plan.window_minutes
     if minutes >= 1440:
         window = f"{minutes / 1440:g}-day "
@@ -693,12 +729,12 @@ def format_plan_usage(snap: BudgetSnapshot) -> str:
         window = f"{minutes}-minute "
     else:
         window = ""  # the backend reported the window with no length
-    cap = "" if snap.max_percent == -1 else f" of max_percent {snap.max_percent:g}"
+    cap = "" if max_percent == -1 else f" of max_percent {max_percent:g}"
     resets_h = max(0.0, (plan.resets_at - time.time()) / 3600)
     which = "" if plan.binding.name == "primary" else f" ({plan.binding.name})"
     return (
-        f"plan usage: {plan.used_percent:g}% of the {window}window{which}"
-        f" (this run ~{snap.plan_consumed:g} points{cap}; resets in {resets_h:.0f}h)"
+        f"plan usage ({route}): {plan.used_percent:g}% of the {window}window{which}"
+        f" (this run ~{spend.consumed:g} points{cap}; resets in {resets_h:.0f}h)"
         + (
             f"; purchased credits balance {plan.credits_balance or 'present'}"
             if plan.has_credits and not plan.credits_unlimited

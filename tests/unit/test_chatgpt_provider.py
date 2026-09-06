@@ -431,7 +431,7 @@ def test_plan_usage_headers_feed_the_percent_budget(signed_in: ChatGPTCredential
     assert snap.plan_latest.used_percent == 37.0
     assert snap.plan_latest.window_minutes == 10080
     assert snap.unmetered_tokens == 0
-    assert "plan usage: 37% of the 7-day window" in provider.budget.format_summary()
+    assert "plan usage (gpt-5-codex): 37% of the 7-day window" in provider.budget.format_summary()
 
 
 def test_completed_stream_without_message_item_keeps_delta_text(

@@ -236,7 +236,7 @@ def test_percent_meter_sawtooth_and_cap() -> None:
     rec(8.0)  # +3 -> consumed 11 >= 10
     with pytest.raises(BudgetExceeded, match="plan budget exhausted"):
         t.check()
-    assert "plan usage: 8% of the 7-day window" in t.format_summary()
+    assert "plan usage (gpt-5.6-sol): 8% of the 7-day window" in t.format_summary()
     assert "(subscription)" in t.format_summary()
 
 
@@ -458,7 +458,8 @@ def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:
             windows=(PlanWindow("primary", 1.0, 10080, 2e9), PlanWindow("secondary", 3.0, 0, 2e9))
         ),
     )
-    line = format_plan_usage(t.snapshot())
+    route, spend = next(iter(t.snapshot().plans.items()))
+    line = format_plan_usage(route, spend, -1)
     assert "3% of the window (secondary)" in line
     assert "0-minute" not in line
 
@@ -483,3 +484,36 @@ def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
     assert "of $" not in total, total
     assert "cost~$0.0000+" in total
     assert "2,000,000 fallback tokens" in total
+
+
+def test_each_subscription_plan_prints_its_own_named_line() -> None:
+    """A run that draws on two subscription plans (a panel with a chatgpt seat
+    and a claude seat) reports one line per provider entry, each named, and
+    meters each plan's windows apart: two `primary` windows at different
+    percents are two plans, not one plan that reset."""
+    t = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    t.note_route("gpt-5.6-sol", "chatgpt")
+    t.note_route("claude-opus-5", "claude")
+
+    def rec(model: str, pct: float) -> None:
+        t.record(
+            model=model,
+            input_tokens=10,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            plan_usage=PlanUsage.single(used_percent=pct, window_minutes=10080, resets_at=2e9),
+        )
+
+    rec("gpt-5.6-sol", 28.0)
+    rec("claude-opus-5", 54.0)
+    rec("gpt-5.6-sol", 29.0)  # +1 on the chatgpt plan; the claude plan is untouched
+    snap = t.snapshot()
+    assert set(snap.plans) == {"chatgpt", "claude"}
+    assert snap.plans["chatgpt"].consumed == pytest.approx(1.0)
+    assert snap.plans["claude"].consumed == 0.0
+    assert snap.plan_consumed == pytest.approx(1.0)
+    assert snap.plan_latest is not None and snap.plan_latest.used_percent == 29.0
+    summary = t.format_summary()
+    assert "plan usage (chatgpt): 29% of the 7-day window" in summary
+    assert "plan usage (claude): 54% of the 7-day window" in summary

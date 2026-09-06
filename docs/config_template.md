@@ -98,7 +98,7 @@ agent6 model worker chatgpt gpt-5.6-sol
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
 - Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs, never a static list), and its context windows size compaction.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
-- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show `plan usage: N% of the 7-day window`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run). Dollar figures stay an authoritative $0.
+- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show `plan usage (<entry>): N% of the 7-day window` (the provider entry named), and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run). Dollar figures stay an authoritative $0.
 
 ### Claude Code subscription (`api_format = "claude_code"`)
 
@@ -114,7 +114,7 @@ agent6 model worker claude claude-sonnet-4-5
   Inside it every Claude Code capability is off: built-in tools, hooks, settings, CLAUDE.md, MCP servers, skills, slash commands, session files, auto-memory, auto-compaction.
 - `binary` names the executable (default `claude`, resolved on PATH).
   agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
-- Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows, surfaces show the fuller one as `plan usage: N% of the 7-day window (seven_day)`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
+- Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows, surfaces show the fuller one as `plan usage (<entry>): N% of the 7-day window (seven_day)`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
   Refused: `effort = "off"` (`--effort` has no off value; use `low`).
