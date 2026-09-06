@@ -2085,20 +2085,15 @@ class Workflow:
         the honest all_passed=False in the stop checks applies either way).
         A gate that was red before the run touched anything is not the
         model's to fix, so it is never returned."""
-        wf = self.config.workflow
         if not (
             turn.finish_signal is not None
             and turn.finish_kind == "finish_session"
             and self.mode == "run"
-            and wf.verify_when != "never"
-            and wf.verify_command
             and self._tree_is_verify_green(state) is False
-            and state.verify.baseline_ok is not False
-            and state.verify_finish_retries_used < wf.verify_retries
-            and self.dispatcher.command_policy() != "no"
-            and not state.verify.denied
+            and self._red_gate_returns(state)
         ):
             return
+        wf = self.config.workflow
         state.verify_finish_retries_used += 1
         turn.finish_signal = None
         turn.finish_payload = None
@@ -2277,6 +2272,23 @@ class Workflow:
                 budget_remaining=budget_remaining,
             )
 
+    def _red_gate_returns(self, state: LoopState) -> bool:
+        """Whether a red gate is the model's to fix, so an end over it goes
+        back: a gate exists and is the harness's to run, was not red before
+        the run touched anything, was not denied or withheld by the operator,
+        and returns are left. One answer for finish_session and the ends the
+        harness declares, so neither can hand back a gate the model cannot
+        run."""
+        wf = self.config.workflow
+        return (
+            wf.verify_when != "never"
+            and bool(wf.verify_command)
+            and state.verify.baseline_ok is not False
+            and state.verify_finish_retries_used < wf.verify_retries
+            and self.dispatcher.command_policy() != "no"
+            and not state.verify.denied
+        )
+
     def _end_gates(self, state: LoopState, turn: TurnState, *, ending: str) -> SessionResult | None:
         """An end declared without finish_session (`settled`: the harness's
         idle stop; `silent_finish`: a prose turn with no tool call) passes the
@@ -2291,13 +2303,7 @@ class Workflow:
         if aborted is not None:
             return aborted
         wf = self.config.workflow
-        red_returned = (
-            wf.verify_when != "never"
-            and bool(wf.verify_command)
-            and state.verify.last_ok is False
-            and state.verify.baseline_ok is not False
-            and state.verify_finish_retries_used < wf.verify_retries
-        )
+        red_returned = state.verify.last_ok is False and self._red_gate_returns(state)
         if red_returned:
             state.verify_finish_retries_used += 1
             turn.tool_results.append(

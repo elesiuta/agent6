@@ -765,3 +765,35 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     assert dispatcher.run_verify.call_count == 0, "the standing red covers the tree"
     assert turn.end_returned is True
     assert state.verify_finish_retries_used == 1
+
+
+@pytest.mark.parametrize(("policy", "denied"), [("no", False), ("ask", True)])
+def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
+    policy: str, denied: bool
+) -> None:
+    """The standing red decides the hand-back, with the guards finish_session
+    already carries: a gate the operator withheld (`run_commands = "no"`) or
+    denied is not the model's to fix, and bouncing the end told it to."""
+    dispatcher = MagicMock()
+    dispatcher.command_policy.return_value = policy
+    wf = Workflow(
+        root=Path("/tmp"),
+        config=Config.model_validate(
+            {"workflow": {"verify_command": ["true"], "verify_when": "step", "verify_retries": 2}}
+        ),
+        provider=MagicMock(),
+        dispatcher=dispatcher,
+        logger=lambda _m: None,
+        mode="run",
+    )
+    state = LoopState(original_task="t", tool_calls=0)
+    state.verify.note_edit()
+    state.verify.note_fail("sig")
+    state.verify.denied = denied
+    state.verify.note_edit()
+    turn = TurnState(iteration=7, resp=MagicMock(), assistant=MagicMock())
+
+    wf._end_gates(state, turn, ending="silent_finish")  # pyright: ignore[reportPrivateUsage]
+
+    assert turn.end_returned is False
+    assert dispatcher.run_verify.call_count == 0
