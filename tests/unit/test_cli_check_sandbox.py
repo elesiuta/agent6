@@ -17,6 +17,7 @@ import pytest
 
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox.detect import IsolationUnavailableError
+from agent6.sandbox.jail import JailUnavailableError
 from agent6.types import CommandResult, JailPolicy
 from agent6.ui.cli import check_cmds
 
@@ -163,6 +164,33 @@ def test_check_sandbox_probes_the_isolation_the_config_selects(
     assert rc == 0, out
     assert "effective isolation (hardened): hardened" in out
     assert stub_jail and all(p.isolation == "hardened" for p in stub_jail)
+
+
+def test_check_names_a_jail_binary_it_cannot_run(
+    monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unusable AGENT6_JAIL_BIN read as "this host blocks user namespaces"
+    (`userns supported: False`, `auto` resolved to hardened): the environment
+    probe hands back the binary's own refusal, and each section prints it."""
+    refusal = "agent6-jail at /opt/agent6-jail cannot be executed: Exec format error. Reinstall it"
+
+    def _binary_refusal() -> object:
+        raise JailUnavailableError(refusal)
+
+    monkeypatch.setattr(check_cmds, "detect_env", _binary_refusal)
+    rc = check_cmds._cmd_check_sandbox(None)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert f"[FAIL] jail_binary: {refusal}" in out
+    assert "user namespaces" not in out
+    assert stub_jail == []
+    checks = check_cmds._check_config_section(Config())  # pyright: ignore[reportPrivateUsage]
+    assert (checks[0].name, checks[0].status, checks[0].detail) == (
+        "config.isolation",
+        "FAIL",
+        refusal,
+    )
+    assert "user namespaces" not in capsys.readouterr().out
 
 
 def test_check_sandbox_fails_on_an_isolation_this_host_refuses(

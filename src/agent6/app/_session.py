@@ -89,7 +89,13 @@ def select_isolation(
     confirm an unconfined autorun, and refuse configs the isolation cannot honor
     (network mode, strict egress, budget) or a workspace no tool could read.
     Raises :class:`SessionRefused`."""
-    env = detect_env()
+    try:
+        env = detect_env()
+    except JailUnavailableError as exc:
+        # The strict probe could not run the jail binary itself: no isolation
+        # can be selected over a binary no command will run.
+        reporter.refuse(str(exc))
+        raise SessionRefused(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
     try:
         warn_sandbox_gaps(

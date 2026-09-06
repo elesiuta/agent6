@@ -56,7 +56,9 @@ def detect_env() -> Environment:
       EACCES" instead of the run degrading to `hardened`.
 
     So the real jail binary settles it either way. It costs one short jail spawn
-    at startup, cached for the process lifetime.
+    at startup, cached for the process lifetime. A binary the kernel cannot
+    execute raises JailBinaryError out of the probe: the callers refuse with
+    it, and `auto` never resolves to `hardened` over it.
     """
     env = detect()
     if not env.sandbox_available:

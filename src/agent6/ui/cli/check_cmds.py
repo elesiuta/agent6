@@ -120,7 +120,11 @@ def _cmd_check_sandbox(cfg: Config | None = None) -> int:
         )
     )
 
-    env = detect_env()
+    try:
+        env = detect_env()
+    except JailUnavailableError as exc:
+        reports.append(SandboxReport(name="jail_binary", ok=False, detail=str(exc)))
+        return _print_sandbox_reports(reports)
     requested = cfg.sandbox.isolation if cfg is not None else "auto"
     try:
         isolation = resolve_isolation(requested, env)
@@ -324,7 +328,12 @@ def _check_config_section(
 ) -> list[_DoctorCheck]:
     """Environment detection + isolation selection + the refusal ladder a run
     would apply + static config checks."""
-    env = detect_env()
+    try:
+        env = detect_env()
+    except JailUnavailableError as exc:
+        print(f"  [FAIL] jail binary: {exc}")
+        failed = _DoctorCheck(name="config.isolation", status="FAIL", detail=str(exc))
+        return [failed, *_doctor_check_config(cfg)]
     print(f"  kernel: {env.kernel.raw}")
     print(f"  userns supported: {env.userns_supported}")
     print(f"  sandbox available: {env.sandbox_available}")
@@ -491,10 +500,10 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
     """Every boundary in one place, grouped by ACTOR: who is confined, what
     files it reaches, which network it gets. Resolved values only (what THIS
     host and config give), one line per fact; informational, no probes."""
-    env = detect_env()
     try:
+        env = detect_env()
         selected = resolve_isolation(cfg.sandbox.isolation, env)
-    except IsolationUnavailableError as exc:
+    except (IsolationUnavailableError, JailUnavailableError) as exc:
         print(f"[FAIL] isolation selection: {exc}")
         return [_DoctorCheck(name="boundaries", status="FAIL", detail=str(exc))]
     print(f"  isolation: {selected}  (sandbox.isolation = {cfg.sandbox.isolation})")
@@ -547,7 +556,10 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
                 detail="not configured (cfg.mcp.enabled=False or empty servers)",
             )
         ]
-    isolation = resolve_isolation("auto", detect_env())
+    try:
+        isolation = resolve_isolation("auto", detect_env())
+    except JailUnavailableError as exc:
+        return [_DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
     out: list[_DoctorCheck] = []
     refused = {
         name: reason

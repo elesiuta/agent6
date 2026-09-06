@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import errno
 import functools
 import json
 import os
@@ -24,10 +25,10 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import IO
+from typing import IO, NoReturn
 
 from agent6.paths import hidden_paths, private_dirs
 from agent6.types import BackgroundHandoff, CommandResult, JailPolicy
@@ -231,6 +232,11 @@ class JailUnavailableError(Exception):
     could not guarantee the command left nothing running."""
 
 
+class JailBinaryError(JailUnavailableError):
+    """The launcher binary itself is unusable: missing, or one the kernel
+    refuses to execute. No answer about the host's namespaces."""
+
+
 def _lossy_text(v: object) -> str:
     """Decode child/launcher output for surfaces: one decode policy for this
     module. Command output is not guaranteed UTF-8 (grep over a binary, a
@@ -325,14 +331,21 @@ class SessionNetwork:
     @classmethod
     def open(cls) -> SessionNetwork:
         binary = _require_jail_binary()
-        proc = subprocess.Popen(
-            [str(binary), "--hold-netns"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=_LAUNCHER_ENV,
-            preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
-        )
+        # Not `_spawn_launcher`: the holder is no command launcher. Nothing
+        # sweeps it or takes its group down (`close` ends it through its
+        # stdin), so it needs neither the helper's own session nor its
+        # registration; it shares the exec-failure translation.
+        try:
+            proc = subprocess.Popen(
+                [str(binary), "--hold-netns"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=_LAUNCHER_ENV,
+                preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
+            )
+        except OSError as exc:
+            _raise_for_exec_failure(binary, exc)
         fds: list[int] = []
         try:
             assert proc.stdout is not None
@@ -503,7 +516,9 @@ def strict_namespaces_work() -> bool:
     the *agent6-jail* binary userns but not `/usr/bin/unshare`. This runs the
     real jail binary with a trivial `strict` policy to get the authoritative
     answer. Cached for the process lifetime; the kernel/isolation state does not
-    change mid-run. Returns False if the jail binary is missing.
+    change mid-run. A binary the kernel cannot execute (JailBinaryError)
+    propagates: it says nothing about namespaces, and the callers refuse with
+    it rather than read it as "no strict".
     """
     if not Path("/usr/bin/true").exists():
         return False
@@ -518,6 +533,8 @@ def strict_namespaces_work() -> bool:
                 timeout_s=10.0,
             )
         )
+    except JailBinaryError:
+        raise
     except JailUnavailableError:
         return False
     return res.returncode == 0
@@ -526,13 +543,66 @@ def strict_namespaces_work() -> bool:
 def _require_jail_binary() -> Path:
     binary = locate_jail_binary()
     if binary is None:
-        raise JailUnavailableError(
+        raise JailBinaryError(
             "agent6-jail binary not found. Install agent6 from a built wheel"
             " (which bundles the binary), or build from source with"
             " `cargo build --release --locked --manifest-path src/agent6/jail/Cargo.toml`,"
             f" or set {_ENV_VAR}=/path/to/agent6-jail."
         )
     return binary
+
+
+def _raise_for_exec_failure(binary: Path, exc: OSError) -> NoReturn:
+    """Re-raise the launcher's spawn failure as the binary's refusal when the
+    kernel refused to execute it (ENOEXEC: a build for another architecture;
+    EACCES: no exec bit), naming the file and the remedy. Any other OSError
+    (fork or descriptor pressure) says nothing about the binary and passes
+    through unchanged."""
+    if exc.errno not in (errno.ENOEXEC, errno.EACCES):
+        raise exc
+    raise JailBinaryError(
+        f"agent6-jail at {binary} cannot be executed: {exc.strerror}."
+        " Reinstall the bundled binary with `uv sync --reinstall-package agent6`,"
+        f" or point {_ENV_VAR} at a build for this host."
+    ) from exc
+
+
+def _spawn_launcher(
+    binary: Path,
+    args: Sequence[str],
+    *,
+    stdin: int | IO[bytes] | None,
+    stdout: int | IO[bytes] | None,
+    stderr: int | IO[bytes] | None,
+    pass_fds: Sequence[int] = (),
+    die_with_agent: bool = True,
+) -> subprocess.Popen[bytes]:
+    """Start the launcher in its own session (a hang is one killpg of its
+    group away, pidns-init and grandchildren included) and register it live
+    for the escapee sweep, under the sweep lock so the sweep never sees it
+    half-registered. It gets `_LAUNCHER_ENV` (see its note), and
+    *die_with_agent* ties it to this process; a background job outlives the
+    turn that started it and stays untied. A binary the kernel refuses to
+    execute raises JailBinaryError naming the file and the remedy
+    (`_raise_for_exec_failure`)."""
+    try:
+        with _sweep_lock:
+            proc = subprocess.Popen(
+                [str(binary), *args],
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                pass_fds=pass_fds,
+                start_new_session=True,
+                preexec_fn=(  # noqa: PLW1509
+                    die_with_parent(os.getpid(), sig=signal.SIGKILL) if die_with_agent else None
+                ),
+                env=_LAUNCHER_ENV,
+            )
+            _live_launchers.add(proc.pid)
+    except OSError as exc:
+        _raise_for_exec_failure(binary, exc)
+    return proc
 
 
 # --- escapee reaping ---------------------------------------------------------
@@ -776,18 +846,17 @@ def spawn_in_jail(
     join_args, join_fds = _join_args(policy, session_net)
     policy_r, policy_w = os.pipe()
     try:
-        with _sweep_lock:
-            proc = subprocess.Popen(
-                [str(binary), "--policy-fd", str(policy_r), *join_args],
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr,
-                pass_fds=(policy_r, *join_fds),
-                start_new_session=True,
-                preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
-                env=_LAUNCHER_ENV,
-            )
-            _live_launchers.add(proc.pid)
+        proc = _spawn_launcher(
+            binary,
+            ["--policy-fd", str(policy_r), *join_args],
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            pass_fds=(policy_r, *join_fds),
+        )
+    except BaseException:
+        os.close(policy_w)
+        raise
     finally:
         # Ours to close either way: the child has its own copy, and holding the
         # read end here would leave the launcher waiting on an EOF that the
@@ -829,23 +898,14 @@ def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None
     # Snapshot first: anything that is a child of this process afterwards but was not before
     # escaped the command. A concurrent caller's launcher is excluded by pid.
     before = frozenset(_own_children())
-    with _sweep_lock:
-        # Launch the launcher in its own session (group leader) so that, if it ever
-        # hangs — e.g. a backgrounded grandchild holds the stdout pipe open past the
-        # timeout — we can kill its whole process group and reap any orphaned
-        # pidns-init/grandchild, not just the launcher itself. Use Popen (not
-        # subprocess.run) so the pid stays available to target os.killpg.
-        launcher = subprocess.Popen(
-            [str(binary), *join_args],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            pass_fds=join_fds,
-            start_new_session=True,
-            preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
-            env=_LAUNCHER_ENV,
-        )
-        _live_launchers.add(launcher.pid)
+    launcher = _spawn_launcher(
+        binary,
+        join_args,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        pass_fds=join_fds,
+    )
     survivors: frozenset[int] = frozenset()
     try:
         result = _launcher_result(launcher, policy, spec, start, binary)
@@ -1242,16 +1302,9 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
     result = (outcome_dir / _RESULT_NAME).open("wb")
     errors = (outcome_dir / _LAUNCHER_ERR_NAME).open("wb")
     try:
-        with _sweep_lock:
-            launcher = subprocess.Popen(
-                [str(binary)],
-                stdin=subprocess.PIPE,
-                stdout=result,
-                stderr=errors,
-                start_new_session=True,
-                env=_LAUNCHER_ENV,
-            )
-            _live_launchers.add(launcher.pid)
+        launcher = _spawn_launcher(
+            binary, (), stdin=subprocess.PIPE, stdout=result, stderr=errors, die_with_agent=False
+        )
     finally:
         result.close()
         errors.close()
@@ -1329,18 +1382,14 @@ class JailSession:
         _become_subreaper()
         interrupt_r, interrupt_w = os.pipe()
         try:
-            with _sweep_lock:
-                proc = subprocess.Popen(
-                    [str(binary), "--interrupt-fd", str(interrupt_r), *join_args],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    pass_fds=(interrupt_r, *join_fds),
-                    start_new_session=True,
-                    preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
-                    env=_LAUNCHER_ENV,
-                )
-                _live_launchers.add(proc.pid)
+            proc = _spawn_launcher(
+                binary,
+                ["--interrupt-fd", str(interrupt_r), *join_args],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                pass_fds=(interrupt_r, *join_fds),
+            )
         except BaseException:
             os.close(interrupt_w)
             raise

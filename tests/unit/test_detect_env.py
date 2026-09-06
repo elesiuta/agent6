@@ -12,6 +12,9 @@ it either way.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 from agent6.app import _setup
@@ -70,6 +73,43 @@ def test_detect_env_upgrades_to_strict_via_jail_probe(monkeypatch: pytest.Monkey
     monkeypatch.setattr(_setup, "detect", lambda: _env(False))
     monkeypatch.setattr(_setup, "strict_namespaces_work", lambda: True)
     assert _setup.detect_env().userns_supported is True
+
+
+def test_detect_env_refuses_over_a_binary_it_cannot_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 0644 or wrong-architecture AGENT6_JAIL_BIN answered the strict probe
+    False: `check` printed "userns supported: False", an explicit strict
+    refused blaming the host's namespaces, and `auto` picked hardened over a
+    binary no command would run. The probe answers only the namespace
+    question; the binary's own refusal propagates, and the isolation
+    preflight refuses with it."""
+    from agent6.app._session import select_isolation
+    from agent6.app.preflight import SessionRefused
+    from agent6.app.reporter import Reporter
+    from agent6.config import Config
+    from agent6.sandbox.jail import JailUnavailableError, strict_namespaces_work
+
+    fake = tmp_path / "agent6-jail"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+    fake.chmod(0o644)
+    monkeypatch.setenv("AGENT6_JAIL_BIN", str(fake))
+    strict_namespaces_work.cache_clear()
+    try:
+        with pytest.raises(JailUnavailableError, match=re.escape(str(fake))):
+            _setup.detect_env()
+        said: list[str] = []
+        reporter = Reporter(out=said.append, err=said.append)
+        with pytest.raises(SessionRefused):
+            select_isolation(
+                Config(),
+                cwd=tmp_path,
+                confirm_unconfined=lambda _level, _cfg: True,
+                reporter=reporter,
+            )
+        assert any(str(fake) in line and "uv sync --reinstall-package" in line for line in said)
+    finally:
+        strict_namespaces_work.cache_clear()
 
 
 def test_detect_env_stays_hardened_when_jail_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
