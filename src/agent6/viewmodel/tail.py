@@ -23,8 +23,9 @@ def tail_events(
 ) -> Iterator[dict[str, Any]]:
     """Yield JSON-decoded events from *path* as they are appended.
 
-    *on_position* hears the byte offset each yielded event ends at, so a
-    caller can order its own lines against the journal.
+    *on_position* hears the byte offset an event ends at, before that event
+    is yielded, so a caller handling the event can order its own lines
+    against the journal read so far.
 
     - Waits for the file to appear (up to forever if follow=True).
     - Yields each existing line on startup, then tails for new ones.
@@ -82,16 +83,16 @@ def tail_events(
             # at that superseded end would silently drop everything the resumed
             # run does. A live run's real end is the batch's last event.
             for i, (end, evt) in enumerate(parsed):
-                yield evt
                 heard(end)
+                yield evt
                 if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "session.end":
                     return
 
         if not follow or final_drain:
             evt = _parse_event_line(pending)
             if evt is not None:
-                yield evt
                 heard(pos)
+                yield evt
             return
         time.sleep(poll_s)
 

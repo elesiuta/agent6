@@ -270,3 +270,19 @@ def test_start_at_end_skips_existing_lines(tmp_path: Path) -> None:
         )
     )
     assert [e["type"] for e in got] == ["fresh", "session.end"]
+
+
+def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: Path) -> None:
+    """A consumer ordering its own lines against the journal reads the position
+    while handling the event; reported after the yield, it lagged one event
+    behind, and a line stamped at this event's end waited for the next one.
+    The trailing fragment a non-follow drain yields is reported the same way."""
+    path = tmp_path / "logs.jsonl"
+    first = json.dumps({"type": "a"}) + "\n"
+    last = json.dumps({"type": "b"})  # no trailing newline: the drained fragment
+    path.write_text(first + last, encoding="utf-8")
+    positions: list[int] = []
+    seen: list[tuple[str, int | None]] = []
+    for evt in tail_events(path, follow=False, on_position=positions.append):
+        seen.append((evt["type"], positions[-1] if positions else None))
+    assert seen == [("a", len(first)), ("b", len(first) + len(last))]
