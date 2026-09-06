@@ -20,6 +20,10 @@ We use the filesystem rather than a socket because:
 - the JSONL log is already the cross-process contract,
 - the front-end may crash without taking the workflow down with it,
 - every front-end mirrors the same files (the TUI, the web server, the ACP agent).
+
+Answers are written with `atomic_write` (a unique temp file, fsync, rename):
+the reader polls on existence and would consume a torn file as deny or "",
+and two live front-ends answering one prompt must not share a temp name.
 """
 
 from __future__ import annotations
@@ -299,34 +303,31 @@ def worker_is_alive(session_dir: Path) -> bool:
     if rec is None:
         return False
     pid, recorded_start = rec
-    # `os.kill(0, 0)` probes the process GROUP and `os.kill(-1, 0)` every
-    # process, so both answer alive: 0 and -1 are not pids, as frontend_is_live
-    # already knows.
+    return _still_the_process(pid, recorded_start)
+
+
+def _still_the_process(pid: int, recorded_start: str) -> bool:
+    """Alive AND, when a start time was recorded, still the process that
+    recorded it (a recycled pid fails the match). Liveness alone is not
+    identity: a front-end that died and had its pid reused by another process
+    of ours would read live forever, and an approval would then wait out its
+    whole timeout instead of the dead-grace, the stall away-mode exists to
+    avoid. No recorded start time is trusted. `os.kill(0, 0)` probes the
+    process GROUP and `os.kill(-1, 0)` every process, so both answer alive:
+    0 and -1 are not pids."""
     if pid <= 0 or not pid_alive(pid):
         return False
-    if not recorded_start:
-        return True
-    return _proc_start_time(pid) == recorded_start
+    return not recorded_start or _proc_start_time(pid) == recorded_start
 
 
 def _claim_is_live(claim: Path, pid: int) -> bool:
-    """Whether *claim* still names the front-end that wrote it.
-
-    The same test :func:`worker_is_alive` applies to the worker: alive AND, when
-    a start time was recorded, still the process that recorded it. Liveness
-    alone is not identity: a front-end that died and had its pid reused by
-    another process of ours would read live forever, and an approval would then
-    wait out its whole timeout instead of the dead-grace -- exactly the stall
-    away-mode exists to avoid. A claim with no recorded start time is trusted,
-    as the worker's is.
-    """
-    if pid <= 0 or not pid_alive(pid):
-        return False
+    """Whether *claim* still names the front-end that wrote it (the worker's
+    own test, `_still_the_process`, over the start time the claim recorded)."""
     try:
         recorded_start = claim.read_text(encoding="utf-8").strip()
     except OSError:
         return False
-    return not recorded_start or _proc_start_time(pid) == recorded_start
+    return _still_the_process(pid, recorded_start)
 
 
 def effective_away(session_dir: Path) -> str:
@@ -360,19 +361,6 @@ def frontend_is_live(session_dir: Path) -> bool:
             with contextlib.suppress(OSError):
                 f.unlink()
     return live
-
-
-def _write_answer_atomic(target: Path, text: str) -> None:
-    """Write an answer file via a UNIQUE temp + fsync + atomic replace.
-
-    The reader polls on existence every 0.2s, so a plain write_text would
-    expose an empty/partial file it consumes as deny / "". The temp must be
-    unique per call (portable.atomic_write's mkstemp): two concurrently-live
-    front-ends (attach + web on one run, or two web threads) answering the
-    same prompt would race on a shared fixed sibling .tmp, the loser hitting
-    FileNotFoundError after the winner's rename -- a 500 on an answer that
-    actually landed."""
-    atomic_write(target, text)
 
 
 def _consume_answer(target: Path) -> str | None:
@@ -441,7 +429,7 @@ def write_answer(session_dir: Path, prompt_id: str, answer: str) -> None:
     """Called by a front-end (TUI or web) with the operator's literal choice:
     "yes", "no", "session" or "session-deny"."""
     target = _answer_path(approvals_dir(session_dir), prompt_id)
-    _write_answer_atomic(target, answer)
+    atomic_write(target, answer)
 
 
 def answer_written(session_dir: Path, prompt_id: str) -> bool:
@@ -502,7 +490,7 @@ def set_session_allow(session_dir: Path, scope: str) -> None:
     """Record the operator's 'allow all of *scope* for the session' choice."""
     target = _marker_path(session_dir, SESSION_ALLOW_FILE, scope)
     target.parent.mkdir(parents=True, exist_ok=True)
-    _write_answer_atomic(target, "1")
+    atomic_write(target, "1")
 
 
 def session_allow_set(session_dir: Path, scope: str) -> bool:
@@ -519,7 +507,7 @@ def set_session_deny(session_dir: Path, scope: str) -> None:
     """
     target = _marker_path(session_dir, SESSION_DENY_FILE, scope)
     target.parent.mkdir(parents=True, exist_ok=True)
-    _write_answer_atomic(target, "1")
+    atomic_write(target, "1")
 
 
 def session_deny_set(session_dir: Path, scope: str) -> bool:
@@ -583,7 +571,7 @@ def set_away_mode(session_dir: Path, mode: str) -> None:
         raise ValueError(
             f"away.mode is 'deny' or 'wait', got {mode!r} (approve-all reuses session.allow)"
         )
-    _write_answer_atomic(approvals_dir(session_dir) / AWAY_MODE_FILE, mode)
+    atomic_write(approvals_dir(session_dir) / AWAY_MODE_FILE, mode)
 
 
 def away_mode(session_dir: Path) -> str:
@@ -658,9 +646,7 @@ def questions_dir(session_dir: Path) -> Path:
 def write_question_answers(session_dir: Path, question_id: str, answers: Sequence[str]) -> None:
     """Called by a front-end when the user answers the question(s). Answers align to
     the prompt's `questions` by index and are stored as a JSON list."""
-    _write_answer_atomic(
-        _answer_path(questions_dir(session_dir), question_id), json.dumps(list(answers))
-    )
+    atomic_write(_answer_path(questions_dir(session_dir), question_id), json.dumps(list(answers)))
 
 
 def question_answers_written(session_dir: Path, question_id: str) -> bool:
@@ -708,7 +694,7 @@ def read_question_answers(
 
 def write_steer_answer(session_dir: Path, answer: str) -> None:
     """Called by a front-end when the user answers the steer prompt."""
-    _write_answer_atomic(session_dir / STEER_ANSWER_FILE, answer)
+    atomic_write(session_dir / STEER_ANSWER_FILE, answer)
 
 
 def clear_steer_answer(session_dir: Path) -> None:
@@ -845,22 +831,15 @@ def clear_compact_request(session_dir: Path) -> None:
         (session_dir / COMPACT_REQUEST_FILE).unlink()
 
 
-def read_steer_answer(
-    session_dir: Path,
-    *,
-    timeout_s: float = 600.0,
-    poll_s: float = 0.2,
-    live_dir: Path | None = None,
-    dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
-) -> str | None:
-    """Called by the workflow when the TUI is live. Returns the answer string
-    (consuming the file), or None on timeout or once the front-end has stayed
-    dead past `dead_grace_s`. `live_dir` overrides the liveness-gate dir
-    (see :func:`read_answer`)."""
+def read_steer_answer(session_dir: Path, *, live_dir: Path | None = None) -> str | None:
+    """Called by the workflow when a front-end is live. Returns the answer
+    string (consuming the file), or None after ten minutes or once the
+    front-end has stayed dead past `FRONTEND_DEAD_GRACE_S`. `live_dir`
+    overrides the liveness-gate dir (see :func:`read_answer`)."""
     return _await_answer(
         session_dir / STEER_ANSWER_FILE,
         live_dir or session_dir,
-        timeout_s=timeout_s,
-        poll_s=poll_s,
-        dead_grace_s=dead_grace_s,
+        timeout_s=600.0,
+        poll_s=0.2,
+        dead_grace_s=FRONTEND_DEAD_GRACE_S,
     )
