@@ -210,8 +210,8 @@ fn hold_netns() -> ! {
         die(format!("session network: unshare failed: {e}"));
     }
     fs::write("/proc/self/setgroups", "deny").ok();
-    if let Err(e) = fs::write("/proc/self/uid_map", format!("0 {} 1\n", uid))
-        .and_then(|()| fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid)))
+    if let Err(e) = fs::write("/proc/self/uid_map", format!("{uid} {uid} 1\n"))
+        .and_then(|()| fs::write("/proc/self/gid_map", format!("{gid} {gid} 1\n")))
     {
         die(format!("session network: id map failed: {e}"));
     }
@@ -326,8 +326,6 @@ fn interrupt_requested(fd: Option<RawFd>) -> bool {
 }
 
 fn run_strict(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Option<RawFd>) -> ! {
-    // Before the user namespace maps this process to 0: the jail root is
-    // named for the REAL uid, and inside the namespace getuid() is always 0.
     let real_uid = getuid().as_raw();
     if let Err(e) = setup_namespaces(&policy.network, join) {
         die(format!("namespace setup failed: {e}"));
@@ -625,17 +623,19 @@ fn setup_namespaces(network: &str, join: Option<(RawFd, RawFd)>) -> io::Result<(
     }
     unshare(flags).map_err(io_err)?;
 
-    // Map current uid/gid into the new user namespace so we appear as root
-    // inside (required to mount, but capabilities are still confined to this
-    // namespace). BEFORE touching the new netns: until the map is written this
-    // process is the overflow uid there, and inside a container that costs the
-    // loopback ioctl its permission -- strict failed outright under
-    // `docker --security-opt seccomp=unconfined` with EACCES, while the
-    // netns holder, which maps first, worked on the same host.
+    // Map the current uid/gid to themselves in the new user namespace. The
+    // namespace grants its creator every capability over what it owns (the
+    // mounts, the loopback ioctl) whatever the map says; what the map decides
+    // is the uid a command reads. Kept real rather than 0: a command reading
+    // as root restores archive owners (`tar`), refuses to run (`npm`) or warns
+    // (`pip`), and with one uid mapped every chown to another fails EINVAL.
+    // Written BEFORE touching the new netns: until then this process is the
+    // overflow uid there, which inside a container costs the loopback ioctl
+    // its permission (EACCES under `docker --security-opt seccomp=unconfined`).
     fs::write("/proc/self/setgroups", "deny").ok();
-    fs::write("/proc/self/uid_map", format!("0 {} 1\n", uid))
+    fs::write("/proc/self/uid_map", format!("{uid} {uid} 1\n"))
         .map_err(|e| io::Error::other(format!("uid_map: {e}")))?;
-    fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid))
+    fs::write("/proc/self/gid_map", format!("{gid} {gid} 1\n"))
         .map_err(|e| io::Error::other(format!("gid_map: {e}")))?;
     name_the_uts_namespace();
 
@@ -2363,8 +2363,8 @@ struct CapData {
 /// seccomp ptrace deny (reaching another /proc entry is a permission check,
 /// not that syscall). With dumpable 0 the check is ptrace_may_access, which
 /// demands CAP_SYS_PTRACE in this user namespace -- which every child gives up
-/// in `drop_capabilities`. Both halves are needed: userns root passes the
-/// same-uid check on its own.
+/// in `drop_capabilities`. Both halves are needed: the command runs as the
+/// launcher's own uid, which passes the same-uid check on its own.
 fn hide_from_children() -> io::Result<()> {
     if unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) } != 0 {
         return Err(io::Error::last_os_error());
@@ -2374,11 +2374,13 @@ fn hide_from_children() -> io::Result<()> {
 
 /// Drop every capability, in the child, between fork and exec.
 ///
-/// A jailed command is uid 0 in the jail's user namespace, so it starts with a
-/// full capability set over everything that namespace owns -- including
-/// CAP_SYS_PTRACE over the launcher. Nothing agent6 runs needs a capability:
-/// the files it touches are owned by that same uid. Async-signal-safe: raw
-/// syscalls only.
+/// The launcher created the jail's user namespace, so it holds a full
+/// capability set over everything that namespace owns -- CAP_SYS_PTRACE over
+/// itself included -- and a forked child inherits it. Nothing agent6 runs
+/// needs a capability: the files it touches are owned by the command's own
+/// uid. With uid 0 inside (`--allow-root`) exec would keep the bounding set as
+/// the new permitted set, so the child drops everything itself.
+/// Async-signal-safe: raw syscalls only.
 ///
 /// # Safety
 /// Called inside `pre_exec`, so it must not allocate or take locks.

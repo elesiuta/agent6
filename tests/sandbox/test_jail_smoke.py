@@ -1060,3 +1060,24 @@ def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: P
     assert rc != 0 and "Read-only file system" in err
     rc, _out, err = jailed("git", "rev-parse", "--show-toplevel", granted=False)
     assert rc != 0 and "not a git repository" in err
+
+
+def test_strict_runs_the_command_as_the_operators_own_uid(jail_bin: Path, tmp_path: Path) -> None:
+    """The user namespace maps the operator's uid to itself, so `id -u` reads
+    the same number in and out of the jail. Mapped to 0, a command read as
+    root: `tar` restored archive owners, the single-uid map refused the chown,
+    and extracting an archive the operator had just made exited 2."""
+    (tmp_path / "f.txt").write_text("hi", encoding="utf-8")
+    subprocess.run(["tar", "-cf", "a.tar", "f.txt"], cwd=tmp_path, check=True)
+    (tmp_path / "out").mkdir()
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("/bin/sh", "-c", "id -u && tar -xf a.tar -C out"),
+            isolation="strict",
+            timeout_s=20.0,
+        )
+    )
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.split()[0] == str(os.getuid())
+    assert (tmp_path / "out" / "f.txt").read_text(encoding="utf-8") == "hi"

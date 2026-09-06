@@ -90,7 +90,7 @@ A diagnostic hands a server the repository to read and writes nothing but the co
 
 | Mode | Applies |
 |---|---|
-| `strict` | user + mount + PID + IPC + UTS namespaces (hostname `agent6`) + network namespace, `pivot_root` rootfs, private `/proc` and `/tmp`, curated `/dev`, Landlock, seccomp, `NO_NEW_PRIVS`, capability drop, timeout |
+| `strict` | user namespace (one uid, the operator's own) + mount + PID + IPC + UTS namespaces (hostname `agent6`) + network namespace, `pivot_root` rootfs, private `/proc` and `/tmp`, curated `/dev`, Landlock, seccomp, `NO_NEW_PRIVS`, capability drop, timeout |
 | `hardened` | Landlock (ABI >= 3), seccomp, `NO_NEW_PRIVS`, capability drop, timeout. No namespaces, no rootfs |
 | `none` | Nothing. Timeout only |
 | `auto` *(default)* | The strongest of the three this host supports |
@@ -200,7 +200,7 @@ The agent works within the environment it is given and cannot expand it:
 - Host-installed toolchains compile and run; a networked build step needs `network` loosened.
 - Toolchains, venvs, and deps are installed outside agent6. Access widens through config (`extra_read_paths`, `network`, `[providers.*].base_url`), all visible in `config show`.
 - Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary
-    - `strict` maps inside-root to real root: jailed children run as real root under Landlock, seccomp, and `NO_NEW_PRIVS` only
+    - `strict`'s single-uid map is then root to root: jailed children run as real root under Landlock, seccomp, and `NO_NEW_PRIVS` only
     - writes outside the workspace and routes off the box stay closed
     - readable files now include root-only ones (`/etc/shadow` under `hardened`; `strict`'s rootfs hides it)
 - Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back
