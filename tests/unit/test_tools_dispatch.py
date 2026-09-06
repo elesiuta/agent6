@@ -232,7 +232,7 @@ def test_run_metric_refused_outside_run_mode(
     """run_metric_command executes the operator's metric command with no
     approval gate; it is run-only (LOOP_EXTRA_TOOLS) and the dispatcher must
     backstop it in every other mode even with [workflow.metric] configured."""
-    body = _VALID_TOML + (
+    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
         "\n[workflow.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
@@ -1164,7 +1164,7 @@ def test_new_index_tools_listed_in_available(tmp_path: Path) -> None:
 
 
 def test_run_metric_command_no_config(tmp_path: Path) -> None:
-    cfg = _config(tmp_path)
+    cfg = _config_with_run_commands(tmp_path, "yes")
     d = ToolDispatcher(root=tmp_path, config=cfg)
     with pytest.raises(ToolError, match=r"no \[workflow.metric\]"):
         d.dispatch("run_metric_command", {})
@@ -1172,8 +1172,30 @@ def test_run_metric_command_no_config(tmp_path: Path) -> None:
     assert "run_metric_command" not in d.available_tool_names()
 
 
-def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_metric_command_is_withheld_when_commands_are(tmp_path: Path) -> None:
+    """It runs the operator's argv in the same jail, as often as the model
+    asks, so `run_commands = "no"` withholds it with the other command tools:
+    it was exposed and dispatched under "no", and prompted under "ask" only
+    because the harness calls it itself."""
     body = _VALID_TOML + (
+        "\n[workflow.metric]\n"
+        'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
+        'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
+        'goal = "minimize"\n'
+    )
+    p = tmp_path / "agent6.toml"
+    p.write_text(body, encoding="utf-8")
+    from agent6.config import load_config
+
+    d = ToolDispatcher(root=tmp_path, config=load_config(p))
+
+    assert "run_metric_command" not in d.available_tool_names()
+    with pytest.raises(ToolError, match="run_commands = 'no'"):
+        d.dispatch("run_metric_command", {})
+
+
+def test_run_metric_command_invokes_jail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
         "\n[workflow.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
@@ -1215,7 +1237,7 @@ def test_run_metric_command_honors_verify_timeout(
     """verify_timeout_s bounds the metric command like the verify command
     (its documented scope); the metric path silently ran on the jail's fixed
     600s default, so a bench config's fast-failure timeout never applied."""
-    body = _VALID_TOML + (
+    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
         "\n[workflow.metric]\n"
         'command = ["/usr/bin/true"]\n'
         'pattern = "(\\\\d+)"\n'
@@ -1249,7 +1271,7 @@ def test_run_metric_command_score_null_on_no_match(
 ) -> None:
     """Pattern compiles fine but doesn't match the output -> score is null,
     rest of the result is unchanged."""
-    body = _VALID_TOML + (
+    body = _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"') + (
         "\n[workflow.metric]\n"
         'command = ["/usr/bin/python3", "-c", "print(\\"no number here\\")"]\n'
         'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'

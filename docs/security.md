@@ -187,7 +187,7 @@ Every path they take resolves through `Workspace`:
 
 ### 4. Commands and environment
 
-Every command tool (`run_command`, `run_verify_command`, `stop_background`) answers to `[sandbox].run_commands`; `run_command` and `run_verify_command` run jailed, and `stop_background` signals a jailed child agent6 already started.
+Every command tool (`run_command`, `run_verify_command`, `run_metric_command`, `stop_background`) answers to `[sandbox].run_commands`; the first three run jailed, and `stop_background` signals a jailed child agent6 already started.
 `run_commands = "no"` withholds the verify gate too, and such a run starts gateless.
 Under `ask`, a denied gate is withheld the same way for the rest of the run (no retry loop can discharge a refusal), and the run ends unverified.
 

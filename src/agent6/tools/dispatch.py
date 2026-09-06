@@ -232,11 +232,14 @@ def _clip_tail(text: str, limit: int = 20_000) -> str:
 # hides them, "ask" prompts (the session-allow marker keeps that to one prompt
 # per run), "yes" runs. run_verify_command is here too -- its argv is the
 # operator's when configured, but INFERRED from a file the model can edit when
-# it is not, and either way it is a command in the same sandbox.
+# it is not, and either way it is a command in the same sandbox. So is
+# run_metric_command: the operator's argv, run in that same jail, as often as
+# the model asks.
 _COMMAND_TOOLS = frozenset(
     {
         RunCommandInput.TOOL_NAME,
         RunVerifyInput.TOOL_NAME,
+        RunMetricInput.TOOL_NAME,
         StopBackgroundInput.TOOL_NAME,
     }
 )
