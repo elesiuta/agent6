@@ -879,3 +879,26 @@ in-checkout - but their pre-existing sibling files carry the conventions
 and the issue text carries the literal strings they assert. Pass 2 (next):
 per-class deep dives on samples to pin which in-checkout signal would have
 redirected each miss; then the subset-piloted arms per G3.
+
+### Autopsy pass 2, first dives: three near-misses, three mechanisms (2026-08-25)
+
+Read from the dataset's test_patch (the graded tests' own source) vs our
+patches, no containers:
+
+- pallets-eco__wtforms-892 (9/10 F2P): the graded test asserts `default`
+  populates the rendered `value` ATTRIBUTE while `form.b.data is None` -
+  an interpretation subtlety pinned as an exact HTML literal. The
+  conventional reading (default -> data) passes everything else.
+- astronomy-commons__hats-648 (14/15): the graded test demands
+  `ValueError` with match="does not have skymap information" - an exact
+  error-string contract on one edge path.
+- sigma67__ytmusicapi-909 (24/25): the one failing F2P is PRE-EXISTING -
+  a red test already sitting runnable in the checkout; the gold fixes it,
+  we never ran it.
+
+Emerging per-class levers, each now evidence-backed at least once:
+- exact-literal contracts (error strings, rendered output) that graded
+  tests assert verbatim: an arm that makes the run honor the issue's
+  quoted literals exactly;
+- pre-existing red tests in the issue's neighbourhood: the touched-scope
+  test runner (G3 step 2) would have found the ytmusicapi one directly.
