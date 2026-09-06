@@ -21,6 +21,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
 from agent6.git_ops import commit_diff, diff_range, run_branch_tips
 from agent6.models.choices import config_value_choices
+from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import (
     HUB_BUCKETS,
     LOGS_NAME,
@@ -178,15 +179,19 @@ def hub_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
 # --- run snapshot + conversation ----------------------------------------------
 
 
-def conversation_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def conversation_items(
+    events: list[dict[str, Any]], *, worker_dead: bool = False
+) -> list[dict[str, Any]]:
     """The events folded into rendered conversation items, one entry per
     `TranscriptItem`: its `kind`, the collapsed `lines` (lists of
     `[text, style]` spans from the shared `item_lines` renderer, the same
     fold the CLI stream and the TUI conversation view draw), and `full` (the
     expanded rendering) only when it differs, so the page can offer per-item
-    expansion without re-implementing any clipping client-side."""
+    expansion without re-implementing any clipping client-side. A dead
+    worker's calls still open settle as never returned (the fold's rule,
+    applied here because only a dir reader can probe the worker)."""
     out: list[dict[str, Any]] = []
-    for item in fold_transcript(events):
+    for item in fold_transcript(events, worker_dead=worker_dead):
         collapsed = item_lines(item, detail="collapsed")
         expanded = item_lines(item, detail="expanded")
         entry: dict[str, Any] = {"kind": item.kind, "lines": collapsed}
@@ -203,7 +208,7 @@ def conversation_payload(session_dir: Path) -> dict[str, Any]:
     events = list(tail_events(session_dir / LOGS_NAME, follow=False))
     return {
         "session_id": session_dir.name,
-        "items": conversation_items(events),
+        "items": conversation_items(events, worker_dead=not worker_is_alive(session_dir)),
         "operator_inputs": operator_inputs(events),
     }
 
@@ -211,7 +216,8 @@ def conversation_payload(session_dir: Path) -> dict[str, Any]:
 def restate_payload(session_dir: Path) -> dict[str, Any]:
     """`/restate` for the web composer: the same fold-side renderer the CLI
     pause menu prints, over the session's whole journal."""
-    return {"text": restate(list(tail_events(session_dir / LOGS_NAME, follow=False)))}
+    events = list(tail_events(session_dir / LOGS_NAME, follow=False))
+    return {"text": restate(events, worker_dead=not worker_is_alive(session_dir))}
 
 
 def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
@@ -221,7 +227,9 @@ def machine_conversation_payload(machine_dir: Path) -> dict[str, Any]:
     log = newest_state_log(machine_dir)
     if log is None:
         return {"state_dir": "", "items": []}
-    items = conversation_items(list(tail_events(log, follow=False)))
+    events = list(tail_events(log, follow=False))
+    # The machine's worker (one pid for every state) is the one to probe.
+    items = conversation_items(events, worker_dead=not worker_is_alive(machine_dir))
     return {"state_dir": log.parent.name, "items": items}
 
 

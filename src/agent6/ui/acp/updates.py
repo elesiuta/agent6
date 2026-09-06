@@ -33,13 +33,16 @@ _CHUNK_KIND = {
 
 
 def updates_for(
-    item: TranscriptItem, *, acp_session_id: str, session_id: str = ""
+    item: TranscriptItem, *, acp_session_id: str, session_id: str = "", announced: bool = False
 ) -> list[dict[str, Any]]:
     """The `session/update` notifications one fold item becomes.
 
-    A tool becomes TWO: the call, then its outcome. ACP models a tool call as a
-    thing with a lifecycle, and an editor that only ever sees the finished one
-    cannot show work in progress -- which for a long verify is the whole point.
+    A tool call is announced once (`tool_call`, from its first in-flight item)
+    and updated after that (`tool_call_update`: awaiting approval, running
+    again, settled), paired by id; *announced* says the editor already has
+    the call. ACP models a tool call as a thing with a lifecycle, and an
+    editor that only sees the finished one cannot show work in progress,
+    which for a long verify is the whole point.
     """
     if item.kind == "done":
         return [
@@ -58,8 +61,13 @@ def updates_for(
             )
         ]
     if item.kind == "tool":
+        if item.ok is None and not announced:
+            return [
+                _update(
+                    acp_session_id, {"sessionUpdate": "tool_call", **_tool_call(item, session_id)}
+                )
+            ]
         return [
-            _update(acp_session_id, {"sessionUpdate": "tool_call", **_tool_call(item, session_id)}),
             _update(
                 acp_session_id,
                 {
@@ -68,7 +76,7 @@ def updates_for(
                     "status": _tool_status(item),
                     **({"content": _tool_content(item)} if _tool_content(item) else {}),
                 },
-            ),
+            )
         ]
     chunk = _CHUNK_KIND.get(item.kind)
     body = item.body.strip()
@@ -148,11 +156,11 @@ def _text(text: str) -> dict[str, Any]:
 
 
 def _tool_status(item: TranscriptItem) -> str:
-    """ACP's four statuses. `ok=None` is the fold's "in flight", which is a
-    status ACP has -- reporting it `completed` said a running tool had
-    finished, and a finished one carries a real verdict anyway."""
+    """ACP's status for the fold's item: a call in flight is `in_progress`,
+    or `pending` while it waits on an approval (the fold's mark in `detail`);
+    a settled one carries its verdict."""
     if item.ok is None:
-        return "in_progress"
+        return "pending" if item.detail else "in_progress"
     return "completed" if item.ok else "failed"
 
 
@@ -201,5 +209,5 @@ def _tool_call(item: TranscriptItem, session_id: str) -> dict[str, Any]:
         # the honest source; guessing a finer category from them would be a
         # second vocabulary to keep in sync.
         "kind": "other",
-        "status": "pending",
+        "status": _tool_status(item),
     }

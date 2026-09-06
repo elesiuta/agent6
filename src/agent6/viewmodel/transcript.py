@@ -3,11 +3,17 @@
 """Fold a session's event stream into an ordered conversation of `TranscriptItem`s.
 
 The medium-agnostic half of live conversation rendering. `TranscriptFold` walks
-`logs.jsonl` events in emission order and yields the things worth showing -- a
-reasoning block, an assistant message, a tool call coalesced with its result, a
-commit, the final verdict -- as plain data. Each front-end (the CLI ANSI stream,
-the TUI RichLog, the web SPA) maps these items to its own styling; the glyphs and
-content helpers here are shared so the three never drift.
+`logs.jsonl` events in emission order and yields the things worth showing as
+plain data: a reasoning block, an assistant message, a tool call (in flight,
+then settled with its result), a commit, the final verdict. Each front-end (the
+CLI ANSI stream, the TUI conversation, the web SPA, ACP) maps these items to
+its own styling; the glyphs and content helpers here are shared so they never
+drift.
+
+One order everywhere: an item lands when it completes, so a tool call's
+settled item lands after anything that landed during the call. The call shows
+in flight (`ok=None`) from its `tool.call` until then, in the surface's
+progress spot (the TUI pane, the web items, an ACP status).
 
 `fold_transcript` is the batch form (whole stream at once); the CLI/TUI live
 tailers feed the same `TranscriptFold` one event at a time.
@@ -19,7 +25,7 @@ import difflib
 import re
 import shlex
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from agent6.types import SESSION_KINDS
@@ -153,7 +159,9 @@ class TranscriptItem:
     name: str = ""  # tool name
     arg: str = ""  # the tool's salient argument (path, pattern, command, ...)
     ok: bool | None = None  # tool or run outcome (None = not applicable / in flight)
-    detail: str = ""  # tool result summary, verify badge, or commit/done metadata
+    # Tool result summary, verify badge, or commit/done metadata; for a call in
+    # flight, why it waits ("awaiting approval"), empty while it runs.
+    detail: str = ""
     tail: str = ""  # a failed tool's captured output tail
     # The provider's stamped call_id, for a surface that pairs a tool's start
     # with its outcome by identity. Reconstructing one from name+arg made two
@@ -320,17 +328,25 @@ DRIVING_ROLES: frozenset[str] = frozenset(k.role for k in SESSION_KINDS.values()
 
 class TranscriptFold:
     """Incremental event -> `TranscriptItem` fold. Feed events in order; each
-    `feed` returns the items that event completed (usually zero or one)."""
+    `feed` returns the items that event produced (usually zero or one).
+
+    A tool call is several items under one `call_id`, each superseding the
+    last: in flight at `tool.call` (`ok=None`), marked awaiting while its
+    approval prompt is open, settled at `tool.result`. A consumer keeping a
+    list drops the superseded one (`fold_transcript` does). A leg boundary
+    settles every call still open; a reader that knows the worker died calls
+    `settle_open_calls` itself.
+    """
 
     def __init__(self) -> None:
         self._thinking: list[str] = []
         self._text: list[str] = []
-        # Calls awaiting their result -- (salient arg, call-side preview) --
-        # keyed by the per-dispatch call_id (a concurrent explore-tier review
-        # panel shares one dispatcher across threads, so same-name calls
-        # interleave); an id-less historical event falls back to its name key
-        # (sequential pairing).
-        self._pending: dict[int | str, tuple[str, str]] = {}
+        # Calls awaiting their result, as (the in-flight item, the call-side
+        # preview), keyed by the per-dispatch call_id: a concurrent
+        # explore-tier review panel shares one dispatcher across threads, so
+        # same-name calls interleave. An id-less historical event falls back
+        # to its name key (sequential pairing).
+        self._pending: dict[int | str, tuple[TranscriptItem, str]] = {}
         self._verify: tuple[bool, str] | None = None  # (ok, badge) for run_verify_command
         self._finish = ""  # summary from the terminal finish tool
         self._tools = 0
@@ -430,18 +446,14 @@ class TranscriptFold:
             return self._flush_message(settled=settled)
         if etype == "tool.call":
             out = self._flush_message()  # a turn's prose precedes its calls
-            name = str(event.get("name", ""))
-            if name in _FINISH_TOOLS:
-                self._finish = str((event.get("args") or {}).get("summary", "")).strip()
-                return out
-            self._tools += 1
-            args = event.get("args") or {}
-            self._pending[_pending_key(event, name)] = (
-                salient_arg(args),
-                _call_preview(name, args),
-            )
-            self._verify = None
+            out.extend(self._start_tool(event))
             return out
+        if etype == "approval.prompt":
+            # The dispatcher journals tool.call before the approval gate: the
+            # newest call in flight is the one the prompt holds.
+            return self._mark_newest_call("awaiting approval")
+        if etype == "approval.answer":
+            return self._mark_newest_call("")
         if etype == "verify.end":
             code = event.get("exit_code")
             dur = float(event.get("duration_s", 0) or 0)
@@ -473,8 +485,11 @@ class TranscriptFold:
             if body:
                 out.append(TranscriptItem(kind, body=body))
             return out
+        if etype in SESSION_START_EVENTS:
+            return self.settle_open_calls("the run ended")
         if etype == "session.end":
-            out = self._flush_message()
+            out = self.settle_open_calls("the run ended")
+            out.extend(self._flush_message())
             counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
             # Pair the finish summary with the done line ONLY on a clean finish
@@ -518,13 +533,46 @@ class TranscriptFold:
             out.append(TranscriptItem("text", body=text))
         return out
 
+    def _start_tool(self, event: dict[str, Any]) -> list[TranscriptItem]:
+        """A dispatched call: its in-flight item, kept until the result. A
+        finish tool's summary is the done line's, never an item."""
+        name = str(event.get("name", ""))
+        if name in _FINISH_TOOLS:
+            self._finish = str((event.get("args") or {}).get("summary", "")).strip()
+            return []
+        self._tools += 1
+        args = event.get("args") or {}
+        key = _pending_key(event, name)
+        out: list[TranscriptItem] = []
+        if key in self._pending:
+            # An id-less journal pairs by name: a second call under the name
+            # takes the key, and the first would never settle.
+            first, _preview = self._pending.pop(key)
+            out.append(replace(first, ok=False, detail="no result (superseded)"))
+        pending = TranscriptItem("tool", name=name, arg=salient_arg(args), call_id=str(key))
+        self._pending[key] = (pending, _call_preview(name, args))
+        self._verify = None
+        out.append(pending)
+        return out
+
+    def _mark_newest_call(self, why: str) -> list[TranscriptItem]:
+        """The newest call in flight re-emitted with *why* it waits (empty:
+        it runs again); nothing when no call is in flight (a prompt before
+        the run starts gates no call)."""
+        if not self._pending:
+            return []
+        key = next(reversed(self._pending))
+        pending, preview = self._pending[key]
+        marked = replace(pending, detail=why)
+        self._pending[key] = (marked, preview)
+        return [marked]
+
     def _complete_tool(self, event: dict[str, Any]) -> list[TranscriptItem]:
         name = str(event.get("name", ""))
         key = _pending_key(event, name)
         if key not in self._pending:  # a finish tool's result, or an unmatched one
             return []
-        arg, call_preview = self._pending.pop(key)
-        call_id = str(key)
+        pending, call_preview = self._pending.pop(key)
         if name == "run_verify_command" and self._verify is not None:
             ok, detail = self._verify
             self._verify = None
@@ -546,28 +594,64 @@ class TranscriptFold:
         else:
             tail = call_preview
         return [
-            TranscriptItem(
-                "tool",
-                name=name,
-                arg=arg,
+            replace(
+                pending,
                 ok=ok,
-                call_id=call_id,
                 detail=scrub_terminal_controls(detail),
                 tail=scrub_terminal_controls(tail),
             )
         ]
 
+    def settle_open_calls(self, why: str) -> list[TranscriptItem]:
+        """Every call still in flight settled as one that never returned,
+        with *why* ("the run ended" at a leg boundary; "the run died" from a
+        reader whose worker probe found the worker gone)."""
+        out = [
+            replace(pending, ok=False, detail=f"no result ({why})")
+            for pending, _preview in self._pending.values()
+        ]
+        self._pending.clear()
+        return out
 
-def fold_transcript(events: list[dict[str, Any]]) -> list[TranscriptItem]:
-    """Fold a whole event stream into its ordered conversation items."""
+
+def _land(out: list[TranscriptItem], item: TranscriptItem) -> None:
+    """Append *item*; a tool item first drops the in-flight one it supersedes
+    (near the end: calls in flight are recent)."""
+    if item.kind == "tool":
+        for i in range(len(out) - 1, -1, -1):
+            earlier = out[i]
+            if earlier.kind == "tool" and earlier.ok is None and earlier.call_id == item.call_id:
+                del out[i]
+                break
+    out.append(item)
+
+
+def fold_transcript(
+    events: list[dict[str, Any]], *, worker_dead: bool = False
+) -> list[TranscriptItem]:
+    """Fold a whole event stream into its ordered conversation items, one per
+    tool call. *worker_dead* (the caller probed the worker and it is gone)
+    settles the calls still open at the end: nothing will."""
     fold = TranscriptFold()
     out: list[TranscriptItem] = []
     for event in events:
-        out.extend(fold.feed(event))
+        for item in fold.feed(event):
+            _land(out, item)
+    if worker_dead:
+        for item in fold.settle_open_calls("the run died"):
+            _land(out, item)
     return out
 
 
-def restate(events: list[dict[str, Any]]) -> str:
+def _outcome_word(item: TranscriptItem) -> str:
+    """A tool item's bracket word in a restatement: its verdict, or (in
+    flight) why it waits, else "running"."""
+    if item.ok is None:
+        return item.detail or "running"
+    return "ok" if item.ok else "FAILED"
+
+
+def restate(events: list[dict[str, Any]], *, worker_dead: bool = False) -> str:
     """The conversation since the operator's last prompt or steer, compacted:
     their words, then assistant prose kept whole with tool calls and markers
     one line each. Rendered from the journal, never a model call, so every
@@ -581,7 +665,7 @@ def restate(events: list[dict[str, Any]]) -> str:
     anchor = events[last]
     said = str(anchor.get(_OPERATOR_TEXT[str(anchor["type"])], "")).strip()
     lines = [f"you said: {_clip(said, 200)}"]
-    for item in fold_transcript(events[last:]):
+    for item in fold_transcript(events[last:], worker_dead=worker_dead):
         if item.kind in ("thinking", "operator"):
             continue
         if item.kind == "text":
@@ -589,10 +673,9 @@ def restate(events: list[dict[str, Any]]) -> str:
             if body:
                 lines.extend(("", body))
         elif item.kind == "tool":
-            outcome = "running" if item.ok is None else ("ok" if item.ok else "FAILED")
             arg = f" {item.arg}" if item.arg else ""
             detail = f": {_clip(item.detail, 80)}" if item.detail else ""
-            lines.append(f"  [{outcome}] {item.name}{arg}{detail}")
+            lines.append(f"  [{_outcome_word(item)}] {item.name}{arg}{detail}")
         else:  # commit / marker / done
             body = (item.body or item.detail).strip()
             if body:

@@ -22,9 +22,16 @@ def updates_for_events(
     fresh folds per event would emit each partial message as if it were whole."""
     fold = TranscriptFold()
     out: list[dict[str, Any]] = []
+    announced: set[str] = set()
     for event in events:
         for item in fold.feed(event):
-            out.extend(updates_for(item, acp_session_id=acp_session_id))
+            out.extend(
+                updates_for(
+                    item, acp_session_id=acp_session_id, announced=item.call_id in announced
+                )
+            )
+            if item.kind == "tool":
+                announced.add(item.call_id)
     return out
 
 
@@ -49,32 +56,52 @@ def test_the_operators_own_words_echo_back_as_theirs() -> None:
 
 
 def test_a_tool_is_a_call_and_then_an_outcome() -> None:
-    """ACP models a tool call as a thing with a lifecycle. An editor that only
-    ever saw the finished one could not show work in progress -- which for a
-    long verify is the whole point."""
-    updates = updates_for(
-        TranscriptItem("tool", name="run_verify_command", arg="pytest", ok=True, detail="12s"),
-        acp_session_id="s",
-    )
+    """ACP models a tool call as a thing with a lifecycle: the call goes out
+    when the fold sees it (in progress), its outcome when the result lands.
+    An editor that only ever saw the finished pair could not show work in
+    progress -- which for a long verify is the whole point."""
+    call = {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 1}
+    result = {"type": "tool.result", "name": "run_verify_command", "ok": True, "call_id": 1}
+    updates = updates_for_events([call, result], acp_session_id="s")
     assert _kinds(updates) == ["tool_call", "tool_call_update"]
-    call, done = (u["params"]["update"] for u in updates)
-    assert call["toolCallId"] == done["toolCallId"], "the update must pair with its call"
-    assert call["status"] == "pending"
+    announced, done = (u["params"]["update"] for u in updates)
+    assert announced["toolCallId"] == done["toolCallId"], "the update must pair with its call"
+    assert announced["status"] == "in_progress"
     assert done["status"] == "completed"
 
 
+def test_an_approval_wait_reads_pending_then_in_progress() -> None:
+    """ACP keeps `pending` for a call awaiting approval: the fold marks the
+    gated call while its prompt is open, and the projection follows it,
+    updating the call it announced rather than announcing it again."""
+    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
+    prompt = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: ls"}
+    answer = {"type": "approval.answer", "id": "approval-1", "approved": True}
+    result = {"type": "tool.result", "name": "run_command", "ok": True, "call_id": 1}
+    updates = updates_for_events([call, prompt, answer, result], acp_session_id="s")
+    assert _kinds(updates) == ["tool_call"] + ["tool_call_update"] * 3
+    assert [u["params"]["update"]["status"] for u in updates] == [
+        "in_progress",
+        "pending",
+        "in_progress",
+        "completed",
+    ]
+    assert len({u["params"]["update"]["toolCallId"] for u in updates}) == 1
+
+
 def test_a_failed_tool_says_so() -> None:
-    updates = updates_for(
+    (outcome,) = updates_for(
         TranscriptItem("tool", name="run_command", arg="ls", ok=False), acp_session_id="s"
     )
-    assert updates[1]["params"]["update"]["status"] == "failed"
+    assert outcome["params"]["update"]["status"] == "failed"
 
 
 def test_a_tool_still_running_is_not_reported_failed() -> None:
     """`ok=None` is "no outcome yet", which is neither a failure nor a
-    success. This asserted "completed" while its own name said otherwise."""
+    success: the call is announced, in progress, and nothing closes it."""
     updates = updates_for(TranscriptItem("tool", name="grep", arg="x"), acp_session_id="s")
-    assert updates[1]["params"]["update"]["status"] == "in_progress"
+    assert _kinds(updates) == ["tool_call"]
+    assert updates[0]["params"]["update"]["status"] == "in_progress"
 
 
 def test_an_empty_body_produces_nothing() -> None:
@@ -210,7 +237,7 @@ def test_a_tools_output_is_wrapped_in_acps_tagged_content() -> None:
     from agent6.viewmodel.transcript import TranscriptItem
 
     item = TranscriptItem(kind="tool", name="run_verify", arg="", ok=False, detail="exit 1")
-    _call, outcome = updates_for(item, acp_session_id="s")
+    (outcome,) = updates_for(item, acp_session_id="s")
     content = outcome["params"]["update"]["content"]
     assert content == [{"type": "content", "content": {"type": "text", "text": "exit 1"}}]
 
@@ -225,7 +252,7 @@ def test_a_failed_tool_carries_the_output_that_explains_it() -> None:
     item = TranscriptItem(
         kind="tool", name="run_verify", arg="", ok=False, detail="exit 1", tail="E   assert 1 == 2"
     )
-    _call, outcome = updates_for(item, acp_session_id="s")
+    (outcome,) = updates_for(item, acp_session_id="s")
     text = outcome["params"]["update"]["content"][0]["content"]["text"]
     assert "assert 1 == 2" in text
 
@@ -254,8 +281,8 @@ def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
     from agent6.viewmodel.transcript import TranscriptItem
 
     hostile = "sh -c '\x1b]0;PWNED\x07'"
-    call, _outcome = updates_for(
-        TranscriptItem(kind="tool", name="run_command", arg=hostile, ok=True), acp_session_id="s"
+    (call,) = updates_for(
+        TranscriptItem(kind="tool", name="run_command", arg=hostile), acp_session_id="s"
     )
     assert "\x1b" not in call["params"]["update"]["title"]
     assert "\x07" not in call["params"]["update"]["title"]

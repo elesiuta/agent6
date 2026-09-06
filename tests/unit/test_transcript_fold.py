@@ -569,3 +569,96 @@ def test_a_resumed_legs_receipt_is_its_own() -> None:
     ]
     dones = [it for it in fold_transcript(events) if it.kind == "done"]
     assert dones[-1].detail == "$0.0020 · 3s · 0 tools · 0 commits"
+
+
+def test_a_tool_call_is_in_flight_until_its_result_settles_it() -> None:
+    """The fold yields a call as soon as it is seen (`ok=None`: "running" on
+    every surface), then its settled twin under the same call_id, which
+    supersedes it; the batch form keeps one item per call, at the call's place."""
+    from agent6.viewmodel.transcript import TranscriptFold
+
+    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+    result = {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"}
+    fold = TranscriptFold()
+    (pending,) = fold.feed({**call, "call_id": 7})
+    assert (pending.kind, pending.name, pending.arg) == ("tool", "run_command", "sleep 60")
+    assert pending.ok is None and pending.call_id == "7"
+    (settled,) = fold.feed({**result, "call_id": 7})
+    assert settled.call_id == "7" and settled.ok is True and settled.detail == "exit 0"
+    # Batch order is stream order: the settled item lands where the stream is
+    # when the result arrives, after anything that landed during the call.
+    aside = {"type": "btw.answered", "block": "--- btw: why\nbecause"}
+    items = fold_transcript([{**call, "call_id": 7}, aside, {**result, "call_id": 7}])
+    assert [(i.kind, i.ok) for i in items] == [("marker", None), ("tool", True)]
+
+
+def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
+    """tool.call is journaled before the approval gate, so a gated call is in
+    flight while its prompt is open: the fold says it waits (every surface
+    reads it from here), and says it runs again once answered."""
+    from agent6.viewmodel.transcript import TranscriptFold
+
+    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
+    prompt = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: ls"}
+    answer = {"type": "approval.answer", "id": "approval-1", "approved": True}
+    fold = TranscriptFold()
+    fold.feed(call)
+    (waiting,) = fold.feed(prompt)
+    assert (waiting.ok, waiting.call_id, waiting.detail) == (None, "1", "awaiting approval")
+    (running,) = fold.feed(answer)
+    assert (running.ok, running.call_id, running.detail) == (None, "1", "")
+    (item,) = fold_transcript([call, prompt])
+    assert item.detail == "awaiting approval"
+    events = [{"type": "session.start", "user_task": "list"}, call, prompt]
+    assert "[awaiting approval] run_command ls" in restate(events)
+    assert fold_transcript([prompt]) == []  # a prompt gating no call (a pre-run confirmation)
+
+
+def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
+    """A worker killed without a session.end leaves its last call open with no
+    boundary to settle it; the reader that probes the worker settles it."""
+    events = [
+        {"type": "session.start", "user_task": "x"},
+        {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}},
+    ]
+    (item,) = fold_transcript(events)
+    assert item.ok is None
+    (item,) = fold_transcript(events, worker_dead=True)
+    assert item.ok is False and item.detail == "no result (the run died)"
+    assert "[FAILED] run_command sleep 60: no result (the run died)" in restate(
+        events, worker_dead=True
+    )
+
+
+def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
+    """A journal with no call ids pairs by name: a second call under the same
+    name before the first settles would orphan it in flight for good."""
+    events = [
+        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+        {"type": "tool.call", "name": "read_file", "args": {"path": "b.py"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "b bytes"},
+    ]
+    assert [(i.arg, i.ok, i.detail) for i in fold_transcript(events)] == [
+        ("a.py", False, "no result (superseded)"),
+        ("b.py", True, "b bytes"),
+    ]
+
+
+def test_a_leg_boundary_settles_a_call_that_never_returned() -> None:
+    """A call still open at session.end (a crash, a kill) or at the next leg's
+    start (a resume over one) did not return: it settles as such instead of
+    reading "running" for the rest of time."""
+    call = {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 3}
+    items = fold_transcript([call, {"type": "session.end", "reason": "crashed"}])
+    assert [i.kind for i in items] == ["tool", "done"]
+    assert items[0].ok is False and items[0].call_id == "3" and "no result" in items[0].detail
+    items = fold_transcript([call, {"type": "loop.resume.start"}])
+    assert [(i.kind, i.ok) for i in items] == [("tool", False)]
+
+
+def test_restate_names_a_call_still_running() -> None:
+    events = [
+        {"type": "session.start", "user_task": "wait a bit"},
+        {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}},
+    ]
+    assert "[running] run_command sleep 60" in restate(events)

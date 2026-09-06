@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import bisect
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from textual.app import App
 from textual.containers import VerticalScroll
 from textual.widgets import Static
 
+from agent6.ui.tui.composer import ApprovalRow
 from agent6.ui.tui.conversation import ConversationScreen, SteerInput
 
 
@@ -523,5 +525,62 @@ def test_live_pane_keeps_moving_between_events(tmp_path: Path) -> None:
             assert "working…" in first
             conv._poll()  # a data-less poll still turns the spinner
             assert str(live.render()) != first
+
+    asyncio.run(scenario())
+
+
+def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: Path) -> None:
+    """A long run_command read as a bare "working…" until its result. The
+    call shows in the live pane as soon as it is seen; its settled item lands
+    in the scrollback and the pane line goes with it."""
+    logs = tmp_path / "logs.jsonl"
+    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+    _write(logs, [_EVENTS[0], {**call, "call_id": 1}])
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            live = app.screen.query_one("#conv-live", Static)
+            await _wait_for(pilot, lambda: "running" in str(live.render()), "the call in the pane")
+            pane = str(live.render())
+            assert "→ run_command" in pane and "sleep 60" in pane
+            assert "run_command" not in _body_text(app)
+            result = {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"}
+            with logs.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps({**result, "call_id": 1}) + "\n")
+            await _wait_for(pilot, lambda: "exit 0" in _body_text(app), "the settled call")
+            assert "running" not in str(live.render())
+            assert _body_text(app).count("→ run_command") == 1
+
+    asyncio.run(scenario())
+
+
+def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: Path) -> None:
+    """The dispatcher journals tool.call before the approval gate, so the
+    call is in flight while its prompt is open: the fold marks it, and the
+    pane (a viewer with no host status to say "waiting") shows that mark,
+    never "running"."""
+    logs = tmp_path / "logs.jsonl"
+    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    _write(
+        logs,
+        [
+            _EVENTS[0],
+            {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1},
+            {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls"},
+        ],
+    )
+
+    async def scenario() -> None:
+        app = _Host(logs)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConversationScreen)
+            await _wait_for(pilot, lambda: bool(screen.query(ApprovalRow)), "the approval row")
+            live = screen.query_one("#conv-live", Static)
+            assert "→ run_command  ls  · awaiting approval" in str(live.render())
+            assert "running" not in str(live.render())
 
     asyncio.run(scenario())

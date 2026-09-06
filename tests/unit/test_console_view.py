@@ -364,3 +364,16 @@ def test_the_receipt_reads_the_mode_from_the_start_the_console_prints_itself() -
     assert "1 tool" in out
     assert "0 commits" not in out
     assert out.count("why?") == 1  # the headline once, no operator item for the start
+
+
+def test_the_cli_prints_a_tool_once_when_it_settles() -> None:
+    """The fold announces a call before its result; the CLI's heartbeat covers
+    the wait, so the call prints once, head and result together."""
+    out = _render(
+        [
+            {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+            {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
+        ]
+    )
+    assert out.count("→ read_file") == 1
+    assert "running" not in out

@@ -52,6 +52,7 @@ def _notifications() -> list[dict[str, Any]]:
     """
     fold = TranscriptFold()
     out: list[dict[str, Any]] = []
+    announced: set[str] = set()
     for line in _RECORDED.read_text(encoding="utf-8").splitlines():
         try:
             event = json.loads(line)
@@ -59,7 +60,16 @@ def _notifications() -> list[dict[str, Any]]:
             continue  # the fixture's trailing malformed lines
         if isinstance(event, dict):
             for item in fold.feed(event):
-                out.extend(updates_for(item, acp_session_id="s", session_id="brave-oak-AAAAAA"))
+                out.extend(
+                    updates_for(
+                        item,
+                        acp_session_id="s",
+                        session_id="brave-oak-AAAAAA",
+                        announced=item.call_id in announced,
+                    )
+                )
+                if item.kind == "tool":
+                    announced.add(item.call_id)
     return out
 
 

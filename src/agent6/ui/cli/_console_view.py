@@ -262,7 +262,12 @@ class ConsoleView:
     # -- structural items ---------------------------------------------------
     def _render(self, item: TranscriptItem) -> None:
         """The CLI skin over the shared item_lines(): map each span's semantic style
-        to ANSI, behind a two-space left gutter (a blank spec line stays blank)."""
+        to ANSI, behind a two-space left gutter (a blank spec line stays blank).
+        An in-flight tool call prints nothing (on a tty the heartbeat shows the
+        wait; a pipe sees nothing until the result); the settled item prints
+        the call whole."""
+        if item.kind == "tool" and item.ok is None:
+            return
         for line in item_lines(item, detail="collapsed"):
             rendered = "".join(
                 f"{_STYLE_ANSI[style]}{text}{_ANSI['reset']}"

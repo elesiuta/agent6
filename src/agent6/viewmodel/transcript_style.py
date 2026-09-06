@@ -63,15 +63,19 @@ DETAIL_CLIP = 120  # chars of a tool result's first line shown inline (the rest 
 
 
 def _tool_lines(item: TranscriptItem, *, expanded: bool) -> list[Line]:
-    """A tool call's lines: the call head, then the result. The RESULT glyph
-    carries the pass/fail colour; the detail is its OWN neutral span, never
-    tinted by the fail colour. Collapsed, a long multi-line detail (a failed
-    tool's error dump) is clipped to its first line + a "+N more lines" note so it
-    can't dominate; expanded, the full detail is shown, indented and still neutral."""
+    """A tool call's lines: the call head, then the result; an in-flight call
+    is its head alone, marked running. The RESULT glyph carries the pass/fail
+    colour; the detail is its OWN neutral span, never tinted by the fail
+    colour. Collapsed, a long multi-line detail (a failed tool's error dump)
+    is clipped to its first line + a "+N more lines" note so it can't
+    dominate; expanded, the full detail is shown, indented and still neutral."""
     head_style: StyleName = "verify" if item.name == "run_verify_command" else "call"
     head: Line = [(f"{CALL} {item.name}", head_style)]
     if item.arg:
         head.append((f"  {item.arg}", "arg"))
+    if item.ok is None:  # in flight: the head alone, marked; its result replaces it
+        head.append((f"  · {item.detail or 'running'}", "more"))
+        return [head]
     glyph: StyleName = "ok" if item.ok else "fail"
     detail_lines = item.detail.split("\n")
     long = len(detail_lines) > 1 or len(detail_lines[0]) > DETAIL_CLIP

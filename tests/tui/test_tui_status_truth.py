@@ -338,6 +338,40 @@ def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: Path) ->
     asyncio.run(scenario())
 
 
+def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: Path) -> None:
+    """A worker killed mid-command leaves the call open with no session.end;
+    the host knows the worker is gone (its pid probe), so the conversation
+    settles the call as one that never returned instead of dropping it."""
+    d = tmp_path / "convdead2"
+    _mk_crashed(d)
+    with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+            )
+            + "\n"
+        )
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            app._heartbeat_at = 0.0
+            app._tick()
+            await _wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            body = "\n".join(
+                str(w.content)
+                for w in app._conv.query(".conv-chunk").results(Static)  # pyright: ignore[reportPrivateUsage]
+            )
+            assert "→ run_command  sleep 60" in body
+            assert "no result (the run died)" in body
+            assert "running" not in body
+
+    asyncio.run(scenario())
+
+
 def test_conversation_composer_routes_through_the_host_parser(tmp_path: Path) -> None:
     """A composer line on the PRIMARY conversation view routes through the
     host's submit_instruction, so `/compact <focus>` becomes an out-of-band

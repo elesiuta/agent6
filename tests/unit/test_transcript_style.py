@@ -5,6 +5,8 @@ and the collapsed/expanded/hidden detail levels."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from agent6.viewmodel.transcript import TranscriptItem
 from agent6.viewmodel.transcript_style import TAIL_CLIP, item_lines
 
@@ -148,3 +150,16 @@ def test_verify_head_has_its_own_style() -> None:
     assert item_lines(verify, detail="collapsed")[0][0][1] == "verify"
     other = TranscriptItem("tool", name="read_file", arg="a.py", ok=True, detail="ok")
     assert item_lines(other, detail="collapsed")[0][0][1] == "call"
+
+
+def test_an_in_flight_tool_is_one_running_line() -> None:
+    """A call with no result yet renders as its head marked running, at every
+    detail level that shows tools; never the fail glyph over an empty result."""
+    item = TranscriptItem("tool", name="run_command", arg="sleep 60", ok=None, call_id="7")
+    (line,) = item_lines(item, detail="collapsed")
+    assert "".join(text for text, _style in line) == "→ run_command  sleep 60  · running"
+    assert "fail" not in {style for _text, style in line}
+    assert item_lines(item, detail="expanded") == [line]
+    assert item_lines(item, detail="hidden") == []
+    (line,) = item_lines(replace(item, detail="awaiting approval"), detail="collapsed")
+    assert "".join(text for text, _style in line) == "→ run_command  sleep 60  · awaiting approval"

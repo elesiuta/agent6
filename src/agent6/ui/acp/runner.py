@@ -353,14 +353,20 @@ class RunBridge:
         the editor rendered those turns as they happened -- start at the end,
         or the whole conversation replays as if new."""
         fold = TranscriptFold()
+        announced: set[str] = set()  # tool calls the editor has been told about
         for event in tail_events(
             logs_path, stop_when_finished=True, should_stop=stop, start_at_end=resuming
         ):
             for item in fold.feed(event):
                 for body in updates_for(
-                    item, acp_session_id=session.acp_id, session_id=session.session_id
+                    item,
+                    acp_session_id=session.acp_id,
+                    session_id=session.session_id,
+                    announced=item.call_id in announced,
                 ):
                     self.server.notify_raw(body)
+                if item.kind == "tool":
+                    announced.add(item.call_id)
 
 
 def serve_acp(

@@ -70,7 +70,7 @@ from agent6.viewmodel.transcript import (
     TranscriptFold,
     TranscriptItem,
 )
-from agent6.viewmodel.transcript_style import DetailLevel, StyleName, item_lines
+from agent6.viewmodel.transcript_style import DetailLevel, Line, StyleName, item_lines
 
 _LIVE_TAIL = 1600  # chars of the in-progress turn kept in the live pane
 # Sealed-chunk size for the transcript body. The body is a SEQUENCE of Static
@@ -116,18 +116,21 @@ _STYLE_RICH: dict[StyleName, str] = {
 }
 
 
+def _rich_line(line: Line) -> Text:
+    """One styled line of item_lines() as a Rich Text (the TUI skin)."""
+    text = Text()
+    for chunk, style in line:
+        text.append(chunk, style=_STYLE_RICH[style] or None)
+    return text
+
+
 def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text]:
     """The TUI skin over the shared item_lines(): one Rich Text per line, mapping
     each span's semantic style, with a blank line after the item for spacing."""
     lines = item_lines(item, detail=detail)
     if not lines:
         return []
-    out: list[Text] = []
-    for line in lines:
-        text = Text()
-        for chunk, style in line:
-            text.append(chunk, style=_STYLE_RICH[style] or None)
-        out.append(text)
+    out = [_rich_line(line) for line in lines]
     out.append(Text(""))  # one blank line after the item
     return out
 
@@ -311,6 +314,9 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         # live appends re-render (see _CHUNK_LINES).
         self._tail_text = Text()
         self._tail_lines = 0
+        # Tool calls in flight, by call_id: the live pane shows them until the
+        # settled item lands in the scrollback (which is append-only).
+        self._pending: dict[str, TranscriptItem] = {}
         self._approval: tuple[str, str, bool] | None = None  # (id, prompt, standing)
         self._approval_done: str | None = None
         self._row: ApprovalRow | None = None
@@ -384,6 +390,11 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         return self.query_one("#conv-scroll", VerticalScroll)
 
     def _append(self, item: TranscriptItem) -> bool:
+        if item.kind == "tool":
+            if item.ok is None:
+                self._pending[item.call_id] = item
+                return False
+            self._pending.pop(item.call_id, None)
         self._item_starts.append(self._content_lines)  # where this item begins (for the anchor)
         wrote = False
         for line in _item_renderables(item, detail=self._detail):
@@ -552,6 +563,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             # pane would keep saying "thinking…" over a corpse -- on the primary
             # view, which carries no status label to contradict it.
             live.display = False
+            self._settle_dead()
             return
         if self._host_waiting():
             # Blocked on the operator (an approval or a question is open): the
@@ -567,11 +579,20 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             if not self._live:
                 live.display = False
                 return
-            # Mid-run with nothing streaming (the model is being called, or
-            # tools are executing): a vanished pane reads as frozen for the
-            # whole stretch, so keep something moving.
+            # Mid-run with nothing streaming: the calls in flight, one line
+            # each, else "working…" (the model is being called); a vanished
+            # pane reads as frozen for the whole stretch, so keep it moving.
             body = Text()
-            body.append(f"{frame} working… ", style="bold cyan")
+            body.append(f"{frame} ", style="bold cyan")
+            rows = [
+                ln for it in self._pending.values() for ln in item_lines(it, detail=self._detail)
+            ]
+            if not rows:
+                body.append("working… ", style="bold cyan")
+            for i, row in enumerate(rows):
+                if i:
+                    body.append("\n  ")
+                body.append_text(_rich_line(row))
             live.display = True
             live.update(body)
             return
@@ -589,6 +610,18 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         live.display = True
         live.update(body)
 
+    def _settle_dead(self) -> None:
+        """The calls a dead worker left in flight never return: settle them
+        into the scrollback (the fold's rule, applied here because the host's
+        worker probe is what knows; a viewer with no host cannot)."""
+        if not self._pending or getattr(self.app, "session_controllable", None) is None:
+            return
+        wrote = False
+        for item in self._fold.settle_open_calls("the run died"):
+            wrote = self._append(item) or wrote
+        if wrote:
+            self._flush_tail()
+
     def _reload(self) -> None:
         """Re-read the whole log from scratch (mount, reload, detail cycle)."""
         self._tail = LogTail(self._logs_path)
@@ -598,6 +631,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._content_lines = 0
         self._tail_text = Text()
         self._tail_lines = 0
+        self._pending = {}
         self.query(".conv-sealed").remove()  # rebuilt below by _flush_tail
         self._live_think.clear()
         self._live_text.clear()

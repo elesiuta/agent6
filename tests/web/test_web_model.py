@@ -562,3 +562,36 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: Path) -> None:
         snap = session_snapshot(d)
         assert snap["finished"] is False, d.name  # why the old poll fired at once
         assert snap["live"] is False, d.name  # ...and what actually distinguishes them
+
+
+def test_conversation_payload_carries_an_in_flight_call(tmp_path: Path) -> None:
+    """The page rebuilds its items from each payload, so a call the fold
+    reports in flight shows as running until its result replaces it."""
+    from agent6.sessions.ipc import write_worker_pid
+
+    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+    d = _run(tmp_path, "r3", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
+    write_worker_pid(d, os.getpid())  # a live worker: the call is in flight
+
+    def flat_items() -> list[str]:
+        items = model.conversation_payload(d)["items"]
+        return ["".join(t for line in it["lines"] for t, _s in line) for it in items]
+
+    assert flat_items() == ["→ run_command  sleep 60  · running"]
+    result = {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"}
+    with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({**result, "call_id": 1}) + "\n")
+    (settled,) = flat_items()
+    assert "exit 0" in settled and "running" not in settled
+
+
+def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: Path) -> None:
+    """No session.end will ever settle a call the killed worker left open; the
+    payload probes the worker and settles it, and /restate agrees."""
+    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+    d = _run(tmp_path, "r4", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
+    (d / "worker.pid").write_text("4194304", encoding="utf-8")  # past pid_max: gone
+    (item,) = model.conversation_payload(d)["items"]
+    flat = "".join(t for line in item["lines"] for t, _s in line)
+    assert "no result (the run died)" in flat and "running" not in flat
+    assert "no result (the run died)" in model.restate_payload(d)["text"]
