@@ -503,7 +503,12 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
 def _dispatch_tui(args: argparse.Namespace) -> int:
     from agent6.ui.cli.plan_watch import _cmd_tui  # noqa: PLC0415
+    from agent6.ui.cli.watch import _cmd_watch_target  # noqa: PLC0415
 
+    if args.target:
+        return _cmd_watch_target(
+            args.target, tui=True, json_out=False, since=0, raw=False, config_path=args.config
+        )
     return _cmd_tui(args.config)
 
 

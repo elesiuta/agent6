@@ -64,11 +64,18 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
 
 
 def _add_tui_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    _sub(
+    tui_p = _sub(
         sub,
         "tui",
         help="Open the TUI hub: browse runs and start a new run/plan/ask.",
     )
+    tui_target = tui_p.add_argument(
+        "target",
+        nargs="?",
+        default="",
+        help=f"{SESSION_ID} or machine id to open (what `attach --tui` opens); omit for the hub.",
+    )
+    tui_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
 
 
 def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
