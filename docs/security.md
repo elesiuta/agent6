@@ -318,6 +318,7 @@ Under `none` isolation nothing is enforced or refused.
 
 - Provider keys live in `$XDG_CONFIG_HOME/agent6/secrets.toml`, `0600` and owner-only (refused if group- or other-readable, or foreign-owned), or come from `[providers.<name>].api_key_env` (env wins).
 - They are absent from transcripts, redacted in `config show`, and masked from the jail: the config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
+- No child agent6 spawns carries one: a jailed command's environment is built from its policy, and the unconfined paths (`isolation = "none"`, git subprocesses, MCP servers) drop every configured `api_key_env` name.
 - `agent6 connect` prompts locally (`getpass`) and writes config and secrets
     - one read-only `GET` to the provider's key endpoint confirms auth (status only; `--no-verify` skips it)
     - it executes nothing a remote returns

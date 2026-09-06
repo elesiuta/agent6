@@ -44,6 +44,7 @@ StyleName = Literal[
     "marker",
     "done-ok",
     "done-fail",
+    "done-neutral",
     "body",
     "done-detail",
     "operator",
@@ -154,10 +155,18 @@ def item_lines(item: TranscriptItem, *, detail: DetailLevel) -> list[Line]:
         lines.append([(f"── {body_lines[0]} ──", "marker")])
         lines.extend([(f"   {ln}", "marker")] for ln in body_lines[1:])
     elif item.kind == "done":
+        # Three outcomes, three badges: green for a verified pass, the failure
+        # colour for a red gate, and neutral for an end no gate judged (a
+        # gateless finish, the operator's own stop or undo).
         badge: Line = (
             [(f"{DONE} done", "done-ok")]
             if item.ok
-            else [(f"{DONE} {item.name or 'stopped'}", "done-fail")]
+            else [
+                (
+                    f"{DONE} {item.name or 'stopped'}",
+                    "done-fail" if item.ok is False else "done-neutral",
+                )
+            ]
         )
         body_lines = item.body.split("\n") if item.body else []
         if body_lines:

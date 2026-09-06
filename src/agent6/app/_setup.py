@@ -14,7 +14,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.child_env import curated_env
+from agent6.child_env import curated_env, set_provider_key_env
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -27,7 +27,7 @@ from agent6.config import (
 )
 from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.events import EventSink
-from agent6.git_ops import set_provider_key_env, set_repo_filter_policy, set_repo_hook_policy
+from agent6.git_ops import set_repo_filter_policy, set_repo_hook_policy
 from agent6.models.cache import list_models, refresh_pricing_catalog
 from agent6.providers.claude_code import login_status
 from agent6.sandbox import strict_namespaces_work

@@ -13,6 +13,7 @@ policy, which is narrower still.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 
 # Enough to execute a program. Never the whole environment: it carries the
 # provider API keys resolved via `[providers.*].api_key_env`, and a child that
@@ -41,6 +42,28 @@ _DESKTOP = (
     "DBUS_SESSION_BUS_ADDRESS",
     "XDG_RUNTIME_DIR",
 )
+
+
+# The `[providers.*].api_key_env` names this run resolves keys from, registered
+# once at startup. agent6's own credentials: no child it spawns needs one, and
+# a child that logs or forwards its environment would carry it. Mutated, not
+# rebound, so importers hold the one set.
+_provider_key_env: set[str] = set()
+
+
+def set_provider_key_env(names: Iterable[str]) -> None:
+    """Register the provider-key env var names agent6 keeps out of the children
+    it spawns (git subprocesses, an unconfined command)."""
+    _provider_key_env.clear()
+    _provider_key_env.update(n for n in names if n)
+
+
+def without_provider_keys(env: dict[str, str]) -> dict[str, str]:
+    """*env* minus the registered provider-key names. For a child that inherits
+    the operator's environment: at `isolation = "none"` a model-chosen command
+    runs unconfined, and a key that lives only in the shell (never on disk) has
+    no business in it."""
+    return {k: v for k, v in env.items() if k not in _provider_key_env}
 
 
 def curated_env(

@@ -163,3 +163,21 @@ def test_an_in_flight_tool_is_one_running_line() -> None:
     assert item_lines(item, detail="hidden") == []
     (line,) = item_lines(replace(item, detail="awaiting approval"), detail="collapsed")
     assert "".join(text for text, _style in line) == "→ run_command  sleep 60  · awaiting approval"
+
+
+def test_the_done_badge_keeps_the_gates_tri_state() -> None:
+    """`all_passed` is null for a run no gate judged and for the operator's own
+    stop or undo. Flattening it to a bool painted those in the failure colour
+    and rendered a gateless finish byte-identically to a finish over a RED gate
+    (which exits 4)."""
+    from agent6.viewmodel.transcript import TranscriptItem
+    from agent6.viewmodel.transcript_style import item_lines
+
+    def badge(ok: bool | None, name: str) -> tuple[str, str]:
+        item = TranscriptItem("done", ok=ok, name=name, detail="1 tool")
+        return item_lines(item, detail="collapsed")[1][0]
+
+    assert badge(True, "") == ("● done", "done-ok")
+    assert badge(False, "finished") == ("● finished", "done-fail")
+    assert badge(None, "finished") == ("● finished", "done-neutral")
+    assert badge(None, "stopped") == ("● stopped", "done-neutral")

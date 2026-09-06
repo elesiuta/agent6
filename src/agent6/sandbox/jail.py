@@ -30,6 +30,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO, NoReturn
 
+from agent6.child_env import without_provider_keys
 from agent6.paths import hidden_paths, private_dirs
 from agent6.types import BackgroundHandoff, CommandResult, JailPolicy
 
@@ -462,13 +463,15 @@ def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
 
     Used for the `none` isolation: the explicit opt-out, the
     dangerously-disable escape hatch, or `auto` on a host with no confinement
-    mechanism. Inherits the parent
-    environment (so `PATH` etc. resolve normally) overlaid with `policy.env`;
-    runs in `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths,
+    mechanism. Inherits the parent environment (so `PATH` etc. resolve
+    normally) overlaid with `policy.env`, minus agent6's own provider keys --
+    a jailed command never sees one, and a key that lives only in the
+    operator's shell is not on the disk this command can already read. Runs in
+    `policy.cwd`. The sandbox-only knobs (network, ro/rw/protect paths,
     memory_limit_mb) have no effect here, there is no kernel mechanism to
     enforce them.
     """
-    env = {**os.environ, **{k: v for k, v in policy.env}}
+    env = without_provider_keys({**os.environ, **{k: v for k, v in policy.env}})
     start = time.monotonic()
     # Unsandboxed escape hatch; see run_in_jail's docstring. Output is
     # captured as bytes and decoded lossily: a strict text=True decode would
@@ -1283,7 +1286,7 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
             proc = subprocess.Popen(
                 list(policy.argv),
                 cwd=str(policy.cwd),
-                env={**os.environ, **dict(policy.env)},
+                env=without_provider_keys({**os.environ, **dict(policy.env)}),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

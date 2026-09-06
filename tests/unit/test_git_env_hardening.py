@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6 import git_ops
+from agent6 import child_env, git_ops
 from agent6.app._setup import apply_git_ops_policy
 from agent6.config import Config
 
@@ -23,7 +23,7 @@ from agent6.config import Config
 @pytest.fixture(autouse=True)
 def _reset_policy() -> object:  # pyright: ignore[reportUnusedFunction]
     yield
-    git_ops.set_provider_key_env([])  # module-level state; do not leak across tests
+    child_env.set_provider_key_env([])  # module-level state; do not leak across tests
 
 
 def _captured_git_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, str]:

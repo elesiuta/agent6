@@ -19,10 +19,11 @@ import subprocess
 import tempfile
 import textwrap
 from collections import Counter
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from agent6.child_env import without_provider_keys
 from agent6.types import CommandResult
 
 
@@ -166,19 +167,9 @@ def set_repo_hook_policy(honor: bool) -> None:
     _hook_policy["honor_repo_hooks"] = honor
 
 
-# Provider-key env var names (the configured `api_key_env`s) to drop from the
-# environment agent6's git subprocesses inherit. git never needs a provider
-# key, and a git subprocess -- a credential helper, a content driver we could
-# not neutralize -- should not be handed one. Set once at startup from the
-# config; empty when keys live only in secrets.toml (never in the environment).
-# A module-level set, mutated not rebound, like _hook_policy.
-_provider_key_env: set[str] = set()
-
-
-def set_provider_key_env(names: Iterable[str]) -> None:
-    """The provider-key env var names `_run` strips from git's environment."""
-    _provider_key_env.clear()
-    _provider_key_env.update(n for n in names if n)
+# git never needs a provider key, and a git subprocess -- a credential helper,
+# a content driver we could not neutralize -- should not be handed one. The
+# names live in `child_env`, which every child agent6 spawns strips them from.
 
 
 # Whether the repo's own content drivers -- `filter.<n>.clean/smudge/process`
@@ -304,9 +295,9 @@ def _run(
     # fast instead of hanging with no output. Local ops are unaffected.
     # LC_ALL=C: git translates its human-readable output, and the bystander
     # rescue reads one of those sentences to learn which stash it dropped.
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env_extra or {})}
-    for name in _provider_key_env:
-        env.pop(name, None)
+    env = without_provider_keys(
+        {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env_extra or {})}
+    )
     hardening = git_hardening_flags(cwd)
     # A poisoned `.git/config` reaches a host command two ways on a diff/show:
     # `diff.external` and per-file `diff.<d>.textconv`. The `-c` overrides above

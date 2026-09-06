@@ -504,7 +504,14 @@ class TranscriptFold:
                 TranscriptItem(
                     "done",
                     body=body,
-                    ok=bool(event.get("all_passed")),
+                    # The gate's tri-state, not a bool: null (no gate ran, or
+                    # the operator ended the run) is neither pass nor fail, and
+                    # flattening it painted `stopped` and a gateless finish in
+                    # the failure colour and rendered them identically to a
+                    # finish over a RED gate, which exits 4.
+                    ok=all_passed
+                    if isinstance(all_passed := event.get("all_passed"), bool)
+                    else None,
                     detail=counts,
                     name=_END_REASON_LABEL.get(reason, reason),
                 )

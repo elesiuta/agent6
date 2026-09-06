@@ -305,7 +305,7 @@ depends_on = ["agent6.paths"]
 
 [[modules]]
 path = "agent6.sandbox"
-depends_on = [ "agent6.paths", "agent6.sandbox.landlock", "agent6.types"]
+depends_on = [ "agent6.paths", "agent6.sandbox.landlock", "agent6.types", "agent6.child_env"]  # the provider-key names an unconfined child is stripped of
 
 [[modules]]
 # Pure-ctypes Landlock syscall wrapper: a leaf, so detection can probe the
@@ -338,7 +338,7 @@ depends_on = ["agent6.graph.models", "agent6.types"]
 
 [[modules]]
 path = "agent6.git_ops"
-depends_on = ["agent6.types"]
+depends_on = ["agent6.types", "agent6.child_env"]  # the provider-key names every child is stripped of
 
 [[modules]]
 # The package __init__ re-exports the models as the public API.
