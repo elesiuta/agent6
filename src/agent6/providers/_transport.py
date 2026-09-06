@@ -156,6 +156,41 @@ def _envelope_detail(err: object) -> str:
     return str(err)
 
 
+def meter_completion(
+    budget: BudgetTracker | None, model: str, parsed: ProviderResponse, api_label: str
+) -> None:
+    """Book *parsed*'s usage, then refuse a completion the upstream failed.
+
+    The upstream's own failure signal, seen from OpenRouter as a 200 whose
+    choice carries `finish_reason: "error"`, a null content and nothing else.
+    Returned as a finished turn it spends a went-quiet nudge on an error and
+    abstains a review seat as if the model had answered; raised here it
+    retries, like a stream that ends without [DONE]. The record comes FIRST:
+    the provider billed those tokens either way, and every retry books its own.
+
+    Both shapes a response arrives in -- decoded at once, or assembled from a
+    stream -- meter and check here, so neither can drift from the other.
+    """
+    if budget is not None:
+        budget.record(
+            model=model,
+            input_tokens=parsed.input_tokens,
+            output_tokens=parsed.output_tokens,
+            cache_read_tokens=parsed.cache_read_tokens,
+            cache_creation_tokens=parsed.cache_creation_tokens,
+            cost_usd=parsed.cost_usd,
+        )
+    if (
+        parsed.stop_reason.strip().lower() == "error"
+        and not parsed.text.strip()
+        and not parsed.tool_uses
+    ):
+        raise ProviderError(
+            f"{api_label} response carries finish_reason='error' with no content:"
+            " the upstream failed this completion"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderCall:
     """One provider API call: the attempt loop around a built request body.
@@ -313,28 +348,5 @@ class ProviderCall:
             raise ProviderError(
                 f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
             ) from exc
-        if self.budget is not None:
-            self.budget.record(
-                model=self.model,
-                input_tokens=parsed.input_tokens,
-                output_tokens=parsed.output_tokens,
-                cache_read_tokens=parsed.cache_read_tokens,
-                cache_creation_tokens=parsed.cache_creation_tokens,
-                cost_usd=parsed.cost_usd,
-            )
-        # The upstream's own failure signal, seen from OpenRouter as a 200 whose
-        # choice carries `finish_reason: "error"`, a null content and nothing
-        # else. Returned as a finished turn it spends a went-quiet nudge on an
-        # error and abstains a review seat as if the model had answered; raised
-        # here it retries, like a stream that ends without [DONE]. AFTER the
-        # record: the provider billed those tokens either way.
-        if (
-            parsed.stop_reason.strip().lower() == "error"
-            and not parsed.text.strip()
-            and not parsed.tool_uses
-        ):
-            raise ProviderError(
-                f"{self.api_label} response carries finish_reason='error' with no content:"
-                " the upstream failed this completion"
-            )
+        meter_completion(self.budget, self.model, parsed, self.api_label)
         return parsed

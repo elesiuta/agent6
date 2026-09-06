@@ -607,3 +607,38 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
     }
     assert parse_response(partial).text == "half an answer"
+
+
+def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
+    """A live front-end takes the streaming path, which assembles its own body:
+    metering and this refusal have one owner so the two shapes cannot drift.
+    Checked only on the decoded shape, a streamed upstream failure came back as
+    a finished, silent turn."""
+    from agent6.budget import BudgetTracker
+    from tests.unit.test_anthropic_streaming import FakeStreamResponse
+
+    def chunk(obj: dict[str, Any]) -> list[str]:
+        return [f"data: {json.dumps(obj)}", ""]
+
+    lines = chunk({"choices": [{"index": 0, "delta": {"role": "assistant"}}]})
+    lines += chunk({"choices": [{"index": 0, "finish_reason": "error", "delta": {}}]})
+    lines += chunk({"usage": {"prompt_tokens": 12000, "completion_tokens": 16801}, "choices": []})
+    lines += ["data: [DONE]", ""]
+
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
+    with (
+        mock.patch(
+            "agent6.providers._stream.http_stream",
+            return_value=FakeStreamResponse(status_code=200, lines=lines),
+        ),
+        pytest.raises(ProviderError, match="finish_reason='error'"),
+    ):
+        provider.call(
+            system="s",
+            messages=[{"role": "user", "content": "hi"}],
+            text_delta_callback=lambda _t: None,  # selects the streaming path
+        )
+
+    snap = budget.snapshot()
+    assert (snap.input_total, snap.output_total) == (12000, 16801), "billed tokens went unmetered"

@@ -33,7 +33,7 @@ from agent6.budget import BudgetTracker
 from agent6.providers._openai_messages import anthropic_to_openai_messages, tools_to_openai
 from agent6.providers._openai_parse import parse_response
 from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
-from agent6.providers._transport import ProviderCall, envelope_status
+from agent6.providers._transport import ProviderCall, envelope_status, meter_completion
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
     ProviderError,
@@ -756,13 +756,5 @@ class OpenAIProvider:
         if self.budget is not None:
             _require_metered_usage(usage, source="OpenAI stream")
         parsed = parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)
-        if self.budget is not None:
-            self.budget.record(
-                model=self.model,
-                input_tokens=parsed.input_tokens,
-                output_tokens=parsed.output_tokens,
-                cache_read_tokens=parsed.cache_read_tokens,
-                cache_creation_tokens=parsed.cache_creation_tokens,
-                cost_usd=parsed.cost_usd,
-            )
+        meter_completion(self.budget, self.model, parsed, "OpenAI")
         return parsed

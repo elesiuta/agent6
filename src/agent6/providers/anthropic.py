@@ -22,7 +22,7 @@ import httpx2
 
 from agent6.budget import BudgetTracker
 from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
-from agent6.providers._transport import ProviderCall, envelope_status
+from agent6.providers._transport import ProviderCall, envelope_status, meter_completion
 from agent6.providers.types import (
     ProviderError,
     ProviderResponse,
@@ -721,14 +721,7 @@ class AnthropicProvider:
                 )
             _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
         parsed = _parse_response(synthesised)
-        if self.budget is not None:
-            self.budget.record(
-                model=self.model,
-                input_tokens=parsed.input_tokens,
-                output_tokens=parsed.output_tokens,
-                cache_read_tokens=parsed.cache_read_tokens,
-                cache_creation_tokens=parsed.cache_creation_tokens,
-            )
+        meter_completion(self.budget, self.model, parsed, "Anthropic")
         return parsed
 
 
