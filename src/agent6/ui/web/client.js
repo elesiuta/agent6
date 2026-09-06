@@ -315,7 +315,7 @@ function sessionsCard(sessions) {
   // The CLI's --delete-squashed, as a flag beside the verb: with the default
   // squash strategy every merged run's branch is unreachable, so a plain prune
   // reports them and deletes none.
-  const sq = el('label', 'sub'); sq.style.marginLeft = '8px';
+  const sq = el('label', 'sub muted'); sq.style.marginLeft = '8px';
   const sqBox = document.createElement('input'); sqBox.type = 'checkbox';
   sq.appendChild(sqBox); sq.appendChild(document.createTextNode(' also squash-merged branches'));
   prune.onclick = async () => {

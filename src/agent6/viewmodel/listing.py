@@ -177,13 +177,15 @@ def summary_row(
     `/api/hub` serves, so one name per fact reaches every reader.
 
     `label` and `level` are the rendered status cell and its colour level, so a
-    client needs no copy of the status maps. *task_chars* clips the task for a
-    fixed-width row.
+    client needs no copy of the status maps. *task_chars* asks for a one-line
+    snippet clipped to that width, for a card with a row to fill; without it
+    the task rides whole, since a JSON reader has its own layout and a
+    multi-line task otherwise arrives as its first line with nothing to say so.
     """
     return {
         "session_id": s.session_id,
         "mode": s.mode,
-        "task": task_snippet(s.task, max_chars=task_chars),
+        "task": s.task if task_chars is None else task_snippet(s.task, max_chars=task_chars),
         "status": s.status,
         "reason": s.reason,
         "label": listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),

@@ -749,3 +749,24 @@ def test_status_of_an_ask_does_not_repeat_its_word(
     )
     assert _cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "state:      answered\n" in capsys.readouterr().out
+
+
+def test_show_json_label_matches_the_listing_cell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One vocabulary across the two surfaces: `show --json`'s label was the
+    bare word while the listing folds the mode in, so a script could not match
+    a run's row to its detail view."""
+    from agent6.viewmodel.format import listing_status_label
+    from agent6.viewmodel.listing import summarize_session_dir
+
+    d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "plan"}])
+    (d / "manifest.json").write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
+    write_worker_pid(d, os.getpid())
+
+    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+
+    obj = json.loads(capsys.readouterr().out)
+    s = summarize_session_dir(d)
+    assert obj["label"] == listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged)
+    assert obj["label"] == "plan · running", "the mode is folded in, as the listing folds it"

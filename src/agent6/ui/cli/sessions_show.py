@@ -30,7 +30,7 @@ from agent6.viewmodel.format import (
     format_compare,
     format_cost,
     format_lineage,
-    status_label,
+    listing_status_label,
 )
 
 
@@ -72,15 +72,15 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
 
 
 def _status_state(
-    session_dir: Path, scan: LogScan, *, last_age: float | None
+    session_dir: Path, scan: LogScan, *, last_age: float | None, mode: str, unmerged: bool
 ) -> tuple[str, str, str]:
     """This run's state as `(status, label, detail)`.
 
-    `status` is the LISTING's own word (`status_for_session_dir`), so every
-    surface names the state the same way; `label` is that word rendered
-    (`status_label`), and `detail` is this surface's diagnostic: what to do, or
-    why the word applies. The text render joins label and detail; --json emits
-    the three, the word included, so a script never parses prose.
+    `status` is the LISTING's own word (`status_for_session_dir`) and `label`
+    is the cell the listing renders from it, so a script reading one surface
+    reads the other; `detail` is this surface's diagnostic: what to do, or why
+    the word applies. The text render joins label and detail; --json emits the
+    three, the word included, so a script never parses prose.
 
     The pre-unification words lied twice: a crashed run led with "stopped"
     (the hub's word for an OPERATOR stop) and a launching run with "running"
@@ -90,7 +90,7 @@ def _status_state(
         # The raw end reason is the diagnostic; it is not repeated when the
         # label already carries it (an ask's word, a failure's reason).
         end = "" if scan.end_reason in (word, reason) else scan.end_reason
-        return word, status_label(word, reason), end
+        return word, listing_status_label(mode, word, reason, unmerged=unmerged), end
     detail = {
         "waiting": "needs answer; attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
@@ -101,7 +101,7 @@ def _status_state(
     }.get(word, "")
     if word == "running" and last_age is not None and last_age > 120:
         detail = "long step, likely a provider call"
-    return word, word, detail
+    return word, listing_status_label(mode, word, reason, unmerged=unmerged), detail
 
 
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
@@ -148,13 +148,16 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         else None
     )
 
-    status, status_cell, status_detail = _status_state(target, scan, last_age=last_age)
-    state = f"{status_cell} ({status_detail})" if status_detail else status_cell
-
     driver = manifest.models.driver
     model = (driver.model if driver else "") or "?"
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
+    # The listing's own cell, so a script reading `show` and one reading `list`
+    # get the same words for the same run (the mode folded in, the unmerged mark).
+    status, status_cell, status_detail = _status_state(
+        target, scan, last_age=last_age, mode=mode_display or "?", unmerged=changes.unmerged
+    )
+    state = f"{status_cell} ({status_detail})" if status_detail else status_cell
 
     if as_json:
         print(
@@ -241,6 +244,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 class _Changes:
     line: str  # the text row; "" for a session with no run branch
     merged_into: str  # the base the run branch is merged into, else ""
+    unmerged: bool = False  # commits are waiting on `sessions merge`
 
 
 def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Changes:
@@ -265,8 +269,12 @@ def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Ch
         chain = chain_ref_for(session_id)
         if chain_tip(cwd, chain) is None:
             return _Changes(f"{run_branch} (no commits)", "")
-        return _Changes(f"{chain} ({run_branch} is gone; the commits are kept); {merge_hint}", "")
-    return _Changes(f"{format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", "")
+        return _Changes(
+            f"{chain} ({run_branch} is gone; the commits are kept); {merge_hint}", "", True
+        )
+    return _Changes(
+        f"{format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", "", True
+    )
 
 
 def _print_listening_ports(session_dir: Path) -> None:

@@ -25,6 +25,7 @@ from agent6.sessions.manifest import (
 )
 from agent6.ui.cli._common import (
     _runs_dir,
+    plural,
 )
 from agent6.ui.cli._compare import (
     RankOutcome,
@@ -213,7 +214,7 @@ def _cmd_compare(
     }
     recorded = _recorded_outcome(resolved, candidates) if by_fanout and not rejudge else None
     if recorded is not None:
-        print(f"[agent6] the recorded verdict for {len(candidates)} lanes:")
+        print(f"[agent6] the recorded verdict for {plural(len(candidates), 'lane')}:")
         print_ranked_candidates(candidates, recorded, merged_into=merged)
         print("\n(recorded when the fan-out ran; `--rejudge` spends a fresh judge call)")
         return 0

@@ -269,3 +269,31 @@ def test_model_controlled_run_refuses_the_git_surfaces() -> None:
     model_run = SessionManifest(mode="run", session_id="x2", git_control="model")
     msg = model_git_refusal(model_run, "sessions diff")
     assert msg is not None and "model" in msg and "x2" in msg
+
+
+def test_the_json_row_carries_the_whole_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The table clips for width; `--json` is the surface a script reads, and a
+    one-line snippet there is indistinguishable from a one-line task."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    from agent6.config.layer import resolved_state_dir
+    from agent6.sessions.layout import SessionLayout
+
+    task = "fix the parser bug\nsecond line of the task\nthird line"
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-TASK11")
+    layout.ensure()
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": task}) + "\n",
+        encoding="utf-8",
+    )
+
+    from agent6.ui.cli import main
+
+    assert main(["sessions", "list", "--json"]) == 0
+
+    (row,) = json.loads(capsys.readouterr().out)
+    assert row["task"] == task
