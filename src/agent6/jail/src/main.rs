@@ -566,8 +566,8 @@ fn bring_loopback_up() -> io::Result<()> {
 /// Enter the run's session network: its user namespace first, because
 /// setns(CLONE_NEWNET) needs CAP_SYS_ADMIN in the namespace that OWNS the
 /// target netns, and an unprivileged joiner only has that inside it. The
-/// caller therefore does NOT create a user namespace of its own; it is already
-/// uid 0 in the one it joined, which is what the mounts below need.
+/// caller therefore does NOT create a user namespace of its own; it holds every
+/// capability in the one it joined, which is what the mounts below need.
 fn join_network(userns_fd: RawFd, netns_fd: RawFd) -> io::Result<()> {
     for (fd, kind) in [
         (userns_fd, CloneFlags::CLONE_NEWUSER),
