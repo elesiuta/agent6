@@ -27,6 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
 from agent6.providers.types import ToolDefinition
 from agent6.tools.schema import AskUserInput
 from agent6.workflows._conversation import (
@@ -36,6 +37,8 @@ from agent6.workflows._conversation import (
     Turn,
     UserTurn,
 )
+from agent6.workflows._panel import REVIEW_NOTICE_BYTES
+from agent6.workflows._verify_gate import VERIFY_TAIL_CHARS
 
 # Stable prefix shared by every placeholder variant: idempotency checks and
 # tests key on it.
@@ -238,6 +241,14 @@ def parse_gist_lines(text: str, paths: Sequence[str]) -> dict[str, str]:
 # latches. Bytes, because the bound that displaces this default for a Claude
 # Code worker (its 50,000-byte persistence threshold) is measured in bytes.
 TOOL_RESULT_CAP_BYTES = 60_000
+
+# A Claude Code worker's turn carries the capped result and the turn's
+# trailing notices in one tool_result, and the whole stays under the
+# provider's persist threshold with the notices at their largest: a verify
+# tail of VERIFY_TAIL_CHARS four-byte characters, a review critique of
+# REVIEW_NOTICE_BYTES, and the nudges and framing around them.
+CLAUDE_CODE_NOTICE_ROOM_BYTES = 4 * VERIFY_TAIL_CHARS + REVIEW_NOTICE_BYTES + 4_000
+CLAUDE_CODE_RESULT_CAP_BYTES = CLAUDE_CODE_PERSIST_BYTES - CLAUDE_CODE_NOTICE_ROOM_BYTES
 
 # compaction thresholds (chars, not tokens - approximate; tokens
 # are roughly chars/4 for English-shaped content).

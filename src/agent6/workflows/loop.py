@@ -204,6 +204,7 @@ from agent6.workflows._panel import (
     inconclusive_note,
     panel_is_inconclusive,
     render_findings,
+    review_notice,
 )
 from agent6.workflows._parallel_dispatch import (
     LaneJoin,
@@ -2183,7 +2184,7 @@ class Workflow:
         any new signature, so a normal re-read after an edit does not
         trigger."""
         if turn.review_text:
-            turn.tool_results.append(Notice(f"[review]\n{turn.review_text}"))
+            turn.tool_results.append(Notice(review_notice(turn.review_text)))
         if turn.metric_feedback:
             turn.tool_results.append(Notice(turn.metric_feedback))
         if (
@@ -3027,7 +3028,7 @@ class Workflow:
             if isinstance(item, Notice):
                 conversation.notice(item.text)
         if turn.review_text:
-            conversation.notice(f"[review]\n{turn.review_text}")
+            conversation.notice(review_notice(turn.review_text))
         return aborted
 
     def _handle_silent_finish(  # noqa: PLR0911 - a gate chain of early bounces

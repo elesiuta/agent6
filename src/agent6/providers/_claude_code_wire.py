@@ -16,12 +16,10 @@ from agent6.budget import PlanUsage, PlanWindow
 from agent6.child_env import curated_env
 
 # Claude Code writes a tool result above this many bytes under
-# ~/.claude/projects and hands the model a 2 KB preview of it.
+# ~/.claude/projects and hands the model a 2 KB preview of it. The loop's
+# result cap for this provider sits under it by the room the turn's trailing
+# notices take (`workflows/_compaction.CLAUDE_CODE_RESULT_CAP_BYTES`).
 CLAUDE_CODE_PERSIST_BYTES = 50_000
-# The loop's result cap for this provider: the threshold less the room the
-# turn's trailing notices take, which ride in the same tool_result content
-# (a verify tail runs about 2 KB, a review critique more).
-CLAUDE_CODE_RESULT_CAP_BYTES = 45_000
 
 
 MCP_SERVER = "agent6"

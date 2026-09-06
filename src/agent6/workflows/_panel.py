@@ -91,6 +91,23 @@ def inconclusive_note(result: PanelResult) -> str:
     return f"review inconclusive: all {result.n_abstain} seats abstained; nothing was reviewed"
 
 
+# A critique rides into the worker's next turn as a notice beside the tool
+# results, and a Claude Code worker's turn has a persist threshold the loop
+# sizes its result cap under with this much critique in mind
+# (`_compaction.CLAUDE_CODE_NOTICE_ROOM_BYTES`). Head first: the findings lead.
+REVIEW_NOTICE_BYTES = 4_000
+
+
+def review_notice(text: str) -> str:
+    """The `[review]` notice for *text*, cut to `REVIEW_NOTICE_BYTES` of UTF-8
+    with a marker naming the cut."""
+    body = text.encode()
+    if len(body) <= REVIEW_NOTICE_BYTES:
+        return f"[review]\n{text}"
+    head = body[:REVIEW_NOTICE_BYTES].decode(errors="ignore")
+    return f"[review]\n{head}\n[review: {len(body) - len(head.encode())} more bytes cut]"
+
+
 # ----------------------------------------------------------------------------
 # Diff grounding: the (path, line) citations this diff supports.
 # ----------------------------------------------------------------------------

@@ -35,7 +35,6 @@ from agent6.providers import (
 )
 from agent6.providers._claude_code_wire import (
     CLAUDE_CODE_ENV,
-    CLAUDE_CODE_RESULT_CAP_BYTES,
     claude_argv,
     plan_usage_from_rate_limit,
     render_history,
@@ -1085,10 +1084,16 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     turn folds into the payload, so a capped result never reaches that
     refusal, whatever its characters weigh."""
     from agent6.app._session import tool_result_cap_bytes
-    from agent6.providers._claude_code_wire import CLAUDE_CODE_PERSIST_BYTES
+    from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
     from agent6.tools.results import ExecResult
-    from agent6.workflows._compaction import TOOL_RESULT_CAP_BYTES, cap_tool_result
-    from agent6.workflows._verify_gate import harness_verify_notice
+    from agent6.workflows._compaction import (
+        CLAUDE_CODE_RESULT_CAP_BYTES,
+        TOOL_RESULT_CAP_BYTES,
+        cap_tool_result,
+    )
+    from agent6.workflows._nudges import RUN_BUDGET_NUDGE, STAGNATION_NUDGE
+    from agent6.workflows._panel import review_notice
+    from agent6.workflows._verify_gate import VERIFY_TAIL_CHARS, harness_verify_notice
 
     cc = Config.model_validate(
         {
@@ -1102,10 +1107,16 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     wide = cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=tool_result_cap_bytes(cc))
     gate = ExecResult(
         returncode=1,
-        stdout="FAILED tests/test_x.py::test_y\n" * 60,
+        stdout="\U0001f600" * (2 * VERIFY_TAIL_CHARS),
         stderr="",
         duration_s=3.0,
         exec_failed=False,
     )
-    notice = harness_verify_notice(gate, "step")
-    assert len(wide.encode()) + len(notice.encode()) < CLAUDE_CODE_PERSIST_BYTES
+    turn = [
+        wide,
+        harness_verify_notice(gate, "step"),
+        review_notice("\u6f22" * 10_000),
+        STAGNATION_NUDGE,
+        RUN_BUDGET_NUDGE,
+    ]
+    assert sum(len(text.encode()) for text in turn) < CLAUDE_CODE_PERSIST_BYTES

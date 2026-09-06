@@ -20,7 +20,8 @@ from agent6.tools.results import ExecResult
 VerifyWhen = Literal["finish", "step", "never"]
 HarnessVerifyWhy = Literal["finish", "step"]
 
-_TAIL_CHARS = 2000
+# Characters of gate output the model sees, from the end.
+VERIFY_TAIL_CHARS = 2000
 
 
 def harness_verify_due(
@@ -53,7 +54,7 @@ def harness_verify_notice(result: ExecResult, why: HarnessVerifyWhy) -> str:
     """What the model sees of a gate run it did not start: the verdict and
     the output tail, labelled by what triggered it."""
     verdict = "passed" if result.returncode == 0 else f"exit {result.returncode}"
-    tail = f"{result.stdout}\n{result.stderr}".strip()[-_TAIL_CHARS:]
+    tail = f"{result.stdout}\n{result.stderr}".strip()[-VERIFY_TAIL_CHARS:]
     head = f"[harness verify] {why}: verify_command {verdict} ({result.duration_s:.0f}s)."
     return f"{head}\n{tail}" if tail else head
 
@@ -65,7 +66,7 @@ def scoped_verify_notice(result: ExecResult, *, timeout_s: float, paths: tuple[s
     certifies less than a full pass and the notice says so. One notice for
     the harness gate and the follow-up to the model's own timed-out call."""
     verdict = "passed" if result.returncode == 0 else f"exit {result.returncode}"
-    tail = f"{result.stdout}\n{result.stderr}".strip()[-_TAIL_CHARS:]
+    tail = f"{result.stdout}\n{result.stderr}".strip()[-VERIFY_TAIL_CHARS:]
     head = (
         f"[verify] verify_command overran its {timeout_s:.0f}s budget;"
         f" the gate ran scoped to the tests nearest the run's change ({', '.join(paths)}):"

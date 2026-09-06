@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
-from agent6.providers._claude_code_wire import CLAUDE_CODE_RESULT_CAP_BYTES, result_text
+from agent6.providers._claude_code_wire import CLAUDE_CODE_PERSIST_BYTES, result_text
 from agent6.providers.anthropic import AnthropicProvider
 from agent6.providers.chatgpt import ChatGPTProvider
 from agent6.providers.chatgpt_oauth import ChatGPTCredential
@@ -85,7 +85,7 @@ def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int
 
 
 __all__ = [
-    "CLAUDE_CODE_RESULT_CAP_BYTES",
+    "CLAUDE_CODE_PERSIST_BYTES",
     "AnthropicProvider",
     "ChatGPTCredential",
     "ChatGPTProvider",

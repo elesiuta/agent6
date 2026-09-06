@@ -683,3 +683,15 @@ def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
     kept = diff_hunks("--- a/k.py\n+++ b/k.py\n@@ -10,5 +9,0 @@\n-a\n-b\n-c\n-d\n-e\n")
     assert kept["k.py"] == [Hunk(old=(10, 14), new=(9, 9))]
     assert is_grounded("k.py:9", kept) and is_grounded("k.py:12", kept)
+
+
+def test_a_review_notice_is_cut_head_first_at_a_character_boundary() -> None:
+    """The cut keeps the head (the findings lead), lands on a character
+    boundary inside the byte budget, and names the bytes it dropped."""
+    from agent6.workflows._panel import REVIEW_NOTICE_BYTES, review_notice
+
+    assert review_notice("short") == "[review]\nshort"
+    text = "\u6f22" * 2_000  # three bytes a character
+    head, marker = review_notice(text).removeprefix("[review]\n").rsplit("\n", 1)
+    assert head == "\u6f22" * (REVIEW_NOTICE_BYTES // 3)
+    assert marker == f"[review: {6_000 - len(head.encode())} more bytes cut]"

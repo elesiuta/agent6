@@ -39,7 +39,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
-from agent6.providers import CLAUDE_CODE_RESULT_CAP_BYTES, Provider, TranscriptSink
+from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, SessionNetwork
 from agent6.sessions.layout import SessionLayout
@@ -47,7 +47,7 @@ from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import IsolationLevel, ResumableMode
-from agent6.workflows._compaction import TOOL_RESULT_CAP_BYTES
+from agent6.workflows._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
 from agent6.workflows.review import ReviewSeat
 
 
