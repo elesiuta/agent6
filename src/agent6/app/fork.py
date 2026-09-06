@@ -63,6 +63,7 @@ from agent6.git_ops import (
     chain_ref_for,
     chain_tip,
     create_branch_at,
+    delete_ref,
     git_common_dir,
     merge_stamp_holds,
     remove_worktree,
@@ -908,12 +909,18 @@ def _materialize_fork(
     # operator's checkout: the hidden ref always, the visible branch per
     # [git].branch_per_run (both additive ref writes, never a checkout).
     try:
-        set_ref(cwd, chain_ref_for(dst.session_id), plan.forked_from_sha)
+        # The branch is the write that can refuse (it exists at another sha, as
+        # after `sessions rm`, which keeps branches), so cut it first: nothing
+        # of the fork's is on disk yet to unpick.
         if run_branch is not None:
             create_branch_at(cwd, run_branch, plan.forked_from_sha)
+        set_ref(cwd, chain_ref_for(dst.session_id), plan.forked_from_sha)
     except GitError as exc:
         reporter.error(f"could not cut fork refs at {plan.forked_from_sha[:12]}: {exc}")
-        # A fork exists only with its refs: the run dir written above goes too.
+        # A fork exists only with its refs: the chain ref and the run dir
+        # written above go too, so a later run reusing the id cannot build its
+        # chain on a dead fork's tip.
+        delete_ref(cwd, chain_ref_for(dst.session_id))
         shutil.rmtree(dst.session_dir, ignore_errors=True)
         return 1
 

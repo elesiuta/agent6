@@ -1362,3 +1362,31 @@ def test_a_fork_records_the_untracked_files_of_its_own_checkout(
     worktree = Path(json.loads(dst.manifest_path.read_text(encoding="utf-8"))["worktree"])
     assert not (worktree / "notes.txt").exists(), "a fresh checkout has none of it"
     assert read_untracked_at_start(dst.session_dir) == frozenset()
+
+
+def test_a_refused_fork_leaves_no_chain_ref_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions rm` keeps a run's branch, so forking onto a reused id hits the
+    branch refusal. The chain ref was written first and never removed, and a
+    later run with that id would build its chain on the dead fork's tip."""
+    from agent6.git_ops import chain_ref_for, chain_tip
+
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    # The branch a removed run left behind, pointing at a different commit.
+    (repo / "other.txt").write_text("other\n")
+    sp.run(["git", "add", "other.txt"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-q", "-m", "other"], cwd=repo, check=True)
+    sp.run(["git", "branch", "agent6/brave-yak-BBBB22", "HEAD"], cwd=repo, check=True)
+
+    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
+
+    assert "could not cut fork refs" in capsys.readouterr().err
+    assert chain_tip(repo, chain_ref_for("brave-yak-BBBB22")) is None
+    assert not (
+        SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    ).session_dir.exists()
