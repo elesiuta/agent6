@@ -524,13 +524,15 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         # a lie and the chain-ref cleanup below would strand its commits.
         print(f"ERROR: could not remove {layout.session_dir}: {exc}", file=sys.stderr)
         return 1
-    note = ""
+    went: list[str] = []  # what went with the record
+    stays = ""
     if worktree is not None and sharing:
-        note = f" (its worktree stays: {', '.join(sharing)} still work in it)"
+        verb = "names" if len(sharing) == 1 else "name"
+        stays = f"; its worktree stays: {', '.join(sharing)} still {verb} it"
     elif worktree is not None:
         gone, left = remove_fork_worktree(cwd, worktree)
         if gone:
-            note = " and its worktree" + (f" ({left})" if left else "")
+            went.append("its worktree" + (f" ({left})" if left else ""))
     chain = chain_ref_for(layout.session_id)
     try:
         if chain_tip(cwd, chain) is not None:
@@ -538,12 +540,17 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
             branch_kept = branch_exists(cwd, branch)
             delete_ref(cwd, chain)
             # With no visible branch the ref was the commits' only anchor.
-            note = " and its chain ref" + (
-                f" (branch {branch} kept; `sessions prune` reports it)"
-                if branch_kept
-                else " (its commits are now loose)"
+            went.append(
+                "its chain ref"
+                + (
+                    f" (branch {branch} kept; `sessions prune` reports it)"
+                    if branch_kept
+                    else " (its commits are now loose)"
+                )
             )
     except GitError:
         pass  # not a repo here, or git unreadable: state-dir removal stands
-    print(f"removed {layout.session_id}{note}")
+    what = [layout.session_id, *went]
+    removed = f"{', '.join(what[:-1])} and {what[-1]}" if went else what[0]
+    print(f"removed {removed}{stays}")
     return 0

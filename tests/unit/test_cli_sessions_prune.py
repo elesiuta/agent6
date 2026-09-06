@@ -738,19 +738,23 @@ def test_rm_removes_the_worktree_its_manifest_records(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`sessions rm <fork>` deletes the fork's worktree with its record (the
-    one moment the ledger still names it), and git's record of the worktree."""
+    one moment the ledger still names it), and git's record of the worktree,
+    and says so beside the chain ref it also drops: the chain-ref note
+    overwrote the worktree's, so the removal line never mentioned it."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
     worktree = _fork_with_worktree(tmp_path, "fork-gone11", merged=False)
+    _git(tmp_path, "update-ref", chain_ref_for("fork-gone11"), "HEAD")
 
     assert main(["sessions", "rm", "fork-gone11"]) == 0
     out = capsys.readouterr().out
     assert not worktree.exists()
     assert str(worktree) not in _git(tmp_path, "worktree", "list", "--porcelain")
-    assert "removed fork-gone11" in out and "worktree" in out
+    assert "removed fork-gone11, its worktree and its chain ref" in out
+    assert "branch agent6/fork-gone11 kept" in out
 
 
 def _record(repo: Path, session_id: str, worktree: Path, *, merged: bool) -> Path:
@@ -816,10 +820,12 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     assert "kept fork-moved011's worktree (unmerged)" in out
     assert "kept fork-live0011's worktree (live)" in out
 
+    _git(tmp_path, "update-ref", chain_ref_for("fork-parent11"), "HEAD")
     assert main(["sessions", "rm", "fork-parent11"]) == 0
     out = capsys.readouterr().out
     assert (shared / "wip.txt").exists()
-    assert "its worktree stays: fork-child011" in out
+    assert "removed fork-parent11 and its chain ref" in out
+    assert "its worktree stays: fork-child011 still names it" in out
 
 
 def test_removing_a_worktree_deletes_only_the_lock_it_left_in_its_state_dir(
