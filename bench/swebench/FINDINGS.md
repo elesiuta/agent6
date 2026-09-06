@@ -1140,3 +1140,20 @@ controls. The oracle ceiling after removing the staging artifacts is
 "docker network create", hats-648 "does not have skymap information",
 koxudaxi-3071 "Invalid JSON:", docsight-437 key names). The arm is not
 built.
+
+### Fresh full-110 on the fixed staging harness: 63/110 (57.3%) (2026-08-30)
+
+One run, same wheel and prompt as the 61/110 run, single attempt per
+instance, conc 4, 06:59Z-11:07Z, 13 plan points: 63 resolved, 46
+unresolved, 1 empty (schemathesis-4087, a clean finish with 0 patch
+lines), 0 errors. Per batch: 8, 7, 5, 5, 8, 6, 8, 9, 5, 2 of 11. The
+five ids whose fix needs a new source module (toqito-1484_interface,
+scim2-models-139_interface, pygraphistry-1107_interface, pygmt-4463,
+sunpy-8548_interface) all resolved; 11 legs submitted new files (40 in
+total). Against the old-harness run: 53 ids resolved in both, 10 only
+here, 8 only there (the ~3-point single-run variance).
+
+On the 2026_03 window the board reads Junie 61.6 +/- 0.64, Codex 60.4
++/- 1.37, Claude Code 59.6 +/- 1.98 (mean of 5); one run of 63/110 is
+within one SD of Codex and Claude Code and below Junie. No claim beyond
+that: a mean-of-5 (~60 points) is what the board reports.
