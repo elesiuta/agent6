@@ -87,8 +87,8 @@ def read_budget_totals(log_path: Path, *, from_offset: int = 0) -> Spend:
 def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
     """Journal an `AttemptSpend` for an orphaned in-flight state log, then
     retire the log dir (renamed `crashed-<timestamp>-<original>`, out of
-    every seq matcher and unique per crash) so the booked slice can never fold twice and the re-run starts
-    a fresh log.
+    every seq matcher and unique per crash) so the booked slice can never fold
+    twice and the re-run starts a fresh log.
 
     A supervisor death mid-agent-state leaves real provider spend recorded
     only in the per-state log; without this, resume re-granted the budget and

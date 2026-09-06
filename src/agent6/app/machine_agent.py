@@ -440,7 +440,9 @@ def run_one(
         state_dir=resolved_state_dir(req.root),
     )
     rm = cfg.models.resolve("worker")
-    compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm, log=reporter.err)
+    compact_drop, compact_summarise, keep_recent = resolve_compaction_thresholds(
+        cfg, rm, log=reporter.err
+    )
     cfg = resolve_decompose(cfg, rm, log=reporter.err)
     wf = Workflow(
         root=req.root,
@@ -467,7 +469,7 @@ def run_one(
         compact_drop_at_chars=compact_drop,
         compact_summarise_at_chars=compact_summarise,
         context_summary_max_tokens=cfg.context.summary_max_tokens,
-        keep_recent_chars=cfg.context.keep_recent_chars,
+        keep_recent_chars=keep_recent,
         keep_thinking_turns=cfg.context.keep_thinking_turns,
         compact_elision_gists=cfg.context.elision_gists,
         steer_requested=bridges.steer_requested if bridges is not None else (lambda: False),

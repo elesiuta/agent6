@@ -335,7 +335,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             compact_drop_at_chars=tools.compact_drop_at_chars,
             compact_summarise_at_chars=tools.compact_summarise_at_chars,
             context_summary_max_tokens=cfg.context.summary_max_tokens,
-            keep_recent_chars=cfg.context.keep_recent_chars,
+            keep_recent_chars=tools.keep_recent_chars,
             keep_thinking_turns=cfg.context.keep_thinking_turns,
             compact_elision_gists=cfg.context.elision_gists,
         )

@@ -40,13 +40,19 @@ from agent6.workflows.review import ReviewSeat, parse_seat_spec
 
 def resolve_compaction_thresholds(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
-) -> tuple[int, int]:
-    """Effective `(context.drop_at_chars, context.summarise_at_chars)` for the
+) -> tuple[int, int, int]:
+    """Effective `(drop_at_chars, summarise_at_chars, keep_recent_chars)` for the
     model *rm* drives the loop with: the explicit config values if set, else
     sized from the model's context window (bundled table + live model cache),
     else the historical fixed defaults. Logs the choice when adaptive so the
     operator can see what was picked. `rm is None` (model unresolved) falls
-    through to explicit-or-fixed-default."""
+    through to explicit-or-fixed-default.
+
+    An adaptive tier-2 threshold clamps the verbatim tail to half of itself:
+    the config validator refuses an explicit pair where the tail alone would
+    re-trigger tier 2, and a small window (a 32k model against the 80,000-char
+    default) sizes one that does. Under it the restart kept NO verbatim turns
+    at all, paraphrasing away the results the model was about to act on."""
     drop_override = cfg.context.drop_at_chars
     summarise_override = cfg.context.summarise_at_chars
     provider = rm.provider if rm is not None else ""
@@ -67,7 +73,16 @@ def resolve_compaction_thresholds(
         # These are the thresholds compaction WILL fire at, not a compaction
         # that happened; say "at" or a fresh run reads as a 1.3M-char event.
         log(f"compaction thresholds: drop at {drop:,} chars, summarise at {summarise:,} [{src}]")
-    return drop, summarise
+    keep = cfg.context.keep_recent_chars
+    if summarise_override is None and keep > summarise // 2:
+        keep = summarise // 2
+        if log is not None:
+            log(
+                f"context.keep_recent_chars {cfg.context.keep_recent_chars:,} ->"
+                f" {keep:,} chars: half this model's tier-2 threshold, so a restart"
+                " shrinks the context instead of re-triggering on its own tail"
+            )
+    return drop, summarise, keep
 
 
 def resolve_decompose(

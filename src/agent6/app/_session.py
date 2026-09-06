@@ -226,6 +226,7 @@ class SessionTools:
     dispatcher: ToolDispatcher
     compact_drop_at_chars: int
     compact_summarise_at_chars: int
+    keep_recent_chars: int
     cfg: Config
 
 
@@ -265,13 +266,16 @@ def build_session_tools(
         use_jail_session=True,
         session_net=session_net,
     )
-    compact_drop, compact_summarise = resolve_compaction_thresholds(cfg, rm_role, log=loop_log)
+    compact_drop, compact_summarise, keep_recent = resolve_compaction_thresholds(
+        cfg, rm_role, log=loop_log
+    )
     cfg = resolve_decompose(cfg, rm_role, log=loop_log)
     return SessionTools(
         curator=curator,
         dispatcher=dispatcher,
         compact_drop_at_chars=compact_drop,
         compact_summarise_at_chars=compact_summarise,
+        keep_recent_chars=keep_recent,
         cfg=cfg,
     )
 
