@@ -30,7 +30,7 @@ from agent6.app.frontend import (
     apply_spawned_away_default,
     approval_scopes,
 )
-from agent6.app.manifest import pin_gate, stamp_fork_task, stamp_preset
+from agent6.app.manifest import pin_gate, stamp_fork_task, stamp_leg, stamp_preset
 from agent6.app.preflight import (
     SessionRefused,
     drop_gate_if_unrunnable,
@@ -638,6 +638,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # The crash marker's answer is spent only now, at the point of no
         # return: every refusal above leaves it for the next attempt to ask.
         clear_turn_marker(layout.session_dir / TURN_IN_FLIGHT_NAME)
+        # This leg's models and policy, so `agent6 exec` joins the jail the
+        # agent is in and every policy surface describes the leg that is live.
+        stamp_leg(layout.session_dir, cfg, mode, isolation)
         end = run_leg(
             cfg,
             layout,

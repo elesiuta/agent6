@@ -432,3 +432,37 @@ def test_each_mode_gets_its_own_tool_surface() -> None:
         assert ("run_command" in names) is kind.runs_commands, name
     with pytest.raises(UnknownSessionKind):
         mode_tools("wat")
+
+
+def test_a_leg_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> None:
+    """Written once at run start, they described leg 1 forever: `agent6 exec`
+    joins the RECORDED policy, so a run started unsandboxed and resumed under
+    strict ran the operator's command unconfined against a jailed agent, and
+    every policy surface named leg 1's model while another one answered."""
+    from agent6.app.manifest import stamp_leg
+    from agent6.config import Config
+
+    _write(
+        tmp_path,
+        {
+            "version": MANIFEST_VERSION,
+            "session_id": "legs-run-A1",
+            "mode": "run",
+            "user_task": "t",
+            "models": {"driver": {"provider": "openai", "model": "old-model"}},
+            "policy": {"run_commands": "yes", "isolation": "none", "network": "auto"},
+        },
+    )
+    cfg = Config.model_validate(
+        {
+            "models": {"worker": {"provider": "anthropic", "model": "new-model"}},
+            "sandbox": {"run_commands": "ask"},
+        }
+    )
+
+    stamp_leg(tmp_path, cfg, "run", "strict")
+
+    m = read_manifest(tmp_path)
+    assert m.policy.isolation == "strict"
+    assert m.policy.run_commands == "ask"
+    assert m.models.driver is not None and m.models.driver.model == "new-model"

@@ -183,6 +183,34 @@ def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:
     )
 
 
+def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None:
+    """Re-stamp the facts a LEG owns: the models driving it and the policy it
+    runs under.
+
+    Written once at run start, they described leg 1 forever: `agent6 exec`
+    takes the recorded policy as the jail to join, so a run started
+    unsandboxed and resumed under `strict` ran the operator's command
+    unconfined against a jailed agent -- and `sessions show` named leg 1's
+    model while another one was answering."""
+    m = read_manifest(session_dir)
+    write_manifest(
+        session_dir / "manifest.json",
+        m.model_copy(
+            update={
+                "models": ModelsBrief(
+                    driver=_model_brief(cfg.models.resolve(session_kind(mode).role)),
+                    reviewer=_model_brief(cfg.models.resolve("reviewer")),
+                ),
+                "policy": PolicyStamp(
+                    run_commands=cfg.sandbox.run_commands,
+                    isolation=isolation or str(cfg.sandbox.isolation),
+                    network=str(cfg.sandbox.network),
+                ),
+            }
+        ),
+    )
+
+
 def stamp_preset(session_dir: Path, name: str) -> None:
     """Record the preset a resumed leg was started under with `--preset`: from
     here the run runs under it, and a later resume without a flag replays it
