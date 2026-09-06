@@ -3382,6 +3382,37 @@ def test_tier2_summariser_is_told_the_task() -> None:
     assert "TASK (the goal, verbatim):\nmake the tests pass" in user_msg
 
 
+def test_a_restart_does_not_re_fire_on_the_next_iteration() -> None:
+    """The growth floor keeps a restart that lands near the threshold from
+    summarising every other iteration. Measured on the conversation alone while
+    the TRIGGER also counts the request prefix, the floor sat below the total
+    the moment the restart finished: tier 2 re-fired with no new turns, paid a
+    second summariser call, and paraphrased away the tail it had just kept."""
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("progress summary")
+    # A small-window model against a big AGENTS.md: the prefix alone clears the
+    # threshold, so every iteration is "over" and the floor is the only thing
+    # between the run and a summariser call per turn.
+    wf = _wf(summariser_provider=summariser, compact_summarise_at_chars=60_000)
+    msgs = _big_text_history("TASK: x", blocks=8, block_chars=20_000)
+    st = _state()
+    prefix = 100_000
+
+    conversation = Conversation.from_wire(msgs)
+    assert (
+        wf._maybe_compact(conversation, st, prefix_chars=prefix)  # pyright: ignore[reportPrivateUsage]
+        is True
+    )
+    assert summariser.call.call_count == 1
+
+    # Same conversation, one iteration later, nothing added.
+    assert (
+        wf._maybe_compact(conversation, st, prefix_chars=prefix)  # pyright: ignore[reportPrivateUsage]
+        is False
+    )
+    assert summariser.call.call_count == 1
+
+
 def test_compact_request_forces_a_tier2_restart() -> None:
     """An operator compact.request (the TUI's "Compact now") forces the tier-2
     summarise-and-restart at the next boundary even far below the size

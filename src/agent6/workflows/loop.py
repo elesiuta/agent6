@@ -3924,7 +3924,9 @@ class Workflow:
         # other iteration; a forced (operator) compaction bypasses it.
         over = total > self.compact_summarise_at_chars and total >= state.tier2_floor_chars
         if (forced is not None or over) and len(conversation) > 3:
-            return self._summarise_and_restart(conversation, state, focus=forced or "")
+            return self._summarise_and_restart(
+                conversation, state, focus=forced or "", prefix_chars=prefix_chars
+            )
         if forced is not None:
             # The request was consumed above (one request, one compaction), so a
             # silent return would drop it: the front-end has already told the
@@ -3957,7 +3959,12 @@ class Workflow:
         return parse_gist_lines(resp.text or "", paths=[r.path for r in requests])
 
     def _summarise_and_restart(
-        self, conversation: Conversation, state: LoopState, *, focus: str = ""
+        self,
+        conversation: Conversation,
+        state: LoopState,
+        *,
+        focus: str = "",
+        prefix_chars: int = 0,
     ) -> bool:
         """Replace the history with (original task + a model-written progress
         summary), in place. The loop only calls this at the top of an
@@ -4059,7 +4066,11 @@ class Workflow:
             + summary,
             keep=turns[tail_start:],
         )
-        state.tier2_floor_chars = int(context_chars(conversation) * 1.25)
+        # The floor is measured the way the trigger is (the whole request, prefix
+        # included): computed on the conversation alone it sat below the total
+        # from the moment the restart finished, so tier 2 re-fired on the next
+        # iteration and paraphrased away the tail it had just kept.
+        state.tier2_floor_chars = int((context_chars(conversation) + prefix_chars) * 1.25)
         self._emit(
             "loop.compact.summarise.done",
             summary_chars=len(summary),
