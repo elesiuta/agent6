@@ -506,9 +506,9 @@ function paintRun(cards, s) {
       body.innerHTML = '';
       if (!sel.value) { cards._stepState = null; paintDetails(cards, s, null); body.appendChild(renderDiff(s.latest_diff || '')); return; }
       try {
-        const d = await getJSON('/api/session/' + encodeURIComponent(id) + '/diff?sha=' + encodeURIComponent(sel.value) + '&cumulative=' + (cum.checked ? '1' : '0'));
+        const d = await getJSON('/api/session/' + encodeURIComponent(cards._id) + '/diff?sha=' + encodeURIComponent(sel.value) + '&cumulative=' + (cum.checked ? '1' : '0'));
         body.appendChild(renderDiff(d.patch));
-        const st = await getJSON('/api/session/' + encodeURIComponent(id) + '?step=' + encodeURIComponent(sel.value));
+        const st = await getJSON('/api/session/' + encodeURIComponent(cards._id) + '?step=' + encodeURIComponent(sel.value));
         cards._stepState = st; paintDetails(cards, st, st.as_of);
       } catch (e) { body.appendChild(el('div', 'muted', e.message)); }
     };
