@@ -429,6 +429,70 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
         child.wait()
 
 
+def test_the_resume_note_leaves_the_untracked_at_start_files_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ "the tree holds changes no commit has ...; this leg's next commit takes
+    them" named the operator's files untracked when the run started, which
+    every chain commit leaves out."""
+    from unittest.mock import MagicMock
+
+    from agent6.sessions.layout import write_untracked_at_start
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    base = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "note-UNTRACKED"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "note-UNTRACKED",
+                "mode": "run",
+                "user_task": "t",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": "agent6/note-UNTRACKED",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 1,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_untracked_at_start(session_dir, {"notes.md"})
+    (repo / "notes.md").write_text("the operator's, since before the run\n", encoding="utf-8")
+    (repo / "seed.txt").write_text("edited between legs\n", encoding="utf-8")
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    assert resume_mod.resume_task(None, "note-UNTRACKED", frontend=MagicMock(), force=False) == 0
+    notes = [line for line in capsys.readouterr().err.splitlines() if "no commit has" in line]
+    assert notes == [
+        "[agent6] the tree holds changes no commit has (seed.txt);"
+        " this leg's next commit takes them"
+    ]
+
+
 def test_plan_resume_builds_the_planner_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

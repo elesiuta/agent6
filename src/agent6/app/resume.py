@@ -648,14 +648,23 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # This leg's models and policy, so `agent6 exec` joins the jail the
         # agent is in and every policy surface describes the leg that is live.
         stamp_leg(layout.session_dir, cfg, mode, isolation)
+        untracked_at_start = read_untracked_at_start(layout.session_dir)
         if writes_code:
             # What the tree holds that the chain does not: the previous leg's
             # uncommitted tail after a crash, and any edit of the operator's
             # between legs. The next auto-commit takes both, under the agent's
             # identity and into what `sessions diff` and `merge` present as the
-            # run's work -- silently, where a fresh run asks about exactly this.
+            # run's work, where a fresh run asks about exactly this. The files
+            # untracked at the start stay the operator's: every commit leaves
+            # them out, so the note does too.
             with contextlib.suppress(GitError, OSError):
-                dirty = chain_dirty_paths(cwd, chain_ref_for(session_id), resume_base_sha, 5)
+                dirty = chain_dirty_paths(
+                    cwd,
+                    chain_ref_for(session_id),
+                    resume_base_sha,
+                    5,
+                    exclude=untracked_at_start,
+                )
                 if dirty:
                     named = ", ".join(dirty[:4]) + (", ..." if len(dirty) > 4 else "")
                     reporter.note(
@@ -676,7 +685,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 gate=_gate,
                 chain_branch=run_branch or None,
                 base_sha=resume_base_sha,
-                untracked_at_start=read_untracked_at_start(layout.session_dir),
+                untracked_at_start=untracked_at_start,
                 resume_state_path=snapshot_path,
                 undo_forker=_undo_forker,
                 prompts=prompts,
