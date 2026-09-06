@@ -293,7 +293,7 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
-            await pilot.pause()
+            await app.workers.wait_for_complete()
 
     asyncio.run(scenario())
     assert seen["argv"][-3:] == ["run", "--from", "planny-one-AAAAAA"]
@@ -309,7 +309,36 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any)
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
-            await pilot.pause()
+            await app.workers.wait_for_complete()
 
     asyncio.run(refuse())
     assert not seen
+
+
+def test_a_refused_btw_toasts_as_a_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`open_btw` carries its outcome, and the composer dropped it: a refused
+    side question toasted at the success severity, unlike every other refusal
+    beside it."""
+
+    def refused(_session_dir: Path, _question: str) -> tuple[bool, str]:
+        return False, "no live run to ask beside"
+
+    def controllable(_app: Agent6TUI) -> bool:
+        return True
+
+    monkeypatch.setattr(app_mod, "open_btw", refused)
+    monkeypatch.setattr(Agent6TUI, "session_controllable", controllable)
+    run = tmp_path / "sessions" / "runs" / "runny-two-BBBBBB"
+    run.mkdir(parents=True)
+    (run / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def scenario() -> list[tuple[str, str]]:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.submit_instruction("/btw why?")
+            await pilot.pause()
+            notes = app._notifications  # pyright: ignore[reportPrivateUsage]
+            return [(str(n.message), n.severity) for n in notes]
+
+    assert ("no live run to ask beside", "warning") in asyncio.run(scenario())

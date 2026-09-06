@@ -468,7 +468,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         if self.session_controllable():
             question = parse_btw(text)
             if question is not None:
-                self.notify(open_btw(self.session_dir, question)[1])
+                opened, line = open_btw(self.session_dir, question)
+                self.notify(line, severity="information" if opened else "warning")
                 return
             focus = parse_compact(text)
             if focus is not None:
@@ -704,6 +705,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             return
         runs = bucket_dir(layout_of(self.session_dir).state_dir, "runs")
         mkdir_for_real_user(runs)
+        self._spawn_run_plan(runs)
+
+    @work(thread=True)
+    def _spawn_run_plan(self, runs: Path) -> None:
+        """The detached `run --from`, off the UI thread: the locate waits for
+        the run's first event, and the notice lands from here."""
         new_dir, err = spawn_and_locate(
             [*agent6_argv(self.config_path), "run", "--from", self.session_dir.name],
             Path.cwd(),
@@ -712,9 +719,9 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             env={**os.environ, **DETACHED_RUN_ENV},
         )
         if new_dir is None:
-            self.notify(err or "could not start the run", severity="error")
+            self.call_from_thread(self.notify, err or "could not start the run", severity="error")
             return
-        self.notify(f"run started: {new_dir.name} (open it from the hub)")
+        self.call_from_thread(self.notify, f"run started: {new_dir.name} (open it from the hub)")
 
     def action_fork(self) -> None:
         """Fork this run at its latest checkpoint into a NEW run, unstarted. On

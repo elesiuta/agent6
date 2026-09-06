@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 
 from textual.app import App
@@ -109,6 +110,15 @@ def test_machine_detail_text_reports_a_bad_file(tmp_path: Path) -> None:
     bad = tmp_path / "bad.asm.toml"
     bad.write_text("this is not = valid [[[\n", encoding="utf-8")
     assert "failed to load bad.asm.toml" in machine_detail_text(bad)
+
+
+async def _spawn_settled(app: App[None]) -> None:
+    """Wait for a spawn worker. One that hands its draft to `app.exit` cancels
+    the worker group on the way out, so its completion reads as cancelled."""
+    from textual.worker import WorkerCancelled
+
+    with contextlib.suppress(WorkerCancelled):
+        await app.workers.wait_for_complete()
 
 
 class _Host(App[None]):
@@ -314,6 +324,10 @@ def test_watch_screen_disables_steer_and_message_when_ended(
             screen.action_steer()  # no-op when ended
             await pilot.pause()
             assert not (state / "steer.request").exists()  # nothing dropped in the dead dir
+            screen.action_poke()  # the palette still reaches it
+            await pilot.pause()
+            toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert ("machine ended; cannot send a message", "warning") in toasts, toasts
 
     asyncio.run(scenario())
 
@@ -395,8 +409,50 @@ def test_create_opens_dashboard_on_the_draft(tmp_path: Path, monkeypatch: object
             screen = app.screen
             assert isinstance(screen, MachinesScreen)
             screen._on_create("make a greeter")  # pyright: ignore[reportPrivateUsage]
+            await _spawn_settled(app)
             await pilot.pause()
         assert app.return_value == draft  # handed the draft to the dashboard
+
+    asyncio.run(scenario())
+
+
+def test_create_spawns_off_the_ui_thread(tmp_path: Path, monkeypatch: object) -> None:
+    """The three spawns ran on the event loop, so the whole TUI froze for the
+    locate (seconds on a real `machine create`, which waits on an authoring
+    run's first event). The handler returns at once; the spawn's answer lands
+    from a worker thread."""
+    import threading
+
+    draft = tmp_path / "draft"
+    draft.mkdir()
+    entered = threading.Event()
+    gate = threading.Event()
+    ran_on: list[int] = []
+
+    def _slow_locate(*_a: object, **_k: object) -> tuple[Path | None, str]:
+        ran_on.append(threading.get_ident())
+        entered.set()
+        if not gate.wait(timeout=5.0):
+            return None, "the test never released the spawn"
+        return draft, ""
+
+    monkeypatch.setattr(machmod, "spawn_and_locate", _slow_locate)  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachinesScreen)
+            screen._on_create("make a greeter")  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()  # the worker starts from the loop
+            assert entered.wait(2.0), "the spawn never ran"
+            # The loop runs this line while the locate blocks on another thread.
+            assert ran_on != [threading.get_ident()], "the spawn ran on the event loop"
+            gate.set()
+            await _spawn_settled(app)
+            await pilot.pause()
+        assert app.return_value == draft
 
     asyncio.run(scenario())
 
@@ -486,7 +542,7 @@ def test_machine_run_confirms_then_spawns(tmp_path: Path, monkeypatch: object) -
             await pilot.pause()
             assert isinstance(app.screen, ConfirmModal)
             await pilot.press("y")  # confirm
-            await pilot.pause()
+            await app.workers.wait_for_complete()
             assert captured and captured[-1][-3:] == ["machine", "run", str(path)]
 
     asyncio.run(scenario())
@@ -512,6 +568,7 @@ def test_machine_run_refusal_notifies_and_skips_watch(tmp_path: Path, monkeypatc
             await pilot.press("r")
             await pilot.pause()
             await pilot.press("y")  # confirm the run
+            await app.workers.wait_for_complete()
             await pilot.pause()
             assert not isinstance(app.screen, MachineWatchScreen)  # no watch on nothing
             notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
@@ -623,7 +680,7 @@ def test_machine_create_spawns_with_task(tmp_path: Path, monkeypatch: object) ->
             assert isinstance(app.screen, CreateMachineModal)
             app.screen.query_one("#create-input", Input).value = "nightly sweep"
             await pilot.press("enter")  # submit
-            await pilot.pause()
+            await _spawn_settled(app)
             assert captured and captured[-1][-3:] == ["create", "--", "nightly sweep"]
 
     asyncio.run(scenario())
@@ -670,6 +727,9 @@ def test_watch_screen_refuses_a_steer_no_state_would_read(
             screen.action_steer()
             await pilot.pause()
             assert not (state / "steer.request").exists()
+            # A refusal is a warning, not a success-coloured toast.
+            notes = app._notifications  # pyright: ignore[reportPrivateUsage]
+            assert [n.severity for n in notes] == ["warning"]
 
     asyncio.run(scenario())
 
@@ -863,6 +923,87 @@ def test_machines_page_lists_instances_with_their_files(
     asyncio.run(scenario())
 
 
+def test_a_create_whose_screen_was_left_still_opens_its_draft(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """The worker read `self.app` from its thread, where the screen it belongs
+    to may already be popped: the locate's answer then died in the thread and
+    the draft never opened. The worker reaches the app it was handed on the
+    UI thread."""
+    import threading
+
+    draft = tmp_path / "draft"
+    draft.mkdir()
+    entered = threading.Event()
+    gate = threading.Event()
+
+    def _slow_locate(*_a: object, **_k: object) -> tuple[Path | None, str]:
+        entered.set()
+        if not gate.wait(timeout=5.0):
+            return None, "the test never released the spawn"
+        return draft, ""
+
+    monkeypatch.setattr(machmod, "spawn_and_locate", _slow_locate)  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachinesScreen)
+            screen._on_create("make a greeter")  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            assert entered.wait(2.0), "the spawn never ran"
+            app.pop_screen()  # Esc while the create is still locating
+            await pilot.pause()
+            gate.set()
+            await _spawn_settled(app)
+            await pilot.pause()
+        assert app.return_value == draft
+
+    asyncio.run(scenario())
+
+
+def test_a_run_whose_screen_was_left_still_opens_its_watch(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    """The worker read `self.app` from its thread, where the Machines page it
+    belongs to may already be popped: the confirm's answer then died in the
+    thread and the watch never opened. The worker reaches the app it was
+    handed on the UI thread."""
+    import threading
+
+    path = _write(tmp_path / "m.asm.toml")
+    entered = threading.Event()
+    gate = threading.Event()
+
+    def _slow_confirm(*_a: object, **_k: object) -> str:
+        entered.set()
+        if not gate.wait(timeout=5.0):
+            return "the test never released the spawn"
+        return ""
+
+    monkeypatch.setattr(machmod, "spawn_and_confirm", _slow_confirm)  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachinesScreen)
+            screen._on_run_confirm(path)(True)  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            assert entered.wait(2.0), "the spawn never ran"
+            app.pop_screen()  # Esc while the run is still starting
+            await pilot.pause()
+            gate.set()
+            await _spawn_settled(app)
+            await pilot.pause()
+            assert isinstance(app.screen, MachineWatchScreen)
+
+    asyncio.run(scenario())
+
+
 def test_watch_screen_stop_on_a_parked_machine_says_why(
     tmp_path: Path, monkeypatch: object
 ) -> None:
@@ -887,8 +1028,8 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
             await pilot.pause()
             await pilot.press("x")
             await pilot.pause()
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
-            assert any("not running" in n for n in notes), notes
+            toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("not running" in m and s == "warning" for m, s in toasts), toasts
             assert not (instance / "stop").exists()
 
     asyncio.run(scenario())

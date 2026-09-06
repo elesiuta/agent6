@@ -20,6 +20,7 @@ from typing import ClassVar
 
 try:
     from rich.text import Text
+    from textual import work
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.containers import Container, Horizontal, VerticalScroll
@@ -270,11 +271,11 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         """Steer the current agent state: drop a request marker + open the steer
         box; the state picks it up at its next safe boundary. No-op if none runs."""
         if refusal := machine_verb_refusal(self._root, self._root.name, "steer"):
-            self.app.notify(refusal, timeout=6.0)
+            self.app.notify(refusal, severity="warning", timeout=6.0)
             return
         state_dir = self._current_state_dir()
         if state_dir is None or self._steer_open:
-            self.app.notify("no agent state to steer", timeout=4.0)
+            self.app.notify("no agent state to steer", severity="warning", timeout=4.0)
             return
         self._steer_open = True
         clear_steer_answer(state_dir)
@@ -292,7 +293,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         """Ask the running machine to park at its next transition boundary
         (the durable stop marker; the instance stays resumable)."""
         if refusal := machine_verb_refusal(self._root, self._root.name, "stop"):
-            self.app.notify(refusal, timeout=6.0)
+            self.app.notify(refusal, severity="warning", timeout=6.0)
             return
         write_stop_request(self._root)
         self.app.notify("stop requested; the machine parks at its next boundary", timeout=4.0)
@@ -300,7 +301,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
     def action_poke(self) -> None:
         """Send a message to a waiting machine (a poke payload the next tool reads)."""
         if self._ended:
-            self.app.notify("machine ended; cannot send a message", timeout=4.0)
+            self.app.notify("machine ended; cannot send a message", severity="warning", timeout=4.0)
             return
         self.app.push_screen(
             TextInputModal("Send a message to the machine (poke):", "message…"), self._on_poke
@@ -732,23 +733,33 @@ class MachinesScreen(ScreenChrome, Screen[None]):
             except MachineError as exc:
                 self.app.notify(f"cannot load {path.name}: {exc}", severity="error", timeout=8.0)
                 return
-            # Started = the child wrote its own pid as the instance worker.pid
-            # (it does so right after taking the machine lock). A refusal (lock
-            # held, network refusal, bad bundle) exits nonzero before that and
-            # its stderr surfaces here instead of a watch screen on nothing.
-            instance = machines_root(self.agent6_dir) / spec.machine
-            argv = agent6_argv(self.config_path)
-            err = spawn_and_confirm(
-                [*argv, "machine", "run", str(path)],
-                self.repo_cwd,
-                started=lambda pid: read_worker_pid(instance) == pid,
-            )
-            if err:
-                self.app.notify(err, severity="error", timeout=8.0)
-                return
-            self._open_watch(path)  # follow it live (it runs detached regardless)
+            self._spawn_machine_run(self.app, path, machines_root(self.agent6_dir) / spec.machine)
 
         return cb
+
+    @work(thread=True)
+    def _spawn_machine_run(self, app: App[object], path: Path, instance: Path) -> None:
+        """Spawn `machine run` detached, off the UI thread: the confirm waits
+        for the child to own the instance (a second or more on a real run).
+        *app* is bound on the UI thread: a screen dismissed mid-spawn has no
+        parent to reach it through.
+
+        Started = the child wrote its own pid as the instance worker.pid (it
+        does so right after taking the machine lock). A refusal (lock held,
+        network refusal, bad bundle) exits nonzero before that and its stderr
+        surfaces here instead of a watch screen on nothing."""
+        err = spawn_and_confirm(
+            [*agent6_argv(self.config_path), "machine", "run", str(path)],
+            self.repo_cwd,
+            started=lambda pid: read_worker_pid(instance) == pid,
+        )
+        app.call_from_thread(self._machine_run_started, path, err)
+
+    def _machine_run_started(self, path: Path, err: str) -> None:
+        if err:
+            self.app.notify(err, severity="error", timeout=8.0)
+            return
+        self._open_watch(path)  # follow it live (it runs detached regardless)
 
     def action_watch(self) -> None:
         """Open the live watch view for the selected machine's instance (whether it
@@ -776,18 +787,26 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         self.app.push_screen(CreateMachineModal(), self._on_create)
 
     def _on_create(self, task: str | None) -> None:
-        if not task:
-            return
-        # Spawn `agent6 machine create` detached, then open the dashboard on the
-        # draft it produces so the authoring agent's reasoning + tool calls are
-        # watchable live, exactly like a run. The create keeps running detached,
-        # so quitting the dashboard is safe.
+        if task:
+            self._spawn_machine_create(self.app, task)
+
+    @work(thread=True)
+    def _spawn_machine_create(self, app: App[object], task: str) -> None:
+        """Spawn `agent6 machine create` detached, off the UI thread (the locate
+        waits on the authoring run's first event), then open the dashboard on
+        the draft it produces so the authoring agent's reasoning + tool calls
+        are watchable live, exactly like a run. The create keeps running
+        detached, so quitting the dashboard is safe. *app* is bound on the UI
+        thread: a screen dismissed mid-spawn has no parent to reach it through."""
         draft_dir, error = spawn_and_locate(
             [*agent6_argv(self.config_path), "machine", "create", "--", task],
             self.repo_cwd,
             before=set(_list_drafts(self.agent6_dir)),
             list_dirs=lambda: _list_drafts(self.agent6_dir),
         )
+        app.call_from_thread(self._machine_created, draft_dir, error)
+
+    def _machine_created(self, draft_dir: Path | None, error: str) -> None:
         if draft_dir is not None:
             self.app.exit(draft_dir)  # the hub loop opens the dashboard on it
         else:
