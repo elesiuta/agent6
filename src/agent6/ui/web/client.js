@@ -450,8 +450,8 @@ function makeConv(url, box, body) {
   const following = () => box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
   // A run/machine that produced no conversation: "yet ... as it streams" while it
   // can still stream, past tense once it has ended (a terminal tool-only machine).
-  const emptyNote = () => conv.parkedLabel
-    ? conv.parkedLabel + ' \u2014 the composer below starts it'
+  const emptyNote = () => conv.deadState
+    ? conv.deadState + ' \u2014 the composer below starts it'
     : conv.finished
       ? 'this session made no conversation'
       : 'no conversation yet; it appears as the session streams';
@@ -502,7 +502,7 @@ function makeConv(url, box, body) {
   // only at the expanded detail level (same rule as the TUI).
   conv.setLive = (s) => {
     conv.finished = notLive(s); // steers emptyNote()'s tense (may run before paintItems)
-    conv.parkedLabel = s.status === 'parked' ? s.status_label : ''; // the reason, server-labelled
+    conv.deadState = s.dead_state || ''; // parked / created / stale, worded by the read model
     const r = s.last_role;
     const follow = following();
     liveHost.innerHTML = '';

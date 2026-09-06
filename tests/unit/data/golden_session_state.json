@@ -191,5 +191,6 @@
   "live": null,
   "status": "passed",
   "status_label": "passed",
+  "dead_state": "",
   "operator_blocked": false
 }

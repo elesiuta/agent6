@@ -65,6 +65,7 @@ from agent6.viewmodel import manifest_branches, manifest_header, session_compare
 from agent6.viewmodel.format import (
     TASK_STATUS_GLYPH,
     clip_cell,
+    dead_run_note,
     format_compare,
     format_cost,
     spinner_frame,
@@ -618,24 +619,11 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             spinner = spinner_frame(tui.spin)
             secs = tui.seconds_since_event()
             st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
-        elif tui.dir_status[0] == "stale":
-            # The composer below has focus and Enter resumes; there is no
-            # plain-letter shortcut to point at (pressing r would just type r).
-            st.append(
-                "worker exited without finishing (crashed or killed) — type a"
-                " follow-up below (Enter resumes)",
-                style="bold red",
-            )
-        elif tui.dir_status[0] == "parked":
-            # No model is coming: the run was saved at submission and never
-            # started (the cause rides in the status detail). Resume is the
-            # one action.
-            cause = f" ({tui.dir_status[1]})" if tui.dir_status[1] else ""
-            st.append(f"parked at submission{cause}\n", style="bold yellow")
-            st.append("type the go-ahead below (Enter resumes)", style="dim")
-        elif tui.dir_status[0] == "created":
-            st.append("created — the run has not started\n", style="bold")
-            st.append("type a follow-up below (Enter resumes)", style="dim")
+        elif (dead := dead_run_note(*tui.dir_status))[0]:
+            # No model is coming. The composer below has focus and Enter
+            # resumes; there is no plain-letter shortcut to point at.
+            st.append(dead[0] + "\n", style=f"bold {status_style(tui.dir_status[0])}")
+            st.append(dead[1], style="dim")
         else:
             st.append("(waiting for the model…)", style="dim")
         return st

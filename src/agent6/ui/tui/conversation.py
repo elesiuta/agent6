@@ -62,7 +62,7 @@ from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.settings import get_copy_method
 from agent6.viewmodel import approval_parts, restate
 from agent6.viewmodel.events import SESSION_START_EVENTS
-from agent6.viewmodel.format import spinner_frame
+from agent6.viewmodel.format import dead_run_note, spinner_frame
 from agent6.viewmodel.policy import session_policy
 from agent6.viewmodel.state import SessionState
 from agent6.viewmodel.tail import LogTail, tail_events
@@ -148,13 +148,9 @@ def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
     conversation": a crashed run and a run that never started both read as an
     ordinary empty one, on the default screen of `agent6 tui`.
     """
-    if word == "parked":
-        why = f": {detail}" if detail else ""
-        return f"(parked{why} \u2014 type below to start it)"
-    if word == "created":
-        return "(the run has not started \u2014 type below to start it)"
-    if word == "stale":
-        return "the worker exited without finishing (crashed or killed) \u2014 type below to resume"
+    state, action = dead_run_note(word, detail)
+    if state:
+        return f"{state} \u2014 {action}"
     if ended:
         return "this session made no conversation"
     return "(no conversation yet; it appears as the session streams)"

@@ -1627,3 +1627,23 @@ def test_the_draft_route_serves_what_the_step_picker_asks_for(
     status, body, _ = _get(port, f"/api/draft/draft-AAAAAAAA/diff?sha={sha}&cumulative=0")
     assert status == 422  # no workspace on disk: the reason, not a missing route
     assert "workspace" in json.loads(body)["error"]
+
+
+def test_the_web_names_a_crashed_run_where_it_paints_no_conversation(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """A crashed run and a never-started one both read "this session made no
+    conversation" on the web, where the CLI and the TUI name the crash; the
+    read model words a dead run once and the page renders that."""
+    from agent6.ui.web.page import CLIENT_JS
+
+    _, port = server
+    _make_run(tmp_path, "stale-run1", [{"type": "session.start", "mode": "run", "user_task": "t"}])
+    d = resolved_state_dir(tmp_path) / "sessions" / "runs" / "stale-run1"
+    (d / "worker.pid").write_text("999999999", encoding="utf-8")
+
+    status, body, _ = _get(port, "/api/session/stale-run1")
+
+    assert status == 200
+    assert json.loads(body)["dead_state"].startswith("worker exited without finishing")
+    assert "conv.deadState" in CLIENT_JS and "s.dead_state" in CLIENT_JS

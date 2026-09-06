@@ -771,11 +771,45 @@ def test_a_parked_sessions_empty_view_names_the_reason() -> None:
     from agent6.ui.tui.conversation import empty_conversation_note
 
     note = empty_conversation_note("parked", "uncommitted changes", ended=False)
-    assert "parked" in note and "uncommitted changes" in note and "type below" in note
-    assert empty_conversation_note("parked", "", ended=False).startswith("(parked ")
+    assert "parked" in note and "uncommitted changes" in note and "below" in note
+    assert empty_conversation_note("parked", "", ended=False).startswith("parked")
     assert empty_conversation_note("", "", ended=True) == "this session made no conversation"
     assert "appears as the session streams" in empty_conversation_note("", "", ended=False)
     # A crashed run and one that never started are not "made no conversation":
     # the dashboard names both, and this view is the default screen.
     assert "crashed or killed" in empty_conversation_note("stale", "", ended=True)
     assert "has not started" in empty_conversation_note("created", "", ended=True)
+
+
+def _mk_created(d: Path) -> None:
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 2, "session_id": d.name, "mode": "run", "user_task": "t"}),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("make", [_mk_created, _mk_parked, _mk_crashed])
+def test_both_run_views_word_a_dead_state_the_same(tmp_path: Path, make: Any) -> None:
+    """The dashboard and the conversation each spelled their own sentence for
+    a created, parked or crashed run, so one run read differently on Ctrl-D
+    than on the default screen. One owner words it for every surface."""
+    from agent6.ui.tui.conversation import empty_conversation_note
+
+    d = tmp_path / "dead1"
+    make(d)
+    out: list[str] = []
+    status: list[tuple[str, str]] = []
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            status.append(app.dir_status)
+            out.append(str(app._dash.query_one("#stream-body", Static).render()))
+
+    asyncio.run(scenario())
+    word, detail = status[0]
+    assert word in ("created", "parked", "stale")
+    first = out[0].split("\n")[0].strip()
+    assert first and first in empty_conversation_note(word, detail, ended=True)

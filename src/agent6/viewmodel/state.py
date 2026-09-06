@@ -4,7 +4,7 @@
 
 The wire form `session_state_as_dict` built from a SessionState is the data
 contract for any external viewer (`attach --json`, the web page, a future
-TS mirror): SessionState's fields plus `status`/`status_label`/`live`/
+TS mirror): SessionState's fields plus `status`/`status_label`/`dead_state`/`live`/
 `operator_blocked`, with `log_tail` as plain strings. Keep its keys stable.
 
 The fold itself does no I/O (dataclasses + an `apply_event` that returns a
@@ -28,7 +28,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel import events
-from agent6.viewmodel.format import status_label
+from agent6.viewmodel.format import dead_run_note, status_label
 from agent6.viewmodel.listing import (
     LIVE_STATUS_WORDS,
     StatusFacts,
@@ -777,6 +777,9 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     # run is blocked on the operator (a "waiting" run is still LIVE).
     d["status"] = word
     d["status_label"] = status_label(word, reason)
+    # A run no model is touching (parked, never started, worker gone), worded
+    # once for every surface; "" otherwise.
+    d["dead_state"] = dead_run_note(word, reason)[0]
     # Whether an operator prompt is unanswered, straight from the fold: a DIR-LESS
     # consumer (the machine watch folds an agent-state log with no session_dir, so it
     # has no dir status) still needs the "blocked, not working" signal to quiet

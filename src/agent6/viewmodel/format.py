@@ -40,6 +40,23 @@ def clip_cell(text: str, width: int) -> str:
     return line if len(line) <= width else line[: max(1, width - 1)] + "\u2026"
 
 
+def dead_run_note(word: str, detail: str) -> tuple[str, str]:
+    """What a run with no live worker reads as, on every surface: the state
+    it is in, and the one action left (the TUI's composer line; the web adds
+    its own). ("", "") for anything live, or that ended normally."""
+    if word == "parked":
+        why = f" ({detail})" if detail else ""
+        return f"parked at submission{why}", "type the go-ahead below (Enter resumes)"
+    if word == "created":
+        return "created \u2014 the run has not started", "type a follow-up below (Enter resumes)"
+    if word == "stale":
+        return (
+            "worker exited without finishing (crashed or killed)",
+            "type a follow-up below (Enter resumes)",
+        )
+    return "", ""
+
+
 def spinner_frame(tick: int) -> str:
     """The braille spinner frame for *tick*, one owner for every surface."""
     return SPINNER_FRAMES[tick % len(SPINNER_FRAMES)]
