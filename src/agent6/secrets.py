@@ -65,6 +65,23 @@ def _require_safe_perms(path: Path, user: RealUser) -> None:
         )
 
 
+def _read_secrets_toml(path: Path) -> dict[str, Any]:
+    """Parse `secrets.toml`, as a SecretsError for anything that stops it.
+
+    THE one reader, because an unreadable file (root-owned after a `sudo
+    connect`, a chmod 000) is the operator's environment and not a bug in
+    agent6: it escaped as an unexpected PermissionError, with a saved
+    traceback and an invitation to report it, and no run could start."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise SecretsError(f"could not read {path}: {exc}") from exc
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
+
+
 def load_secrets(user: RealUser | None = None) -> dict[str, Any]:
     """Load and validate `secrets.toml`. Returns `{}` when absent."""
     user = user or effective_user()
@@ -72,10 +89,7 @@ def load_secrets(user: RealUser | None = None) -> dict[str, Any]:
     if not path.exists():
         return {}
     _require_safe_perms(path, user)
-    try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
+    return _read_secrets_toml(path)
 
 
 def resolve_api_key(
@@ -128,10 +142,7 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
         data: dict[str, Any] = {}
         if path.exists():
             _require_safe_perms(path, user)
-            try:
-                data = tomllib.loads(path.read_text(encoding="utf-8"))
-            except tomllib.TOMLDecodeError as exc:
-                raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
+            data = _read_secrets_toml(path)
         providers = data.get("providers")
         if not isinstance(providers, dict):
             providers = {}
@@ -162,10 +173,7 @@ def delete_provider_secrets(provider_name: str, *, user: RealUser | None = None)
         if not path.exists():
             return False
         _require_safe_perms(path, user)
-        try:
-            data: dict[str, Any] = tomllib.loads(path.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise SecretsError(f"{path} is not valid TOML: {exc}") from exc
+        data: dict[str, Any] = _read_secrets_toml(path)
         providers = data.get("providers")
         if not isinstance(providers, dict) or provider_name not in providers:
             return False

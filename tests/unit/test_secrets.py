@@ -35,6 +35,20 @@ def test_save_secret_is_0600(gcfg: Path) -> None:
     assert secrets.resolve_api_key("anthropic", None) == "sk-ant-xyz"
 
 
+def test_an_unreadable_secrets_file_is_a_named_refusal(gcfg: Path) -> None:
+    """Root-owned after a `sudo connect`, or a plain chmod 000: the operator's
+    environment, not a bug in agent6. It escaped as an unexpected
+    PermissionError with a saved traceback and an invitation to report it, and
+    no run could start."""
+    path = secrets.save_secret("anthropic", "sk-ant-xyz")
+    path.chmod(0o000)
+    try:
+        with pytest.raises(SecretsError, match="could not read"):
+            secrets.load_secrets()
+    finally:
+        path.chmod(0o600)
+
+
 def test_save_secret_preserves_other_providers(gcfg: Path) -> None:
     secrets.save_secret("anthropic", "sk-ant-1")
     secrets.save_secret("openrouter", "sk-or-2")
