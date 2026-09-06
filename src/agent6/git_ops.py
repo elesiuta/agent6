@@ -805,6 +805,19 @@ def git_common_dir(path: Path) -> Path:
     return Path(out).resolve()
 
 
+def _worktree_of_branch(path: Path, branch: str) -> Path | None:
+    """The checkout (main or linked worktree) that has *branch* checked out,
+    or None when no worktree of *path*'s repository does."""
+    out = _run(path, "worktree", "list", "--porcelain").stdout
+    where: Path | None = None
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            where = Path(line[len("worktree ") :])
+        elif line == f"branch refs/heads/{branch}" and where is not None:
+            return where
+    return None
+
+
 def create_branch_at(path: Path, name: str, sha: str) -> None:
     """Create branch *name* pointing at *sha* WITHOUT checking it out.
 
@@ -1256,18 +1269,22 @@ def plumb_merge(
 
 
 def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) -> None:
-    """After moving the CHECKED-OUT branch's ref from *old_tip* to *new_tip*
-    without a checkout, bring the shared index and the worktree forward for
-    the paths the move changed -- each only where it still matches *old_tip*,
+    """After moving a CHECKED-OUT branch's ref from *old_tip* to *new_tip*
+    without a checkout, bring that checkout's index and worktree forward for
+    the paths the move changed, each only where it still matches *old_tip*,
     so anything the operator staged or edited themselves is left exactly as
     they had it. Without the index half, `git status` shows a phantom staged
     reversal of the landed work; without the worktree half, a merge landed
     onto a reverted checkout would leave the files behind. A worktree that
     already holds the new content (as after every run) needs and gets no
-    writes."""
-    head = _run(path, "rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
-    if head != target:
+    writes. The checkout is whichever worktree of the repository has *target*
+    checked out (a fork's leg merges from its own linked worktree); none, or
+    one git still records but whose directory is gone, means nothing to
+    bring forward."""
+    checkout = _worktree_of_branch(path, target)
+    if checkout is None or not checkout.is_dir():
         return
+    path = checkout
     changed = _run(path, "diff-tree", "-r", "--no-renames", "-z", old_tip, new_tip).stdout
     staged = {
         entry.split("\t", 1)[1]: entry.split("\t", 1)[0].split()

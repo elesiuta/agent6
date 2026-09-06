@@ -941,6 +941,32 @@ def test_add_worktree_is_detached_shares_refs_and_is_removed_alone(tmp_path: Pat
     assert str(other) in listed
 
 
+def test_plumb_merge_from_a_linked_worktree_brings_the_main_checkout_forward(
+    tmp_path: Path,
+) -> None:
+    """A merge run from a linked worktree (a fork's leg auto-merging) moves
+    the shared target ref; the checkout that HAS the target checked out is the
+    main one, so its index and files are brought forward there. Checking HEAD
+    in the worktree (detached) skipped the bring-forward and left the main
+    checkout showing a phantom staged reversal of the landed work."""
+    from agent6.git_ops import add_worktree
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    base = _rev(repo, "HEAD")
+    run_tip = _lane_commit(repo, base, "feat.txt", "x\n")
+    subprocess.run(["git", "-C", str(repo), "update-ref", "refs/agent6/r1", run_tip], check=True)
+    wt = tmp_path / "wt"
+    add_worktree(repo, wt, base)
+
+    res = plumb_merge(wt, "main", "refs/agent6/r1", strategy="merge", message="Merge")
+    assert not res.conflicted
+    assert _rev(repo, "main") == res.merged_sha
+    assert (repo / "feat.txt").read_text(encoding="utf-8") == "x\n"
+    assert status(repo).is_clean
+    assert not (wt / "feat.txt").exists()  # the worktree is not the target's checkout
+
+
 def test_plumb_merge_conflict_moves_nothing(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha
@@ -1538,3 +1564,25 @@ def test_tree_diff_paths_names_what_changed_between_two_worktree_trees(tmp_path:
         ["git", "-C", str(tmp_path), "diff", "--cached", "--quiet"], check=False
     )
     assert staged.returncode == 0  # nothing reached the shared index
+
+
+def test_plumb_merge_survives_a_recorded_but_missing_worktree(tmp_path: Path) -> None:
+    """A worktree git still records (its directory gone, not yet pruned) with
+    the target checked out is not a checkout to bring forward: the merge
+    lands and returns. Running git in the missing directory raised
+    FileNotFoundError after the ref had already moved."""
+    import shutil
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    base = _rev(repo, "HEAD")
+    subprocess.run(["git", "-C", str(repo), "branch", "side", base], check=True)
+    run_tip = _lane_commit(repo, base, "feat.txt", "x\n")
+    subprocess.run(["git", "-C", str(repo), "update-ref", "refs/agent6/r1", run_tip], check=True)
+    gone = tmp_path / "gone"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", str(gone), "side"], check=True)
+    shutil.rmtree(gone)
+
+    res = plumb_merge(repo, "side", "refs/agent6/r1", strategy="merge", message="Merge")
+    assert not res.conflicted
+    assert _rev(repo, "side") == res.merged_sha
