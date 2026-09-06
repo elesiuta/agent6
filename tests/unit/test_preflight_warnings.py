@@ -83,7 +83,7 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     from agent6.ui.acp.frontend import acp_frontend
 
     front = acp_frontend(
-        ask=lambda _p, _o, _s: None,
+        ask=lambda _p, _o, _s, _c: None,
         capabilities=FrontendCapabilities(),
         agent6_exe=lambda: "agent6",
         spawn_detached_resume=lambda _cwd, _rid, _flags: "",

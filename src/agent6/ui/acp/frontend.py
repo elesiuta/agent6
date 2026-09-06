@@ -18,6 +18,7 @@ import itertools
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
+from typing import Any
 
 from agent6.app.frontend import FrontendCapabilities, SessionFacts, SessionFrontend, SteerHooks
 from agent6.budget import BudgetTracker
@@ -33,11 +34,36 @@ from agent6.workflows.loop import SessionResult, Workflow
 # What the client is asked, and what an unaskable client is assumed to have
 # said. Every one of these is the CAUTIOUS answer: a session that cannot ask
 # is a session that does less, never one that does something unwatched.
-# (prompt, options, standing) -> the chosen option, or None for no answer.
-# `standing` is None for a QUESTION, whose options the model wrote: an
-# answer among several is not a permission, and must never be offered as
-# one the editor may remember.
-Asker = Callable[[str, tuple[str, ...], bool | None], str | None]
+# (prompt, options, standing, call_id) -> the chosen option, or None for no
+# answer. `standing` is None for a QUESTION, whose options the model wrote: an
+# answer among several is not a permission, and must never be offered as one
+# the editor may remember. `call_id` is the dispatcher's stamp on the tool
+# call the prompt gates, or None for a prompt that gates no call (a pre-run
+# question, a verify the harness runs itself).
+Asker = Callable[[str, tuple[str, ...], bool | None, str | None], str | None]
+
+
+class _OpenCalls:
+    """The leg's tool calls in flight, newest last, read off its own event
+    stream. The dispatcher journals `tool.call` before the gate asks, so the
+    newest open call is the one an approval or question holds: the rule the
+    transcript fold applies to the same events."""
+
+    def __init__(self, events: EventSink) -> None:
+        self._open: dict[int, None] = {}
+        events.subscribe(self._track)
+
+    def _track(self, event: dict[str, Any]) -> None:
+        call_id = event.get("call_id")
+        if not isinstance(call_id, int):
+            return
+        if event.get("type") == "tool.call":
+            self._open[call_id] = None
+        elif event.get("type") == "tool.result":
+            self._open.pop(call_id, None)
+
+    def newest(self) -> str | None:
+        return str(next(reversed(self._open))) if self._open else None
 
 
 def acp_frontend(
@@ -49,7 +75,7 @@ def acp_frontend(
 ) -> SessionFrontend:
     """Wire the lifecycle to one ACP client."""
 
-    def _approve(prompt: str, /, *, scope: str | None = None) -> bool:
+    def _approve(prompt: str, /, *, scope: str | None = None, call_id: str | None = None) -> bool:
         if not capabilities.can_ask:
             return False  # nobody to ask, so the answer is no
         # No scope means an "always allow" the editor remembers must NOT cover
@@ -58,7 +84,7 @@ def acp_frontend(
         # offers "always" needs something to key that decision on.
         standing = scope is not None
         options = ("allow", "deny") if standing else ("allow once", "deny")
-        answer = ask(prompt, options, standing)
+        answer = ask(prompt, options, standing, call_id)
         return bool(answer) and answer.startswith("allow")
 
     def _build_approver(_session_dir: Path, events: EventSink) -> Approver:
@@ -66,6 +92,7 @@ def acp_frontend(
         journals: the fold marks the gated call "awaiting approval" on those
         events and nothing else, so without them no surface (attach, the web,
         this wire's own `pending`) ever shows the wait."""
+        open_calls = _OpenCalls(events)
         numbers = itertools.count(1)
 
         def approve(prompt: str, /, *, scope: str | None = None) -> bool:
@@ -74,7 +101,7 @@ def acp_frontend(
             # A client that cannot be asked denies as a headless run does, and
             # the journal names that: nobody answered.
             if capabilities.can_ask:
-                approved = _approve(prompt, scope=scope)
+                approved = _approve(prompt, scope=scope, call_id=open_calls.newest())
                 source = "acp"
             else:
                 approved, source = False, "headless"
@@ -86,6 +113,7 @@ def acp_frontend(
     def _build_questioner(
         _session_dir: Path, events: EventSink
     ) -> Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]:
+        open_calls = _OpenCalls(events)
         numbers = itertools.count(1)
 
         def ask_questions(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
@@ -95,10 +123,13 @@ def acp_frontend(
                 id=question_id,
                 questions=[{"question": q.question, "options": list(q.options)} for q in questions],
             )
+            call_id = open_calls.newest()
             answers: list[str] = []
             for question in questions:
                 reply = (
-                    ask(question.question, question.options, None) if capabilities.can_ask else None
+                    ask(question.question, question.options, None, call_id)
+                    if capabilities.can_ask
+                    else None
                 )
                 # An unanswered question becomes an empty string, which the loop
                 # already treats as "the operator said nothing", not as a value.

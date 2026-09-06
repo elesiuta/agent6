@@ -22,7 +22,7 @@ from agent6.config.model import ConfigError
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp import runner
 from agent6.ui.acp import session as session_mod
-from agent6.ui.acp.runner import STDERR_REPORTER, RunBridge, option_kind, stop_reason
+from agent6.ui.acp.runner import STDERR_REPORTER, Announced, RunBridge, option_kind, stop_reason
 from agent6.ui.acp.server import ACPServer
 
 
@@ -237,7 +237,9 @@ def _acp_front(*, reply: str | None):
 
     asked: list[tuple[str, tuple[str, ...], bool | None]] = []
 
-    def _ask(prompt: str, options: tuple[str, ...], standing: bool | None) -> str | None:
+    def _ask(
+        prompt: str, options: tuple[str, ...], standing: bool | None, _call_id: str | None
+    ) -> str | None:
         asked.append((prompt, options, standing))
         return reply
 
@@ -263,7 +265,12 @@ def _bridge(answer: dict[str, Any]) -> RunBridge:
 def test_an_approval_round_trips_through_the_editor() -> None:
     bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "0"}})
     session = session_mod.Session(acp_id="s", cwd=Path("/x"))
-    assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny"), True) == "allow"
+    assert (
+        bridge.ask(
+            session, Announced(turn=1), "Allow run_command: ls", ("allow", "deny"), True, None
+        )
+        == "allow"
+    )
 
 
 @pytest.mark.parametrize(
@@ -281,7 +288,12 @@ def test_only_an_option_we_offered_is_an_answer(answer: dict[str, Any]) -> None:
     seam reads a None as the cautious answer."""
     bridge = _bridge(answer)
     session = session_mod.Session(acp_id="s", cwd=Path("/x"))
-    assert bridge.ask(session, "Allow run_command: rm -rf /", ("allow", "deny"), True) is None
+    assert (
+        bridge.ask(
+            session, Announced(turn=1), "Allow run_command: rm -rf /", ("allow", "deny"), True, None
+        )
+        is None
+    )
 
 
 def test_the_option_kinds_carry_what_the_editor_may_remember() -> None:
@@ -469,9 +481,11 @@ def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
 
     bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
     session = session_mod.Session(acp_id="s", cwd=Path("/x"))
-    assert bridge.ask(session, "What should the theme be?", (), None) is None
+    assert (
+        bridge.ask(session, Announced(turn=1), "What should the theme be?", (), None, None) is None
+    )
     assert sent == [], "an unanswerable prompt was still shown"
-    assert bridge.ask(session, "Theme?", ("dark", "light"), None) is None
+    assert bridge.ask(session, Announced(turn=1), "Theme?", ("dark", "light"), None, None) is None
     assert len(sent) == 1, "a question WITH options still goes out"
 
 
@@ -483,7 +497,12 @@ def test_an_approval_closes_the_tool_call_it_announced() -> None:
     bridge = _bridge({"outcome": {"outcome": "selected", "optionId": "0"}})
     bridge.server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     session = session_mod.Session(acp_id="s", cwd=Path("/x"))
-    assert bridge.ask(session, "Allow run_command: ls", ("allow", "deny"), True) == "allow"
+    assert (
+        bridge.ask(
+            session, Announced(turn=1), "Allow run_command: ls", ("allow", "deny"), True, None
+        )
+        == "allow"
+    )
     closes = [m for m in sent if m["params"]["update"]["sessionUpdate"] == "tool_call_update"]
     assert len(closes) == 1 and closes[0]["params"]["update"]["status"] == "completed"
 
@@ -525,7 +544,14 @@ def test_the_approval_dialog_is_scrubbed_too() -> None:
 
     bridge.server.request = _record  # pyright: ignore[reportAttributeAccessIssue]
     session = session_mod.Session(acp_id="s", cwd=Path("/x"))
-    bridge.ask(session, "Allow run_command: \x1b]0;PWNED\x07ls", ("allow\x1b[2J", "deny"), True)
+    bridge.ask(
+        session,
+        Announced(turn=1),
+        "Allow run_command: \x1b]0;PWNED\x07ls",
+        ("allow\x1b[2J", "deny"),
+        True,
+        None,
+    )
     wire = json.dumps(sent[0])
     assert "\\u001b" not in wire and "\\u0007" not in wire, wire
 
@@ -602,6 +628,122 @@ def test_a_second_prompt_resumes_the_same_run(
     assert calls[1] == ("resume", "run-AAAA11", "and now this")
 
 
+def _journal_types(layout: SessionLayout) -> list[str]:
+    return [
+        json.loads(line)["type"]
+        for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def test_a_gated_call_reads_pending_on_the_wire(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A call blocked on an approval: the editor is asked under the CALL's own
+    id, after the call was announced, and the call reads pending until the
+    answer lands. The journaled prompt/answer pair is what lets the fold say
+    so, on this wire and on every other surface."""
+    from agent6.events import EventSink
+
+    monkeypatch.chdir(tmp_path)
+    layouts: list[SessionLayout] = []
+
+    def _gated_run(*_a: object, **kw: Any) -> int:
+        layout = SessionLayout(
+            state_dir=runner.resolved_state_dir(tmp_path), session_id=str(kw["session_id"])
+        )
+        layouts.append(layout)
+        layout.session_dir.mkdir(parents=True, exist_ok=True)
+        events = EventSink(layout.logs_path)
+        approve = kw["frontend"].build_approver(layout.session_dir, events)  # before the loop
+        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
+        approved = approve("Allow run_command: ls", scope="command")
+        events.emit("tool.result", name="run_command", ok=approved, summary="ok", call_id=1)
+        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        return 0
+
+    monkeypatch.setattr(runner, "run_task", _gated_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "do the thing")
+        seen: list[tuple[str, str]] = []  # (toolCallId, status), in wire order
+        announced: list[str] = []  # the `tool_call` announcements' ids
+        asked: dict[str, Any] | None = None
+        announced_before_ask: list[str] = []
+        for _ in range(60):
+            message = wire.recv()
+            if message.get("method") == "session/request_permission":
+                asked = message["params"]["toolCall"]
+                announced_before_ask = list(announced)
+                wire.send(
+                    id=message["id"],
+                    result={"outcome": {"outcome": "selected", "optionId": "0"}},
+                )
+            elif message.get("method") == "session/update":
+                update = message["params"]["update"]
+                if update["sessionUpdate"] == "tool_call":
+                    announced.append(update["toolCallId"])
+                if "toolCallId" in update:
+                    seen.append((update["toolCallId"], update["status"]))
+            elif "result" in message:
+                assert message["result"]["stopReason"] == "end_turn"
+                break
+        assert asked is not None, "the editor was never asked"
+        assert announced == [asked["toolCallId"]], (
+            f"the request must name the one call it gates: {announced} vs {asked['toolCallId']}"
+        )
+        assert announced_before_ask, "the request reached the editor before the call it gates"
+        assert [s for _, s in seen] == ["in_progress", "pending", "in_progress", "completed"]
+        assert {i for i, _ in seen} == {announced[0]}, "an update addressed another call"
+        types = _journal_types(layouts[0])
+        assert "approval.prompt" in types and "approval.answer" in types
+    finally:
+        wire.close()
+
+
+def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> None:
+    """The wait ends on the announcement, when the tail stops reading (it
+    closes the register), or when the turn is cancelled; never on a clock."""
+    import time
+
+    announced = Announced(turn=1)
+    abandoned = threading.Event()
+    returned: list[float] = []
+
+    def _wait() -> None:
+        started = time.monotonic()
+        announced.wait_for("run-x:1:1", abandoned=abandoned.is_set)
+        returned.append(time.monotonic() - started)
+
+    waiter = threading.Thread(target=_wait, daemon=True)
+    waiter.start()
+    waiter.join(timeout=2.5)
+    assert waiter.is_alive(), f"the wait ended on its own after {returned}"
+    announced.add("run-x:1:1")
+    waiter.join(timeout=5.0)
+    assert returned, "the announcement did not release the wait"
+
+    closing = Announced(turn=1)
+    closer = threading.Thread(
+        target=lambda: closing.wait_for("run-x:1:2", abandoned=lambda: False), daemon=True
+    )
+    closer.start()
+    closing.close()
+    closer.join(timeout=5.0)
+    assert not closer.is_alive(), "a closed register must release every wait"
+
+    cancelled = Announced(turn=1)
+    quitter = threading.Thread(
+        target=lambda: cancelled.wait_for("run-x:1:3", abandoned=abandoned.is_set), daemon=True
+    )
+    quitter.start()
+    abandoned.set()
+    quitter.join(timeout=5.0)
+    assert not quitter.is_alive(), "a cancelled turn must release the wait"
+
+
 def test_a_tool_call_id_is_unique_across_a_sessions_turns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -674,7 +816,7 @@ def test_a_late_tail_keeps_its_own_turn(tmp_path: Path) -> None:
     done = threading.Event()
     tail = threading.Thread(
         target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
-        args=(session, log, done.is_set, False, 1),
+        args=(session, log, done.is_set, False, Announced(turn=1)),
         daemon=True,
     )
     tail.start()

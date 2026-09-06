@@ -40,7 +40,13 @@ from agent6.types import session_bucket
 from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import ACP_MODE, Session, Sessions, StopReason
-from agent6.ui.acp.updates import message_update, printable, tool_call_id, updates_for
+from agent6.ui.acp.updates import (
+    message_update,
+    printable,
+    tool_call_id,
+    updates_for,
+    wire_call_id,
+)
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 from agent6.viewmodel.tail import tail_events
 from agent6.viewmodel.transcript import TranscriptFold
@@ -135,6 +141,43 @@ def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
     return options[index] if index < len(options) else None
 
 
+class Announced:
+    """One turn's register: its number, and the tool calls the editor has
+    been told about.
+
+    Written by the tail as it announces; a permission request for a call
+    waits here until the call it names has been announced, so the editor
+    never hears of a call first through its approval. The wait is bounded by
+    liveness, never a clock: the tail closes the register when it stops
+    reading, and a cancelled turn abandons the wait.
+    """
+
+    def __init__(self, turn: int) -> None:
+        self.turn = turn
+        self._ids: set[str] = set()
+        self._closed = False
+        self._changed = threading.Condition()
+
+    def __contains__(self, tool_call_id: str) -> bool:
+        with self._changed:
+            return tool_call_id in self._ids
+
+    def add(self, tool_call_id: str) -> None:
+        with self._changed:
+            self._ids.add(tool_call_id)
+            self._changed.notify_all()
+
+    def close(self) -> None:
+        with self._changed:
+            self._closed = True
+            self._changed.notify_all()
+
+    def wait_for(self, tool_call_id: str, *, abandoned: Callable[[], bool]) -> None:
+        with self._changed:
+            while tool_call_id not in self._ids and not self._closed and not abandoned():
+                self._changed.wait(0.5)  # *abandoned* is polled; add/close wake at once
+
+
 @dataclass
 class RunBridge:
     """Runs prompts for one ACP connection."""
@@ -152,7 +195,13 @@ class RunBridge:
         return Sessions(run=self.run, state_dir_for=resolved_state_dir)
 
     def ask(
-        self, session: Session, prompt: str, options: tuple[str, ...], standing: bool | None
+        self,
+        session: Session,
+        announced: Announced,
+        prompt: str,
+        options: tuple[str, ...],
+        standing: bool | None,
+        call_id: str | None,
     ) -> str | None:
         """Put one approval or question to the editor.
 
@@ -164,22 +213,38 @@ class RunBridge:
         operator to press: asking would stall the whole permission timeout and
         then answer "said nothing" regardless. Not asking is the same answer
         immediately, without holding the run for five minutes.
+
+        `toolCall` is required on a permission request. A prompt gating a
+        tool call (*call_id*, the dispatcher's stamp) names THAT call, once
+        the tail has announced it, and carries nothing else: an editor merges
+        the fields a ToolCallUpdate carries into the call it names, and the
+        prompt text is the request's own. The call's lifecycle carries on
+        from there (pending, then its outcome). A prompt gating no call
+        announces an entity of its own, and closes it: an entity ACP models
+        as having a lifecycle needs its end, or an editor keeps one pending
+        tool call per approval for the life of the session.
         """
         if not options:
             return None
-        with self._asks:
-            self._asked += 1
-            tool_call_id = f"ask-{session.acp_id}-{self._asked}"
+        if call_id is not None:
+            gated = wire_call_id(session.session_id, announced.turn, call_id)
+            announced.wait_for(gated, abandoned=lambda: session.cancelled)
+            tool_call: dict[str, Any] = {"toolCallId": gated, "status": "pending"}
+        else:
+            with self._asks:
+                self._asked += 1
+                gated = f"ask-{session.acp_id}-{self._asked}"
+            tool_call = {
+                "toolCallId": gated,
+                "title": printable(prompt),
+                "kind": "other",
+                "status": "pending",
+            }
         answer = self.server.request(
             "session/request_permission",
             {
                 "sessionId": session.acp_id,
-                "toolCall": {
-                    "toolCallId": tool_call_id,
-                    "title": printable(prompt),
-                    "kind": "other",
-                    "status": "pending",
-                },
+                "toolCall": tool_call,
                 "options": [
                     {
                         # An INDEX, not the option text: the text can be
@@ -197,29 +262,28 @@ class RunBridge:
             timeout_s=PERMISSION_TIMEOUT_S,
         )
         chosen = _selected(answer, options)
-        # `toolCall` is required on a permission request, so the ask announces
-        # one -- and an entity ACP models as having a lifecycle needs its end:
-        # without it an editor keeps one pending tool call per approval, for
-        # the life of the session.
-        self.server.notify_raw(
-            {
-                "jsonrpc": "2.0",
-                "method": "session/update",
-                "params": {
-                    "sessionId": session.acp_id,
-                    "update": {
-                        "sessionUpdate": "tool_call_update",
-                        "toolCallId": tool_call_id,
-                        "status": "completed" if chosen else "failed",
+        if call_id is None:
+            self.server.notify_raw(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": session.acp_id,
+                        "update": {
+                            "sessionUpdate": "tool_call_update",
+                            "toolCallId": gated,
+                            "status": "completed" if chosen else "failed",
+                        },
                     },
-                },
-            }
-        )
+                }
+            )
         return chosen
 
-    def _frontend(self, session: Session) -> SessionFrontend:
+    def _frontend(self, session: Session, announced: Announced) -> SessionFrontend:
         return acp_frontend(
-            ask=lambda prompt, options, standing: self.ask(session, prompt, options, standing),
+            ask=lambda prompt, options, standing, call_id: self.ask(
+                session, announced, prompt, options, standing, call_id
+            ),
             # `initialize` has not landed if this is None, and nothing is
             # known about the client; the cautious answer is that it can do
             # nothing.
@@ -286,6 +350,7 @@ class RunBridge:
         session.turn += 1
 
         said: list[str] = []
+        announced = Announced(turn=session.turn)
         ended, drained = threading.Event(), threading.Event()
 
         def _stop() -> bool:
@@ -306,7 +371,7 @@ class RunBridge:
 
         tail = threading.Thread(
             target=self._stream,
-            args=(session, layout.logs_path, _stop, resuming, session.turn),
+            args=(session, layout.logs_path, _stop, resuming, announced),
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
@@ -320,7 +385,7 @@ class RunBridge:
                 code = resume_task(
                     self.config_path,
                     session.session_id,
-                    frontend=self._frontend(session),
+                    frontend=self._frontend(session, announced),
                     force=False,
                     steer=text,
                     reporter=teeing_reporter(said),
@@ -330,7 +395,7 @@ class RunBridge:
                 code = run_task(
                     effective.config,
                     text,
-                    frontend=self._frontend(session),
+                    frontend=self._frontend(session, announced),
                     session_id=session.session_id,
                     explicit_leaves=effective.explicit_leaves,
                     reporter=teeing_reporter(said),
@@ -351,33 +416,35 @@ class RunBridge:
         logs_path: Path,
         stop: Callable[[], bool],
         resuming: bool,
-        turn: int,
+        announced: Announced,
     ) -> None:
         """Project the run's journal into `session/update` as it is written.
 
         A resumed run appends to the journal its prior legs already fill, and
         the editor rendered those turns as they happened -- start at the end,
-        or the whole conversation replays as if new. *turn* is the tail's
-        own: a tail that outlives its turn's join must not restamp its late
-        items with the next turn's number."""
+        or the whole conversation replays as if new."""
         fold = TranscriptFold()
-        announced: set[str] = set()  # tool calls the editor has been told about
-        for event in tail_events(
-            logs_path, stop_when_finished=True, should_stop=stop, start_at_end=resuming
-        ):
-            for item in fold.feed(event):
-                wire_id = (
-                    tool_call_id(item, session.session_id, turn) if item.kind == "tool" else ""
-                )
-                for body in updates_for(
-                    item,
-                    acp_session_id=session.acp_id,
-                    wire_id=wire_id,
-                    announced=wire_id in announced,
-                ):
-                    self.server.notify_raw(body)
-                if item.kind == "tool":
-                    announced.add(wire_id)
+        try:
+            for event in tail_events(
+                logs_path, stop_when_finished=True, should_stop=stop, start_at_end=resuming
+            ):
+                for item in fold.feed(event):
+                    wire_id = (
+                        tool_call_id(item, session.session_id, announced.turn)
+                        if item.kind == "tool"
+                        else ""
+                    )
+                    for body in updates_for(
+                        item,
+                        acp_session_id=session.acp_id,
+                        wire_id=wire_id,
+                        announced=wire_id in announced,
+                    ):
+                        self.server.notify_raw(body)
+                    if item.kind == "tool":
+                        announced.add(wire_id)
+        finally:
+            announced.close()
 
 
 def serve_acp(

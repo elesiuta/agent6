@@ -22,7 +22,9 @@ from agent6.ui.acp.frontend import acp_frontend
 def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
     asked: list[tuple[str, tuple[str, ...], bool | None]] = []
 
-    def _ask(prompt: str, options: tuple[str, ...], standing: bool | None) -> str | None:
+    def _ask(
+        prompt: str, options: tuple[str, ...], standing: bool | None, _call_id: str | None
+    ) -> str | None:
         asked.append((prompt, options, standing))
         return reply
 

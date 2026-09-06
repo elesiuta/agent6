@@ -123,7 +123,7 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
     means the approval never appears and the run waits out its timeout."""
     import io
 
-    from agent6.ui.acp.runner import RunBridge
+    from agent6.ui.acp.runner import Announced, RunBridge
     from agent6.ui.acp.server import ACPServer
     from agent6.ui.acp.session import Session
 
@@ -135,11 +135,17 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
         return {}
 
     bridge.server.request = _capture  # pyright: ignore[reportAttributeAccessIssue]
-    bridge.ask(
-        Session(acp_id="s", cwd=Path("/x")), "Allow run_command: ls", ("allow", "deny"), True
-    )
-    bridge.ask(Session(acp_id="s", cwd=Path("/x")), "Theme?", ("dark", "light"), None)
+    session = Session(acp_id="s", cwd=Path("/x"), session_id="run-x", turn=1)
+    announced = Announced(turn=1)
+    announced.add("run-x:1:7")
+    bridge.ask(session, announced, "Allow run_command: ls", ("allow", "deny"), True, "7")
+    bridge.ask(session, announced, "Theme?", ("dark", "light"), None, None)
     assert len(sent) == 2
+    assert sent[0]["toolCall"]["toolCallId"] == "run-x:1:7"
+    # ToolCallUpdate: an editor merges the fields a request carries into the
+    # call it names, so a gated request carries nothing that would rename it.
+    assert set(sent[0]["toolCall"]) == {"toolCallId", "status"}, sent[0]["toolCall"]
+    assert sent[1]["toolCall"]["title"] == "Theme?"  # an entity of its own, announced whole
     validator = _validator("RequestPermissionRequest")
     for params in sent:
         assert not _errors(validator, params), json.dumps(params)
