@@ -218,6 +218,27 @@ class TestUpdate:
         assert "aa" in out and "bb" in out and "unchanged" in out
         assert "gone from origin" not in out
 
+    def test_update_finds_a_skill_installed_under_its_frontmatter_name(
+        self, env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A repo skill installs under the name its SKILL.md declares, and the
+        refetch looked the source up by directory name, so a skill whose
+        directory and frontmatter names differ read "gone from origin" for
+        good while its source sat unmoved."""
+        repo = env / "pack"
+        _write_skill_file(repo / "skills" / "aa" / "SKILL.md", "aa")
+        _write_skill_file(repo / "skills" / "beta" / "SKILL.md", "renamed-beta")
+        assert _cmd_skills_install(str(repo), force=False) == 0
+        capsys.readouterr()
+        bumped = (repo / "skills" / "beta" / "SKILL.md").read_text(encoding="utf-8") + "\nmore\n"
+        (repo / "skills" / "beta" / "SKILL.md").write_text(bumped, encoding="utf-8")
+        assert _cmd_skills_update("") == 0
+        out = capsys.readouterr().out
+        assert "gone from origin" not in out
+        assert "renamed-beta" in out and "updated" in out
+        installed = _installed(env, "renamed-beta") / "SKILL.md"
+        assert installed.read_text(encoding="utf-8") == bumped
+
 
 class TestStateCommands:
     def _install_tidy(self, env: Path) -> None:

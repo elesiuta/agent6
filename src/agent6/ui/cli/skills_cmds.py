@@ -229,6 +229,19 @@ def _git_clone(url: str, dest: Path) -> str:
     return head.stdout.strip()
 
 
+def _source_declaring(candidates: list[Path], name: str) -> Path | None:
+    """The skill directory whose SKILL.md declares *name*: a skill installs
+    under its frontmatter name, which need not be its directory's."""
+    for d in candidates:
+        try:
+            declared = _skill_name_from_text(read_operator_file(d / "SKILL.md"), str(d))
+        except OperatorError:
+            continue
+        if declared == name:
+            return d
+    return None
+
+
 def _repo_skill_dirs(root: Path) -> list[Path]:
     """Skill directories inside a fetched repository: `skills/*/SKILL.md`
     (the superpowers/caveman layout) or the repository root itself."""
@@ -365,7 +378,7 @@ def _refetch_skill(name: str, origin: dict[str, str]) -> tuple[str, str]:
         with tempfile.TemporaryDirectory(prefix="agent6-skill-") as tmp:
             clone = Path(tmp) / "repo"
             sha = _git_clone(url, clone)
-            src = next((d for d in _repo_skill_dirs(clone) if d.name == name), None)
+            src = _source_declaring(_repo_skill_dirs(clone), name)
             if src is None:
                 return name, "(gone from origin)"
             _install_skill_dir(src, url=url, kind="git", source_sha=sha, force=True)
@@ -375,10 +388,7 @@ def _refetch_skill(name: str, origin: dict[str, str]) -> tuple[str, str]:
         candidates = _repo_skill_dirs(root)
         # A repo-style install records the repo root as the origin and finds the
         # skill in a subdir by name; a single-dir install records the dir itself.
-        if candidates == [root]:
-            src = root
-        else:
-            src = next((d for d in candidates if d.name == name), None)
+        src = root if candidates == [root] else _source_declaring(candidates, name)
         if src is None:
             return name, "(gone from origin)"
         _install_skill_dir(src, url=url, kind="dir", source_sha="", force=True)
