@@ -94,6 +94,9 @@ A green suite is structural validation, not perceptual: the operator dogfoods da
 Less is more everywhere: docs, comments, docstrings, commit messages, CLI output, run summaries, review feedback.
 The shortest version that still carries the point wins.
 
+- Everything committed is permanent and public, and the repository is the only context its reader has: write for someone holding the repo and nothing else.
+  A line needing a conversation, a person, a machine or an account to make sense does not belong, however true it is.
+  When the fact matters and its provenance does not, state the fact in the repo's terms ("the fleet stopped at its spend ceiling", not whose ceiling it was); what fails the test belongs in the untracked ledgers.
 - Lead with the point; add rationale a reader could not reconstruct.
   Cut every word a sentence works without, and every sentence that restates the one before.
 - Plain punctuation: commas, colons, parentheses, periods.
@@ -103,7 +106,6 @@ The shortest version that still carries the point wins.
 - Prose that names code is a claim to verify: every symbol, default and behaviour matches the source, and when the two disagree, decide which side is wrong (sometimes the code).
   Prose someone acts on (a tool description, help text, an error, a refusal) is an interface: it states what is accepted and returned, and names the resolved fact ("default: detected zsh").
 - One idea per sentence, one topic per paragraph; short bullets over prose when listing facts.
-- Committed prose states repo facts, and only those: who ruled it, which round it was and whose budget paid are noise, and noise crowds out signal.
 - Comments and docs state the current state: a constraint, an invariant, a measured number, a link to a decision.
   "Now", "no longer", "previously", "used to" tell the story of a change, which commits own: cut them.
   A comment earns its keep by saying what the code and a grep cannot: a narration of the next line does not.
@@ -154,12 +156,11 @@ The shortest version that still carries the point wins.
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`; the scope matches a directory under `src/agent6/` or a top-level area.
 - One concern per commit, each worth keeping on its own.
   Squash iterative churn only: a fix-up to unpushed work folds into its origin commit.
-- Everything committed is public the moment it is written, and reads the same to someone with no access to the conversation, in a file as much as in a message: names stay in the author field; emails, home paths, hostnames, session structure and decision provenance stay out.
-  Hygiene is prevention; a sweep greps the author name (`pyproject.toml`'s `authors`), home paths, hostnames and machine-local scratch dirs.
+- A commit message is committed prose and meets the same test (Writing style); the author field is the one place a name appears.
 - The operator signs and pushes, from another machine.
   Messages and docs name neither commit hashes (signing changes them) nor branch names (transient).
 - Pushed history is immutable; unpushed commits are rewritten when asked, and never force-pushed.
-  One exception: a leak in an unpushed commit is rewritten out at its origin rather than fixed forward, found by regex and by phrase.
+  One exception: a leak in an unpushed commit is rewritten out at its origin rather than fixed forward, every occurrence of it found first.
 - Stage named files only (never `git add -A`), so scratch notes, session artifacts and generated output stay out.
 - Working directly on master is fine, and the agent folds its session's churn (zero-diff verified) before returning control, so the operator takes over a release-ready master.
   A squashed body keeps the decisions, and what was tried and rejected; durable design reasoning goes to docs.
