@@ -852,3 +852,30 @@ Read: the approval-hang was worth ~+3 resolved and -7 empties on the
 honest same-config comparison (53 -> 56, 50.9%); against the board's
 58-62 (mean of 5, 128K context) the gap is now ~7-11 points. The deny fix
 is bench config; the agent6 wait default stands per the A1 ruling.
+
+### Autopsy sprint, pass 1: the 54 gate-on misses classified (2026-08-25)
+
+From on-disk data only (eval reports, preds, the dataset's gold patch +
+F2P/P2P lists, classified out of repo; parked-rerun results substituted):
+
+| class | n | definition |
+|---|---|---|
+| zero-F2P | 23 | patch applied, P2P clean, no graded F2P passes |
+| near-miss | 18 | some F2P pass, some fail (several at 1 failure: ytmusicapi 24/25, hats 14/15, wtforms 9/10) |
+| broke-P2P | 8 | P2P regressions (mostly 1-2 tests) |
+| slow-empty | 5 | no patch produced |
+
+Checked and refuted: the gold patches often touch changelog/news
+fragments (~13 misses), but the failing F2P are real behaviour tests in
+every sampled case, never changelog-enforcement - a changelog-writing arm
+would buy nothing.
+
+What the data does say: in the zero-F2P class the failing test file
+frequently names the module the fix belonged in (pygmt/tests/
+test_grdmask.py vs the gold's pygmt/src/grdmask.py, which our patch never
+touched; moto tests/test_kms vs moto/kms/responses.py). The graded tests
+are usually ADDED by the dataset's test_patch, so they are not readable
+in-checkout - but their pre-existing sibling files carry the conventions
+and the issue text carries the literal strings they assert. Pass 2 (next):
+per-class deep dives on samples to pin which in-checkout signal would have
+redirected each miss; then the subset-piloted arms per G3.
