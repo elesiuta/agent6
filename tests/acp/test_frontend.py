@@ -114,13 +114,15 @@ def test_an_approval_that_must_not_be_remembered_says_so(tmp_path: Path) -> None
     assert asked[-1][1:] == (("allow", "deny"), True)
 
 
-def test_nothing_is_drawn_and_deltas_still_reach_the_journal() -> None:
-    """An ACP client renders from session/update, so there is no console view
-    -- but the deltas still have to be EMITTED for it to render."""
+def test_the_editor_is_the_live_view_and_nothing_is_drawn() -> None:
+    """An ACP client renders from session/update, so the deltas have to be
+    EMITTED, and the editor counts as the live view: the lifecycle prints its
+    headless end block (headline, summary) only when no live view rendered
+    the run, and the reporter repeats every line to the editor, which already
+    has the fold's done item. The console view it would attach is nothing."""
     front, _asked = _frontend()
-    stream_text, console_stream = front.stream_modes(False)
-    assert stream_text is True, "session/update has nothing to show otherwise"
-    assert console_stream is False, "there is no console to echo to"
+    assert front.stream_modes(False) == (True, True)
+    assert front.attach_console_view(None) is None  # pyright: ignore[reportArgumentType]
     assert front.should_spawn_tui(True, True, "run") is False
 
 

@@ -41,6 +41,7 @@ from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import ACP_MODE, Session, Sessions, StopReason
 from agent6.ui.acp.updates import (
+    ending,
     message_update,
     printable,
     tool_call_id,
@@ -66,31 +67,27 @@ def _stderr(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-# Everything the lifecycle would print goes to stderr, where an editor shows it
-# as agent log output. stdout is the wire.
-STDERR_REPORTER = Reporter(out=_stderr, err=_stderr)
-# How many of the run's own lines to keep for a refusal that never reached a
-# journal. The reason is the last thing said, and one screen of context is
-# what makes it actionable.
-KEPT_LINES = 40
+def forwarding_reporter(server: ACPServer, acp_session_id: str, said: list[str]) -> Reporter:
+    """The lifecycle's reporter: stderr (the editor's agent log), and the same
+    line to the editor as agent6's own prose.
 
-
-def teeing_reporter(kept: list[str]) -> Reporter:
-    """The stderr reporter, remembering what it said.
-
-    A lifecycle refusal (`return 2`) writes its reason here and nowhere
-    else: no `session.end` event exists, so the fold produces no ending and the
-    editor saw a turn stop with a stop reason and no words. There are about
-    a dozen such paths -- a missing git identity, a run id already in use,
-    another writer holding the repo, a dirty worktree, isolation refused.
+    What the lifecycle says is stated nowhere else: no journal event carries a
+    refusal's reason (a missing git identity, another writer holding the
+    repo, a dirty worktree), the auto-stash notice, or the where-are-my-changes
+    footer. The cost receipt goes to stderr only: the fold's done item already
+    carries the cost. *said* collects the forwarded lines, so a turn that
+    ended with nothing said can be told apart from one that explained itself.
     """
 
-    def _keep(message: str) -> None:
+    def _say(message: str) -> None:
         _stderr(message)
-        kept.extend(message.splitlines() or [""])
-        del kept[:-KEPT_LINES]
+        text = message.strip()
+        if text:
+            said.append(text)
+            # `note`/`warn` already carry the marker `message_update` adds.
+            server.notify_raw(message_update(acp_session_id, text.removeprefix("[agent6] ")))
 
-    return Reporter(out=_keep, err=_keep)
+    return Reporter(out=_say, err=_say, receipt=_stderr)
 
 
 def option_kind(text: str, standing: bool | None) -> str:
@@ -304,7 +301,7 @@ class RunBridge:
         return (layout.session_dir / "loop_state.json").is_file()
 
     def had_journal(self, session: Session) -> bool:
-        """Whether this turn got far enough to say anything of its own."""
+        """Whether this turn got far enough to write a journal of its own."""
         if not session.session_id:
             return False
         return session.layout(resolved_state_dir(session.cwd)).logs_path.exists()
@@ -376,6 +373,7 @@ class RunBridge:
             daemon=True,
         )
         tail.start()
+        reporter = forwarding_reporter(self.server, session.acp_id, said)
         try:
             if resuming:
                 # The prompt rides in as the resumed run's first steering
@@ -388,7 +386,7 @@ class RunBridge:
                     frontend=self._frontend(session, announced),
                     force=False,
                     steer=text,
-                    reporter=teeing_reporter(said),
+                    reporter=reporter,
                 )
             else:
                 effective = load_session_config(session.cwd, self.config_path, mode=ACP_MODE)
@@ -398,16 +396,14 @@ class RunBridge:
                     frontend=self._frontend(session, announced),
                     session_id=session.session_id,
                     explicit_leaves=effective.explicit_leaves,
-                    reporter=teeing_reporter(said),
+                    reporter=reporter,
                 )
         finally:
             ended.set()
             tail.join(timeout=DRAIN_S)
-        if code != 0 and not self.had_journal(session):
-            # A refusal before the run had anything to say for itself.
-            self.server.notify_raw(
-                message_update(session.acp_id, "\n".join(said) or f"the run stopped (exit {code})")
-            )
+        if code != 0 and not said and not self.had_journal(session):
+            # A stop before the run had anything to say for itself.
+            self.server.notify_raw(message_update(session.acp_id, f"the run stopped (exit {code})"))
         return stop_reason(code)
 
     def _stream(
@@ -422,7 +418,9 @@ class RunBridge:
 
         A resumed run appends to the journal its prior legs already fill, and
         the editor rendered those turns as they happened -- start at the end,
-        or the whole conversation replays as if new."""
+        or the whole conversation replays as if new. The ending also goes to
+        stderr, the editor's agent log: the editor is the live view, so the
+        lifecycle prints no ending of its own."""
         fold = TranscriptFold()
         try:
             for event in tail_events(
@@ -443,6 +441,8 @@ class RunBridge:
                         self.server.notify_raw(body)
                     if item.kind == "tool":
                         announced.add(wire_id)
+                    elif item.kind == "done":
+                        _stderr(ending(item))
         finally:
             announced.close()
 

@@ -182,9 +182,11 @@ def acp_frontend(
     return SessionFrontend(
         capabilities=capabilities,
         should_spawn_tui=lambda _tui, _interactive, _mode: False,
-        # Stream the deltas as events (session/update reads them) without
-        # echoing to a console nobody is watching.
-        stream_modes=lambda _tui_enabled: (True, False),
+        # Stream the deltas as events (session/update reads them); the editor
+        # is the live view, so the ending's headline and summary are the
+        # fold's done item, and the console view a terminal would attach is
+        # nothing here.
+        stream_modes=lambda _tui_enabled: (True, True),
         attach_console_view=lambda _events: None,
         close_console_view=lambda: None,
         loop_logger=lambda _mode: lambda _line: None,

@@ -20,6 +20,13 @@ from dataclasses import dataclass
 class Reporter:
     out: Callable[[str], None]
     err: Callable[[str], None]
+    # The cost receipt (`BudgetTracker.format_summary`): the one end-of-run
+    # block a live view also renders on its done line, so a front-end whose
+    # live view carries it routes the receipt to its log. None means `out`.
+    receipt: Callable[[str], None] | None = None
+
+    def cost(self, msg: str) -> None:
+        (self.receipt or self.out)(msg)
 
     # The four stderr conventions, owned here so every lifecycle words them
     # the same: a refusal (the run does not start, exit 2), an error, a loud

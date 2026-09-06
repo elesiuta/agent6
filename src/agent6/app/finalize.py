@@ -273,7 +273,7 @@ def print_session_end(
     _print_unknown_baseline(result, layout=layout, reporter=reporter)
     _print_unverified(result, layout=layout, reporter=reporter)
     _print_stale_gate(result, reporter=reporter)
-    reporter.out(budget.format_summary())
+    reporter.cost(budget.format_summary())
     _print_run_total_across_legs(layout, reporter=reporter)
     _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter)
 
@@ -374,7 +374,7 @@ def print_interrupt_end(
     the (auto-committed, resumable) work back up, and no note they were left on
     the run branch. Mirrors the not-completed footer of `print_session_end`."""
     reporter.out("")
-    reporter.out(budget.format_summary())
+    reporter.cost(budget.format_summary())
     _print_run_total_across_legs(layout, reporter=reporter)
     reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
     run_branch = ""

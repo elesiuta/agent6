@@ -22,7 +22,7 @@ from agent6.config.model import ConfigError
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp import runner
 from agent6.ui.acp import session as session_mod
-from agent6.ui.acp.runner import STDERR_REPORTER, Announced, RunBridge, option_kind, stop_reason
+from agent6.ui.acp.runner import Announced, RunBridge, forwarding_reporter, option_kind, stop_reason
 from agent6.ui.acp.server import ACPServer
 
 
@@ -94,12 +94,22 @@ def _loaded(*_a: object, **_k: object) -> EffectiveConfig:
 
 def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
     """stdout IS the protocol stream. One status line on it desynchronises the
-    connection irrecoverably, and no editor recovers from that."""
-    STDERR_REPORTER.out("a status line")
-    STDERR_REPORTER.err("a warning")
+    connection irrecoverably, and no editor recovers from that. The same line
+    reaches the editor as agent6's own prose, marked once."""
+    wire = io.BytesIO()
+    said: list[str] = []
+    reporter = forwarding_reporter(ACPServer(stdin=io.BytesIO(), stdout=wire), "s", said)
+    reporter.out("a status line")
+    reporter.note("a note")
     captured = capsys.readouterr()
     assert captured.out == "", "the wire must carry nothing but JSON-RPC"
-    assert "a status line" in captured.err and "a warning" in captured.err
+    assert "a status line" in captured.err and "[agent6] a note" in captured.err
+    texts = [
+        json.loads(line)["params"]["update"]["content"]["text"]
+        for line in wire.getvalue().decode().splitlines()
+    ]
+    assert texts == ["[agent6] a status line", "[agent6] a note"]
+    assert said == ["a status line", "[agent6] a note"]
 
 
 def test_a_cancel_reaches_the_run_it_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -829,3 +839,98 @@ def test_a_late_tail_keeps_its_own_turn(tmp_path: Path) -> None:
     done.set()
     tail.join(timeout=5.0)
     assert sent and sent[0]["params"]["update"]["toolCallId"] == "run-x:1:1", sent
+
+
+def test_the_runs_notices_reach_the_editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The stash notice and the where-are-my-changes footer are facts the CLI
+    prints at the end of a run. Over ACP they went to stderr only once a
+    journal existed, so stashes accumulated invisibly."""
+    from agent6.events import EventSink
+
+    monkeypatch.chdir(tmp_path)
+
+    def _noticing_run(*_a: object, **kw: Any) -> int:
+        layout = SessionLayout(
+            state_dir=runner.resolved_state_dir(tmp_path), session_id=str(kw["session_id"])
+        )
+        layout.session_dir.mkdir(parents=True, exist_ok=True)
+        events = EventSink(layout.logs_path)
+        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        reporter = kw["reporter"]
+        assert isinstance(reporter, Reporter)
+        reporter.out("\nchanges are on agent6/run-x")
+        reporter.out("  merge with:  agent6 sessions merge run-x")
+        reporter.note("pre-run changes left stashed; restore with: git stash apply abc123")
+        return 0
+
+    monkeypatch.setattr(runner, "run_task", _noticing_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "do the thing")
+        said: list[str] = []
+        for _ in range(60):
+            message = wire.recv()
+            if message.get("method") == "session/update":
+                update = message["params"]["update"]
+                if update["sessionUpdate"] == "agent_message_chunk":
+                    said.append(update["content"]["text"])
+            elif "result" in message:
+                assert message["result"]["stopReason"] == "end_turn"
+                break
+        text = "\n".join(said)
+        assert "git stash apply abc123" in text, text
+        assert "merge with:  agent6 sessions merge run-x" in text, text
+    finally:
+        wire.close()
+
+
+def test_the_editor_gets_each_ending_fact_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fold's done item carries the summary and the cost. The lifecycle's
+    cost receipt and the ending go to stderr (the editor's agent log), so
+    the editor reads each fact once and the log keeps its headline."""
+    from agent6.events import EventSink
+
+    monkeypatch.chdir(tmp_path)
+
+    def _ending_run(*_a: object, **kw: Any) -> int:
+        layout = SessionLayout(
+            state_dir=runner.resolved_state_dir(tmp_path), session_id=str(kw["session_id"])
+        )
+        layout.session_dir.mkdir(parents=True, exist_ok=True)
+        events = EventSink(layout.logs_path)
+        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit("budget.update", usd_total=0.0028)
+        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        reporter = kw["reporter"]
+        assert isinstance(reporter, Reporter)
+        reporter.cost("Token + cost summary:\n  TOTAL: in=839 out=253 cost=$0.0028 of $0.0500")
+        reporter.out("\nchanges are on agent6/run-x")
+        return 0
+
+    monkeypatch.setattr(runner, "run_task", _ending_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "do the thing")
+        said: list[str] = []
+        for _ in range(60):
+            message = wire.recv()
+            if message.get("method") == "session/update":
+                update = message["params"]["update"]
+                if update["sessionUpdate"] == "agent_message_chunk":
+                    said.append(update["content"]["text"])
+            elif "result" in message:
+                break
+    finally:
+        wire.close()
+    assert sum("$0.0028" in text for text in said) == 1, said
+    assert not any("Token + cost summary" in text for text in said), said
+    assert any("changes are on agent6/run-x" in text for text in said), said
+    err = capsys.readouterr().err
+    assert "Token + cost summary" in err and "Session passed" in err, err

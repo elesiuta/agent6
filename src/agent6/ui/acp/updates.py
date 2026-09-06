@@ -53,7 +53,7 @@ def updates_for(
         return [
             _update(
                 acp_session_id,
-                {"sessionUpdate": "agent_message_chunk", "content": _text(_ending(item))},
+                {"sessionUpdate": "agent_message_chunk", "content": _text(ending(item))},
             )
         ]
     if item.kind == "commit":
@@ -89,7 +89,7 @@ def updates_for(
     return [_update(acp_session_id, {"sessionUpdate": chunk, "content": _text(body)})]
 
 
-def _ending(item: TranscriptItem) -> str:
+def ending(item: TranscriptItem) -> str:
     """How a run ended, in words.
 
     The fold sets `body` only for a clean `finish_session`, carrying everything
