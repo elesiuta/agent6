@@ -543,3 +543,29 @@ def test_every_end_reason_has_a_done_line_label() -> None:
 
     missing = set(get_args(SessionEndReason)) - set(_END_REASON_LABEL)
     assert not missing, f"end reasons with no done-line label: {sorted(missing)}"
+
+
+def test_a_resumed_legs_receipt_is_its_own() -> None:
+    """The done item of a resumed leg carries that leg's wall clock and
+    counts, as it already carried its cost; the first leg's 45 s, tool and
+    commit do not ride on a 3 s leg that did nothing."""
+    events = [
+        {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
+        {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
+        {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
+        {"type": "loop.auto_commit", "sha": "abc123", "subject": "first"},
+        {"type": "diff.updated", "sha": "abc123", "patch": "+x\n"},
+        {"type": "budget.update", "usd_total": 0.01},
+        {"type": "session.end", "ts": "2026-08-09T20:00:45+00:00", "reason": "stopped"},
+        {"type": "loop.resume.start", "ts": "2026-08-09T20:10:00+00:00", "user_task": "t"},
+        {"type": "budget.update", "usd_total": 0.002},
+        {"type": "tool.call", "name": "finish_session", "args": {"summary": "Done."}},
+        {
+            "type": "session.end",
+            "ts": "2026-08-09T20:10:03+00:00",
+            "reason": "finish_session",
+            "all_passed": True,
+        },
+    ]
+    dones = [it for it in fold_transcript(events) if it.kind == "done"]
+    assert dones[-1].detail == "$0.0020 · 3s · 0 tools · 0 commits"

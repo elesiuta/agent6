@@ -357,6 +357,12 @@ class TranscriptFold:
                 self._first_ep = ep
         if etype in SESSION_START_EVENTS:
             self._mode = str(event.get("mode", "")) or self._mode
+            # The receipt is the leg's: a resumed leg's wall clock and counts
+            # start at its own start event, as its cost already does.
+            self._first_ep = ep
+            self._tools = 0
+            self._commits = 0
+            self._commit_subject = ""
         if etype == "budget.update":
             self._usd = float(event.get("usd_total", 0) or 0)
             return True
