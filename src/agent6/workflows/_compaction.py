@@ -609,8 +609,12 @@ def compact_old_tool_results(
     # at top-of-iteration only text-only steer/nudge user turns can trail the
     # fresh results, and the delivering provider call runs after this compaction.
     # Exempt that whole turn.
-    last_tool_result_idx = max(turn_idx for turn_idx, _, _ in pointers)
-    candidates = [c for c in pointers[:-keep_recent] if not _is_operator_answer(conversation, c)]
+    last_turn = max(turn_idx for turn_idx, _, _ in pointers)
+    candidates = [
+        c
+        for c in pointers[:-keep_recent]
+        if c[0] != last_turn and not _is_operator_answer(conversation, c)
+    ]
     if protect_paths:
         # Protected reads go last, each group staying oldest-first.
         candidates = [c for c in candidates if not _is_protected(c[0], c[1])] + [
@@ -622,7 +626,6 @@ def compact_old_tool_results(
         max_total_bytes=max_total_bytes,
         protect_paths=protect_paths,
         candidates=candidates,
-        last_tool_result_idx=last_tool_result_idx,
         total=total,
     )
     walk.plan()
@@ -733,7 +736,6 @@ class _Tier1Pass:
     max_total_bytes: int
     protect_paths: frozenset[str]
     candidates: list[tuple[int, int, int]]
-    last_tool_result_idx: int
     total: int
     victims: list[tuple[int, int, int]] = field(default_factory=list)
     gist_headroom: int = 0
@@ -756,8 +758,6 @@ class _Tier1Pass:
         for turn_idx, item_idx, size in self.candidates:
             if planned <= self.max_total_bytes:
                 break
-            if turn_idx == self.last_tool_result_idx:
-                continue
             item = self._item(turn_idx, item_idx)
             if item.content.startswith(ELISION_PREFIX):
                 continue
@@ -851,8 +851,6 @@ class _Tier1Pass:
         for turn_idx, item_idx, _size in self.candidates:
             if self.total <= self.max_total_bytes:
                 break
-            if turn_idx == self.last_tool_result_idx:
-                continue
             item = self._item(turn_idx, item_idx)
             if not item.content.startswith(ELISION_GIST_PREFIX):
                 continue
