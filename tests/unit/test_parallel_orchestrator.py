@@ -618,7 +618,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     monkeypatch.setattr(parallel, "worker_is_alive", fake_worker_is_alive)
 
     assert parallel._await_lanes([res], runtime=runtime) is False  # pyright: ignore[reportPrivateUsage]
-    assert "waiting on a question (answer via the web or TUI hub)" in capsys.readouterr().err
+    assert "waiting on a question (answer via agent6 attach" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------

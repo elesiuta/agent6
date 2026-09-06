@@ -784,8 +784,12 @@ def _print_lane_status(
 ) -> None:
     model = f" ({spec.model})" if spec.model else ""
     cost_s = f"  {format_cost(cost)}" if cost > 0 else ""
-    wait_s = f" · waiting on {waiting} (answer via the web or TUI hub)" if waiting else ""
-    reporter.note(f"lane {spec.lane} [{spec.session_id}]{model}: {status}{wait_s}{cost_s}")
+    state = (
+        f"waiting on {waiting} (answer via agent6 attach {spec.session_id}, the web or TUI hub)"
+        if waiting
+        else status
+    )
+    reporter.note(f"lane {spec.lane} [{spec.session_id}]{model}: {state}{cost_s}")
 
 
 # ---------------------------------------------------------------------------
