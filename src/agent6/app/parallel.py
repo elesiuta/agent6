@@ -70,7 +70,7 @@ from agent6.git_ops import (
 from agent6.git_ops import status as git_status
 from agent6.memory import merge_decisions, merge_memory, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
-from agent6.paths import cache_dir, repo_id, state_dir
+from agent6.paths import cache_dir, mkdir_for_real_user, repo_id, state_dir
 from agent6.sessions.ipc import (
     clear_stop_request,
     clear_worker_pid,
@@ -588,7 +588,7 @@ def build_lane_spawner(
             )
             for i, lane in enumerate(lanes, start=1)
         ]
-        bucket_dir(origin_state, "runs").mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(bucket_dir(origin_state, "runs"))
         import_lock = threading.Lock()
         coord_dir = bucket_dir(origin_state, "runs") / coordinator_session_id
         hard_stop = threading.Event()

@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from agent6.events import EventSink
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
 
 APPROVAL_DIR_NAME = "approvals"
@@ -64,7 +65,7 @@ def approvals_dir(session_dir: Path) -> Path:
     """The approvals dir, created. A READ asks `approvals_path` instead: making
     the dir bumps the session dir's mtime, which the listings sort by."""
     p = session_dir / APPROVAL_DIR_NAME
-    p.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(p)
     return p
 
 
@@ -124,7 +125,7 @@ def register_frontend(session_dir: Path, pid: int) -> None:
     is what tells a live front-end from a recycled pid (see
     :func:`frontend_is_live`)."""
     d = session_dir / FRONTENDS_DIR
-    d.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(d)
     (d / str(pid)).write_text(_proc_start_time(pid), encoding="utf-8")
 
 
@@ -489,7 +490,7 @@ def _marker_path(session_dir: Path, stem: str, scope: str) -> Path:
 def set_session_allow(session_dir: Path, scope: str) -> None:
     """Record the operator's 'allow all of *scope* for the session' choice."""
     target = _marker_path(session_dir, SESSION_ALLOW_FILE, scope)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(target.parent)
     atomic_write(target, "1")
 
 
@@ -506,7 +507,7 @@ def set_session_deny(session_dir: Path, scope: str) -> None:
     that will not open.
     """
     target = _marker_path(session_dir, SESSION_DENY_FILE, scope)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(target.parent)
     atomic_write(target, "1")
 
 
@@ -639,7 +640,7 @@ def read_answer(
 
 def questions_dir(session_dir: Path) -> Path:
     p = session_dir / QUESTION_DIR_NAME
-    p.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(p)
     return p
 
 

@@ -22,6 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.paths import mkdir_for_real_user
 from agent6.sandbox.jail import (
     BackgroundJob,
     JailSession,
@@ -132,7 +133,7 @@ class BackgroundShells:
         # Eagerly: the run's jail session grants this path when it opens, and a
         # mount source has to exist by then.
         self.log_root = root / _LOG_ROOT
-        self.log_root.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(self.log_root)
 
     def start(
         self, argv: tuple[str, ...], policy_for: PolicyFor, *, session: JailSession | None = None
@@ -144,7 +145,7 @@ class BackgroundShells:
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
         log_dir = self.log_root / shell_id
-        shell_dir.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(shell_dir)
         log_fd = self._open_log(shell_id)
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
         job: BackgroundJob | LocalJob | SessionJob
@@ -187,7 +188,7 @@ class BackgroundShells:
         self._seq += 1
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
-        shell_dir.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(shell_dir)
         # The launcher created this with O_EXCL|O_NOFOLLOW under a name no
         # command can predict (its own pid); this side never resolves it again.
         try:

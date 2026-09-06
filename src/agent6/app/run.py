@@ -62,7 +62,7 @@ from agent6.git_ops import (
     stash_tracked_changes,
     untracked_paths,
 )
-from agent6.paths import mkdir_for_real_user, state_dir
+from agent6.paths import state_dir
 from agent6.providers import TranscriptSink
 from agent6.sessions.id import (
     SessionIdError,
@@ -246,10 +246,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 "continue it, or choose a different --session-id."
             )
             return 2
-    # Under sudo the first run on a machine creates the whole state ancestry;
-    # hand the created dirs back NOW, not at teardown -- a killed run must not
-    # leave a root-owned base that blocks every other repo's non-root runs.
-    mkdir_for_real_user(layout.session_dir)
     layout.ensure()
     # One authoritative writer per run dir. Acquire BEFORE touching any shared
     # run state (clearing answers, the worker pid, the curator) so a second

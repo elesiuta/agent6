@@ -20,6 +20,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
 
 
@@ -211,7 +212,7 @@ class TranscriptSink:
     __slots__ = ("_dir", "_lock", "_seq")
 
     def __init__(self, transcripts_dir: Path) -> None:
-        transcripts_dir.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(transcripts_dir)
         self._dir = transcripts_dir
         self._lock = threading.Lock()
         self._seq = _max_seq_in_dir(transcripts_dir)

@@ -235,7 +235,6 @@ def _cmd_review(  # noqa: PLR0911
     # is per-invocation since this command is a one-shot.
     budget = budget_tracker(cfg)
     layout_root = state_dir(root) / "reviews"
-    layout_root.mkdir(parents=True, exist_ok=True)
     transcript_sink = TranscriptSink(layout_root)
 
     if reviewers >= 1:

@@ -40,6 +40,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic_core import PydanticSerializationError
 
 from agent6.machine.model import MachineError
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write, lock_exclusive, unlock
 
 __all__ = [
@@ -340,8 +341,7 @@ class MachineJournal:
         self.wait_path = root / "wait.json"
 
     def ensure_dirs(self) -> None:
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.snapshots_dir.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(self.snapshots_dir)
 
     def exists(self) -> bool:
         return self.journal_path.is_file()
@@ -430,7 +430,7 @@ class MachineJournal:
         would otherwise accumulate ~150k files a year. Keep a short fixed tail
         (paranoia against a corrupt latest) and delete the rest.
         """
-        self.snapshots_dir.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(self.snapshots_dir)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"
         atomic_write(dest, dump_json(snapshot, indent=2) + "\n")
         if self.snapshot_keep <= 0:
@@ -546,7 +546,7 @@ class MachineJournal:
         exposes an empty/partial file it would consume as a bare poke,
         dropping the payload.
         """
-        self.root.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(self.root)
         atomic_write(self.signal_path, json.dumps(payload))
 
     def read_pending_wait(self) -> PendingWait | None:
@@ -567,7 +567,7 @@ class MachineJournal:
 
     def write_pending_wait(self, pending: PendingWait) -> None:
         """Persist the armed next-wake instant atomically (temp file + rename)."""
-        self.root.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(self.root)
         atomic_write(self.wait_path, dump_json(pending, indent=2) + "\n")
 
     def clear_pending_wait(self) -> None:
@@ -577,7 +577,7 @@ class MachineJournal:
 @contextmanager
 def machine_lock(root: Path) -> Generator[None]:
     """Single-writer guard for one machine id (§6). Refuses a second runner."""
-    root.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(root)
     lock_path = root / "machine.lock"
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
@@ -595,7 +595,7 @@ def machine_lock(root: Path) -> Generator[None]:
 
 def write_source(root: Path, text: str) -> None:
     """Persist the exact `.asm.toml` source the run started from (for replay)."""
-    root.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(root)
     atomic_write(root / "machine.asm.toml", text)
 
 
@@ -612,7 +612,7 @@ def write_stop_request(root: Path) -> None:
     A marker, not a kill (the `sessions stop` semantics): the state in flight
     finishes and journals its fact, then the engine returns a "stopped" result
     without a MachineEnd -- the instance stays resumable."""
-    root.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(root)
     (root / "stop").touch()
 
 

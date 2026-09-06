@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import IO, NoReturn
 
 from agent6.child_env import without_provider_keys
-from agent6.paths import hidden_paths
+from agent6.paths import hidden_paths, mkdir_for_real_user
 from agent6.types import BackgroundHandoff, CommandResult, JailPolicy
 
 # Loaded at import, never between fork and exec: dlopen allocates, and another
@@ -1128,7 +1128,7 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
     escapee sweep spares it while it lives (it is a deliberate child, not
     something a command left behind) and `stop` takes its whole group down.
     """
-    outcome_dir.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(outcome_dir)
     if policy.isolation == "none":
         # Unsandboxed escape hatch; see run_in_jail's note.
         with _sweep_lock:

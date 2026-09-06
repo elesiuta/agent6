@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.errors import OperatorError
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
 
 MEMORY_DIR_NAME = "memory"
@@ -84,7 +85,7 @@ def record_decision(
     a = answer.strip().replace("\n", "\n  ")
     entry = f"- {stamp} [{session}] Q: {q}\n  A: {a}\n"
     path = decisions_path(state_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(path.parent)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(entry)
     return entry
@@ -130,7 +131,7 @@ def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]
             known.add(ruling)
             fresh.append(entry)
     if fresh:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(path.parent)
         with path.open("a", encoding="utf-8") as fh:
             if existing and not existing.endswith("\n"):
                 fh.write("\n")
@@ -168,7 +169,7 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
     if not src.is_dir():
         return MemoryMerge()
     dst = memory_dir(dst_state_dir)
-    dst.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(dst)
     seeds = seed_digests(src_state_dir)
     src_index = index_text(src_state_dir).splitlines()
     lane = {p.stem: p for p in src.glob("*.md") if p.name not in (INDEX_NAME, DECISIONS_NAME)}
@@ -191,7 +192,7 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
             origin.unlink()
         elif fate == "held":
             if path is not None:
-                held_dir.mkdir(parents=True, exist_ok=True)
+                mkdir_for_real_user(held_dir)
                 shutil.copyfile(path, held_dir / path.name)
         elif path is not None:  # carried or updated: the lane has the file
             shutil.copyfile(path, origin)
@@ -241,7 +242,7 @@ def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
     copied = 0
     digests: dict[str, str] = {}
     dst = memory_dir(dst_state_dir)
-    dst.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(dst)
     for path in sorted(src.iterdir()):
         target = dst / path.name
         if not path.is_file() or target.exists():
@@ -362,7 +363,7 @@ def add(state_dir: Path, name: str, body: str) -> Path:
     if not body:
         raise MemoryStoreError("memory body must be non-empty")
     d = memory_dir(state_dir)
-    d.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(d)
     path = d / f"{_check_name(name)}.md"
     if path.exists():
         if _index_has(state_dir, name):

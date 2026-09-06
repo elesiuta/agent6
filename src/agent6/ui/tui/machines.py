@@ -43,6 +43,7 @@ from agent6.machine import (
     validate_semantics,
     write_stop_request,
 )
+from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import (
     clear_steer_answer,
     read_worker_pid,
@@ -212,7 +213,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         # state's approval/question/steer prompts bridge here while we watch. Seed
         # notification history so past notifies are not re-announced on open. The
         # dir may not exist yet (watching a just-spawned run), so create it first.
-        self._root.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(self._root)
         # Per-process claim file: nothing to defend or re-assert, concurrent
         # web/TUI watchers each hold their own.
         register_frontend(self._root, os.getpid())

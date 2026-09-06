@@ -49,6 +49,7 @@ from agent6.graph.models import (
 )
 from agent6.memory import decisions_path, decisions_text, memory_dir, record_decision
 from agent6.memory import index_text as memory_index_text
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
 from agent6.prompts.revision import (
     CONTEXT_SUMMARY_SYSTEM_PROMPT,
@@ -1516,7 +1517,7 @@ class Workflow:
                 self._log("  plan salvaged: folded summary into a title-only plan_markdown")
             if self.plan_output_path is not None and plan_md:
                 try:
-                    self.plan_output_path.parent.mkdir(parents=True, exist_ok=True)
+                    mkdir_for_real_user(self.plan_output_path.parent)
                     self.plan_output_path.write_text(plan_md, encoding="utf-8")
                     self._log(f"  plan written: {self.plan_output_path} ({len(plan_md)} chars)")
                     self._emit(

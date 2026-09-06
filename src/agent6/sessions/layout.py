@@ -13,6 +13,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
 
 
@@ -109,10 +110,13 @@ class SessionLayout:
         return self.session_dir / LOGS_NAME
 
     def ensure(self) -> None:
-        self.session_dir.mkdir(parents=True, exist_ok=True)
-        self.graph_dir.mkdir(exist_ok=True)
-        self.transcripts_dir.mkdir(exist_ok=True)
-        self.checkpoints_dir.mkdir(exist_ok=True)
+        """Create the run dir and its subdirs through `mkdir_for_real_user`: the
+        state ancestry a first run creates is 0700 whatever the umask, and
+        under sudo it is handed back to the operator now, not at teardown (a
+        killed run must not leave a root-owned base)."""
+        mkdir_for_real_user(self.graph_dir)
+        mkdir_for_real_user(self.transcripts_dir)
+        mkdir_for_real_user(self.checkpoints_dir)
 
     def checkpoint_path(self, turn: int) -> Path:
         """Path of the checkpoint for `turn` (zero-padded to 4 digits)."""

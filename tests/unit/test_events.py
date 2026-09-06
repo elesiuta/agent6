@@ -139,3 +139,26 @@ def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: Pat
     assert _json_default(datetime(2026, 1, 2, tzinfo=UTC)) == "2026-01-02T00:00:00+00:00"
     mock = MagicMock()
     assert _json_default(mock) == repr(mock)
+
+
+def test_the_log_dir_is_created_once_not_per_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sink creates its directory through the state tree's one creator,
+    whose handback walks the whole dir under sudo: once when missing, never
+    again on every emit."""
+    from agent6 import events as events_mod
+    from agent6.paths import mkdir_for_real_user
+
+    calls: list[Path] = []
+
+    def counting(path: Path) -> None:
+        calls.append(path)
+        mkdir_for_real_user(path)
+
+    monkeypatch.setattr(events_mod, "mkdir_for_real_user", counting)
+    sink = EventSink(tmp_path / "run" / "logs.jsonl")
+    sink.emit("session.start")
+    sink.emit("loop.tool.call", name="read_file")
+    assert calls == [tmp_path / "run"]
+    assert (tmp_path / "run" / "logs.jsonl").read_text(encoding="utf-8").count("\n") == 2

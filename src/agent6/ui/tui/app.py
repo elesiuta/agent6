@@ -46,6 +46,7 @@ from agent6.app.fork import create_fork, undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_btw, parse_compact, parse_now
+from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import (
     register_frontend,
     request_compact,
@@ -699,7 +700,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self.notify("no plan.md yet (still planning, or never finished)", severity="warning")
             return
         runs = bucket_dir(layout_of(self.session_dir).state_dir, "runs")
-        runs.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(runs)
         new_dir, err = spawn_and_locate(
             [*agent6_argv(self.config_path), "run", "--from", self.session_dir.name],
             Path.cwd(),

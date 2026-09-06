@@ -20,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
+from agent6.paths import mkdir_for_real_user
 from agent6.sessions.ipc import request_stop, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, bucket_dir
 from agent6.viewmodel import summarize_session_dir
@@ -96,7 +97,7 @@ def symlink_lane(origin_state: Path, res: LaneResult) -> None:
     """Symlink a located lane's (clone-side) run dir into the origin's `runs/` so
     `agent6 sessions`/hub shows it live. Replaced by the real imported dir at import."""
     link = lane_link(origin_state, res.spec.session_id)
-    link.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(link.parent)
     with contextlib.suppress(FileNotFoundError):
         link.unlink()
     with contextlib.suppress(OSError):

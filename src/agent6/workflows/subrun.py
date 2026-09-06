@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from agent6.git_ops import GitError, branch_exists, clone_repo, fetch_branch
+from agent6.paths import mkdir_for_real_user
 from agent6.sessions.layout import bucket_dir
 
 
@@ -124,6 +125,6 @@ def import_run(
             fetch_branch(origin, lane_repo, f"{branch}:{branch}")
         except GitError as exc:
             raise SubrunError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
-    dest_session_dir.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(dest_session_dir.parent)
     shutil.move(str(lane_session_dir), str(dest_session_dir))
     return dest_session_dir

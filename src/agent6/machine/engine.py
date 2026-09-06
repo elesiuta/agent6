@@ -73,6 +73,7 @@ from agent6.machine.template import (
     render_string,
     render_value,
 )
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.layout import LOGS_NAME
@@ -424,7 +425,7 @@ class LiveWorld:
         """
         if self.data_dir is None:
             return
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(self.data_dir)
         atomic_write(self.data_dir / "poke.json", json.dumps(payload, sort_keys=True))
 
     def notify(self, kind: str, state: str, message: str, level: str) -> None:

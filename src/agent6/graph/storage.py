@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agent6.graph.models import TaskNode
+from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write, fsync_dir, lock_exclusive, unlock
 from agent6.sessions.layout import SessionLayout
 
@@ -46,7 +47,7 @@ from agent6.sessions.layout import SessionLayout
 
 def _append_line(path: Path, line: str) -> None:
     """Append one line durably; raise on a short write instead of losing bytes."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(path.parent)
     payload = (line if line.endswith("\n") else line + "\n").encode("utf-8")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     try:
@@ -73,7 +74,7 @@ def append_jsonl(path: Path, entry: dict[str, object]) -> None:
 @contextmanager
 def flock(path: Path) -> Generator[None]:
     """fcntl exclusive lock on `path`. Creates the file if missing."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(path.parent)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)
     try:
         lock_exclusive(fd, blocking=True)
@@ -287,11 +288,11 @@ def node_md_path(layout: SessionLayout, nodes: dict[str, TaskNode], node_id: str
 def write_node(layout: SessionLayout, nodes: dict[str, TaskNode], node: TaskNode) -> None:
     """Atomically write a node's .md file at its canonical path."""
     path = node_md_path(layout, nodes, node.id)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(path.parent)
     # If the node has children, ensure the matching directory exists too.
     if node.children:
         child_dir = path.with_suffix("")
-        child_dir.mkdir(exist_ok=True)
+        mkdir_for_real_user(child_dir)
     atomic_write(path, _dump_frontmatter(node))
     # Remove any STALE .md for this same id at a different path. The canonical
     # path can move -- e.g. load_graph re-roots an orphan (parent_id -> None when

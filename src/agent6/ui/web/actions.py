@@ -30,7 +30,7 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.paths import state_dir
+from agent6.paths import mkdir_for_real_user, state_dir
 from agent6.sessions.ipc import (
     read_worker_pid,
     request_compact,
@@ -273,7 +273,7 @@ def run_plan(
     if not (session_dir / "plan.md").is_file():
         return None, "this plan has no plan.md yet (it is still planning, or never finished)"
     runs = bucket_dir(state_dir(cwd), "runs")
-    runs.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(runs)
     new_dir, err = spawn_and_locate(
         [*agent6_argv(config_path), "run", "--from", session_id],
         cwd,

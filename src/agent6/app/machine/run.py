@@ -77,7 +77,7 @@ from agent6.machine import (
     machine_lock,
     write_bundle,
 )
-from agent6.paths import state_dir
+from agent6.paths import mkdir_for_real_user, state_dir
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.sessions.layout import machines_root
@@ -432,7 +432,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                         f" fresh with the edited machine: {journal.root}"
                     )
                     return 2
-            data_dir.mkdir(parents=True, exist_ok=True)
+            mkdir_for_real_user(data_dir)
             # A leftover stop marker from a prior invocation would park this
             # one at its first boundary; starting the machine is the answer to
             # any stale request (mirrors the session-side stale-marker clear).

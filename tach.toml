@@ -107,6 +107,7 @@ depends_on = [
 path = "agent6.workflows"
 depends_on = [
   "agent6.commit_message",
+  "agent6.paths",
   "agent6.prompts",  # pure prompt/template text the loop assembles
   # prompt show resolves the isolation a run here would get, so the preview
   # renders the same level-aware blocks the loop does
@@ -149,7 +150,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.events"
-depends_on = []
+depends_on = ["agent6.paths"]
 
 [[modules]]
 path = "agent6.ui.tui"
@@ -492,7 +493,7 @@ depends_on = []
 # MemoryStoreError subclasses OperatorError, so a store refusal presents as the
 # operator's at the CLI boundary while the run loop keeps its degrade catches.
 path = "agent6.memory"
-depends_on = ["agent6.errors", "agent6.portable"]
+depends_on = ["agent6.errors", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.skills"
@@ -561,7 +562,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.sessions.layout"
-depends_on = ["agent6.portable"]
+depends_on = ["agent6.paths", "agent6.portable"]
 
 [[modules]]
 # The single manifest.json reader (the writer is app.manifest). A pure leaf:
@@ -587,11 +588,11 @@ path = "agent6.sessions.ipc"
 # atomic_write: the answer files need a unique-temp durable write (two live
 # front-ends answering one prompt raced on a shared .tmp).
 # events: the start-family emitter owns the worker-pid-before-start order.
-depends_on = ["agent6.events", "agent6.portable"]
+depends_on = ["agent6.events", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.graph.storage"
-depends_on = ["agent6.graph.models", "agent6.portable", "agent6.sessions.layout"]
+depends_on = ["agent6.graph.models", "agent6.paths", "agent6.portable", "agent6.sessions.layout"]
 
 [[modules]]
 path = "agent6.graph.curator"
@@ -630,11 +631,11 @@ depends_on = ["agent6.machine.model"]
 # JournalError subclasses MachineError (machine.model), so a broken journal and
 # a broken machine file degrade through the same catch sites.
 path = "agent6.machine.journal"
-depends_on = ["agent6.machine.model", "agent6.portable"]
+depends_on = ["agent6.machine.model", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"
-depends_on = ["agent6.sessions.layout", "agent6.machine.model", "agent6.machine._semantics", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.sandbox", "agent6.types", "agent6.portable"]
+depends_on = ["agent6.sessions.layout", "agent6.machine.model", "agent6.machine._semantics", "agent6.machine.template", "agent6.machine.predicate", "agent6.machine.journal", "agent6.sandbox", "agent6.types", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.dryrun"

@@ -30,7 +30,7 @@ from agent6.config.layer import (
 )
 from agent6.config.write import set_config_value
 from agent6.errors import OperatorError
-from agent6.paths import repo_config_path
+from agent6.paths import mkdir_for_real_user, repo_config_path
 from agent6.verify_infer import infer_verify_command
 
 _EMPTY_CONFIG = """\
@@ -265,7 +265,7 @@ def init_workspace(
     if cfg_path.is_file():
         print(f"  config exists ({cfg_path.name}); leaving it in place.")
     elif ask(f"Create the per-repo config file at {cfg_path}?", True):
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        mkdir_for_real_user(cfg_path.parent)
         cfg_path.write_text(_EMPTY_CONFIG, encoding="utf-8")
         print(f"  created {cfg_path}")
     else:

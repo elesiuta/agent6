@@ -29,7 +29,7 @@ from agent6.config import Config
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.memory import memory_dir
-from agent6.paths import data_dir
+from agent6.paths import data_dir, mkdir_for_real_user
 from agent6.sandbox._tool_paths import jail_search_path
 from agent6.sandbox.jail import (
     JailSession,
@@ -311,7 +311,7 @@ class ToolDispatcher:
             # The grant's target must exist: the model cannot mkdir outside
             # the jail, so a fresh repo's FIRST organic memory write would
             # fail with ENOENT.
-            mem.mkdir(parents=True, exist_ok=True)
+            mkdir_for_real_user(mem)
         self._ws = workspace_for(config, self._root, memory_dir=mem)
         # Public: the prompt builder reads it so the system prompt describes
         # THIS dispatcher's command behaviour (hardened-only caveats).

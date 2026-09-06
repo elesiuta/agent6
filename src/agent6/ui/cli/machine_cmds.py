@@ -46,7 +46,7 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.paths import chown_to_real_user, repo_config_path, state_dir
+from agent6.paths import chown_to_real_user, mkdir_for_real_user, repo_config_path, state_dir
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import machines_root
@@ -193,7 +193,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
         print("Stopped; nothing changed.", file=sys.stderr)
         return 2
     target = repo_config_path(cwd)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(target.parent)
     for key, value in fix.items():
         upsert_toml_leaf(target, key, value)
     chown_to_real_user(target.parent)

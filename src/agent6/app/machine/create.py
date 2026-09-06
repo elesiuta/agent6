@@ -39,7 +39,7 @@ from agent6.machine import (
     dry_run,
     load_machine,
 )
-from agent6.paths import state_dir
+from agent6.paths import mkdir_for_real_user, state_dir
 from agent6.portable import atomic_write
 from agent6.sessions.id import unused_session_id
 from agent6.sessions.ipc import emit_session_start
@@ -209,7 +209,8 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # Through the owner: `mkdir(exist_ok=True)` on a collision reused a live
     # draft's directory, overwriting its prompt and appending to its journal.
     scratch = bucket_dir(state, bucket) / unused_session_id(state, bucket)
-    scratch.mkdir(parents=True)
+    mkdir_for_real_user(scratch.parent)
+    scratch.mkdir(mode=0o700)
     # Persist the natural-language task that drove this draft, so the draft dir is
     # self-describing (the agent_transcripts/ embed it inside the authoring prompt,
     # but a plain prompt.txt is what a human looks for).

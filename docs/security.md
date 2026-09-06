@@ -354,6 +354,7 @@ Under `none` isolation nothing is enforced or refused.
     - every mutation validates against a pydantic schema before writing, under a per-mutation flock on the session dir
     - a write-path fault after the in-memory update reloads from disk before surfacing: a later read never observes a node that was never persisted
 - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/`, outside the working directory jailed commands run in.
+    - every directory under the base is created `0700` whatever the umask (`mkdir_for_real_user`, the one creator), keeping transcripts, memory and run history from other local users; a base an older release created at `755` keeps that mode
 - The config write lock serializes read-modify-write cycles and enforces nothing
     - publishes are atomic: a torn config is impossible with or without it
     - it fails open (a planted symlink refuses `O_NOFOLLOW`; a stale root-owned lock is ignored); a write proceeding without it is kept, reported "kept as written" (docs/config.md)

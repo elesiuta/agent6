@@ -547,7 +547,7 @@ def _cmd_skills_enable(
     if not (not always and _state_map(config_path).get(name)):
         _require_known(name, Path.cwd(), config_path)
     target = _state_target(repo)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(target.parent)
     try:
         if always:
             upsert_toml_leaf(target, f"skills.state.{name}", "always")
@@ -566,7 +566,7 @@ def _cmd_skills_enable(
 def _cmd_skills_disable(name: str, *, repo: bool, config_path: Path | None = None) -> int:
     _require_known(name, Path.cwd(), config_path)
     target = _state_target(repo)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_for_real_user(target.parent)
     try:
         upsert_toml_leaf(target, f"skills.state.{name}", "disabled")
     finally:

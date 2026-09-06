@@ -29,6 +29,8 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from agent6.paths import mkdir_for_real_user
+
 # High-frequency streaming deltas: written + flushed (so tailers see them live)
 # but NOT fsynced. They are ephemeral UI, reconstructable from the lossless
 # transcripts, and a reasoning model can emit tens of thousands per run -- an
@@ -95,7 +97,11 @@ class EventSink:
         data = (line + "\n").encode("utf-8", "replace")
         try:
             with self._lock:
-                self.path.parent.mkdir(parents=True, exist_ok=True)
+                # Created through the state tree's one creator, but only when
+                # missing: on every event the fallback handback would walk the
+                # whole session dir under sudo.
+                if not self.path.parent.is_dir():
+                    mkdir_for_real_user(self.path.parent)
                 with self.path.open("ab") as fh:
                     fh.write(data)
                     fh.flush()
