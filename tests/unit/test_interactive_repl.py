@@ -30,6 +30,7 @@ from agent6.budget import BudgetTracker
 from agent6.paths import state_dir
 from agent6.ui.cli._repl import REPL_HELP
 from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.steer import SteerState
 
 
 def _init_repo(path: Path) -> None:
@@ -95,6 +96,38 @@ def test_hook_empty_input_continues(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("builtins.input", lambda _p="": "")
     hook = build_repl_hook(tmp_path, _budget())
     assert hook(1, "deadbeefcafe1234") == "continue"
+
+
+def _steer(*, armed: bool) -> SteerState:
+    return SteerState(
+        requested=lambda: False,
+        clear=lambda: None,
+        prompt=lambda: None,
+        restore=lambda: None,
+        abort_pending=lambda: False,
+        interrupt=lambda: False,
+        reset_stage=lambda: None,
+        armed=lambda: armed,
+    )
+
+
+def test_the_banner_names_a_ctrl_c_pause_armed_during_the_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A Ctrl-C during the committing step arms a pause whose menu opens only
+    after this prompt: the banner says so, and says nothing when no pause is
+    armed."""
+    monkeypatch.setattr("builtins.input", lambda _p="": "/continue")
+    assert (
+        build_repl_hook(tmp_path, _budget(), steer_cell=[_steer(armed=True)])(2, "abc")
+        == "continue"
+    )
+    assert "Ctrl-C pause armed: the steer menu opens after /continue" in capsys.readouterr().err
+    assert (
+        build_repl_hook(tmp_path, _budget(), steer_cell=[_steer(armed=False)])(3, "abc")
+        == "continue"
+    )
+    assert "pause armed" not in capsys.readouterr().err
 
 
 def test_hook_slash_continue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,6 +28,7 @@ from agent6.ui.cli.plan_watch import (
     format_plain_event,
 )
 from agent6.ui.cli.sessions_cmds import _cmd_diff
+from agent6.ui.steer import SteerState
 from agent6.viewmodel.state import LOG_NOISE_EVENTS, STREAM_DELTA_EVENTS
 
 REPL_HELP = (
@@ -60,6 +61,7 @@ def build_repl_hook(
     session_id: str = "",
     mcp_manager: MCPManager | None = None,
     console_view: ConsoleView | None = None,
+    steer_cell: Sequence[SteerState | None] = (),
 ) -> Callable[[int, str], AutoCommitDirective]:
     """Build the after_auto_commit hook for `agent6 run -i`.
 
@@ -68,7 +70,10 @@ def build_repl_hook(
     `/watch`), and the live MCP manager (for `/mcp`) in a closure
     so Workflow stays agnostic of the CLI's extra state. `/undo` is the
     loop's own undo (take back the last message: the tree goes back and a
-    fork holds the state before it), returned as a directive.
+    fork holds the state before it), returned as a directive. *steer_cell*
+    holds the leg's steer state once it exists: a Ctrl-C pause armed during
+    the committing step opens its menu only after this prompt, so the banner
+    says so.
     """
 
     def hook(iteration: int, sha: str) -> AutoCommitDirective:
@@ -88,6 +93,12 @@ def build_repl_hook(
             f"REPL: /continue /cost /diff /watch /mcp /init /undo /help /quit /exit",
             file=sys.stderr,
         )
+        steer = steer_cell[0] if steer_cell else None
+        if steer is not None and steer.armed():
+            print(
+                "[agent6] Ctrl-C pause armed: the steer menu opens after /continue.",
+                file=sys.stderr,
+            )
         while True:
             try:
                 raw = input("agent6> ").strip()

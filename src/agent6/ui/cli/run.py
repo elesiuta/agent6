@@ -189,6 +189,7 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
             session_id=session_id,
             mcp_manager=mcp_manager,
             console_view=console_cell[0],
+            steer_cell=steer_cell,
         ),
         run_ask_repl=lambda wf, budget, layout, first_question: run_ask_repl(
             wf, budget, layout, first_question=first_question
