@@ -21,7 +21,7 @@ from typing import Any, cast
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.sessions.ipc import write_worker_pid
+from agent6.sessions.ipc import register_frontend, write_worker_pid
 from agent6.ui.cli import main
 from agent6.ui.web.server import (
     WebServer,
@@ -349,6 +349,9 @@ def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Pat
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    # The watching browser's own claim, which its SSE registers: without one the
+    # run is waiting at its terminal and the answer would reach nobody.
+    register_frontend(session_dir, os.getpid())
     status, body = _post(port, "/api/session/appr-run/approve", {"id": "p1", "answer": "yes"})
     assert status == 200
     assert body["ok"] is True
@@ -366,6 +369,9 @@ def _run_asking_one_question(tmp_path: Path, session_id: str) -> Path:
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    # The watching browser's own claim, which its SSE registers: without one the
+    # run is waiting at its terminal and the answer would reach nobody.
+    register_frontend(session_dir, os.getpid())
     return session_dir
 
 
@@ -429,6 +435,9 @@ def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_pa
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
+    # The watching browser's own claim, which its SSE registers: without one the
+    # run is waiting at its terminal and the answer would reach nobody.
+    register_frontend(session_dir, os.getpid())
     escape = tmp_path / "pwned.answer"
     status, _ = _post(
         port, "/api/session/trav-run/approve", {"id": "../../../../pwned", "answer": "yes"}

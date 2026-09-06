@@ -57,9 +57,16 @@ FRONTEND_DEAD_GRACE_S = 30.0
 
 
 def approvals_dir(session_dir: Path) -> Path:
+    """The approvals dir, created. A READ asks `approvals_path` instead: making
+    the dir bumps the session dir's mtime, which the listings sort by."""
     p = session_dir / APPROVAL_DIR_NAME
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def approvals_path(session_dir: Path) -> Path:
+    """Where the approvals dir would be; never created."""
+    return session_dir / APPROVAL_DIR_NAME
 
 
 def _contained(directory: Path, filename: str, *, untrusted: str, what: str) -> Path:
@@ -322,6 +329,18 @@ def _claim_is_live(claim: Path, pid: int) -> bool:
     return not recorded_start or _proc_start_time(pid) == recorded_start
 
 
+def answer_reaches(session_dir: Path) -> bool:
+    """Whether a written answer will be READ by the run it is written for.
+
+    The run polls the answer file only for a live front-end or an away-mode of
+    "wait"; a foreground run with a terminal is blocked on that terminal and
+    never looks. THE one owner of the question, because writing the file and
+    reporting "answered" to an operator whose run then sits there forever is
+    the same lie on every surface -- the CLI refused it while the web and the
+    TUI both wrote and said "answered"."""
+    return frontend_is_live(session_dir) or away_mode(session_dir) == "wait"
+
+
 def frontend_is_live(session_dir: Path) -> bool:
     """True when ANY registered front-end is a live process agent6 registered. Prunes
     dead claims (hard-killed front-ends, and pids since reused by something
@@ -466,8 +485,10 @@ SESSION_DENY_FILE = "session.deny"
 
 
 def _marker_path(session_dir: Path, stem: str, scope: str) -> Path:
+    """Where one scope's marker lives; the dir is created by the WRITERS, so a
+    probe (`session_allow_set`) never makes one."""
     return _contained(
-        approvals_dir(session_dir), f"{stem}.{scope}", untrusted=scope, what="approval scope"
+        approvals_path(session_dir), f"{stem}.{scope}", untrusted=scope, what="approval scope"
     )
 
 
@@ -556,15 +577,13 @@ def set_away_mode(session_dir: Path, mode: str) -> None:
         raise ValueError(
             f"away.mode is 'deny' or 'wait', got {mode!r} (approve-all reuses session.allow)"
         )
-    d = approvals_dir(session_dir)
-    d.mkdir(parents=True, exist_ok=True)
-    _write_answer_atomic(d / AWAY_MODE_FILE, mode)
+    _write_answer_atomic(approvals_dir(session_dir) / AWAY_MODE_FILE, mode)
 
 
 def away_mode(session_dir: Path) -> str:
     """ "deny", "wait", or "" (unset -- interactive/foreground default flow)."""
     try:
-        return (approvals_dir(session_dir) / AWAY_MODE_FILE).read_text(encoding="utf-8").strip()
+        return (approvals_path(session_dir) / AWAY_MODE_FILE).read_text(encoding="utf-8").strip()
     except OSError:
         return ""
 
@@ -574,7 +593,7 @@ def clear_away_mode(session_dir: Path) -> None:
     resume starts: the operator is back at the terminal, so a stale away-mode from a
     prior detach must not keep auto-denying/waiting."""
     with contextlib.suppress(FileNotFoundError):
-        (approvals_dir(session_dir) / AWAY_MODE_FILE).unlink()
+        (approvals_path(session_dir) / AWAY_MODE_FILE).unlink()
 
 
 def read_answer(

@@ -16,8 +16,7 @@ from pathlib import Path
 
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import (
-    away_mode,
-    frontend_is_live,
+    answer_reaches,
     worker_is_alive,
     write_question_answers,
 )
@@ -37,19 +36,13 @@ def _print_question(session_id: str, prompt: QuestionPrompt) -> None:
 
 def _unanswerable(session_dir: Path, session_id: str) -> str:
     """Why this run cannot take a WRITTEN answer, or "". Reading the open
-    question is never gated by it.
-
-    The run reads the answer file only for a live front-end or an away-mode of
-    "wait"; a foreground run with a terminal is blocked on that terminal and
-    never looks. Writing one there and printing "answered" left the operator
-    waiting on a run that was waiting on them.
-    """
-    if not frontend_is_live(session_dir) and away_mode(session_dir) != "wait":
-        return (
-            f"{session_id} is waiting at its own terminal, which is where the answer"
-            f" has to go: agent6 attach {session_id}"
-        )
-    return ""
+    question is never gated by it."""
+    if answer_reaches(session_dir):
+        return ""
+    return (
+        f"{session_id} is waiting at its own terminal, which is where the answer"
+        f" has to go: agent6 attach {session_id}"
+    )
 
 
 def _refuse(reason: str) -> int:
