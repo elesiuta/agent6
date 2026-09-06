@@ -163,10 +163,10 @@ def _run_review_panel(
         verdict, rc = "PASS (with findings)", 0
     else:
         verdict, rc = "PASS", 0
-    print(f"VERDICT: {verdict}")
+    print(f"VERDICT: {verdict}", flush=True)
     body = render_findings(result.merged_findings)
     if body:
-        print(body)
+        print(body, flush=True)
     print(
         f"\nper-seat ({result.n_block} blocking model(s), {result.n_abstain} abstained):",
         file=sys.stderr,
@@ -290,6 +290,6 @@ def _cmd_review(  # noqa: PLR0911
         print(f"BUDGET EXCEEDED: {exc}", file=sys.stderr)
         return 3
 
-    print(text)
+    print(text, flush=True)
     print(budget.format_summary(), file=sys.stderr)
     return 0

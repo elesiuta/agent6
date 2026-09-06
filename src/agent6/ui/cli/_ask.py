@@ -293,7 +293,7 @@ def run_ask_repl(
         else:
             augmented = question
         result = wf.run(augmented)
-        print(result.summary)
+        print(result.summary, flush=True)
         conversation.append((question, result.summary))
         save_ask_repl_transcript(layout, conversation)
         if budget.is_exhausted():
