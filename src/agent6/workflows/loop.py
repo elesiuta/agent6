@@ -231,6 +231,7 @@ from agent6.workflows._toolset import (
 )
 from agent6.workflows._verify_gate import (
     finish_red_notice,
+    gate_withheld_notice,
     harness_verify_due,
     harness_verify_notice,
     scoped_verify_notice,
@@ -1339,7 +1340,22 @@ class Workflow:
                 text = q.get("question", "") if isinstance(q, dict) else str(q)
                 self._record_decision(state, str(text), answer)
         if name == "run_verify_command" and isinstance(result, ExecResult):
-            self._note_verify_result(state, turn, result)
+            # The model's own gate overran its budget: the same scoped
+            # follow-up the harness gate gets, whose verdict is the turn's
+            # (the 124 is not noted beside it); under `never` the harness
+            # runs nothing and the timeout is the verdict.
+            if not (
+                self.mode == "run"
+                and self.config.workflow.verify_when != "never"
+                and result.returncode == self._EXIT_TIMEOUT
+                and not state.verify.scoped
+                and self._scoped_gate_followup(state, turn) is not None
+            ):
+                if result.returncode == 0:
+                    # The model's call runs the full argv: a green there is a
+                    # full pass, so later harness gates run full again.
+                    state.verify.scoped = False
+                self._note_verify_result(state, turn, result)
         elif name == "run_metric_command" and isinstance(result, MetricResult):
             if turn.verify_just_passed:
                 turn.metric_after_verify_pass = True
@@ -1532,21 +1548,9 @@ class Workflow:
         try:
             scope = self._gate_scope_paths() if state.verify.scoped else ()
             result = self.dispatcher.run_verify(extra_argv=scope)
-            if result.returncode == self._EXIT_TIMEOUT and not state.verify.scoped:
-                scope = self._gate_scope_paths()
-                if scope:
-                    state.verify.scoped = True
-                    self._log(f"LOOP: verify overran; gate scoped to {len(scope)} test files")
-                    self._emit("loop.verify_scoped", n_paths=len(scope), iteration=turn.iteration)
-                    result = self.dispatcher.run_verify(extra_argv=scope)
         except ToolDenied as exc:
             state.verify.denied = True
-            turn.tool_results.append(
-                Notice(
-                    f"[harness verify] {why}: not run: {exc}."
-                    " The gate is withheld for the rest of the run; the run ends unverified."
-                )
-            )
+            turn.tool_results.append(Notice(gate_withheld_notice(f"[harness verify] {why}", exc)))
             return None
         except ToolError as exc:
             turn.tool_results.append(Notice(f"[harness verify] {why}: not run: {exc}"))
@@ -1555,13 +1559,16 @@ class Workflow:
             return self._unexecutable_abort(
                 exc, iteration=turn.iteration, tool_calls=state.tool_calls
             )
+        if (
+            result.returncode == self._EXIT_TIMEOUT
+            and not state.verify.scoped
+            and self._scoped_gate_followup(state, turn) is not None
+        ):
+            return None
         self._note_verify_result(state, turn, result)
         notice = (
             scoped_verify_notice(
-                result,
-                why,
-                timeout_s=self.config.workflow.verify_timeout_s,
-                n_paths=len(scope),
+                result, timeout_s=self.config.workflow.verify_timeout_s, paths=scope
             )
             if scope
             else harness_verify_notice(result, why)
@@ -1577,6 +1584,38 @@ class Workflow:
         if not is_bare_pytest(tuple(self.config.workflow.verify_command)):
             return ()
         return nearest_test_paths(self.root, diff_changed_paths(self._run_diff()))
+
+    def _scoped_gate_followup(self, state: LoopState, turn: TurnState) -> ExecResult | None:
+        """The scoped re-run after a full gate overran its budget, wherever
+        that gate ran (the harness's own, or the model's run_verify_command):
+        the same command over the tests nearest the run's diff, noted and
+        noticed like any gate run. Arms `verdict.scoped`, so later harness
+        gates skip the doomed full run. None when the gate is not pytest or
+        nothing near the change exists to run."""
+        scope = self._gate_scope_paths()
+        if not scope:
+            return None
+        state.verify.scoped = True
+        self._log(f"LOOP: verify overran; gate scoped to {len(scope)} test files")
+        self._emit("loop.verify_scoped", paths=list(scope), iteration=turn.iteration)
+        try:
+            result = self.dispatcher.run_verify(extra_argv=scope)
+        except ToolDenied as exc:
+            state.verify.denied = True
+            turn.tool_results.append(Notice(gate_withheld_notice("[verify] scoped re-run", exc)))
+            return None
+        except ToolError as exc:
+            turn.tool_results.append(Notice(f"[verify] scoped re-run not run: {exc}"))
+            return None
+        self._note_verify_result(state, turn, result)
+        turn.tool_results.append(
+            Notice(
+                scoped_verify_notice(
+                    result, timeout_s=self.config.workflow.verify_timeout_s, paths=scope
+                )
+            )
+        )
+        return result
 
     def _turn_auto_commit_and_metric(
         self, state: LoopState, turn: TurnState

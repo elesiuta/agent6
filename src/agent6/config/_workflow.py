@@ -100,9 +100,9 @@ class WorkflowConfig(BaseModel):
             "Seconds one `verify_command` or `metric.command` call may take before it is killed "
             "and counted as failed. A pytest gate naming no paths that overruns this budget "
             "(the harness's run or the model's own `run_verify_command`) re-runs scoped to the "
-            "test files nearest the run's diff and stays scoped for the rest of the run; a "
-            "scoped green ends the run `passed · scoped gate`. A model-chosen `run_command` is "
-            "not bounded (see `command_checkin_s`)."
+            "test files nearest the run's diff, and harness gates run scoped until a full run "
+            "of the gate passes; a scoped green ends the run `passed · scoped gate`. A "
+            "model-chosen `run_command` is not bounded (see `command_checkin_s`)."
         ),
     )
     # Bounds one LEG: a resume gets a fresh allowance (numbering continues),

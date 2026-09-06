@@ -53,20 +53,29 @@ def harness_verify_notice(result: ExecResult, why: HarnessVerifyWhy) -> str:
     return f"{head}\n{tail}" if tail else head
 
 
-def scoped_verify_notice(
-    result: ExecResult, why: HarnessVerifyWhy, *, timeout_s: float, n_paths: int
-) -> str:
+def scoped_verify_notice(result: ExecResult, *, timeout_s: float, paths: tuple[str, ...]) -> str:
     """What the model sees of a scoped gate run: the full command overran its
-    budget, so the gate ran only the tests nearest the run's change. A scoped
-    green certifies less than a full pass and the notice says so."""
+    budget (this run or an earlier one; scoping stays armed), so the gate ran
+    only the tests nearest the run's change, listed by path. A scoped green
+    certifies less than a full pass and the notice says so. One notice for
+    the harness gate and the follow-up to the model's own timed-out call."""
     verdict = "passed" if result.returncode == 0 else f"exit {result.returncode}"
     tail = f"{result.stdout}\n{result.stderr}".strip()[-_TAIL_CHARS:]
     head = (
-        f"[harness verify] {why}: verify_command overran its {timeout_s:.0f}s budget;"
-        f" the gate ran scoped to the {n_paths} test files nearest the run's change:"
+        f"[verify] verify_command overran its {timeout_s:.0f}s budget;"
+        f" the gate ran scoped to the tests nearest the run's change ({', '.join(paths)}):"
         f" {verdict} ({result.duration_s:.0f}s). A scoped green is not a full-suite pass."
     )
     return f"{head}\n{tail}" if tail else head
+
+
+def gate_withheld_notice(head: str, exc: Exception) -> str:
+    """A gate run not approved (a human's no, or the unattended auto-deny):
+    withheld for the rest of the run, whichever site asked."""
+    return (
+        f"{head}: not run: {exc}."
+        " The gate is withheld for the rest of the run; the run ends unverified."
+    )
 
 
 def finish_red_notice(*, used: int, retries: int) -> str:

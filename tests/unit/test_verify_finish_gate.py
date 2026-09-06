@@ -506,12 +506,14 @@ def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
 
 
-def _scoped_wf(root: Path, command: list[str]) -> tuple[Workflow, MagicMock]:
-    """A finish-gated loop whose root holds pkg/mod.py + tests/test_mod.py."""
+def _scoped_wf(
+    root: Path, command: list[str], *, when: str = "finish"
+) -> tuple[Workflow, MagicMock]:
+    """A harness-gated loop whose root holds pkg/mod.py + tests/test_mod.py."""
     for rel in ("pkg/mod.py", "tests/test_mod.py"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text("")
-    data: dict[str, Any] = {"workflow": {"verify_command": command, "verify_when": "finish"}}
+    data: dict[str, Any] = {"workflow": {"verify_command": command, "verify_when": when}}
     dispatcher = MagicMock()
     dispatcher.command_policy.return_value = "yes"
     wf = Workflow(
@@ -540,6 +542,12 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     gate that timed out and certified nothing."""
     monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
+    emitted: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture(event_type: str, **fields: Any) -> None:
+        emitted.append((event_type, fields))
+
+    wf.events = MagicMock(emit=_capture)
     dispatcher.run_verify.side_effect = [_exec(124), _exec(0)]
     state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
@@ -551,8 +559,9 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     assert state.verify.scoped is True
     assert turn.verify_just_passed is True
     notice = turn.tool_results[-1].text
-    assert "scoped to the 1 test files nearest" in notice
+    assert "the gate ran scoped to the tests nearest the run's change (tests/test_mod.py)" in notice
     assert "not a full-suite pass" in notice
+    assert ("loop.verify_scoped", {"paths": ["tests/test_mod.py"], "iteration": 3}) in emitted
     # The next gate skips the doomed full run.
     dispatcher.run_verify.reset_mock(side_effect=True)
     dispatcher.run_verify.return_value = _exec(0)
@@ -620,3 +629,99 @@ def test_a_timeout_with_no_nearby_tests_stands(tmp_path: Path, monkeypatch: Any)
     dispatcher.run_verify.assert_called_once_with(extra_argv=())
     assert state.verify.scoped is False
     assert turn.verify_just_failed is True
+
+
+def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """run_verify_command exit 124 from the model's OWN call gets the scoped
+    follow-up too. The harness-gate fallback alone never reached this flow (a
+    self-judged turn is not re-judged), so pilot legs timed out at the full
+    budget with no scoped re-run ever firing."""
+    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
+    dispatcher.run_verify.return_value = _exec(0)
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = _turn()
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "run_verify_command", _exec(124), {}
+    )
+    dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
+    assert state.verify.scoped is True
+    assert turn.verify_just_passed is True  # the scoped green stands
+    assert "not a full-suite pass" in turn.tool_results[-1].text
+    # One verdict per turn, as on the harness path: the 124 is not noted as a
+    # fail beside the scoped green (an on_verify_fail panel and the memory
+    # flip nudge key on those flags).
+    assert turn.verify_just_failed is False
+    assert turn.verify_flipped_green is False
+    assert state.verify.fail_streak == 0
+
+
+def test_never_mode_leaves_the_models_timed_out_gate_alone(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """`never`: only the model's own run_verify_command calls run the gate, so
+    a timeout there gets no harness re-run; the 124 is the turn's verdict."""
+    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"], when="never")
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = _turn()
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "run_verify_command", _exec(124), {}
+    )
+    dispatcher.run_verify.assert_not_called()
+    assert state.verify.scoped is False
+    assert turn.verify_just_failed is True
+
+
+def test_a_full_green_from_the_models_own_gate_unarms_scoping(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The model's own run_verify_command runs the full argv: a green there is
+    a full pass, so scoping (armed by an earlier timeout) ends and the run's
+    end reads a plain "passed", never "passed · scoped gate"."""
+    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
+    dispatcher.run_verify.return_value = _exec(0)
+    state = LoopState(original_task="t", tool_calls=0)
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, _turn(), "run_verify_command", _exec(124), {}
+    )
+    assert state.verify.scoped is True
+    turn = _turn()
+    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        state, turn, "run_verify_command", _exec(0), {}
+    )
+    assert state.verify.scoped is False
+    assert turn.verify_just_passed is True
+    dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
+
+
+def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """One denial means the same on both call sites: the scoped re-run not
+    approved withholds the gate for the rest of the run, in the harness
+    path's words, and a later finish never asks again."""
+    from agent6.tools.errors import ToolDenied
+
+    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
+    dispatcher.run_verify.side_effect = [
+        _exec(124),
+        ToolDenied("run_verify_command not approved"),
+    ]
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert state.verify.denied is True
+    assert (
+        "[verify] scoped re-run: not run: run_verify_command not approved."
+        " The gate is withheld for the rest of the run; the run ends unverified."
+    ) in _notices(turn)
+    turn2 = _turn(finishing=True, edited=True)
+    wf._turn_harness_verify(state, turn2)  # pyright: ignore[reportPrivateUsage]
+    assert dispatcher.run_verify.call_count == 2
+    wf._gate_verify_finish(state, turn2)  # pyright: ignore[reportPrivateUsage]
+    assert turn2.finish_signal == "done"
