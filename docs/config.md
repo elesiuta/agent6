@@ -16,6 +16,7 @@ The layers, lowest precedence first:
 | explicit | `--config FILE` | `agent6 run --config FILE` |
 | machine overlay | a machine file's `[config]` table | `agent6 config set --machine-file FILE` |
 
+A selected preset is inserted above the config layer that selected it; [Presets](#presets) gives the precedence rules.
 The per-repo config lives in the state dir, out of the workspace: per-machine, never committed.
 It can be empty or absent when the global config supplies a provider and model; `workflow.verify_command` is inferred per run when unset.
 
@@ -30,7 +31,7 @@ It can be empty or absent when the global config supplies a provider and model; 
   Every edit is re-validated and rolled back if invalid.
   A sibling pair that must move together is set as one inline table: `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
 - Writes are atomic; a blocked edit lock never blocks the write (worst case one lost update, reported as "kept as written").
-  A symlinked config file is followed only when you own the target.
+  A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - `agent6 config fill`: materialize defaults + global config into the global file.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop invalid entries (unknown keys, stale values), naming each; `--machine-file FILE` repairs an overlay instead.
