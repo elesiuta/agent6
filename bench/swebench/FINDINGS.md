@@ -1078,3 +1078,65 @@ guard-kill artifacts (killed mid-run), not model declines; 1 of its 6
 extracted patches resolved. On legs that ran to completion the rate is
 59/105 (56.2%). Prior best full run: 53/110 (48.2%). A clean 11-leg
 rerun of batch 10 (~1 point) yields the artifact-free 110 number.
+
+### Batch-10 clean rerun, the same-window board, and a staging defect (2026-08-30)
+
+The guard-killed batch 10 of the fresh full-110 (scoped-verify wheel +
+prompt v2) re-ran clean: 3/11 resolved (azure-search-openai-demo-3025,
+rapid-mlx-341_interface, mtplx-21), 7 unresolved, 1 empty
+(schemathesis-4087: a 9-call finish with 0 patch lines), 0 errors, 1.0
+plan point (0.10/leg). Batches 1-9 on disk: 58/99. Clean full-110 =
+61/110 (55.5%). The 2026-08-26 completion note's "59/105 on completed
+legs" is 59/102 on disk (99 legs plus 3 completed in batch 10); its
+~64/110 projection is superseded by the rerun.
+
+The leaderboard on our window (swe-rebench.com, per-window stats from the
+page's embedded JSON, problems 2026-03-01..05-14 = the 110 ids of the
+2026_03 split, mean of 5 runs, SEM):
+
+| agent | resolved | pass@5 |
+|---|---|---|
+| Junie | 61.6 +/- 0.64 | 72.7 |
+| Codex | 60.4 +/- 1.37 | 71.8 |
+| Claude Code | 59.6 +/- 1.98 | 72.7 |
+| Cursor | 53.0 +/- 0.53 | 64.5 |
+| GLM-5.2 [high] | 51.1 +/- 1.13 | 71.8 |
+| Kimi K2.6 | 46.5 +/- 1.27 | 64.5 |
+| agent6, gpt-5.6-sol medium (one run) | 55.5 | |
+
+The "58-62" rows quoted earlier (GPT-5.6 Sol[medium] 62.3, Claude Code
+60.4, Codex 58.0) are the board's default window, problems
+2026-05-15..07-01; GPT-5.6 Sol, Fable 5, Opus 5 and Sonnet 5 have no
+rows on the 2026_03 window. Single-run SD on 110 ids is ~3 points
+(per-id resolve frequencies over the gate-on-class runs: 43 ids never
+resolve, 41 always, 26 flip).
+
+Staging defect in the harness: `in_container.sh` staged the patch with
+`git add -u`, so a file the run CREATED never entered the prediction.
+No prediction in any run family carries a `new file mode` hunk. Four of
+the 110 ids need a new source module for the graded tests to import
+(toqito-1484_interface, scim2-models-139_interface,
+pygraphistry-1107_interface, pygmt-4463); in the judged legs the model
+created that file (apply_edit create / apply_patch add-file), the
+submitted patch lacked it, and the eval died on ModuleNotFoundError
+(pygmt: `No module named 'pygmt.src.grdmask'`); sunpy-8548's autopsy
+leg lost its own helper module the same way. Those legs were
+unresolvable under the harness, not model misses. Fixed: the patch is
+`git add -A` minus the files untracked at the base commit and agent6's
+own files (the board's scaffold submits `git add -A`); the new-file
+count prints beside the patch line count. Smoke on the two new-module ids
+(pygmt-4463, toqito-1484_interface) under the fix: 2/2 resolved, patches
+carrying 1 and 2 new files, 0.2 plan points. A fresh full-110 on the
+fixed harness launched 06:59Z (same wheel and prompt as the 61/110 run;
+out dirs rebench-f110x-b1..10, run-ids rfx1..rfx10).
+
+Literal-contract dry run (scripts and per-id dumps out of repo): three
+extractors (quoted spans; error/expected-output strings; the oracle of
+string literals asserted in the FAIL_TO_PASS tests) over the 54 misses and 20 resolved controls.
+Truthful issue-derived fires on the failing contract: 0 for every
+buildable extractor; the quoted-span variant fires on 55% of resolved
+controls. The oracle ceiling after removing the staging artifacts is
+4/54, all four literals absent from the issue text (opensandbox-426
+"docker network create", hats-648 "does not have skymap information",
+koxudaxi-3071 "Invalid JSON:", docsight-437 key names). The arm is not
+built.

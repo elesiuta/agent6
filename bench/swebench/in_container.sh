@@ -208,6 +208,9 @@ AEOF
 fi
 git add AGENTS.md 2>/dev/null && git commit -q -m "bench scaffolding" 2>/dev/null || true
 BASE=$(git rev-parse HEAD)
+# Files untracked at the base (an image's build leftovers) never enter the
+# patch; the pathspec at extraction excludes them by name.
+git ls-files --others --exclude-standard -z > /tmp/untracked_base.nul
 
 # Pass the (long, special-char-laden) issue text as a single argv via Python so
 # no shell quoting can corrupt it.
@@ -253,16 +256,19 @@ finally:
         timer.cancel()
 PYEOF
 
-# The model's patch = changes to files TRACKED at the base commit. `git add -u`
-# (not -A) deliberately ignores untracked files, so a build/test the agent ran
-# that generated artifacts (sklearn dumped 2000 .txt files) does not pollute
-# the patch. SWE-bench gold patches edit existing source; a genuinely new
-# source file is rare and not worth capturing thousands of build outputs for.
+# The patch = every change since the base commit, new files included (the
+# board's scaffold submits `git add -A` the same way); files untracked at the
+# base and agent6's own files stay out. 4 of the 110 rebench ids need a new
+# source module, which `add -u` dropped.
 mkdir -p /out
-git -C /testbed add -u
+{
+  printf ':/\0:(exclude).agent6\0:(exclude)agent6.toml\0'
+  while IFS= read -r -d '' p; do printf ':(top,exclude,literal)%s\0' "$p"; done < /tmp/untracked_base.nul
+} > /tmp/patch_pathspec.nul
+git -C /testbed add -A --pathspec-from-file=/tmp/patch_pathspec.nul --pathspec-file-nul
 git -C /testbed diff --cached "$BASE" -- . ':(exclude).agent6' ':(exclude)agent6.toml' \
     > /out/patch.diff
-echo "[in_container] patch lines: $(wc -l < /out/patch.diff)"
+echo "[in_container] patch lines: $(wc -l < /out/patch.diff), new files: $(grep -c '^new file mode' /out/patch.diff)"
 
 # Export the run's agent6 state (logs.jsonl + provider transcripts) so
 # tool-call failures are diagnosable after the container is gone (observed:
