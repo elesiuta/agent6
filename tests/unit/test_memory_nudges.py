@@ -161,6 +161,31 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
     assert (state.memory_written, state.ever_edited, turn.edited) == (False, True, True)
 
 
+def test_a_preview_edit_is_no_edit() -> None:
+    """`preview=true` writes nothing, so it marks neither a memory write (both
+    nudges would go quiet over a dry run of the store) nor a tree edit (a green
+    verify would be withdrawn over a tree nothing touched)."""
+    from agent6.tools.results import PreviewResult
+
+    def preview(path: str) -> PreviewResult:
+        return PreviewResult(
+            path=path, diff="", hunks=1, bytes_before=1, bytes_after=2, truncated=False
+        )
+
+    calls: list[tuple[str, dict[str, object]]] = [
+        ("apply_edit", {"path": "/tmp/state/memory/f.md", "edits": [], "preview": True}),
+        ("apply_edit", {"path": "src/code.py", "edits": [], "preview": True}),
+        ("apply_patch", {"patch": "--- a/src/code.py\n+++ b/src/code.py\n@@ -1 +1 @@\n-a\n+b\n"}),
+    ]
+    for name, tool_input in calls:
+        wf, state, turn = _wf(), _state(), _turn(1)
+        wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+            state, turn, name, preview(str(tool_input.get("path", "src/code.py"))), tool_input
+        )
+        assert (state.memory_written, state.ever_edited, turn.edited) == (False, False, False)
+        assert turn.edit_since_verify_pass is False
+
+
 def test_workspace_edit_does_not_mark_memory_written() -> None:
     wf = _wf()
     state = _state()

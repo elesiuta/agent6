@@ -81,7 +81,7 @@ from agent6.tools.dispatch import (
 )
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX
 from agent6.tools.patch_apply import PatchError, patch_target_path, split_patch_files
-from agent6.tools.results import AnswersResult, ExecResult, MetricResult, ToolResult
+from agent6.tools.results import AnswersResult, ExecResult, MetricResult, PreviewResult, ToolResult
 from agent6.tools.schema import (
     AskUserInput,
     FinishPlanningInput,
@@ -1435,6 +1435,8 @@ class Workflow:
             if turn.verify_just_passed:
                 turn.metric_plateau_finish = self._plateau_finish(state.metric_history)
         if name in ("apply_edit", "apply_patch"):
+            if isinstance(result, PreviewResult):
+                return  # a dry run writes nothing: no memory write, no tree edit
             # An edit under the memory dir is a memory write, not workspace
             # work: both memory nudges stay quiet for the rest of the run and
             # none of the tree bookkeeping below applies (the gate's tree is
