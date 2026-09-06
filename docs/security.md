@@ -387,7 +387,7 @@ Each `tool` state is jailed, so a per-tool `network` sets its netns independentl
 **Operator-gated policy**
 
 - `network` is read only from the operator's config
-    - a machine's `[config]` overlay is rejected at load if it declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, `[mcp.*]`, `machine.notify`, `notify.on_complete`, `git.run_repo_hooks`, `git.run_repo_filters`, or `prompt.system_prompt_file`
+    - a machine's `[config]` overlay is rejected at load if it declares a protected table or leaf ([the list](state-machines.md#47-machine-config-overlay-config))
 - A `tool` only declares `network`; honoring `allow` is the operator's call, and every conflict is refused at startup naming the state.
 
 **Bundle confinement**

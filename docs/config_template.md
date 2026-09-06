@@ -13,6 +13,7 @@ The layers, lowest precedence first:
 | global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` | `agent6 connect`, `agent6 model` |
 | per-repo *(override)* | `<state-dir>/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
 | explicit | `--config FILE` | `agent6 run --config FILE` |
+| machine overlay | a machine file's `[config]` table | `agent6 config set --machine-file FILE` |
 
 The per-repo config lives in the state dir, out of the workspace: per-machine, never committed.
 It can be empty or absent when the global config supplies a provider and model; `workflow.verify_command` is inferred per run when unset.

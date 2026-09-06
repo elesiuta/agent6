@@ -283,7 +283,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `memory/DECISIONS.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
-| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`agents_md` / manifest / `llm` / `none` / `disabled` / `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
+| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`agents_md`; a repo signal: `verify.sh`, `package.json`, `Makefile:<target>`, `pyproject`, `Cargo.toml`, `go.mod` or `test_*.py`; `llm`; `none`; `disabled`; `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
 | `role.call` | `role`, `model`, `provider` |
 | `role.result` | `role`, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason`; a failure carries `error` (the reason, clipped) instead |
 | `role.text_delta` | streamed assistant text chunk |
@@ -291,7 +291,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `session.steer_requested` | `source` (`"sigint"`): mid-run Ctrl-C |
 | `session.undone` | `/undo`: the turn taken back and the fork that continues from it |
 | `btw.opened` / `.answered` | a `/btw` side question and its answer block |
-| `command.backgrounded` | a `run_command` handed back as a background job (`id`, argv) |
+| `command.backgrounded` | a `run_command` handed back as a background job (`id`, `pid`, `seconds`) |
 | `metric.start` | the metric command about to run (argv) |
 | `jail.degraded` | `detail`: the sandbox came up weaker than asked, or a process survived the sweep at the run's jail session or a spawned MCP server's close |
 | `mcp.server_unavailable` | a configured MCP server that did not start; the run continues without it |

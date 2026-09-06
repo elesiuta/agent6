@@ -188,7 +188,7 @@ agent6 config fill [--force]         # write the defaults + global layers as one
 
 ## Configuration
 
-Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config, then `--config FILE`.
+Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config, `--config FILE`, then a machine agent's `[config]` overlay.
 
 - every field has a default; security-sensitive fields default safe (a repo can be zero-config)
 - `agent6 config show`: every effective value with the layer that set it
