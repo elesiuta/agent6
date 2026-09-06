@@ -48,7 +48,7 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
 from agent6.viewmodel import session_dirs
-from agent6.viewmodel.listing import summarize_session_dir, summary_row
+from agent6.viewmodel.listing import ListingRow, nested_rows, summarize_session_dir, summary_row
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
@@ -488,17 +488,26 @@ class MCPServer:
         }
 
     def _h_list_sessions(self, _args: dict[str, Any]) -> dict[str, Any]:
-        entries: list[dict[str, Any]] = []
-        for d in _listable_sessions(self._agent6_dir):
-            # The row every listing shares (status, label, cost, task), so an
-            # editor reads the same state words the hubs show; the manifest
-            # rides along for the lineage fields the row omits.
-            entry: dict[str, Any] = summary_row(summarize_session_dir(d))
-            # A missing/corrupt manifest lists the run without one.
+        dirs = {d.name: d for d in _listable_sessions(self._agent6_dir)}
+
+        def entry(row: ListingRow) -> dict[str, Any]:
+            # The row every listing shares (status, label, cost, task, a
+            # fan-out's lanes nested), so an editor reads the same state
+            # words the hubs show; the manifest rides along for the lineage
+            # fields the row omits. A missing/corrupt manifest lists the run
+            # without one.
+            out: dict[str, Any] = summary_row(
+                row.summary, lanes=[entry(lane) for lane in row.lanes]
+            )
+            out["mtime"] = row.mtime
             with contextlib.suppress(ManifestError):
-                entry["manifest"] = read_manifest(d).model_dump(mode="json")
-            entries.append(entry)
-        return {"sessions": entries}
+                out["manifest"] = read_manifest(dirs[row.summary.session_id]).model_dump(
+                    mode="json"
+                )
+            return out
+
+        rows = nested_rows(summarize_session_dir(d) for d in dirs.values())
+        return {"sessions": [entry(row) for row in rows]}
 
 
 # ---------------------------------------------------------------------------

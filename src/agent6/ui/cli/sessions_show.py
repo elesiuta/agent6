@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import json
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,8 +20,8 @@ from agent6.git_ops import (
     run_branch_tips,
 )
 from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
-from agent6.sessions.layout import LOGS_NAME
-from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
+from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
+from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import resolve_target
 from agent6.viewmodel import (
     LogScan,
@@ -32,9 +33,17 @@ from agent6.viewmodel import (
 from agent6.viewmodel.format import (
     format_branch,
     format_compare,
+    format_cost_cell,
     format_lineage,
     format_usd,
+    lane_count,
     listing_status_label,
+    winner_id,
+)
+from agent6.viewmodel.listing import (
+    lanes_of,
+    session_compare,
+    summary_row,
 )
 
 
@@ -63,9 +72,12 @@ def _print_fork_lineage(manifest: SessionManifest) -> None:
 
 
 def _print_parallel_compare(manifest: SessionManifest) -> None:
-    """Print the fan-out compare outcome for a lane (no-op for a non-lane run):
+    """Print a lane's place in its fan-out (no-op for a non-lane run): the
+    coordinator it nests under, then the compare outcome once there is one:
     where it placed, whether it won, judged or mechanical, and the judge's
     rationale when there is one."""
+    if (lineage := manifest.parallel) is not None:
+        print(f"lane of:    {lineage.coordinator} (lane {lineage.lane} of group {lineage.group})")
     formatted = format_compare(manifest.compare)
     if formatted is None:
         return
@@ -73,6 +85,52 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
     print(f"compare:    {headline}")
     if rationale:
         print(f"  judge: {rationale}")
+
+
+def _fanout_lanes(
+    layout: SessionLayout, manifest: SessionManifest, tips: Mapping[str, str]
+) -> list[SessionSummary]:
+    """A fan-out coordinator's lanes with their unmerged marks (empty for any
+    other session)."""
+    if manifest.fanout is None:
+        return []
+    return lanes_of(layout.state_dir, layout.session_id, branch_tips=tips)
+
+
+def _won(stamp: CompareStamp | None) -> bool:
+    return stamp is not None and stamp.winner
+
+
+def _lane_stamps(state: Path, lanes: list[SessionSummary]) -> dict[str, CompareStamp | None]:
+    """Each lane's compare stamp (None before the fan-out ranked it)."""
+    stamps: dict[str, CompareStamp | None] = {}
+    for lane in lanes:
+        lane_layout = session_layout(state, lane.session_id)
+        stamps[lane.session_id] = (
+            session_compare(lane_layout.session_dir) if lane_layout is not None else None
+        )
+    return stamps
+
+
+def _print_fanout(
+    manifest: SessionManifest, lanes: list[SessionSummary], stamps: dict[str, CompareStamp | None]
+) -> None:
+    """Print a coordinator's fan-out line and one line per lane: its place
+    (the compare rank once ranked), id, status and cost."""
+    if manifest.fanout is None:
+        return
+    print(f"fan-out:    {lane_count(manifest.fanout.lanes)} (--parallel {manifest.fanout.spec})")
+    idents = {
+        lane.session_id: winner_id(lane.session_id, winner=_won(stamps.get(lane.session_id)))
+        for lane in lanes
+    }
+    width = max((len(ident) for ident in idents.values()), default=0)
+    for lane in lanes:
+        stamp = stamps.get(lane.session_id)
+        place = f"rank {stamp.rank}/{stamp.of}" if stamp is not None else f"lane {lane.lane}"
+        cost = format_cost_cell(lane.cost_usd, partial=lane.usd_partial)
+        label = listing_status_label(lane.mode, lane.status, lane.reason, unmerged=lane.unmerged)
+        print(f"  {place:<10} {idents[lane.session_id]:<{width}}  {label}  {cost}".rstrip())
 
 
 def _status_state(
@@ -162,8 +220,11 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     model = (driver.model if driver else "") or "?"
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
+    tips = run_branch_tips(Path.cwd())
+    lanes = _fanout_lanes(layout, manifest, tips)
+    stamps = _lane_stamps(layout.state_dir, lanes)
     status, status_cell, status_detail = _status_state(
-        summarize_session_dir(target, branch_tips=run_branch_tips(Path.cwd())),
+        summarize_session_dir(target, branch_tips=tips),
         scan,
         last_age=last_age,
     )
@@ -198,6 +259,13 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "forked_from_sha": manifest.forked_from_sha,
                     "worktree": str(manifest.worktree) if manifest.worktree else None,
                     "compare": compare_json,
+                    "parallel": manifest.parallel.model_dump(mode="json")
+                    if manifest.parallel
+                    else None,
+                    "fanout": manifest.fanout.model_dump(mode="json") if manifest.fanout else None,
+                    "lanes": [
+                        summary_row(ln, winner=_won(stamps.get(ln.session_id))) for ln in lanes
+                    ],
                     "run_branch": existing_run_branch(manifest, Path.cwd()) or None,
                     "base_branch": manifest.base_branch or None,
                     "merged_into": changes.merged_into or None,
@@ -213,6 +281,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(f"task:       {task.splitlines()[0]}")
     _print_fork_lineage(manifest)
     _print_parallel_compare(manifest)
+    _print_fanout(manifest, lanes, stamps)
     print(f"model:      {model}")
     print(f"state:      {state}{pid_note}")
     print(f"iteration:  {scan.iteration if scan.iteration is not None else '-'}")

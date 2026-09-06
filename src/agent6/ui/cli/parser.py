@@ -336,7 +336,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     ps_p.add_argument(
         "--json",
         action="store_true",
-        help="Emit the rows as a JSON array (directory, repo_id, id, mode, status, pid, attached).",
+        help="Emit the rows as a JSON array (directory, repo_id, id, mode, status, pid, attached,"
+        " coordinator, lanes).",
+    )
+    ps_p.add_argument(
+        "--lanes",
+        action="store_true",
+        help="List each fan-out's live lanes under its row (folded into a count otherwise;"
+        " the JSON form nests them always).",
     )
 
     hist_p = _sub(

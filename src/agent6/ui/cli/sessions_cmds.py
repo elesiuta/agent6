@@ -60,21 +60,25 @@ from agent6.viewmodel import (
     session_dirs,
     session_is_live,
     summarize_session_dir,
-    summary_row,
     task_snippet,
 )
 from agent6.viewmodel.format import (
     format_cost_cell,
     format_when,
+    lane_count,
+    lane_id_cell,
     listing_status_label,
     winner_id,
 )
+from agent6.viewmodel.listing import ListingRow, nested_rows, row_json
 
 
-def _cmd_list(*, as_json: bool = False) -> int:
+def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     """List this repo's sessions, newest first: updated (last-activity time),
     status (the mode folded in when the word does not imply it, the failure
-    reason, the unmerged mark), cost, id, task.
+    reason, the unmerged mark), cost, id, task. A fan-out's lanes nest under
+    its row: folded into a count, listed indented with *lanes*; the JSON row
+    nests them always.
 
     EVERY bucket, unlike the TUI/web hubs: they give `machine create` drafts
     their own card, and the CLI has none -- so leaving drafts out here made a
@@ -88,34 +92,39 @@ def _cmd_list(*, as_json: bool = False) -> int:
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
     tips = run_branch_tips(cwd)
-    summaries = sorted(
-        (summarize_session_dir(d, branch_tips=tips) for d in dirs),
-        key=lambda s: s.mtime,
-        reverse=True,
-    )
+    listing = nested_rows(summarize_session_dir(d, branch_tips=tips) for d in dirs)
     if as_json:
-        rows_json = [summary_row(s, winner=s.session_id in winners) for s in summaries]
-        print(json.dumps(rows_json, indent=2))
+        print(json.dumps([row_json(r, winners=winners) for r in listing], indent=2))
         return 0
     color = sys.stdout.isatty()
-    rows: list[tuple[str, str, str, str, str, str]] = []
-    for s in summaries:
+
+    def cells(row: ListingRow, id_cell: str) -> tuple[str, str, str, str, str, str]:
+        s = row.summary
         styled, plain = styled_status(
             s.status,
             s.reason,
             color=color,
             label=listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
         )
-        rows.append(
-            (
-                format_when(s.mtime),
-                styled,
-                plain,
-                format_cost_cell(s.cost_usd, partial=s.usd_partial),
-                winner_id(s.session_id, winner=s.session_id in winners),
-                s.task,
-            )
-        )
+        cost = format_cost_cell(s.cost_usd, partial=s.usd_partial)
+        return format_when(row.mtime), styled, plain, cost, id_cell, s.task
+
+    rows: list[tuple[str, str, str, str, str, str]] = []
+
+    def emit(row: ListingRow, depth: int) -> None:
+        s = row.summary
+        id_cell = winner_id(s.session_id, winner=s.session_id in winners)
+        if depth:
+            id_cell = lane_id_cell(id_cell, depth)
+        elif row.lanes and not lanes:
+            id_cell += f" ({lane_count(len(row.lanes))})"
+        rows.append(cells(row, id_cell))
+        if lanes:
+            for lane in row.lanes:
+                emit(lane, depth + 1)
+
+    for row in listing:
+        emit(row, 0)
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
     id_w = max(2, *(len(r[4]) for r in rows))
     # The task column takes what a tty has left (floor 24); piped output keeps
@@ -332,7 +341,14 @@ def _resolve_session_manifest(
     except ManifestError as exc:
         error(f"could not read manifest: {exc}")
         return 2
-    refusal = model_git_refusal(manifest, "sessions")
+    # A fan-out commits nothing by design: its lanes hold the work, and its
+    # record is the newest run once it ends.
+    refusal = (
+        f"{target_id} is a fan-out; its lanes hold the commits"
+        f" (`agent6 sessions show {target_id}` lists them)"
+        if manifest.fanout is not None
+        else model_git_refusal(manifest, "sessions")
+    )
     if refusal is not None:
         refuse(f"{refusal}")
         return 2

@@ -37,7 +37,15 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         dest="list_json",
         action="store_true",
         help="Emit the rows as a JSON array (session_id, mode, status, label, level,"
-        " reason, unmerged, verify_ok, cost_usd, usd_partial, mtime, winner, task).",
+        " reason, unmerged, verify_ok, cost_usd, usd_partial, mtime, winner, task, lane,"
+        " coordinator, lanes).",
+    )
+    sessions_list.add_argument(
+        "--lanes",
+        dest="list_lanes",
+        action="store_true",
+        help="List each fan-out's lanes under its row (folded into a count otherwise; the"
+        " JSON form nests them always).",
     )
 
     sessions_show = _sub(

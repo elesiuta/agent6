@@ -189,6 +189,18 @@ _MODE_IMPLIED: dict[str, str] = {"planned": "plan", "answered": "ask"}
 _ENDED_WORDS = frozenset({"passed", "failed", "finished", "stopped", "undone"})
 
 
+def lane_count(n: int) -> str:
+    """The folded lanes' count as every listing words it: "3 lanes", "1 lane"."""
+    return f"{n} lane{'' if n == 1 else 's'}"
+
+
+def lane_id_cell(id_cell: str, depth: int = 1) -> str:
+    """A lane's id cell under its fan-out's row, marked the same way in the
+    CLI list, `ps` and the TUI hub (a leading space alone does not survive a
+    table cell); *depth* steps in once more for a lane of a lane."""
+    return f"{'  ' * depth}└ {id_cell}"
+
+
 def listing_status_label(
     mode: str, status: str, reason: str = "", *, unmerged: bool = False
 ) -> str:

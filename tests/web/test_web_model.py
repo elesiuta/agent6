@@ -754,3 +754,22 @@ reason = "routed"
     start = CLIENT_JS.index("const sp = m.spend || {};")
     line = CLIENT_JS[start : CLIENT_JS.index("\n", CLIENT_JS.index("const cost", start))]
     assert "sp.usd ||" not in line, f"a clean $0 is falsy and drops the figure: {line!r}"
+
+
+def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: Path) -> None:
+    """The hub's session rows nest a fan-out's lanes under it, the same shape
+    `sessions list --json` prints."""
+    start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
+    end: dict[str, object] = {"type": "session.end", "all_passed": True}
+    fan = _run(tmp_path, "fan", [start, end])
+    (fan / "manifest.json").write_text(
+        json.dumps({"mode": "run", "fanout": {"lanes": 1, "spec": "1"}}), encoding="utf-8"
+    )
+    lane = _run(tmp_path, "fan-l1", [start, end])
+    (lane / "manifest.json").write_text(
+        json.dumps({"mode": "run", "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}}),
+        encoding="utf-8",
+    )
+    (row,) = model.hub_payload(tmp_path)["sessions"]
+    assert row["session_id"] == "fan"
+    assert [ln["session_id"] for ln in row["lanes"]] == ["fan-l1"]

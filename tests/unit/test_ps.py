@@ -112,3 +112,71 @@ def test_ps_json_carries_the_row_facts(
     assert row["id"] == "fan-l1" and row["mode"] == "run" and row["pid"] == os.getpid()
     assert row["attached"] is False and row["repo_id"] == "lane-repo-000000"
     assert row["directory"] is None  # a state-dir id with no checkout behind it
+
+
+def _live(session_dir: Path, manifest: dict[str, object]) -> None:
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(session_dir, os.getpid())
+
+
+def test_ps_folds_a_live_lane_under_its_live_coordinator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fan-out in flight is one row with its live lane count; `--lanes`
+    lists the lanes under it; a lane whose coordinator is not live stays a
+    row of its own."""
+    base = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(base))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    runs = base / "agent6" / "coord-repo-111111" / "sessions" / "runs"
+    _live(runs / "fan", {"mode": "run", "fanout": {"lanes": 2, "spec": "2"}})
+    _live(
+        runs / "fan-l1",
+        {"mode": "run", "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}},
+    )
+    _live(
+        runs / "old-l1",
+        {"mode": "run", "parallel": {"group": "old", "lane": 1, "coordinator": "old"}},
+    )
+
+    assert cmd_ps() == 0
+    out = capsys.readouterr().out
+    assert "fan (1 lane)" in out and "fan-l1" not in out and "old-l1" in out
+    assert cmd_ps(lanes=True) == 0
+    assert "└ fan-l1" in capsys.readouterr().out
+    assert cmd_ps(as_json=True) == 0
+    rows = {r["id"]: r for r in json.loads(capsys.readouterr().out)}
+    assert set(rows) == {"fan", "old-l1"}
+    assert [ln["id"] for ln in rows["fan"]["lanes"]] == ["fan-l1"]
+
+
+def test_ps_nests_a_lane_under_its_coordinator_whatever_the_scan_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live lane is seen twice: in its clone's own state dir and through
+    the origin's symlink. Keyed on the repo id, the nesting held only when
+    the origin's entry happened to be scanned last; the origin's view wins
+    and the lane nests under its coordinator regardless, its lanes in lane
+    order."""
+    base = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(base))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    origin = base / "agent6" / "aaa-origin-000000" / "sessions" / "runs"
+    clone = base / "agent6" / "zzz-clone-000000" / "sessions" / "runs"
+    _live(origin / "fan", {"mode": "run", "fanout": {"lanes": 2, "spec": "2"}})
+    for lane in (2, 1):
+        _live(
+            clone / f"fan-l{lane}",
+            {"mode": "run", "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"}},
+        )
+        (origin / f"fan-l{lane}").symlink_to(clone / f"fan-l{lane}", target_is_directory=True)
+
+    assert cmd_ps(as_json=True) == 0
+    (row,) = json.loads(capsys.readouterr().out)
+    assert row["id"] == "fan" and [ln["id"] for ln in row["lanes"]] == ["fan-l1", "fan-l2"]
+    assert {ln["repo_id"] for ln in row["lanes"]} == {"aaa-origin-000000"}

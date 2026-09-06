@@ -8,6 +8,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -1021,3 +1022,63 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
         ],
     )
     assert summarize_session_dir(legacy).status == "failed"
+
+
+def _summary(session_id: str, *, mtime: float, coordinator: str = "", lane: int | None = None):
+    from agent6.viewmodel.listing import SessionSummary
+
+    return SessionSummary(
+        session_id=session_id,
+        mode="run",
+        task="t",
+        status="passed",
+        reason="",
+        cost_usd=0.0,
+        usd_partial=False,
+        mtime=mtime,
+        coordinator=coordinator,
+        lane=lane,
+    )
+
+
+def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
+    """A lane's manifest names the session that dispatched it: listed beside
+    that session, it nests under it in lane order, and the group sorts by its
+    latest activity (a lane's, while the coordinator's own journal is quiet),
+    which is the time the row shows. A lane whose coordinator is not listed
+    has nothing to nest under. A lane that dispatched a group of its own
+    (resumed, then `/parallel`) carries its lanes one level deeper: every
+    session appears once, at its depth, never dropped."""
+    from agent6.viewmodel.listing import nested_rows, row_json
+
+    rows = nested_rows(
+        [
+            _summary("other", mtime=50.0),
+            _summary("fan", mtime=10.0),
+            _summary("fan-l2", mtime=30.0, coordinator="fan", lane=2),
+            _summary("fan-l1", mtime=20.0, coordinator="fan", lane=1),
+            _summary("gone-l1", mtime=40.0, coordinator="gone", lane=1),
+            _summary("fan-l1-p1-l1", mtime=35.0, coordinator="fan-l1", lane=1),
+        ]
+    )
+
+    def shape(row: object) -> object:
+        from agent6.viewmodel.listing import ListingRow
+
+        assert isinstance(row, ListingRow)
+        return (row.summary.session_id, [shape(ln) for ln in row.lanes])
+
+    assert [shape(r) for r in rows] == [
+        ("other", []),
+        ("gone-l1", []),
+        ("fan", [("fan-l1", [("fan-l1-p1-l1", [])]), ("fan-l2", [])]),
+    ]
+    assert [r.mtime for r in rows] == [50.0, 40.0, 35.0]
+    fan = row_json(rows[2], winners={"fan-l2"})
+    assert fan["mtime"] == 35.0  # the group's latest activity, as the row sorts
+    lanes: Any = fan["lanes"]
+    assert [ln["session_id"] for ln in lanes] == ["fan-l1", "fan-l2"]
+    assert lanes[1]["winner"] is True and lanes[1]["lane"] == 2
+    assert lanes[1]["coordinator"] == "fan" and lanes[1]["lanes"] == []
+    assert lanes[0]["lanes"][0]["session_id"] == "fan-l1-p1-l1"
+    assert fan["lane"] is None and fan["coordinator"] == ""

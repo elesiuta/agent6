@@ -88,6 +88,9 @@ def test_runs_list_json_carries_the_row_facts(
         "mtime",
         "winner",
         "task",
+        "lanes",
+        "lane",
+        "coordinator",
     }
 
 
@@ -299,3 +302,80 @@ def test_the_json_row_carries_the_whole_task(
 
     (row,) = json.loads(capsys.readouterr().out)
     assert row["task"] == task
+
+
+def _fan_out(runs: Path) -> None:
+    """A `run --parallel` fan-out as it lands: the coordinator's record and two
+    lanes whose manifests name it."""
+    _run(runs, "fan")
+    (runs / "fan" / "manifest.json").write_text(
+        json.dumps({"mode": "run", "fanout": {"lanes": 2, "spec": "2"}}), encoding="utf-8"
+    )
+    for lane in (1, 2):
+        _run(runs, f"fan-l{lane}", winner=lane == 2)
+        (runs / f"fan-l{lane}" / "manifest.json").write_text(
+            json.dumps(
+                {
+                    "mode": "run",
+                    "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"},
+                    "compare": {"rank": 3 - lane, "of": 2, "winner": lane == 2},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+
+def test_runs_list_folds_a_fan_outs_lanes_under_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The fan-out is one row with its lane count; `--lanes` lists the lanes
+    under it, indented, in lane order; the JSON row nests them always."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _fan_out(_runs_dir(repo))
+
+    assert _cmd_list() == 0
+    out = capsys.readouterr().out
+    assert "fan (2 lanes)" in out and "fan-l1" not in out
+    assert _cmd_list(lanes=True) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert "fan " in lines[1] and "(2 lanes)" not in lines[1]
+    assert "└ fan-l1" in lines[2] and "└ fan-l2 ★" in lines[3]
+    assert _cmd_list(as_json=True) == 0
+    (row,) = json.loads(capsys.readouterr().out)
+    assert row["session_id"] == "fan"
+    assert [ln["session_id"] for ln in row["lanes"]] == ["fan-l1", "fan-l2"]
+    assert row["lanes"][1]["winner"] is True
+
+
+def test_a_folded_fan_out_shows_its_groups_latest_activity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The row sorts by the group's latest activity and shows that time: the
+    coordinator's own journal is quiet for the whole fan-out."""
+    import os
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = _runs_dir(repo)
+    _fan_out(runs)
+    _run(runs, "solo")
+    old, mid, new = 1_700_000_000, 1_700_003_600, 1_700_007_200
+    os.utime(runs / "fan" / "logs.jsonl", (old, old))
+    os.utime(runs / "solo" / "logs.jsonl", (mid, mid))
+    for lane in (1, 2):
+        os.utime(runs / f"fan-l{lane}" / "logs.jsonl", (new, new))
+
+    assert _cmd_list(as_json=True) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert [r["session_id"] for r in rows] == ["fan", "solo"]
+    assert rows[0]["mtime"] == new
+    assert _cmd_list() == 0
+    lines = capsys.readouterr().out.splitlines()
+    from agent6.viewmodel.format import format_when
+
+    assert lines[1].startswith(format_when(new)) and "fan (2 lanes)" in lines[1]

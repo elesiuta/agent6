@@ -12,7 +12,7 @@ import contextlib
 import json
 import re
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Container, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -177,10 +177,91 @@ class SessionSummary:
     # status word: the compare table and the judge read it, and the word calls
     # a red-gated finish "finished".
     verify_ok: bool | None = None
+    # A fan-out lane: the session that dispatched it (its manifest's
+    # `parallel.coordinator`, the row it nests under) and its lane number.
+    coordinator: str = ""
+    lane: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ListingRow:
+    """One listing row: a session and the fan-out lanes nested under it, each
+    a row of its own (a lane that dispatched a group carries its lanes)."""
+
+    summary: SessionSummary
+    lanes: tuple[ListingRow, ...] = ()
+
+    @property
+    def mtime(self) -> float:
+        """The row's last activity: its own or a lane's, whichever is later
+        (a coordinator's journal is quiet while its lanes run)."""
+        return max((self.summary.mtime, *(lane.mtime for lane in self.lanes)))
+
+
+def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
+    """The listing's rows, newest first: a lane nests under the session that
+    dispatched it when that session is listed, in lane order, at whatever
+    depth; a lane whose coordinator is not listed has nothing to nest under
+    and stays a row. Every session appears exactly once."""
+    items = list(summaries)
+    by_id = {s.session_id: s for s in items}
+    children: dict[str, list[SessionSummary]] = {}
+    for s in items:
+        if s.coordinator and s.coordinator in by_id and s.coordinator != s.session_id:
+            children.setdefault(s.coordinator, []).append(s)
+    placed: set[str] = set()
+
+    def row(s: SessionSummary) -> ListingRow:
+        placed.add(s.session_id)
+        lanes = sorted(children.get(s.session_id, ()), key=_lane_order)
+        return ListingRow(s, tuple(row(ln) for ln in lanes if ln.session_id not in placed))
+
+    roots = [s for s in items if not (s.coordinator in by_id and s.coordinator != s.session_id)]
+    rows = [row(s) for s in roots]
+    # A coordinator chain that loops reaches no root: its sessions are rows.
+    rows.extend(row(s) for s in items if s.session_id not in placed)
+    rows.sort(key=lambda r: r.mtime, reverse=True)
+    return rows
+
+
+def _lane_order(lane: SessionSummary) -> tuple[int, str]:
+    return (lane.lane or 0, lane.session_id)
+
+
+def lanes_of(
+    state_dir: Path, coordinator: str, *, branch_tips: Mapping[str, str] | None = None
+) -> list[SessionSummary]:
+    """The lanes whose manifests name *coordinator*, in lane order; with
+    *branch_tips* each carries its unmerged mark (`summarize_session_dir`)."""
+    lanes = [
+        s
+        for d in session_dirs(state_dir)
+        if (s := summarize_session_dir(d, branch_tips=branch_tips)).coordinator == coordinator
+    ]
+    return sorted(lanes, key=_lane_order)
+
+
+def row_json(
+    row: ListingRow, *, winners: Container[str], task_chars: int | None = None
+) -> dict[str, object]:
+    """A listing row and its nested lanes as JSON (`summary_row` for each);
+    `mtime` is the row's, the group's latest activity."""
+    out = summary_row(
+        row.summary,
+        winner=row.summary.session_id in winners,
+        task_chars=task_chars,
+        lanes=[row_json(ln, winners=winners, task_chars=task_chars) for ln in row.lanes],
+    )
+    out["mtime"] = row.mtime
+    return out
 
 
 def summary_row(
-    s: SessionSummary, *, winner: bool = False, task_chars: int | None = None
+    s: SessionSummary,
+    *,
+    winner: bool = False,
+    task_chars: int | None = None,
+    lanes: Sequence[dict[str, object]] = (),
 ) -> dict[str, object]:
     """One listing row as JSON: the shape `sessions list --json` prints and
     `/api/hub` serves, so one name per fact reaches every reader.
@@ -190,6 +271,7 @@ def summary_row(
     snippet clipped to that width, for a card with a row to fill; without it
     the task rides whole, since a JSON reader has its own layout and a
     multi-line task otherwise arrives as its first line with nothing to say so.
+    *lanes* are a fan-out's lane rows, nested (`row_json` builds them).
     """
     return {
         "session_id": s.session_id,
@@ -207,6 +289,9 @@ def summary_row(
         "unmerged": s.unmerged,
         "verify_ok": s.verify_ok,
         "winner": winner,
+        "lane": s.lane,
+        "coordinator": s.coordinator,
+        "lanes": list(lanes),
     }
 
 
@@ -711,6 +796,7 @@ def summarize_session_dir(
             body = lines[heading + 1 :] if heading is not None else []
             asked = next((ln.strip() for ln in body if ln.strip()), "")
             task = asked[:200] or transcript.strip()[:200]
+    lineage = manifest.parallel if manifest is not None else None
     unmerged = False
     if branch_tips is not None and manifest is not None and word != "undone":
         tip = branch_tips.get(manifest.run_branch or "")
@@ -730,4 +816,6 @@ def summarize_session_dir(
         usd_partial=scan.usd_partial,
         mtime=session_mtime(session_dir),
         verify_ok=scan.verify_verdict(),
+        coordinator=lineage.coordinator if lineage is not None else "",
+        lane=lineage.lane if lineage is not None else None,
     )

@@ -53,6 +53,7 @@ from agent6.viewmodel import (
 )
 from agent6.viewmodel.config_view import render_show
 from agent6.viewmodel.format import status_label, status_level
+from agent6.viewmodel.listing import nested_rows, row_json
 from agent6.viewmodel.transcript_style import item_lines
 
 
@@ -151,9 +152,13 @@ def _session_summary(session_dir: Path, branch_tips: Mapping[str, str]) -> dict[
 
 
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
-    """Every session a hub lists, summarized, newest first (`session_dirs`)."""
+    """Every session a hub lists, summarized, newest first (`session_dirs`),
+    a fan-out's lanes nested under its row (`nested_rows`)."""
     tips = run_branch_tips(cwd)
-    return [_session_summary(p, tips) for p in session_dirs(state_dir(cwd))]
+    dirs = session_dirs(state_dir(cwd))
+    winners = {p.name for p in dirs if is_winner(p)}
+    rows = nested_rows(summarize_session_dir(p, branch_tips=tips) for p in dirs)
+    return [row_json(r, winners=winners, task_chars=100) for r in rows]
 
 
 def _machine_row(s: MachineSummary) -> dict[str, Any]:

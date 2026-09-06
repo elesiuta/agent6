@@ -1073,3 +1073,30 @@ def test_a_resumed_run_merges_again_from_its_own_landed_tip(
     landed = _git(tmp_path, "show", "main:f.py")
     assert '"""Zero for empty."""' in landed and "return 0" in landed
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "2"
+
+
+def test_the_branch_verbs_refuse_a_fan_out_coordinator_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fan-out's record is the newest run once it ends, so the bare
+    `sessions merge` landed on it and called it a run that "recorded no
+    commits"; it never commits by design, its lanes hold the work."""
+    from agent6.paths import state_dir
+    from agent6.sessions.layout import SessionLayout
+    from agent6.ui.cli.sessions_cmds import (
+        _resolve_session_manifest,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    monkeypatch.chdir(tmp_path)
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="fan")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {"version": 3, "session_id": "fan", "mode": "run", "fanout": {"lanes": 2, "spec": "2"}}
+        ),
+        encoding="utf-8",
+    )
+    for bare in ("", "fan"):
+        assert _resolve_session_manifest(tmp_path, bare) == 2
+        err = capsys.readouterr().err
+        assert "fan is a fan-out" in err and "sessions show fan" in err

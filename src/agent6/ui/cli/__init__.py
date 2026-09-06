@@ -413,7 +413,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
     from agent6.ui.cli.sessions_show import _cmd_status  # noqa: PLC0415
 
     if args.sessions_command == "list":
-        return _cmd_list(as_json=args.list_json)
+        return _cmd_list(as_json=args.list_json, lanes=args.list_lanes)
     if args.sessions_command == "show":
         return _cmd_status(args.session_id, as_json=args.json)
     if args.sessions_command == "diff":
@@ -662,7 +662,7 @@ def _dispatch_skills(args: argparse.Namespace) -> int:
 def _dispatch_ps(args: argparse.Namespace) -> int:
     from agent6.ui.cli.ps_cmd import cmd_ps  # noqa: PLC0415
 
-    return cmd_ps(as_json=args.json)
+    return cmd_ps(as_json=args.json, lanes=args.lanes)
 
 
 def _dispatch_history(args: argparse.Namespace) -> int:

@@ -167,9 +167,8 @@ def _cmd_compare(
     cwd = Path.cwd()
     by_fanout = False
     if len(session_ids) == 1:
-        # One id: a fan-out's, comparing its lanes (the console prints the
-        # fan-out id, `sessions show` calls it ambiguous); anything else is one
-        # run, too few.
+        # One id: a fan-out's, comparing its lanes; anything else is one run,
+        # too few.
         lanes = _fanout_lanes(cwd, session_ids[0])
         by_fanout = bool(lanes)
         session_ids = lanes or session_ids
