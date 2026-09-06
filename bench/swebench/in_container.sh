@@ -189,12 +189,15 @@ this checkout: never spend turns recalling or fetching the canonical
 upstream commit. Anything remembered about the upstream fix is an
 unverified hint, not a source.
 AEOF
-  # AGENT6_SB_TESTFIRST=1: the executed test-first arm. A probe test the
-  # model writes OUTSIDE the repo and runs is real feedback on the issue's
-  # expected behaviour; it never enters the diff (outside the tree) and the
-  # repo's own tests stay untouched.
-  if [ "${AGENT6_SB_TESTFIRST:-}" = "1" ]; then
-    cat >> AGENTS.md <<'AEOF'
+fi
+# AGENT6_SB_TESTFIRST=1: the executed test-first arm. A probe test the
+# model writes OUTSIDE the repo and runs is real feedback on the issue's
+# expected behaviour; it never enters the diff (outside the tree) and the
+# repo's own tests stay untouched. Appended whether or not the repo ships
+# its own AGENTS.md (nested under the no-file branch, the arm silently
+# no-opped on every repo that carries one).
+if [ "${AGENT6_SB_TESTFIRST:-}" = "1" ]; then
+  cat >> AGENTS.md <<'AEOF'
 
 Before the first edit, write a test at /tmp/probe_test.py that fails on
 this checkout by reproducing the issue's expected behaviour (run it with
@@ -202,9 +205,8 @@ this checkout by reproducing the issue's expected behaviour (run it with
 until it passes. /tmp/probe_test.py stays outside the repo: never copy it
 in, and never modify or add tests inside the repo.
 AEOF
-  fi
-  git add AGENTS.md && git commit -q -m "bench scaffolding" 2>/dev/null
 fi
+git add AGENTS.md 2>/dev/null && git commit -q -m "bench scaffolding" 2>/dev/null || true
 BASE=$(git rev-parse HEAD)
 
 # Pass the (long, special-char-laden) issue text as a single argv via Python so
