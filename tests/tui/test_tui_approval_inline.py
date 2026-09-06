@@ -77,3 +77,53 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: Path) -> None:
             assert "allowed" in str(item.render())
 
     asyncio.run(scenario())
+
+
+def test_a_dead_runs_approval_is_shown_but_not_answerable(tmp_path: Path) -> None:
+    """A run killed with its prompt open: the fact stays on the surface, the
+    key row (whose answer would reach nothing) is not offered."""
+    run = tmp_path / "dead-run-AAAAAA"
+    _live_run(run)
+    (run / "worker.pid").write_text("4194304", encoding="utf-8")  # past pid_max: gone
+    _append(
+        run,
+        {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: rm -rf build"},
+    )
+
+    async def scenario() -> None:
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.pause()
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            assert not app.session_controllable()
+            item = app._conv.query_one("#conv-approval", Static)  # pyright: ignore[reportPrivateUsage]
+            assert item.display
+            text = str(item.render())
+            assert "approval pending when the run ended" in text and "rm -rf build" in text
+            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+
+    asyncio.run(scenario())
+
+
+def test_escape_with_a_menu_open_closes_the_menu_not_the_view(tmp_path: Path) -> None:
+    run = tmp_path / "live-run-BBBBBB"
+    _live_run(run)
+
+    async def scenario() -> None:
+        from agent6.ui.tui.menubar import MenuBar
+
+        app = Agent6TUI(run)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            bar = app._conv.query_one(MenuBar)  # pyright: ignore[reportPrivateUsage]
+            bar.open("r")
+            await pilot.pause()
+            assert bar.opened
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not bar.opened
+            assert app.is_running and app.screen is app._conv  # pyright: ignore[reportPrivateUsage]
+
+    asyncio.run(scenario())

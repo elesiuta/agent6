@@ -480,6 +480,11 @@ class MenuBar(Horizontal):
         """Whether *mnemonic*'s menu is the one currently open."""
         return self._open == mnemonic
 
+    @property
+    def opened(self) -> bool:
+        """Whether any menu is open."""
+        return self._open is not None
+
     def open_adjacent(self, mnemonic: str, step: int) -> None:
         """Switch the open menu to the one *step* places left/right (wrapping)."""
         order = [m.mnemonic for m in self._menus]

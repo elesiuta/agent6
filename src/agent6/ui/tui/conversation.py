@@ -908,6 +908,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._scroll().scroll_page_down(animate=False)
 
     def action_close(self) -> None:
+        bar = self.query_one(MenuBar)
+        if bar.opened:  # Esc with a menu open closes the menu, not the view
+            bar.close_menu()
+            return
         if self._primary:
             # The run app's main screen: Back means leave the run view entirely
             # (the Agent6TUI host's to_hub exits with the back-to-hub code).

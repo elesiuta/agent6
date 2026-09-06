@@ -399,6 +399,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self._tui.action_toggle_dashboard()
 
     def action_to_hub(self) -> None:
+        bar = self.query_one(MenuBar)
+        if bar.opened:  # Esc with a menu open closes the menu, not the view
+            bar.close_menu()
+            return
         self._tui.action_to_hub()
 
     def action_quit_hub(self) -> None:
