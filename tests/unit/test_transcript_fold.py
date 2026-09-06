@@ -726,3 +726,30 @@ def test_restate_names_a_call_still_running() -> None:
         {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}},
     ]
     assert "[running] run_command sleep 60" in restate(events)
+
+
+def test_compaction_renders_as_markers_on_the_conversation() -> None:
+    """No `loop.compact.*` event produced an item, so the conversation surfaces
+    (TUI, CLI stream, web, ACP) showed nothing when tier 2 replaced the history
+    the operator was reading, when the summariser failed, or when a `/compact`
+    the surface had promised was refused; only the log pane said so."""
+    items = fold_transcript(
+        [
+            {"type": "loop.compact.requested", "focus": "the parser"},
+            {"type": "loop.compact.refused", "reason": "too little history to summarise"},
+            {"type": "loop.compact.requested", "focus": ""},
+            {
+                "type": "loop.compact.summarise.done",
+                "summary_chars": 1200,
+                "summary": "...",
+                "kept_turns": 3,
+            },
+            {"type": "loop.compact.summarise.failed", "error": "429 rate limited"},
+        ]
+    )
+    assert [it.kind for it in items] == ["marker"] * 5
+    assert items[0].body == "compaction requested: the parser"
+    assert items[1].body == "compaction refused: too little history to summarise"
+    assert items[2].body == "compaction requested"
+    assert items[3].body == "context compacted: 1,200-char summary, 3 recent turns kept verbatim"
+    assert items[4].body == "compaction failed: 429 rate limited"

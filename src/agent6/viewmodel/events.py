@@ -13,7 +13,7 @@ surface that keeps old run dirs folding: a type this module does not know become
 Hand-rolled frozen dataclasses, not pydantic (unlike `machine/journal.py`):
 logs.jsonl is append-only history, so the fold keeps the exact coercion
 semantics old run dirs were written against (`str()`/`int()`/`bool()` with
-per-field defaults, `_as_int`'s swallow-to-zero, the isinstance guards). A
+per-field defaults, `as_int`'s swallow-to-zero, the isinstance guards). A
 pydantic model would impose its own coercion and validation-failure semantics,
 changing how a malformed old line folds; these parsers hold that coercion in
 one place per family. `parse_event` never raises on an unknown type (RawEvent)
@@ -78,7 +78,7 @@ def readable_summary(value: Any) -> str:
     return str(value)
 
 
-def _as_int(value: object) -> int:
+def as_int(value: object) -> int:
     """An event field as an int; 0 for anything unusable (untrusted log data)."""
     try:
         return int(value)  # type: ignore[arg-type]  # int() rejects bad types itself
@@ -392,7 +392,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             return DiffUpdated(patch=str(raw.get("patch", "")), sha=str(raw.get("sha", "")))
         case "loop.auto_commit":
             return AutoCommit(
-                iteration=_as_int(raw.get("iteration")),
+                iteration=as_int(raw.get("iteration")),
                 sha=str(raw.get("sha") or ""),
                 subject=str(raw.get("subject") or ""),
             )
@@ -404,9 +404,9 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             )
         case "role.result":
             return RoleResult(
-                tokens_in=_as_int(raw.get("tokens_in")),
-                cache_read=_as_int(raw.get("cache_read")),
-                cache_creation=_as_int(raw.get("cache_creation")),
+                tokens_in=as_int(raw.get("tokens_in")),
+                cache_read=as_int(raw.get("cache_read")),
+                cache_creation=as_int(raw.get("cache_creation")),
             )
         case "role.text_delta":
             return RoleTextDelta(text=str(raw.get("text", "")))
@@ -491,16 +491,14 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             pins = tuple(str(x) for x in raw_pins) if isinstance(raw_pins, (list, tuple)) else ()
             return PinsRestored(pins=pins)
         case "loop.compact.restored":
-            return CompactRestored(
-                elided=_as_int(raw.get("elided")), gists=_as_int(raw.get("gists"))
-            )
+            return CompactRestored(elided=as_int(raw.get("elided")), gists=as_int(raw.get("gists")))
         case "loop.compact.dropped":
             raw_calls = raw.get("calls", ()) or ()
             calls = tuple(str(c) for c in raw_calls) if isinstance(raw_calls, (list, tuple)) else ()
-            return CompactDropped(n=_as_int(raw.get("n")), calls=calls)
+            return CompactDropped(n=as_int(raw.get("n")), calls=calls)
         case "loop.compact.gists":
             return CompactGists(
-                gisted=_as_int(raw.get("gisted")), demoted=_as_int(raw.get("demoted"))
+                gisted=as_int(raw.get("gisted")), demoted=as_int(raw.get("demoted"))
             )
         case "loop.compact.summarise.done":
             return CompactSummarised()

@@ -41,7 +41,7 @@ def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
 def test_coercion_matches_the_folds_historical_defaults() -> None:
     # Missing fields default, not raise (the fold never validated).
     assert ev.parse_event({"type": "role.call"}) == ev.RoleCall(role="", model="", provider="")
-    # _as_int swallows a non-numeric token to 0 (role.result context math).
+    # as_int swallows a non-numeric token to 0 (role.result context math).
     assert ev.parse_event({"type": "role.result", "tokens_in": "nope"}).tokens_in == 0  # type: ignore[union-attr]
     # ok tolerates the legacy stringified booleans: "True" folds ok, "False"
     # folds FAILED. bool()-coercion read any non-empty string -- "False"

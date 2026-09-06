@@ -29,7 +29,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from agent6.types import SESSION_KINDS
-from agent6.viewmodel.events import SESSION_START_EVENTS, event_epoch, tool_result_ok
+from agent6.viewmodel.events import SESSION_START_EVENTS, as_int, event_epoch, tool_result_ok
 
 # Terminal control sequences in MODEL-AUTHORED text and command output.
 # Default-deny, not a CSI-only blocklist: stripping CSI alone left OSC intact
@@ -305,11 +305,40 @@ def _mcp_unavailable_body(event: dict[str, Any]) -> str:
 
 # Events that render as a marker BETWEEN turns, each composing its own body.
 # A builder returning None renders nothing.
+def _compact_requested_body(event: dict[str, Any]) -> str:
+    focus = str(event.get("focus", "")).strip()
+    return f"compaction requested: {focus}" if focus else "compaction requested"
+
+
+def _compact_done_body(event: dict[str, Any]) -> str:
+    """Tier 2 replaced the history above this line with a summary."""
+    chars = as_int(event.get("summary_chars"))
+    kept = as_int(event.get("kept_turns"))
+    return f"context compacted: {chars:,}-char summary, {kept} recent turns kept verbatim"
+
+
+def _compact_failed_body(event: dict[str, Any]) -> str:
+    error = str(event.get("error", "")).strip()
+    return f"compaction failed: {error}" if error else "compaction failed"
+
+
+def _compact_refused_body(event: dict[str, Any]) -> str:
+    reason = str(event.get("reason", "")).strip()
+    return f"compaction refused: {reason}" if reason else "compaction refused"
+
+
 _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "mcp.server_unavailable": _mcp_unavailable_body,
     "loop.parallel.dispatched": _parallel_dispatched_body,
     "loop.parallel.joined": _parallel_joined_body,
     "loop.parallel.failed": _parallel_failed_body,
+    # Compaction rewrites the history the reader is looking at: the surface
+    # that promised a `/compact` "applies before the next model call" is the
+    # one that says it did, failed, or was refused.
+    "loop.compact.requested": _compact_requested_body,
+    "loop.compact.summarise.done": _compact_done_body,
+    "loop.compact.summarise.failed": _compact_failed_body,
+    "loop.compact.refused": _compact_refused_body,
 }
 
 
