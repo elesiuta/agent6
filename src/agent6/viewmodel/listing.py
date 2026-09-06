@@ -573,16 +573,16 @@ def _tolerant_usd(raw: object, last_good: float) -> float:
 def finished_needs_new_work(session_dir: Path) -> bool:
     """Whether resuming this run would have nothing to do.
 
-    True only when the agent ENDED it by calling `finish_session`: the resumed
-    leg spends a call, answers in prose with no tool use, records a
-    silent_finish, and leaves a run that passed reading as failed for a tree
-    nobody touched. Every other ending -- budget_exhausted, provider_error,
-    steer_abort, a red verify -- is exactly what resume is for. Read through
-    the same fold the listing uses, so a refusal and the status it contradicts
-    cannot disagree.
+    True only when the agent ENDED it by calling `finish_session` over a tree
+    no gate observed red: the resumed leg spends a call, answers in prose
+    with no tool use, records a silent_finish, and leaves a run that passed
+    reading as failed for a tree nobody touched. Every other ending --
+    budget_exhausted, provider_error, steer_abort, a finish over a red
+    verify -- is exactly what resume is for. Read through the same fold the
+    listing uses, so a refusal and the status it contradicts cannot disagree.
     """
     scan = scan_session_log(session_dir / LOGS_NAME)
-    return scan.finished and scan.end_reason == "finish_session"
+    return scan.finished and scan.end_reason == "finish_session" and scan.all_passed is not False
 
 
 def needs_new_work_refusal(session_id: str) -> str:

@@ -24,6 +24,7 @@ from agent6.viewmodel import (
     task_snippet,
 )
 from agent6.viewmodel.format import format_branch, format_compare, format_lineage
+from agent6.viewmodel.listing import finished_needs_new_work
 
 
 def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
@@ -342,6 +343,29 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: Path)
     ]
     rd = _write_run(tmp_path, "runs", "r-legs", resumed)
     assert summarize_session_dir(rd).verify_ok is None
+
+
+def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: Path) -> None:
+    """`finished_needs_new_work` read only the end reason, so a finish_session
+    over an OBSERVED red gate (reason kept, all_passed False) was refused a
+    plain resume on every surface, against its own rule that a red verify is
+    what resume is for."""
+    red: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+        {"type": "session.end", "all_passed": False, "reason": "finish_session"},
+    ]
+    assert finished_needs_new_work(_write_run(tmp_path, "runs", "r-red", red)) is False
+    green: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+    ]
+    assert finished_needs_new_work(_write_run(tmp_path, "runs", "r-green", green)) is True
+    gateless: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "session.end", "all_passed": None, "reason": "finish_session"},
+    ]
+    assert finished_needs_new_work(_write_run(tmp_path, "runs", "r-none", gateless)) is True
 
 
 def test_summary_ask_reads_answered_not_passed(tmp_path: Path) -> None:
