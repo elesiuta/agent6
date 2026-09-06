@@ -86,11 +86,14 @@ def test_repo_id_stays_a_usable_directory_name(tmp_path: Path, segment: str) -> 
     """The filesystem limit is 255 BYTES per component. Capping CHARACTERS gave
     a 271-byte name for a CJK path, and every state-dir command died with an
     unhandled ENAMETOOLONG."""
-    deep = tmp_path.joinpath(*[f"{segment}{i}" for i in range(30)])
-    deep.mkdir(parents=True)
+    # Rooted at `/`: under `tmp_path` the ASCII prefix would take the whole
+    # head cut, leaving only the tail cut inside a multi-byte segment.
+    deep = Path("/", *[f"{segment}{i}" for i in range(30)])
     rid = paths.repo_id(deep)
     assert len(rid.encode()) < 255
-    assert rid == rid.encode().decode()  # no character was split in half
+    # Every kept character comes from the path, a separator or the hex tail:
+    # a character split at the byte cut would decode to something else.
+    assert set(rid) <= set(str(deep.resolve()) + "-0123456789abcdef")
     (tmp_path / rid).mkdir()  # the real filesystem accepts it
 
 
