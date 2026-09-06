@@ -162,6 +162,7 @@ agent6 ask "how does the task-graph curator work?"
 - `--pin "<text>"`: an instruction restated every turn, so it survives compaction (`/pin` does the same mid-run)
 - `--from <id>`: seed the run from another session (its task, outcome, diff and, for a plan, its text); a plan id with no task runs that plan
 - `--decompose`: break the task into a task graph up front (`prompt.decompose`); `--skill NAME` puts a skill in the prompt (`[skills]`)
+  - an installed skill whose text gates on a person ("get your partner's approval before ...") drives an unattended run into `ask_user` on every task: `agent6 skills disable NAME` keeps it out of the index
 - `--session-id ID`: name the new session yourself (default: a generated id)
 - `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: everything the model receives on the first call (system prompt, tool definitions, the first user message)
 
