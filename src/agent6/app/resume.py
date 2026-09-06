@@ -590,7 +590,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         for line in agents_md_notices(cwd):
             reporter.note(line)
 
-        tui_enabled = frontend.should_spawn_tui(tui, False, mode)
+        tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
         refusal = headless_approval_refusal(
             cfg,
             tui_enabled=tui_enabled,

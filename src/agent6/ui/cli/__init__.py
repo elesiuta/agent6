@@ -98,6 +98,9 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         # the first commit.
         error("-i needs a TTY on stdin (the REPL reads it); drop -i for a headless run.")
         return 2
+    if args.interactive and args.tui:
+        error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
+        return 2
     parallel = getattr(args, "parallel", "")
     if parallel and (args.interactive or args.tui):
         error("--parallel cannot combine with -i or --tui (each lane runs headless and detached).")
@@ -271,6 +274,9 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         sandbox_overrides=SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
     )
+    # The TUI owns its screen, so it does not hand the terminal back to a prompt.
+    if args.tui:
+        return rc
     return _prompt_for_the_next_input(args, rc, session_id)
 
 
@@ -504,6 +510,9 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
     if getattr(args, "interactive", False) and not sys.stdin.isatty():
         # Same terminal need as `run -i` (the REPL reads stdin).
         error("-i needs a TTY on stdin (the REPL reads it); drop -i for a headless resume.")
+        return 2
+    if getattr(args, "interactive", False) and args.tui:
+        error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
         return 2
     rc = _cmd_resume(
         args.config,

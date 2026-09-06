@@ -87,7 +87,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             "Open the full-screen TUI on the run (the conversation view; Ctrl+D"
             " toggles the dashboard) instead of the default headless CLI stream."
-            " Needs a TTY. With -i the REPL wins: --tui warns and stays headless."
+            " Needs a TTY; not with -i (the REPL wants the terminal too)."
             " (Or run `agent6 tui` and start the run from there.)"
         ),
     )

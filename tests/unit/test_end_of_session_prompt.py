@@ -398,3 +398,81 @@ def test_a_lone_slash_word_is_refused_not_sent_as_a_task(
     err = capsys.readouterr().err
     assert "/shells acts in a composer or the pause menu" in err
     assert "'/cost' is not sent as a task" in err
+
+
+def test_i_with_tui_is_refused_before_a_leg_starts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`-i` and `--tui` both want the terminal: the pair is refused up front,
+    for `run` and `resume` alike. It was degraded in silence (`resume` spawned
+    the TUI and armed the REPL on the same tty, stalling after its first
+    commit) and the dispatchers gated the follow-up prompt on the raw flag."""
+    import agent6.ui.cli.resume as resume_mod
+    import agent6.ui.cli.run as run_mod
+    from agent6.ui import cli
+
+    def _never(*_a: object, **_k: object) -> int:
+        raise AssertionError("the leg must not start")
+
+    monkeypatch.setattr(run_mod, "_cmd_run", _never)
+    monkeypatch.setattr(resume_mod, "_cmd_resume", _never)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    run_args = _run_args(
+        interactive=True,
+        tui=True,
+        parallel="",
+        session_id="",
+        standing="",
+        seed_from="",
+        task="do a thing",
+        skill=[],
+        pins=[],
+        decompose=False,
+    )
+    assert cli._dispatch_run(run_args) == 2  # pyright: ignore[reportPrivateUsage]
+    resume_args = _run_args(interactive=True, tui=True, session_id="runny-one-AAAAAA", steer="")
+    assert cli._dispatch_resume(resume_args) == 2  # pyright: ignore[reportPrivateUsage]
+    err = capsys.readouterr().err
+    assert err.count("-i cannot combine with --tui") == 2
+
+
+def _plan_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """A `plan` whose leg is a fake that writes a finished session; returns
+    the prompts the end-of-session prompt asked."""
+    import agent6.ui.cli.run as run_mod
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    asked: list[str] = []
+
+    def fake_cmd_run(*_a: object, **kw: object) -> int:
+        layout = SessionLayout(
+            state_dir=state_dir(tmp_path), session_id=str(kw["session_id"]), subdir="plans"
+        )
+        layout.session_dir.mkdir(parents=True, exist_ok=True)
+        (layout.session_dir / "logs.jsonl").write_text(
+            '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'
+            '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+            encoding="utf-8",
+        )
+        return 0
+
+    monkeypatch.setattr(run_mod, "_cmd_run", fake_cmd_run)
+    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda p="": (asked.append(p), "/exit")[1])
+    return asked
+
+
+def test_plan_tui_does_not_hand_the_terminal_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`plan --tui` ends where the TUI ends, as `run --tui` does; the plan
+    dispatcher alone still handed the terminal back to the follow-up prompt."""
+    from agent6.ui.cli import main
+
+    asked = _plan_harness(tmp_path, monkeypatch)
+    assert main(["plan", "--tui", "do a thing"]) == 0
+    assert asked == []
+    asked = _plan_harness(tmp_path, monkeypatch)
+    assert main(["plan", "do a thing"]) == 0
+    assert asked == ["next (/exit to finish): "]
