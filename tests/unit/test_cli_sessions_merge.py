@@ -67,6 +67,44 @@ def _setup_run(
     return base_sha
 
 
+def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The chain is the run's record and the branch is a view of it. A commit of
+    the operator's on the run branch takes it off the chain, and every later
+    chain commit then lands on the chain alone: merging the branch there landed
+    a frozen prefix of the run, said "merged", and stamped it so."""
+    monkeypatch.chdir(tmp_path)
+    base = _setup_run(tmp_path, "frozen-branch1", commits=[("a.txt", "one\n", "iter 1")])
+    chain = chain_ref_for("frozen-branch1")
+    _git(tmp_path, "update-ref", chain, "agent6/frozen-branch1")
+    # The operator's own commit moves the branch off the chain.
+    _git(tmp_path, "checkout", "-q", "agent6/frozen-branch1")
+    (tmp_path / "theirs.txt").write_text("the operator's\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "operator work")
+    _git(tmp_path, "checkout", "-q", "main")
+    # The run keeps committing: on the chain, which the branch no longer covers.
+    tree = _git(tmp_path, "rev-parse", f"{chain}^{{tree}}")
+    later = subprocess.run(
+        ["git", "-C", str(tmp_path), "commit-tree", tree, "-p", chain, "-m", "iter 2"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t"},
+    ).stdout.strip()
+    _git(tmp_path, "update-ref", chain, later)
+
+    assert main(["sessions", "merge", "frozen-branch1"]) == 0
+
+    out = capsys.readouterr().out
+    assert chain in out, out
+    assert _git(tmp_path, "log", "--format=%s", "main").splitlines()[0] != "operator work"
+    merged = _git(tmp_path, "rev-parse", "main")
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..{merged}") == "1"
+    assert (tmp_path / "a.txt").name in _git(tmp_path, "show", "--name-only", "--format=", merged)
+
+
 def test_runs_merge_squash_is_one_commit_and_records_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

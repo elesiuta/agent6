@@ -44,6 +44,7 @@ def test_merge_planner_passes_the_explicit_config_path(
     monkeypatch.setattr(sessions_merge, "worker_is_alive", _dead)
 
     class _Manifest:
+        session_id = "sid"
         base_branch = "main"
         base_sha = "0" * 40
         run_branch = "agent6/x"

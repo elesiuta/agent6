@@ -24,6 +24,7 @@ from agent6.git_ops import (
     chain_tip,
     delete_ref,
     git_hardening_flags,
+    is_ancestor,
     list_run_commits,
     run_branch_for,
     run_branch_tips,
@@ -255,12 +256,23 @@ class _CommitsRef:
 
 
 def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
-    """The one owner of the ref fallback: the visible run branch when the
-    manifest records one, else the run's hidden chain ref when it exists (the
-    chain is created lazily by the first commit, so a missing ref means the
-    run recorded nothing)."""
-    if manifest.run_branch:
+    """The one owner of the ref fallback: the visible run branch while it still
+    covers the run's chain, else the chain ref itself (the chain is created
+    lazily by the first commit, so a missing ref means the run recorded
+    nothing).
+
+    The chain is the record and the branch is a view of it: a commit of the
+    operator's on the run branch takes it off the chain, and the run's later
+    commits then land on the chain alone. Reading the branch there merged and
+    diffed a frozen prefix of the run and called it the whole."""
+    chain = chain_ref_for(manifest.session_id)
+    chain_head = chain_tip(cwd, chain)
+    if manifest.run_branch and (
+        chain_head is None or is_ancestor(cwd, chain_head, manifest.run_branch)
+    ):
         return _CommitsRef(head_ref=manifest.run_branch, reason="")
+    if chain_head is not None:
+        return _CommitsRef(head_ref=chain, reason="")
     if manifest.parked_task:
         # A parked run never started, so `base..HEAD` is whatever the run that
         # HELD the checkout committed -- the one it was parked behind.
@@ -274,10 +286,7 @@ def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
             head_ref="",
             reason=f"{article} {manifest.mode} does not write to the repo, so it made no commits",
         )
-    chain = chain_ref_for(manifest.session_id)
-    if chain_tip(cwd, chain) is None:
-        return _CommitsRef(head_ref="", reason="this run recorded no commits")
-    return _CommitsRef(head_ref=chain, reason="")
+    return _CommitsRef(head_ref="", reason="this run recorded no commits")
 
 
 def _resolve_session_manifest(
