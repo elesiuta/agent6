@@ -32,6 +32,9 @@ import sys
 from collections.abc import Callable
 from typing import TextIO
 
+from agent6.ui.cli._terminal_guard import raw_stream
+from agent6.viewmodel.transcript import scrub_terminal_controls
+
 try:  # unix only; Windows callers gate on menu_capable()
     import termios
     import tty
@@ -190,6 +193,11 @@ class _Reader:
         visible = self.line[start : start + avail]
         out = ["\r\x1b[J", prompt, visible]
         rows, highlight = self._rows()
+        # A row's text is data (a history line, a command's blurb), scrubbed
+        # here: this writer bypasses the stream's scrubber for its movement.
+        rows = [
+            (scrub_terminal_controls(label), scrub_terminal_controls(dim)) for label, dim in rows
+        ]
         if rows:
             pad = max(len(label) for label, _dim in rows)
             for i, (label, dim) in enumerate(rows):
@@ -458,8 +466,9 @@ def menu_input(
     if write is None:
 
         def _stdout_write(text: str) -> None:
-            sys.stdout.write(text)
-            sys.stdout.flush()
+            out = raw_stream(sys.stdout)
+            out.write(text)
+            out.flush()
 
         write = _stdout_write
 

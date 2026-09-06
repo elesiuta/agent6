@@ -23,6 +23,7 @@ from threading import Event, RLock, Thread
 from typing import Any, TextIO
 
 from agent6.ui.cli._task_tree import task_tree_lines
+from agent6.ui.cli._terminal_guard import raw_stream
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.format import spinner_frame
 from agent6.viewmodel.listing import task_snippet
@@ -304,7 +305,7 @@ class ConsoleView:
         """Erase the transient spinner line so real output prints cleanly. Caller
         holds the lock (or is the constructor before the thread starts)."""
         if self._status_active:
-            self._out.write("\r\x1b[2K")  # carriage return + erase whole line
+            raw_stream(self._out).write("\r\x1b[2K")  # carriage return + erase whole line
             self._status_active = False
 
     def _raw(self, text: str) -> None:
@@ -356,7 +357,8 @@ class ConsoleView:
                 glyph = spinner_frame(self._spin)
                 hint = "  (Ctrl-C to steer or stop)" if idle >= 20 else ""
                 body = f"{glyph} working… {int(idle)}s{hint}"
-                self._out.write("\r\x1b[2K" + (self._c("dim", body) if self._color else body))
+                raw_stream(self._out).write("\r\x1b[2K")
+                self._out.write(self._c("dim", body) if self._color else body)
                 self._out.flush()
                 self._status_active = True
 

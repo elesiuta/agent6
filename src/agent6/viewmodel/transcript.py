@@ -58,6 +58,27 @@ def scrub_terminal_controls(text: str) -> str:
     return _CONTROL_RE.sub("", text)
 
 
+# What the CLI's stdout, stderr and /dev/tty let through, whoever wrote it:
+# SGR styling, conceal (SGR 8, which hides the text after it) excepted; a
+# 256-colour grey (`38;5;8`) drops with it, and its text stays. A
+# colour cannot move the cursor or rewrite a line; the approval prompt drops
+# styling from the text under judgment all the same. The spinners' erase idiom
+# and the composer's cursor movement go under the wrapper
+# (`ui/cli/_terminal_guard.raw_stream`), since a carriage return and an erase
+# in a file name would forge the line. Anything else the process prints (a
+# commit subject, a summary, a task) is text, wherever it came from.
+_TERMINAL_RE = re.compile(
+    r"(?P<own>\x1b\[(?!(?:[0-9;]*;)?0*8(?:;|m))[0-9;]*m)|" + _CONTROL_RE.pattern, re.DOTALL
+)
+
+
+def scrub_terminal_output(text: str) -> str:
+    """`scrub_terminal_controls` for everything the CLI writes to its terminal:
+    SGR styling passes (conceal excepted), every other control sequence and
+    stray control character drops."""
+    return _TERMINAL_RE.sub(lambda m: m.group("own") or "", text)
+
+
 # Shared glyph vocabulary (text characters, not graphics, so every terminal font
 # renders them). One place so cli/tui/web agree.
 CALL = "→"  # a tool call

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import io
 import os
 import sys
 import tempfile
@@ -21,6 +20,7 @@ from agent6.errors import OperatorError
 from agent6.events import EventWriteError
 from agent6.paths import state_dir
 from agent6.ui.cli._common import _enforce_root_policy, error, refuse
+from agent6.ui.cli._terminal_guard import guarded_terminal
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
 
 
@@ -55,31 +55,32 @@ def cli_main(argv: list[str] | None = None) -> int:
     `SystemExit` (bad args / --help) is not an `Exception` and passes
     through untouched.
     """
-    try:
-        return main(argv)
-    except KeyboardInterrupt:
-        print("\nagent6: interrupted.", file=sys.stderr)
-        return 130
-    except OperatorError as exc:
-        error(f"{exc}")
-        return 2
-    except Exception as exc:  # top-level last resort; re-raised under AGENT6_DEBUG
-        if os.environ.get("AGENT6_DEBUG") == "1":
-            raise
-        error(f"unexpected {type(exc).__name__}: {exc}")
+    with guarded_terminal():
         try:
-            fd, path = tempfile.mkstemp(prefix="agent6-crash-", suffix=".log")
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                traceback.print_exc(file=fh)
-            print(f"  full traceback: {path}", file=sys.stderr)
-        except OSError:
-            pass  # never let crash-reporting itself crash the exit path
-        print(
-            "  re-run with AGENT6_DEBUG=1 to see it inline; if it persists, report it:"
-            " https://github.com/agent6-dev/agent6/issues",
-            file=sys.stderr,
-        )
-        return 1
+            return main(argv)
+        except KeyboardInterrupt:
+            print("\nagent6: interrupted.", file=sys.stderr)
+            return 130
+        except OperatorError as exc:
+            error(f"{exc}")
+            return 2
+        except Exception as exc:  # top-level last resort; re-raised under AGENT6_DEBUG
+            if os.environ.get("AGENT6_DEBUG") == "1":
+                raise
+            error(f"unexpected {type(exc).__name__}: {exc}")
+            try:
+                fd, path = tempfile.mkstemp(prefix="agent6-crash-", suffix=".log")
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    traceback.print_exc(file=fh)
+                print(f"  full traceback: {path}", file=sys.stderr)
+            except OSError:
+                pass  # never let crash-reporting itself crash the exit path
+            print(
+                "  re-run with AGENT6_DEBUG=1 to see it inline; if it persists, report it:"
+                " https://github.com/agent6-dev/agent6/issues",
+                file=sys.stderr,
+            )
+            return 1
 
 
 def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
@@ -829,10 +830,6 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
 
 
 def main(argv: list[str] | None = None) -> int:
-    # A redirected stdout is block-buffered, so a run's log file would stay
-    # empty until exit: line-buffer it so every line lands as it is printed.
-    if isinstance(sys.stdout, io.TextIOWrapper):
-        sys.stdout.reconfigure(line_buffering=True)
     parser = build_parser()
     argcomplete.autocomplete(parser)
     raw = sys.argv[1:] if argv is None else argv

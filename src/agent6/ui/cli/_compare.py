@@ -25,6 +25,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.providers import Provider, TranscriptSink
 from agent6.ui.cli._console_view import _HEARTBEAT_TICK_S
+from agent6.ui.cli._terminal_guard import raw_stream
 from agent6.viewmodel.format import spinner_frame
 from agent6.workflows.judge import CandidateBrief
 
@@ -48,7 +49,8 @@ def _judging_status() -> Generator[None]:
     def spin() -> None:
         i = 0
         while True:
-            sys.stdout.write(f"\r\x1b[2K{spinner_frame(i)} judging...")
+            raw_stream(sys.stdout).write("\r\x1b[2K")
+            sys.stdout.write(f"{spinner_frame(i)} judging...")
             sys.stdout.flush()
             i += 1
             if stop.wait(_HEARTBEAT_TICK_S):
@@ -61,7 +63,7 @@ def _judging_status() -> Generator[None]:
     finally:
         stop.set()
         thread.join(timeout=1.0)
-        sys.stdout.write("\r\x1b[2K")
+        raw_stream(sys.stdout).write("\r\x1b[2K")
         sys.stdout.flush()
 
 

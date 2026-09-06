@@ -79,6 +79,10 @@ The model sees the fixed tool set in `src/agent6/tools/schema.py`.
 Under `api_format = "claude_code"` the model runs inside the operator's installed Claude Code binary, unjailed, as the operator, with every built-in tool off (`--tools ""`).
 Its only reach into the machine is agent6's tools served over the sdk MCP tunnel, so the dispatcher, the jail, and the approval gates are unchanged; the binary holds the operator's Claude login exactly as an interactive `claude` does, and agent6 never reads it.
 
+Every line the CLI prints to the operator's terminal, on stdout, stderr or `/dev/tty`, passes one scrubber (`scrub_terminal_output`): a control sequence inside text the model influenced (a file name a command created, a commit subject, a summary, a task a plan wrote) is dropped, so it cannot write the clipboard (OSC 52), retitle the window or forge a line.
+SGR styling is the allowlist, conceal excepted; an approval prompt drops every sequence from the text under judgment, and the spinners and the interactive composer write their erase and cursor sequences under the wrapper, the composer with its rows scrubbed.
+The ACP and MCP stdio transports write protocol bytes to their peer, not to a terminal; the TUI and the web render text as text by construction.
+
 ### 2. Sandbox
 
 Every tool call that allows the model to run arbitrary commands (`run_command`, `run_verify_command`, backgrounded commands, and MCP servers) runs in a jail at the effective isolation level.

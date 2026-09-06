@@ -39,6 +39,7 @@ from agent6.ui.cli._menu_input import menu_capable, read_line_until
 from agent6.ui.cli._steer_menu import BtwRunner, pause_line, pause_menu
 from agent6.ui.steer import SteerState, file_bridge_steer
 from agent6.viewmodel.format import format_usd
+from agent6.viewmodel.transcript import scrub_terminal_output
 
 
 @contextlib.contextmanager
@@ -142,12 +143,17 @@ def _select_revised_prompt(
         print("[agent6] choose accept, original, edit, or quit.", file=sys.stderr)
 
 
+# The controlling terminal, by path: a TUI redirects the std streams to its
+# console log, and the writers below reach the operator past them.
+TTY_PATH = "/dev/tty"
+
+
 def tty_message(text: str) -> None:
-    """Print to the controlling terminal directly, bypassing any stdout/stderr
-    redirection (the TUI redirects the run's std streams to a log file)."""
+    """Print to the controlling terminal directly, through the same scrubber
+    as stdout."""
     try:
-        with open("/dev/tty", "w", encoding="utf-8") as tty:  # noqa: PTH123
-            tty.write(text)
+        with open(TTY_PATH, "w", encoding="utf-8") as tty:  # noqa: PTH123
+            tty.write(scrub_terminal_output(text))
             tty.flush()
             return
     except OSError:
@@ -175,7 +181,7 @@ def tty_prompt(
         # requires a seekable stream and a tty is not -- so every /dev/tty
         # prompt silently used the stdin fallback (or, without the fallback,
         # returned no answer at all).
-        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+        fd = os.open(TTY_PATH, os.O_RDWR | os.O_NOCTTY)
         # Discard type-ahead before prompting (the sudo/ssh rule): text typed
         # before this prompt existed was aimed at something else -- e.g. a
         # pause-menu command typed during the "pausing after this step" window
@@ -198,7 +204,7 @@ def tty_prompt(
             return None
     try:
         with tty:
-            tty.write(text)
+            tty.write(scrub_terminal_output(text))
             line = read_line_until(tty, fd, until)
             if line is None and until is not None:
                 # Whatever was typed was aimed at a prompt that is over.

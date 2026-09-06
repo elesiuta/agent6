@@ -5,7 +5,10 @@ typing steers, history recalls; input()'s EOF/interrupt contract holds."""
 
 from __future__ import annotations
 
+import io
 import os
+import re
+import sys
 
 import pytest
 
@@ -14,6 +17,7 @@ from agent6.ui.cli._menu_input import (
     menu_input,
 )
 from agent6.ui.cli._steer_menu import MENU_COMMANDS
+from agent6.ui.cli._terminal_guard import ScrubbedStream
 
 
 def _chars(text: str) -> list[str]:
@@ -182,8 +186,6 @@ def test_input_row_never_exceeds_the_terminal_width(monkeypatch: pytest.MonkeyPa
     math and every keystroke walked a garbled menu down the screen. The WHOLE
     row -- prompt clamped first, line windowed into the remainder -- must fit
     width-1, like the menu rows already do."""
-    import re
-
     from agent6.ui.cli._menu_input import _Reader  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.cli._steer_menu import PROMPT
 
@@ -223,3 +225,18 @@ def test_read_key_decodes_bytes_from_a_pipe() -> None:
     finally:
         os.close(r)
         os.close(w)
+
+
+def test_the_default_writer_reaches_the_terminal_under_the_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`cli_main` wraps stdout in a scrubber that drops cursor movement, and
+    the composer's menu lost its cursor-up (every render garbled). The
+    composer writes to the stream under the wrapper, its rows scrubbed."""
+    raw = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", ScrubbedStream(raw))
+    it = iter(["tab", "enter"])
+    menu_input("P> ", {"/a": "x\x1b]52;c;aGVsbG8=\x07y", "/b": "z"}, [], read_key=lambda: next(it))
+    out = raw.getvalue()
+    assert re.search(r"\x1b\[\d+A", out), out
+    assert "xy" in out and "\x1b]" not in out and "\x07" not in out

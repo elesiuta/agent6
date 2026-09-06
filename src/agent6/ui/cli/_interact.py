@@ -41,6 +41,7 @@ from agent6.ui.cli._steer import (
 )
 from agent6.ui.steer import SteerState
 from agent6.viewmodel import approval_parts
+from agent6.viewmodel.transcript import scrub_terminal_controls
 
 
 def _pause(cv: ConsoleView | None) -> contextlib.AbstractContextManager[None]:
@@ -85,7 +86,9 @@ def default_stdin_approver(
     the sibling of the `->` call line that follows an allow."""
     suffix = "[y/N/a/d]  (a = allow all, d = deny all, this session): " if standing else "[y/N]: "
     bold, dim, yellow, reset = "\033[1m", "\033[2m", "\033[33m", "\033[0m"
-    head, payload = approval_parts(prompt)
+    # The text under judgment carries no sequence at all, styling included:
+    # conceal (SGR 8) hides the part of a command it wraps.
+    head, payload = approval_parts(scrub_terminal_controls(prompt))
     if payload:
         body = "\n".join(f"    {ln}" for ln in payload.splitlines())
         rendered = (
