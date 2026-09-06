@@ -295,3 +295,28 @@ def test_a_command_runs_to_the_end_when_nobody_asked_to_stop(tmp_path: Path) -> 
         assert waited > 1.5, f"returned in {waited:.1f}s; the command sleeps 2"
     finally:
         d.close()
+
+
+def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: Path) -> None:
+    """plan and ask permit `run_command` but withhold `read_background` and
+    `stop_background`, so a check-in hand-back there left the model holding a
+    handle it could neither poll nor stop, with the command running until
+    teardown. Where the hand-back is unusable the command runs bounded."""
+    root = tmp_path / "repo"
+    root.mkdir(exist_ok=True)
+    session_dir = tmp_path / "session"
+    session_dir.mkdir(exist_ok=True)
+    cfg = Config.model_validate(
+        {"sandbox": {"run_commands": "yes"}, "workflow": {"command_checkin_s": 0.3}}
+    )
+    d = ToolDispatcher(
+        root=root,
+        config=cfg,
+        isolation="none",
+        session_dir=session_dir,
+        use_jail_session=True,
+        mode="plan",
+    )
+    out = _run(d, "sleep 1; echo done")
+    assert out.get("background_id") is None and not out.get("still_running"), out
+    assert out["returncode"] == 0 and "done" in out["stdout"]

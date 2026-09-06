@@ -905,13 +905,20 @@ class ToolDispatcher:
         instead of a guess about whether a long one is stuck.
 
         The check-in needs a session (something must stay alive to own the
-        running command) and a background roster to hand it to; without either
-        this is an ordinary bounded run.
+        running command), a background roster to hand it to, and a mode whose
+        tools can read and stop the hand-back (`_start_detached`'s rule: plan
+        and ask withhold both); without any of these this is an ordinary
+        bounded run.
         """
         session = self._run_session()
         shells = self._shells
         checkin = self._config.workflow.command_checkin_s
-        if session is None or shells is None or checkin <= 0:
+        if (
+            session is None
+            or shells is None
+            or checkin <= 0
+            or ReadBackgroundInput.TOOL_NAME not in mode_tools(self._mode).permitted
+        ):
             return self._run_argv_in_jail(argv, label="run_command")
         try:
             policy = self._jail_policy(argv)
