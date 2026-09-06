@@ -1755,3 +1755,27 @@ def test_remove_worktree_reports_a_tree_it_could_not_delete(tmp_path: Path) -> N
         assert held.is_dir()
     finally:
         held.chmod(0o700)
+
+
+def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: Path) -> None:
+    """`diff.noprefix`, `diff.mnemonicPrefix` and `diff.srcPrefix` in the
+    operator's git config changed every header agent6 reads (`i/`, `w/`, none),
+    so the panel's hunk map filed each file under a path no citation matched
+    and every block downgraded to a warning in silence."""
+    from agent6.git_ops import diff_since
+    from agent6.workflows._panel import diff_hunks, is_grounded
+
+    _init_repo(tmp_path)
+    base = _rev(tmp_path, "HEAD")
+    for key, value in (
+        ("diff.noprefix", "true"),
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.srcPrefix", "x/"),
+        ("diff.dstPrefix", "y/"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), "config", key, value], check=True)
+    (tmp_path / "README.md").write_text("hi\nthere\n", encoding="utf-8")
+    diff = diff_since(tmp_path, base)
+    assert "diff --git a/README.md b/README.md" in diff
+    assert "--- a/README.md" in diff and "+++ b/README.md" in diff
+    assert is_grounded("README.md:2", diff_hunks(diff))

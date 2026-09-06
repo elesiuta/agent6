@@ -133,6 +133,9 @@ def _git() -> str:
 # `filter.*` and `merge.*.driver` -- are the same RCE class but have no blanket
 # `-c` off switch, so `_repo_driver_overrides` neutralizes each by NAME, gated
 # by `run_repo_filters` (the Git-LFS opt-in, since LFS uses exactly these).
+# The diff prefix family pins `a/` and `b/` headers: `diff_hunks` and every
+# path a reviewer cites read them, and an operator's `diff.noprefix` or
+# `diff.mnemonicPrefix` would file each file under a path no citation matches.
 _GIT_HARDENING: tuple[str, ...] = (
     "-c",
     "core.fsmonitor=false",
@@ -140,6 +143,14 @@ _GIT_HARDENING: tuple[str, ...] = (
     "diff.external=",
     "-c",
     "commit.gpgsign=false",
+    "-c",
+    "diff.noprefix=false",
+    "-c",
+    "diff.mnemonicPrefix=false",
+    "-c",
+    "diff.srcPrefix=a/",
+    "-c",
+    "diff.dstPrefix=b/",
 )
 
 # Whether the repo's own `.git/hooks/*` run during agent6's git ops (notably the
