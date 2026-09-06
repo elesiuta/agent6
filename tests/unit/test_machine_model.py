@@ -758,3 +758,20 @@ def test_wait_every_secs_accepts_a_bare_integer() -> None:
     assert templated.every_secs == "{{ config.poll }}"
     with pytest.raises(ValidationError):
         WaitState.model_validate({"kind": "wait", "every_secs": 1.5, "on": {"tick": "done"}})
+
+
+def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: Path) -> None:
+    """`parse_type` resolves `str`/`int`/`float`/`bool`/`json` before it looks
+    at the declared schemas, so `[schemas.str]` loaded clean and could never be
+    named by a var or an `output_schema`."""
+    src = (
+        'machine = "m1"\nversion = 1\ninitial = "done"\n\n'
+        "[budget]\nmax_transitions = 5\n\n"
+        '[schemas.str]\nfield = { type = "str" }\n\n'
+        '[states.done]\nkind = "terminal"\nstatus = "ok"\nreason = "done"\n'
+    )
+    path = tmp_path / "m1.asm.toml"
+    path.write_text(src, encoding="utf-8")
+
+    with pytest.raises(MachineError, match="built-in type"):
+        load_machine(path)

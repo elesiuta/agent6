@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 from agent6.machine.model import (
     AGENT_LABELS,
+    BUILTIN_TYPE_NAMES,
     IDENT_RE,
     RESERVED_NAMES,
     TOOL_LABELS,
@@ -123,6 +124,13 @@ def validate_semantics(spec: MachineSpec) -> list[str]:
     for sname in spec.schemas:
         if not IDENT_RE.match(sname):
             problems.append(f"schema name {sname!r} is not a valid identifier (^[a-z][a-z0-9_]*$)")
+        elif sname in BUILTIN_TYPE_NAMES:
+            # `parse_type` resolves the built-ins before the schema names, so a
+            # schema called `str` or `json` loads clean and can never be named
+            # by a var or an `output_schema`.
+            problems.append(
+                f"schema name {sname!r} is a built-in type, so nothing could reference it"
+            )
 
     schemas, schema_problems = _resolve_schemas(spec, schema_names)
     problems.extend(schema_problems)

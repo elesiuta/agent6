@@ -45,6 +45,9 @@ IDENT_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _LIST_RE = re.compile(r"^list\[([a-z0-9_]+)\]$")
 
 _SCALARS = ("str", "int", "float", "bool")
+# What `parse_type` resolves before it looks at a machine's declared schemas,
+# so a schema of one of these names could never be referenced.
+BUILTIN_TYPE_NAMES = frozenset({*_SCALARS, "json"})
 RESERVED_NAMES = frozenset({"vars", "operator", "code", "agent", "result"})
 
 AGENT_LABELS = frozenset({"ok", "failed", "budget_exhausted", "timeout"})
