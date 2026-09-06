@@ -281,6 +281,38 @@ def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one() -> None:
     assert "config add workflow.verify_command" in err
 
 
+def test_setting_a_section_keeps_its_other_leaves_and_comments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`config set context '{ ... }'` is the form a sibling-rule refusal
+    recommends. Written as one key it replaced the whole `[context]` table,
+    silently taking every other leaf and comment with it."""
+    from agent6.config.write import set_config_value
+
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    (gdir / "config.toml").write_text(
+        "[context]\n# my tuning\nkeep_recent_chars = 50000\nsummary_max_tokens = 4096\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    err = set_config_value(
+        repo_root, "context", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
+    )
+
+    assert err is None, err
+    text = (gdir / "config.toml").read_text(encoding="utf-8")
+    assert "# my tuning" in text
+    assert "keep_recent_chars = 50000" in text
+    assert "summary_max_tokens = 4096" in text
+    # Both halves of the pair land under one revalidation, so the rule spanning
+    # them sees its sibling instead of refusing each leaf on its own.
+    assert "drop_at_chars = 200000" in text and "summarise_at_chars = 400000" in text
+
+
 def test_written_value_error_catches_a_section_wide_rule() -> None:
     """A rule spanning two keys is a model_validator, and pydantic reports it at
     the SECTION -- a PARENT of the written key. Accepting a parent loc only for

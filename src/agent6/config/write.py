@@ -22,7 +22,7 @@ import difflib
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import get_args
+from typing import Any, get_args
 
 from pydantic import BaseModel, ValidationError
 from pydantic_core import ErrorDetails
@@ -223,7 +223,25 @@ def unknown_key_error(key: str) -> str:
     return f"unknown config key {key!r}{hint} (see `agent6 config show`)"
 
 
-def written_value_error(key: str, value: object) -> str | None:
+def _section_leaves(doc: dict[str, Any], key: str) -> dict[str, Any]:
+    """The scalar leaves of *key*'s own section as *doc* holds them, "" when it
+    has none. A cross-leaf rule is a `model_validator` on the section, so the
+    standalone check needs the siblings; nested tables are dropped, since a
+    child section validates on its own."""
+    parts = key.split(".")[:-1]
+    cur: Any = doc
+    for part in parts:
+        if not isinstance(cur, dict) or part not in cur:
+            return {}
+        cur = cur[part]
+    if not isinstance(cur, dict):
+        return {}
+    return {k: v for k, v in cur.items() if not isinstance(v, dict)}
+
+
+def written_value_error(
+    key: str, value: object, *, section: dict[str, Any] | None = None
+) -> str | None:
     """Validate the just-written `key = value` against the Config model on its
     own (a minimal dict, defaults for the rest), independent of the layer merge.
     A write of an invalid value into a layer that a HIGHER layer masks (e.g. a
@@ -251,7 +269,7 @@ def written_value_error(key: str, value: object) -> str | None:
     nested: dict[str, object] = {}
     cur = nested
     for part in parts[:-1]:
-        child: dict[str, object] = {}
+        child: dict[str, object] = dict(section or {}) if part == parts[-2] else {}
         cur[part] = child
         cur = child
     cur[parts[-1]] = value
@@ -321,10 +339,14 @@ def revalidate_write(
     removes it.
 
     *written* is the `(key, value)` pairs this edit wrote, each validated
-    STANDALONE via :func:`written_value_error` so a value a higher layer masks in
-    the merge is caught here, not left to explode once the mask is gone."""
+    against the section as this file now holds it (:func:`written_value_error`)
+    so a value a higher layer masks in the merge is caught here, not left to
+    explode once the mask is gone -- while a rule spanning two leaves of one
+    section can still see its sibling, whether it was already in the file or
+    written by this same edit."""
+    doc = read_toml_file(target)
     for wkey, wvalue in written:
-        value_err = written_value_error(wkey, wvalue)
+        value_err = written_value_error(wkey, wvalue, section=_section_leaves(doc, wkey))
         if value_err is not None:
             return keep_or_rollback(target, prior, value_err, held=held)
     err = merged_config_error(repo_root)
@@ -354,9 +376,21 @@ def set_config_value(
         read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
         parsed = parse_cli_value(raw_value)
-        upsert_toml_leaf(target, dotted_key, parsed)
+        if isinstance(parsed, dict):
+            # A table's own value: `config set context '{ a = 1, b = 2 }'`, the
+            # form a sibling-rule refusal recommends. Written as ONE key it
+            # replaces the whole `[table]`, taking every other leaf and comment
+            # in it with no warning; written per leaf, the siblings survive and
+            # both halves of a pair land under one revalidation.
+            fields = {k: v for k, v in parsed.items()}
+            for key, val in fields.items():
+                upsert_toml_leaf(target, f"{dotted_key}.{key}", val)
+            written = [(f"{dotted_key}.{k}", v) for k, v in fields.items()]
+        else:
+            upsert_toml_leaf(target, dotted_key, parsed)
+            written = [(dotted_key, parsed)]
         return revalidate_write(
-            repo_root, target, prior, was_valid=was_valid, held=held, written=[(dotted_key, parsed)]
+            repo_root, target, prior, was_valid=was_valid, held=held, written=written
         )
 
 
