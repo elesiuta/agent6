@@ -302,8 +302,9 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
         # terminal it owns. Otherwise tell the user a prompt is coming.
         if not frontend_is_live(session_dir):
             tty_message(
-                "\n[agent6] pausing after this step: steer / continue / stop / detach."
-                " Ctrl-C again to interrupt now.\n" + _status_suffix(session_facts)
+                "\n[agent6] pausing after this step: Enter continues, type to steer,"
+                " stop ends it, detach backgrounds it. Ctrl-C again to interrupt now.\n"
+                + _status_suffix(session_facts)
             )
 
     previous = signal.signal(signal.SIGINT, _handler)
