@@ -76,8 +76,8 @@ class ApplyEditInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Edit one file. `edits` is an array of {old_string, new_string, kind?}."
         " Each old_string occurs exactly once in the file, byte for byte."
-        ' kind="create" makes a new file and kind="overwrite" replaces an'
-        " existing file whole: for both, empty old_string, the full content in"
+        ' kind="create" makes a new file and kind="overwrite" writes the whole'
+        " file, existing or not: for both, empty old_string, the full content in"
         " new_string, the only edit in the array. An omitted kind follows the"
         ' pair: an empty old_string means "create", any other means "replace".'
         " A miss that matches exactly one region up to a uniform indent shift"
