@@ -177,7 +177,10 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
 
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     out = d.dispatch("list_tasks", {}).to_wire()
-    # Exact equality also pins list-vs-tuple: ("a.py",) != ["a.py"].
+    # Exact equality also pins list-vs-tuple: ("a.py",) != ["a.py"]. `standing`
+    # rides along because the finish gate excludes those: without it the model
+    # read three open tasks while the gate counted one, with no way to tell
+    # which.
     assert out == {
         "tasks": [
             {
@@ -188,6 +191,7 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
                 "acceptance": "",
                 "relevant_paths": [],
                 "depends_on": [],
+                "standing": False,
             },
             {
                 "id": a.id,
@@ -197,6 +201,7 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
                 "acceptance": "no bugs left",
                 "relevant_paths": ["a.py"],
                 "depends_on": [],
+                "standing": False,
             },
             {
                 "id": b.id,
@@ -206,6 +211,7 @@ def test_list_tasks_wire_shape_is_stable(tmp_path: Path) -> None:
                 "acceptance": "",
                 "relevant_paths": [],
                 "depends_on": [a.id],
+                "standing": False,
             },
         ],
         "count": 3,

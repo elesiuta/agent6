@@ -113,6 +113,10 @@ def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksRe
                 "acceptance": node.acceptance,
                 "relevant_paths": list(node.relevant_paths),
                 "depends_on": list(node.depends_on),
+                # A standing task never passes and never gates a finish. Absent
+                # here, the model read three open tasks while the finish gate
+                # counted one, with no field to tell it which.
+                "standing": node.standing,
             }
         )
     return ListTasksResult(tasks=tuple(out), count=len(out))
