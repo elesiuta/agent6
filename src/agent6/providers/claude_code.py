@@ -74,6 +74,7 @@ from agent6.providers._stream import (
     STREAM_IDLE_TIMEOUT_S,
     STREAM_THINKING_IDLE_TIMEOUT_S,
     STREAM_WATCHDOG_TICK_S,
+    safe_poll,
 )
 from agent6.providers.types import (
     ProviderAborted,
@@ -406,22 +407,12 @@ class _Watch:
         self.last_at = time.monotonic()
 
     def tick(self) -> None:
-        if _poll(self._abort):
+        if safe_poll(self._abort):
             raise ProviderAborted("run stopped by operator")
-        if _poll(self._interrupt):
+        if safe_poll(self._interrupt):
             raise ProviderInterrupted("steer requested mid-turn")
         if time.monotonic() - self.last_at > self.limit:
             raise ProviderError(f"claude produced no output for {self.limit:.0f}s")
-
-
-def _poll(fn: Callable[[], bool] | None) -> bool:
-    """An operator-state poll; a failing poll never kills the watch."""
-    if fn is None:
-        return False
-    try:
-        return bool(fn())
-    except Exception:
-        return False
 
 
 @dataclass(frozen=True, slots=True)

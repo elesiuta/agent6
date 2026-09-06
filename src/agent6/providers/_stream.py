@@ -148,6 +148,17 @@ class StreamClock:
         return (STREAM_FIRST_DATA_TIMEOUT_S, "before any data (prefill)")
 
 
+def safe_poll(fn: Callable[[], bool] | None) -> bool:
+    """An operator-state poll (should_abort, should_interrupt): absent or
+    raising, it reads False, so a poll never kills the watcher."""
+    if fn is None:
+        return False
+    try:
+        return bool(fn())
+    except Exception:
+        return False
+
+
 def record_billed_usage(
     budget: BudgetTracker | None,
     model: str,
@@ -243,24 +254,16 @@ class SseCall:
                 resp = resp_holder.get("resp")
                 if resp is None:
                     continue
-                should_stop = False
-                if self.should_abort is not None:
-                    # A poll failure must not kill the watchdog -- that would also
-                    # disable idle-hang detection. Treat it as "not aborting".
-                    with contextlib.suppress(Exception):
-                        should_stop = self.should_abort()
-                if should_stop:
+                # A poll that raised would end this thread and with it the
+                # idle-hang detection.
+                if safe_poll(self.should_abort):
                     aborted.set()
                     with contextlib.suppress(Exception):
                         resp.close()
                     return
                 # A steer request (Ctrl-C / TUI `s`) closes the stream so a long
                 # thinking turn reaches the loop's steer boundary at once.
-                should_steer = False
-                if self.should_interrupt is not None:
-                    with contextlib.suppress(Exception):
-                        should_steer = self.should_interrupt()
-                if should_steer:
+                if safe_poll(self.should_interrupt):
                     interrupted.set()
                     with contextlib.suppress(Exception):
                         resp.close()

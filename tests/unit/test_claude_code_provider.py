@@ -1120,3 +1120,14 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
         RUN_BUDGET_NUDGE,
     ]
     assert sum(len(text.encode()) for text in turn) < CLAUDE_CODE_PERSIST_BYTES
+
+
+def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
+    """A should_abort/should_interrupt that raises reads False in the wait
+    loop's tick: an exception there would end the call instead of the idle
+    clock."""
+
+    def boom() -> bool:
+        raise RuntimeError("operator state unreadable")
+
+    claude_code._Watch(boom, boom).tick()  # pyright: ignore[reportPrivateUsage]

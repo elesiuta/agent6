@@ -335,3 +335,20 @@ def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
 
     with pytest.raises(ProviderError, match="did not match the wire shape"):
         call._decode_success({}, _Resp())  # pyright: ignore[reportPrivateUsage, reportArgumentType]
+
+
+def test_a_raising_abort_poll_leaves_the_watchdog_alive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A should_abort that raises reads False in the watchdog: an exception
+    there would end the thread and with it the idle-hang detection, so the
+    prefill kill still fires."""
+    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
+
+    def boom() -> bool:
+        raise RuntimeError("operator state unreadable")
+
+    with (
+        mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse())),
+        pytest.raises(ProviderError, match="prefill"),
+    ):
+        _call(should_abort=boom, should_interrupt=boom).run(_drain)
