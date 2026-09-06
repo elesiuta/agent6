@@ -349,6 +349,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             )
 
     detach_requested = False
+    handed_to_run_task = False  # a parked submission: run_task owns its whole lifecycle
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
     repo_lock_fd: int | None = None
     try:
@@ -392,6 +393,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             saved_task = manifest.parked_task
             release_single_writer(worker_lock_fd)
             worker_lock_fd = None
+            handed_to_run_task = True
             return run_task(
                 cfg,
                 saved_task,
@@ -702,7 +704,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # this process owns the run until the background `resume` claims it, and
         # `detach_to_background` clears the pid if that spawn fails.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-        if not detach_requested:
+        if not detach_requested and not handed_to_run_task:
+            # run_task's own teardown keeps the pid through a detach there, and
+            # the spawned child then holds the file: nothing here to clear.
             clear_worker_pid(layout.session_dir)
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)

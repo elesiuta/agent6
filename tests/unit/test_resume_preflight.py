@@ -370,6 +370,65 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     assert order == ["isolation", "pid", "leg"]
 
 
+def _unconfined(*_a: object, **_k: object) -> str:
+    return "none"
+
+
+def _nothing(*_a: object, **_k: object) -> None:
+    return None
+
+
+def _finished_leg(*_a: object, **_k: object) -> object:
+    from agent6.app._leg import LegEnd
+
+    return LegEnd(0)
+
+
+def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parked submission resumed by `agent6 resume` runs through run_task,
+    whose teardown keeps worker.pid through a detach (the spawned child then
+    holds the file). resume_task's own teardown then cleared it: every listing
+    read the live child as stale until its loop wrote the pid again."""
+    import subprocess
+    from unittest.mock import MagicMock
+
+    import agent6.app.run as run_mod
+    from agent6.app._leg import LegEnd
+    from agent6.sessions.ipc import read_worker_pid, write_worker_pid
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "parked-DETACH"
+    _park_manifest(session_dir, preset="", from_flag=False)
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    child = subprocess.Popen(["sleep", "60"])
+    try:
+
+        def _leg(*_a: object, events: object, **_k: object) -> LegEnd:
+            events.emit("session.start", session_id="parked-DETACH", mode="run", user_task="t")  # type: ignore[attr-defined]
+            return LegEnd(0, detach_requested=True)
+
+        monkeypatch.setattr(run_mod, "run_leg", _leg)
+        monkeypatch.setattr(run_mod, "select_isolation", _unconfined)
+        frontend = MagicMock()
+
+        def _spawn(_cwd: Path, _sid: str, _flags: object) -> str:
+            write_worker_pid(session_dir, child.pid)  # the child claimed the run
+            return ""
+
+        frontend.spawn_detached_resume.side_effect = _spawn
+        assert resume_mod.resume_task(None, "parked-DETACH", frontend=frontend, force=False) == 0
+        assert read_worker_pid(session_dir) == child.pid
+    finally:
+        child.kill()
+        child.wait()
+
+
 def test_plan_resume_builds_the_planner_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
