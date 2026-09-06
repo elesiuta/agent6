@@ -104,7 +104,9 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " freeform review. Findings are grounded against the diff (only real,"
             " block-eligible problems gate). 0 (default) = the classic single review."
             " With [review].seats configured, N only turns the panel on: the seats"
-            " decide the reviewers."
+            " decide the reviewers. Exits 0 PASS, 1 INCONCLUSIVE (every seat"
+            " abstained), 2 refused before any seat ran, 3 budget, 4 BLOCK: the"
+            " codes `agent6 run` uses."
         ),
     )
     review_p.add_argument(

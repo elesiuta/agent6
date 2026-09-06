@@ -119,15 +119,15 @@ agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
     - the run's untracked-at-start files stay, and so do HEAD and the index; the later commits and the pre-undo commit stay on the run's ref
     - refused while another live run drives the checkout
 
-Exit codes for `agent6 run` and `resume`, for scripts to branch on:
+Exit codes for `agent6 run`, `resume` and `review --reviewers N`, for scripts to branch on:
 
 | Code | Meaning |
 |---|---|
-| `0` | finished with a green gate, or nothing to gate on |
-| `1` | the run broke (crash, provider error) |
-| `2` | operator error (bad flag or config) |
+| `0` | finished with a green gate, or nothing to gate on; a review panel's PASS |
+| `1` | the run broke (crash, provider error); a review panel whose every seat abstained |
+| `2` | operator error (bad flag or config, a refusal before anything ran) |
 | `3` | budget exhausted |
-| `4` | finished over a red or never-run verify gate |
+| `4` | finished over a red or never-run verify gate; a review panel's BLOCK |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_step = false`, stays `0`) |
 | `130` | interrupted |
 

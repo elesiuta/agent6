@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from agent6.app._setup import budget_tracker, check_provider_keys
+from agent6.app.finalize import EXIT_VERIFY_FAILED
 from agent6.app.providers import build_review_seats, build_role_provider
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import (
@@ -125,11 +126,12 @@ def _run_review_panel(
     """Run the grounded adversarial review panel over *diff* and print a verdict
     + merged findings. Read-only. Per-seat status and budget go to stderr.
 
-    The exit code carries the verdict for scripting: 0 = PASS (clean or with
-    non-blocking findings), 1 = INCONCLUSIVE (every seat abstained; nothing was
-    reviewed), 2 = BLOCK (a grounded gating finding). All three are distinct on
-    purpose: a script must be able to tell "reviewed clean" from "nothing
-    reviewed"."""
+    The exit code carries the verdict, on `agent6 run`'s scale: 0 = PASS
+    (clean or with non-blocking findings), 1 = INCONCLUSIVE (every seat
+    abstained: the review broke), 3 = budget, 4 = BLOCK (a grounded gating
+    finding: the diff is not green). 2 stays the refusal before any seat ran
+    (a missing key, no diff), so a script tells "blocked" from "not reviewed"
+    from "could not start"."""
     persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
     try:
         seats = build_review_seats(
@@ -185,7 +187,7 @@ def _run_review_panel(
     if inconclusive:
         verdict, rc = f"INCONCLUSIVE ({inconclusive_note(result)})", 1
     elif result.blocked:
-        verdict, rc = "BLOCK", 2
+        verdict, rc = "BLOCK", EXIT_VERIFY_FAILED
     elif result.merged_findings:
         verdict, rc = "PASS (with findings)", 0
     else:

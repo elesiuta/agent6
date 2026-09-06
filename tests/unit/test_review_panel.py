@@ -470,7 +470,7 @@ def test_review_exit_code_is_consistent_across_verdicts(monkeypatch: Any, capsys
         return rc
 
     assert run((passing,), blocked=False, findings=()) == 0  # PASS
-    assert run((block,), blocked=True, findings=block.findings) == 2  # BLOCK
+    assert run((block,), blocked=True, findings=block.findings) == 4  # BLOCK, run's 4
     abstain = _seat("m3", seat="s3", error="starved")
     assert run((abstain,), blocked=False, findings=()) == 1  # INCONCLUSIVE
 
