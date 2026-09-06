@@ -584,6 +584,24 @@ def _compute_wake(state: WaitState, blackboard: Mapping[str, object], now: float
     raise StateRuntimeError("a timerless `wait` has no wake instant to compute")
 
 
+def _arm_pending_wait(
+    state: WaitState,
+    blackboard: Mapping[str, object],
+    journal: MachineJournal,
+    world: World,
+    state_name: str,
+) -> PendingWait:
+    """The persisted wait record for *state_name*: the one already armed, else
+    a fresh one whose absolute wake instant is journaled before anything waits
+    on it, so a resume compares against the same instant."""
+    pending = journal.read_pending_wait()
+    if pending is None or pending.state != state_name:
+        wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
+        pending = PendingWait(state=state_name, wake_epoch=wake)
+        journal.write_pending_wait(pending)
+    return pending
+
+
 def _block_on_wait(
     state: WaitState,
     blackboard: Mapping[str, object],
@@ -595,19 +613,13 @@ def _block_on_wait(
     None when a stop request interrupted the sleep -- the pending wait stays
     armed, nothing is journaled, and the caller parks.
 
-    The deadline persists BEFORE the sleep -- the same `PendingWait` the
-    `--exit-on-wait` path keeps -- so a supervisor death mid-sleep resumes the
-    original instant instead of re-running the full interval from a fresh
-    `now()`. The driver clears it once the transition it produced is in the
-    journal: a stale wait.json would suppress this state's notify on re-entry,
-    reuse a stale wake_epoch under a later `--exit-on-wait`, and pin
-    machine_is_parked in the web UI.
+    A supervisor death mid-sleep resumes the armed instant instead of re-running
+    the full interval from a fresh `now()`. The driver clears the record once the
+    transition it produced is in the journal: a stale wait.json would suppress
+    this state's notify on re-entry, reuse a stale wake_epoch under a later
+    `--exit-on-wait`, and pin machine_is_parked in the web UI.
     """
-    pending = journal.read_pending_wait()
-    if pending is None or pending.state != state_name:
-        wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
-        pending = PendingWait(state=state_name, wake_epoch=wake)
-        journal.write_pending_wait(pending)
+    pending = _arm_pending_wait(state, blackboard, journal, world, state_name)
     woke = world.sleep_until(pending.wake_epoch)
     if woke.woke_by == "stop":
         return None
@@ -627,18 +639,12 @@ def _fire_persisted_wait(
 ) -> tuple[str, str, Fact] | None:
     """Arm-or-fire a `wait` without blocking (`--exit-on-wait`, §6).
 
-    On first reaching the wait, the absolute wake instant is computed once and
-    persisted so re-invocations compare against the same instant. Returns the
-    `(label, goto, fact)` triple when the wait fires (a signal arrived or the
-    instant has passed); returns `None` when the wait is not yet ready, leaving
-    the record persisted for the caller to yield on. The record is the
-    caller's to clear, once the transition it produced is in the journal.
+    Returns the `(label, goto, fact)` triple when the wait fires (a signal
+    arrived or the instant has passed); returns `None` when the wait is not yet
+    ready, leaving the record persisted for the caller to yield on. The record
+    is the caller's to clear, once the transition it produced is in the journal.
     """
-    pending = journal.read_pending_wait()
-    if pending is None or pending.state != state_name:
-        wake = None if _is_forever(state) else _compute_wake(state, blackboard, world.now())
-        pending = PendingWait(state=state_name, wake_epoch=wake)
-        journal.write_pending_wait(pending)
+    pending = _arm_pending_wait(state, blackboard, journal, world, state_name)
     signaled, payload = journal.take_signal()
     if signaled:
         return (

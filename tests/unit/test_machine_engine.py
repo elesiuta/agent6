@@ -1738,3 +1738,55 @@ def test_live_world_sleep_wakes_on_a_stop_request(tmp_path: Path) -> None:
     world = LiveWorld(cwd=tmp_path, journal=journal, poll_interval_s=0.01)
     write_stop_request(journal.root)
     assert world.sleep_until(_time.time() + 3600).woke_by == "stop"
+
+
+# Two waits in a row: the second must not inherit the first's wake instant.
+WAITER_CHAIN = """
+machine = "waiter_chain"
+version = 1
+initial = "first"
+
+[budget]
+max_usd = 1.0
+max_transitions = 100
+
+[states.first]
+kind = "wait"
+every_secs = "60"
+on = { tick = "second", signal = "second" }
+
+[states.second]
+kind = "wait"
+every_secs = "3600"
+on = { tick = "done", signal = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "ticked"
+"""
+
+
+def test_a_wait_never_inherits_the_previous_waits_record(tmp_path: Path) -> None:
+    """The driver clears the record only after the StepEvent is durable, so a
+    death in that window resumes at the goto state holding the previous wait's
+    record. Arming keys on the state name: `second` computes its own instant
+    instead of firing on `first`'s."""
+    journal, f = _load(tmp_path, WAITER_CHAIN)
+    spec = load_machine(f)
+    appended = journal.append
+
+    def _die_after_the_step(event: object) -> None:
+        appended(event)  # pyright: ignore[reportArgumentType]
+        if isinstance(event, StepEvent):
+            raise KeyboardInterrupt("died between the wake's StepEvent and the clear")
+
+    journal.append = _die_after_the_step  # type: ignore[method-assign]
+    with pytest.raises(KeyboardInterrupt):
+        drive(spec, journal, FakeWorld({}), live=True)
+    journal.append = appended  # type: ignore[method-assign]
+    assert journal.read_pending_wait() == PendingWait(state="first", wake_epoch=1060.0)
+
+    world = FakeWorld({})
+    assert drive(spec, journal, world, live=True).status == "ok"
+    assert world.sleep_deadlines == [4600.0]
