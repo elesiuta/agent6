@@ -58,15 +58,15 @@ def test_the_page_carries_no_cost_formatter() -> None:
 
 
 def test_the_budget_line_is_rendered_once() -> None:
-    assert budget_usd_text(0.42, partial=False, usd_cap=0.0, usd_prior_legs=0.0) == "$0.4200"
+    assert budget_usd_text(0.42, partial=False, usd_cap=0.0, usd_prior_legs=0.0) == "$0.42"
     assert budget_usd_text(0.42, partial=True, usd_cap=-1, usd_prior_legs=0.0) == (
-        "~$0.4200 (unlimited)"
+        "~$0.42 (unlimited)"
     )
     assert budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_legs=0.0) == (
-        "$0.4200 / $1.00"
+        "$0.42 / $1.00"
     )
     assert budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_legs=0.1) == (
-        "$0.4200 · leg $0.3200 / $1.00"
+        "$0.42 · leg $0.32 / $1.00"
     )
 
 
@@ -80,9 +80,9 @@ def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: Path) -> No
         ],
     )
     clean = _run(tmp_path, "clean", [{"type": "session.start", "mode": "run", "user_task": "y"}])
-    assert summary_row(summarize_session_dir(spent))["cost"] == "$0.1562"
+    assert summary_row(summarize_session_dir(spent))["cost"] == "$0.16"
     assert summary_row(summarize_session_dir(clean))["cost"] == ""
-    assert session_snapshot(spent)["budget"]["usd_text"] == "$0.1562 / $1.00"
+    assert session_snapshot(spent)["budget"]["usd_text"] == "$0.16 / $1.00"
 
     (spent / "manifest.json").write_text(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),

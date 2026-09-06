@@ -342,7 +342,7 @@ def test_status_shows_usage_from_budget_update_event(
     _cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "in=4200 out=800" in out  # latest budget.update wins, not the 0/0 loop.budget
-    assert "$0.0456" in out
+    assert "$0.05" in out
     # json carries the same
     _cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
@@ -467,7 +467,7 @@ def test_status_text_labels_leg_scoped_figures_on_a_resumed_run(
     _cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "in=300 out=50 (latest leg)" in out
-    assert "cost $0.0250 (all 2 legs)" in out
+    assert "cost $0.03 (all 2 legs)" in out
 
 
 def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(

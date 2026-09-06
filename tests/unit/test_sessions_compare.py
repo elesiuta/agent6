@@ -207,7 +207,7 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
     assert "agent6 sessions merge run-BBBB22" in out
     assert "no reviewer model configured" in out
     # Candidate spend is totaled; no judge ran, so no judge figure.
-    assert "total: candidates $0.1000" in out and "+ judge" not in out
+    assert "total: candidates $0.10" in out and "+ judge" not in out
 
 
 def test_compare_row_of_a_merged_run_says_so(
@@ -473,7 +473,7 @@ def test_compare_total_line_accounts_the_judge_calls_own_spend(
 
     assert rc == 0
     out = capsys.readouterr().out
-    assert "total: candidates $0.1200 + judge $0.0102 = $0.1302" in out
+    assert "total: candidates $0.12 + judge $0.01 = $0.13" in out
 
 
 def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
@@ -564,8 +564,8 @@ def test_failed_judge_announces_what_its_attempts_still_spent(
     assert rc == 0
     captured = capsys.readouterr()
     assert "judge failed" in captured.err
-    assert "judge spend $0.0204" in captured.err  # two attempts billed 0.0102 each
-    assert "total: candidates $0.1200 + judge $0.0204 = $0.1404" in captured.out
+    assert "judge spend $0.02" in captured.err  # two attempts billed 0.0102 each
+    assert "total: candidates $0.12 + judge $0.02 = $0.14" in captured.out
 
 
 class _UnpricedFakeProvider(_FakeProvider):
@@ -609,7 +609,7 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
 
     assert rc == 0
     out = capsys.readouterr().out
-    assert "+ judge ~$0.0000 = ~$0.1200" in out  # marked lower bound, not hidden
+    assert "+ judge ~$0.0000 = ~$0.12" in out  # marked lower bound, not hidden
 
 
 def test_compare_falls_back_to_mechanical_on_judge_error(

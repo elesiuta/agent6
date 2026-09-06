@@ -470,10 +470,10 @@ def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
     a clean $0 stays blank."""
     from agent6.viewmodel.format import format_cost_cell
 
-    assert format_cost_cell(0.0123, partial=True) == "~$0.0123"
+    assert format_cost_cell(0.0123, partial=True) == "~$0.01"
     assert format_cost_cell(0.0, partial=True) == "~$0.0000"
     assert format_cost_cell(0.0, partial=False) == ""
-    assert format_cost_cell(0.0123, partial=False) == "$0.0123"
+    assert format_cost_cell(0.0123, partial=False) == "$0.01"
 
 
 def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(

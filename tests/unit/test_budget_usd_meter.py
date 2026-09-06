@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from agent6.budget import BudgetTracker
+from agent6.budget import BudgetTracker, format_usd
 
 
 @pytest.fixture(autouse=True)
@@ -133,8 +133,8 @@ def test_estimate_usd_matches_format_summary_total() -> None:
     )
     usd, _ = bt.estimate_usd()
     summary = bt.format_summary()
-    # format_summary prints `cost~$X.XXXX` for the total.
-    assert f"cost~${usd:.4f}" in summary
+    # format_summary prints the total through format_usd, marked `~`.
+    assert f"cost~{format_usd(usd)}" in summary
 
 
 def test_reported_cost_overrides_table_estimate() -> None:

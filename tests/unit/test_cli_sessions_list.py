@@ -130,7 +130,7 @@ def test_runs_list_marks_a_partial_cost(
         encoding="utf-8",
     )
     assert _cmd_list() == 0
-    assert "~$0.0123" in capsys.readouterr().out
+    assert "~$0.01" in capsys.readouterr().out
 
 
 def test_styled_status_colors_stale_red_and_parked_yellow() -> None:

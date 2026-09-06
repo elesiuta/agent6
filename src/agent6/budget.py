@@ -190,12 +190,12 @@ class _ModelCost:
 
 
 def format_usd(usd: float, *, partial: bool = False) -> str:
-    """A dollar figure as every surface prints it: cents at >= $1, four
-    decimals below (a sub-cent cap or spend is never "$0.00"), led by "~" when
-    the figure is a known under-estimate (a model without price data). The web
-    SPA mirrors this in client.js's fmtUsd."""
+    """A dollar figure as every surface prints it: cents from one cent up,
+    four decimals below it (a sub-cent cap or spend is never "$0.00"), led by
+    "~" when the figure is a known under-estimate (a model without price
+    data). The web shows this string; it keeps no formatter of its own."""
     mark = "~" if partial else ""
-    return f"{mark}${usd:.2f}" if usd >= 0.995 else f"{mark}${usd:.4f}"
+    return f"{mark}${usd:.2f}" if usd >= 0.01 else f"{mark}${usd:.4f}"
 
 
 def _billed_apart_from_plan(t: _ModelTotals | ModelUsage) -> bool:

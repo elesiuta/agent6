@@ -477,7 +477,7 @@ def test_end_banner_adds_the_run_total_across_resume_legs(
         reporter=STDIO_REPORTER,
     )
     out = capsys.readouterr().out
-    assert "RUN TOTAL (all 2 legs): $0.0316" in out
+    assert "RUN TOTAL (all 2 legs): $0.03" in out
 
 
 def test_end_banner_stays_quiet_on_a_single_leg_run(
