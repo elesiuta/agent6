@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from agent6.models.pricing import lookup_price
@@ -139,7 +139,10 @@ class PlanUsage:
 
 
 @dataclass(slots=True)
-class _ModelTotals:
+class ModelUsage:
+    """Per-model usage totals: the tracker's live counters for one model, and,
+    copied, a :class:`BudgetSnapshot` row."""
+
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
@@ -157,24 +160,6 @@ class _ModelTotals:
     percent_metered: bool = False
     unreported_cache_read_tokens: int = 0
     unreported_cache_creation_tokens: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class ModelUsage:
-    """Immutable per-model usage totals inside a :class:`BudgetSnapshot`."""
-
-    input_tokens: int
-    output_tokens: int
-    cache_read_tokens: int
-    cache_creation_tokens: int
-    calls: int
-    reported_cost_usd: float
-    reported_calls: int
-    unreported_input_tokens: int
-    unreported_output_tokens: int
-    unreported_cache_read_tokens: int
-    unreported_cache_creation_tokens: int
-    percent_metered: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +184,7 @@ def format_usd(usd: float, *, partial: bool = False) -> str:
     return f"{mark}${usd:.2f}" if usd >= 0.01 else f"{mark}${usd:.4f}"
 
 
-def _billed_apart_from_plan(t: _ModelTotals | ModelUsage) -> bool:
+def _billed_apart_from_plan(t: ModelUsage) -> bool:
     """Whether the bucket also holds calls that cost money.
 
     One model id reaches both a subscription provider and a paid API (a review
@@ -216,9 +201,7 @@ def _billed_apart_from_plan(t: _ModelTotals | ModelUsage) -> bool:
     )
 
 
-def _model_cost_usd(
-    model: str, t: _ModelTotals | ModelUsage, provider: str = ""
-) -> _ModelCost | None:
+def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost | None:
     """Per-model USD cost: the ONE owner of the pricing arithmetic, shared by
     `_estimate_usd_locked` (the enforced USD ceiling) and `format_summary`
     (the printed figure) so a drifted copy can never misreport spend.
@@ -277,7 +260,7 @@ def _model_cost_usd(
 
 @dataclass(frozen=True, slots=True)
 class BudgetSnapshot:
-    """Immutable snapshot of a BudgetTracker's counters at one instant."""
+    """A point-in-time copy of a BudgetTracker's counters."""
 
     input_total: int
     output_total: int
@@ -326,7 +309,7 @@ class BudgetTracker:
     # an omitted value can never widen spend, so sites may rely on it.
     allow_paid_credits: bool = False
     _lock: threading.Lock = field(default_factory=threading.Lock)
-    _per_model: dict[str, _ModelTotals] = field(default_factory=dict)
+    _per_model: dict[str, ModelUsage] = field(default_factory=dict)
     _input_total: int = 0
     _output_total: int = 0
     _cache_read_total: int = 0
@@ -383,7 +366,7 @@ class BudgetTracker:
             cache_read_tokens = max(cache_read_tokens, 0)
             cache_creation_tokens = max(cache_creation_tokens, 0)
             cost_usd = max(cost_usd, 0.0)
-            totals = self._per_model.setdefault(model, _ModelTotals())
+            totals = self._per_model.setdefault(model, ModelUsage())
             totals.input_tokens += input_tokens
             totals.output_tokens += output_tokens
             totals.cache_read_tokens += cache_read_tokens
@@ -558,25 +541,9 @@ class BudgetTracker:
         return max(0.0, 1.0 - used)
 
     def snapshot(self) -> BudgetSnapshot:
-        """Immutable snapshot of all counters."""
+        """A point-in-time copy of all counters."""
         with self._lock:
-            per_model = {
-                model: ModelUsage(
-                    input_tokens=t.input_tokens,
-                    output_tokens=t.output_tokens,
-                    cache_read_tokens=t.cache_read_tokens,
-                    cache_creation_tokens=t.cache_creation_tokens,
-                    calls=t.calls,
-                    reported_cost_usd=t.reported_cost_usd,
-                    reported_calls=t.reported_calls,
-                    unreported_input_tokens=t.unreported_input_tokens,
-                    unreported_output_tokens=t.unreported_output_tokens,
-                    unreported_cache_read_tokens=t.unreported_cache_read_tokens,
-                    unreported_cache_creation_tokens=t.unreported_cache_creation_tokens,
-                    percent_metered=t.percent_metered,
-                )
-                for model, t in sorted(self._per_model.items())
-            }
+            per_model = {model: replace(t) for model, t in sorted(self._per_model.items())}
             return BudgetSnapshot(
                 input_total=self._input_total,
                 output_total=self._output_total,
