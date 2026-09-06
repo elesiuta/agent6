@@ -153,14 +153,16 @@ class SessionSummary:
     mode: str  # run | plan | ask | ?
     task: str  # raw task text; callers snippet/truncate for their layout
     # created|starting|running|waiting|stale|passed|answered|planned|finished|
-    # stopped|failed
+    # stopped|undone|failed
     status: str
     reason: str  # detail: the end reason when "failed", "needs answer" when "waiting", else ""
     cost_usd: float
     usd_partial: bool  # sticky: cost_usd is a lower bound (unpriced spend in some leg)
     mtime: float
     # The run branch holds commits its base does not (per the merge stamp and
-    # the caller's branch-tips snapshot); False when unknowable (no snapshot).
+    # the caller's branch-tips snapshot); False when unknowable (no snapshot),
+    # and for an undone run: its /undo child carries the mark for the commits
+    # up to the checkpoint, and the later ones were taken back.
     unmerged: bool = False
     # The gate verdict from the gate facts (LogScan.verify_verdict), NOT the
     # status word: the compare table and the judge read it, and the word calls
@@ -175,11 +177,12 @@ def status_word(
 
     The single place that decides how a run's outcome reads -- shared by
     `session_status_label` (headers) and `summarize_session_dir` (listings) so the
-    surfaces can never disagree. "stopped" is the operator's own act (not a
-    failure); "planned" and "answered" are the no-verify clean exits (a plan
-    pass / an ask, where "passed" would mislead); "passed" means all verify
-    gates green, "finished" is a deliberate finish without all-passed, and
-    anything else is "failed" with the reason (provider_error, went_quiet, ...).
+    surfaces can never disagree. "stopped" and "undone" are the operator's
+    own acts (a stop, an /undo), not failures; "planned" and "answered" are
+    the no-verify clean exits (a plan pass / an ask, where "passed" would
+    mislead); "passed" means all verify gates green, "finished" is a
+    deliberate finish without all-passed, and anything else is "failed" with
+    the reason (provider_error, went_quiet, ...).
 
     `all_passed` is the wire's verify tri-state: True = the final tree was
     observed verify-green, False = it was not (red, stale, or an error end),
@@ -191,15 +194,17 @@ def status_word(
     """
     if not finished:
         return "running", ""
-    if end_reason in ("steer_abort", "steer_exit", "interrupted", "interactive_stop", "undone"):
+    if end_reason in ("steer_abort", "steer_exit", "interrupted", "interactive_stop"):
         return "stopped", ""  # each is the operator's own act, not a failure
     # A clean exit that verified nothing gets its own word, never "passed": a
-    # plan pass ends via finish_planning, an ask by answering, and a gateless
-    # run settles with committed work no verify ever gated (deliberate, so
+    # plan pass ends via finish_planning, an ask by answering, /undo takes the
+    # last message back (the fork it cut continues), and a gateless run
+    # settles with committed work no verify ever gated (deliberate, so
     # "finished"; never green, never "failed").
     no_verify = {
         "finish_planning": ("planned", ""),
         "answered": ("answered", ""),
+        "undone": ("undone", ""),
         "settled": ("finished", "unverified"),
         # The gate is red, and a verify against an UNMODIFIED tree proved it
         # was red before this run touched anything. "Your run failed" and "your
@@ -655,7 +660,7 @@ def summarize_session_dir(
         with contextlib.suppress(OSError):
             task = (session_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")
     unmerged = False
-    if branch_tips is not None:
+    if branch_tips is not None and word != "undone":
         with contextlib.suppress(ManifestError):
             m = read_manifest(session_dir)
             tip = branch_tips.get(m.run_branch or "")

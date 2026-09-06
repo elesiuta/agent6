@@ -390,6 +390,33 @@ def test_summary_interrupt_reads_as_stopped(tmp_path: Path) -> None:
     assert summarize_session_dir(rd).status == "stopped"
 
 
+def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: Path) -> None:
+    """/undo ends a run with reason "undone": its own word on every surface
+    (the listing folded it into "stopped" while the console said "undone
+    (forked back)"), and never the unmerged mark, whatever its branch holds
+    (see SessionSummary.unmerged)."""
+    from agent6.viewmodel.format import listing_status_label
+
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r-undone",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "session.end", "reason": "undone", "all_passed": False},
+        ],
+    )
+    (rd / "manifest.json").write_text(
+        json.dumps(
+            {"mode": "run", "user_task": "t", "base_sha": "b" * 40, "run_branch": "agent6/r"}
+        ),
+        encoding="utf-8",
+    )
+    s = summarize_session_dir(rd, branch_tips={"agent6/r": "c" * 40})
+    assert (s.status, s.reason, s.unmerged) == ("undone", "", False)
+    assert listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged) == "undone"
+
+
 def test_summary_resume_unfinishes(tmp_path: Path) -> None:
     """A detached resume appends past the first session.end; the run is running
     again, not whatever it last ended as."""

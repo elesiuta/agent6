@@ -687,6 +687,48 @@ def test_status_says_where_the_changes_are(
     assert "is gone; the commits are kept); merge with: agent6 sessions merge" in out
 
 
+def test_status_of_an_undone_run_does_not_offer_a_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The changes line of an undone run agrees with the listing: the branch
+    was taken back by /undo, so no merge is offered. It read the end reason
+    not at all and offered `merge with: agent6 sessions merge <id>`."""
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(5), "type": "session.start", "mode": "run"},
+            {"ts": _ts(1), "type": "session.end", "reason": "undone", "all_passed": False},
+        ],
+    )
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=Path.cwd(), check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "b",
+        ],
+        cwd=Path.cwd(),
+        check=True,
+    )
+    branch = "agent6/winsome-dawn-YWH5ZS"
+    subprocess.run(["git", "branch", branch], cwd=Path.cwd(), check=True)
+    _stamp_manifest(d, run_branch=branch, base_branch="main")
+
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    out = capsys.readouterr().out
+    assert "state:      undone" in out
+    assert f"changes:    {branch} (taken back by /undo)" in out
+    assert "merge with:" not in out
+
+
 def test_status_of_an_ask_does_not_repeat_its_word(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

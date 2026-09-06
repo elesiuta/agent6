@@ -148,7 +148,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     driver = manifest.models.driver
     model = (driver.model if driver else "") or "?"
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
-    changes = _changes(target.name, manifest)
+    changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
 
     if as_json:
         print(
@@ -235,15 +235,18 @@ class _Changes:
     merged_into: str  # the base the run branch is merged into, else ""
 
 
-def _changes(session_id: str, manifest: SessionManifest) -> _Changes:
+def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Changes:
     """Where the run's work lives, checked against git as the end-of-run
     footer checks it: merged into the base (the stamp still describes the
     branch), on the run branch awaiting `sessions merge`, on the hidden chain
-    ref alone (the branch deleted, the commits kept), or a branch no commit
-    ever reached."""
+    ref alone (the branch deleted, the commits kept), a branch no commit
+    ever reached, or taken back by /undo (*undone*: no merge to offer, as
+    the listing marks none)."""
     run_branch = manifest.run_branch or ""
     if not run_branch:
         return _Changes("", "")
+    if undone:
+        return _Changes(f"{run_branch} (taken back by /undo)", "")
     cwd = Path.cwd()
     stamp = manifest.merged
     if stamp is not None and merge_stamp_holds(cwd, run_branch, stamp.tip):
