@@ -98,3 +98,12 @@ def test_the_web_tool_row_counts_the_args_lines_it_drops() -> None:
     body = CLIENT_JS[start : CLIENT_JS.index("// shells:", start)]
     extra = body[body.index("const extra") : body.index("\n", body.index("const extra"))]
     assert "args_preview" in extra, extra
+
+
+def test_delete_is_gated_on_the_run_being_over() -> None:
+    """Merge dims itself on a live run; Delete stayed enabled, asked for
+    confirmation, and only then surfaced the server's refusal as a toast."""
+    assert "cards._rm_btn = rmBtn" in CLIENT_JS
+    start = CLIENT_JS.index("function paintRun(")
+    body = CLIENT_JS[start : CLIENT_JS.index("function renderDiff(", start)]
+    assert "cards._rm_btn.disabled = !isDead" in body

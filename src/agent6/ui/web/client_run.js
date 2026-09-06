@@ -111,6 +111,7 @@ async function renderRun(id, opts, gen) {
     };
     for (const b of [stopBtn, stepBtn, compactBtn, planBtn, mergeBtn, rmBtn]) actions.appendChild(b);
     cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
+    cards._rm_btn = rmBtn; // paintRun gates it the other way: the server refuses a live run
     cards._plan_btn = planBtn;
   }
   app.appendChild(actions);
@@ -364,6 +365,10 @@ function paintRun(cards, s) {
   const isDead = notLive(s);
   if (!cards._readOnly) paintPrompts(cards, isDead ? {} : s);
   if (cards._live_btns) for (const b of cards._live_btns) b.disabled = isDead;
+  if (cards._rm_btn) {
+    cards._rm_btn.disabled = !isDead;
+    cards._rm_btn.title = isDead ? "delete this session's history" : 'the session is still live; stop or let it finish first';
+  }
   // Merge needs a finished run with an unmerged branch: a live run (the server
   // refuses one), an ask / branch_per_run=false run (no branch), or an already-
   // merged branch can't be merged.
