@@ -186,6 +186,7 @@ async function renderRun(id, opts, gen) {
   let sawEnd = false;
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
+    if (s.type === 'error') { toast('stream error: ' + s.error); return; }
     if (s.undone_to) {
       // /undo landed: follow the fork with the undone text back to edit.
       toast('undone: forked to ' + s.undone_to);
@@ -510,9 +511,13 @@ function paintRun(cards, s) {
     const show = async () => {
       cards._diffPick = { sha: sel.value, cumulative: cum.checked };
       body.innerHTML = '';
-      if (!sel.value) { cards._stepState = null; paintDetails(cards, s, null); body.appendChild(renderDiff(s.latest_diff || '')); return; }
+      if (!sel.value) {
+        if (cum.checked) { cum.checked = false; cards._diffPick.cumulative = false; toast('cumulative applies to a chosen step'); }
+        cards._stepState = null; paintDetails(cards, s, null); body.appendChild(renderDiff(s.latest_diff || '')); return;
+      }
       try {
         const d = await getJSON(cards._base + '/diff?sha=' + encodeURIComponent(sel.value) + '&cumulative=' + (cum.checked ? '1' : '0'));
+        if (cum.checked && d.cumulative === false) { cum.checked = false; cards._diffPick.cumulative = false; toast('this run has no base to accumulate from; showing the single step'); }
         body.appendChild(renderDiff(d.patch));
         const st = await getJSON(cards._base + '?step=' + encodeURIComponent(sel.value));
         cards._stepState = st; paintDetails(cards, st, st.as_of);
@@ -579,6 +584,7 @@ async function renderConversation(id, gen) {
   let sawEnd = false;
   live.onmessage = ev => {
     let s; try { s = JSON.parse(ev.data); } catch (_) { return; }
+    if (s.type === 'error') { toast('stream error: ' + s.error); return; }
     composer.setState(s);
     paintPrompts(cards, notLive(s) ? {} : s);
     cc.conv.setLive(s);

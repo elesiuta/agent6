@@ -234,6 +234,8 @@ def _create_web_server(
 
 
 class _Handler(BaseHTTPRequestHandler):
+    _streaming = False  # the SSE headers went out; an error is a frame now
+    _body_length = 0  # this request's Content-Length, parsed once in do_POST
     protocol_version = "HTTP/1.1"
     server: WebServer  # type: ignore[assignment]
 
@@ -257,11 +259,25 @@ class _Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass  # client went away mid-response
         except Exception as exc:  # never take the whole server down for one bad request
-            self._send_json({"error": str(exc)}, status=500)
+            if self._streaming:
+                # The 200 and the event-stream headers are on the wire: a second
+                # status line would land inside the event body.
+                self._sse_send({"type": "error", "error": str(exc)})
+            else:
+                self._send_json({"error": str(exc)}, status=500)
 
     def do_POST(self) -> None:  # BaseHTTPRequestHandler dispatch contract (method name fixed)
         path = unquote(urlsplit(self.path).path)
         try:
+            try:
+                # Parsed once, here: the CSRF check and the body reader read
+                # this value, so a bad header meets one refusal (nothing was
+                # read, and the body would parse as the next request).
+                self._body_length = int(self.headers.get("Content-Length", "0") or "0")
+            except ValueError:
+                self.close_connection = True
+                self._send_json({"error": "bad Content-Length"}, status=400)
+                return
             csrf_err = self._csrf_refusal()
             if csrf_err is not None:
                 # Close the connection rather than drain an unread body under
@@ -275,7 +291,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 self._send_json({"error": "chunked bodies are not supported"}, status=411)
                 return
-            content_length = int(self.headers.get("Content-Length", "0") or "0")
+            content_length = self._body_length
             if content_length < 0:
                 # A negative length would make rfile.read(n) read to EOF, buffering
                 # arbitrary bytes and parking the worker thread; the > cap check
@@ -328,8 +344,7 @@ class _Handler(BaseHTTPRequestHandler):
         127.0.0.1 so its request is same-origin) is not covered here; a Host
         allow-list would break the tailnet-hostname `tailscale serve` path, so
         that vector is left to the network layer."""
-        n = int(self.headers.get("Content-Length", "0") or "0")
-        if n > 0:
+        if self._body_length > 0:
             ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
             if ctype != "application/json":
                 return f"POST body must be Content-Type: application/json, not {ctype!r}"
@@ -341,7 +356,7 @@ class _Handler(BaseHTTPRequestHandler):
         return None
 
     def _read_body(self) -> dict[str, Any]:
-        n = int(self.headers.get("Content-Length", "0") or "0")
+        n = self._body_length
         raw = self.rfile.read(n) if n > 0 else b""
         if not raw:
             return {}
@@ -666,6 +681,7 @@ class _Handler(BaseHTTPRequestHandler):
         # finished run's EventSource stop). close_connection makes the handler
         # close the socket when the stream loop returns.
         self.close_connection = True
+        self._streaming = True
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")

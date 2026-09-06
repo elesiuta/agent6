@@ -1647,3 +1647,70 @@ def test_the_web_names_a_crashed_run_where_it_paints_no_conversation(
     assert status == 200
     assert json.loads(body)["dead_state"].startswith("worker exited without finishing")
     assert "conv.deadState" in CLIENT_JS and "s.dead_state" in CLIENT_JS
+
+
+def test_a_content_length_that_is_not_a_number_closes_the_connection(
+    server: tuple[WebServer, int],
+) -> None:
+    """`int()` raised before the body was read, and the ValueError handler
+    (written for a body already consumed) kept the connection open: the
+    unread body parsed as the next request line (a 501 for a pipelined GET)."""
+    _srv, port = server
+    sock = socket.create_connection(("127.0.0.1", port), timeout=10)
+    try:
+        body = b'{"mode":"run","task":"t"}'
+        bad = (
+            b"POST /api/new HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\nContent-Length: abc\r\n\r\n" + body
+        )
+        follow = b"GET /api/meta HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+        sock.sendall(bad + follow)
+        chunks = []
+        while True:
+            data = sock.recv(4096)
+            if not data:
+                break
+            chunks.append(data)
+        raw = b"".join(chunks)
+    finally:
+        sock.close()
+    assert raw.count(b"HTTP/1.1 ") == 1 and b" 400 " in raw, raw
+    assert b"501" not in raw, raw
+
+
+def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
+    server: tuple[WebServer, int], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stream that raised after `_begin_sse` fell into the GET handler's
+    500 path, which wrote a second status line into the event body; the
+    client saw a generic network error and no reason."""
+    from agent6.ui.web import _sse
+
+    def boom(*_a: object, **_k: object) -> object:
+        raise RuntimeError("header exploded")
+
+    monkeypatch.setattr(_sse, "manifest_header", boom)
+    _srv, port = server
+    _make_run(tmp_path, "sse-err", [{"type": "session.start", "user_task": "t"}])
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        conn.request("GET", "/api/session/sse-err/events")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        body = resp.read()
+    finally:
+        conn.close()
+    assert b"HTTP/1.1 500" not in body, body
+    assert b'"error": "header exploded"' in body, body
+
+
+def test_the_machine_stream_error_frame_is_typed_like_the_run_streams(tmp_path: Path) -> None:
+    """The machine stream sent `{"error": ...}` while the run stream sends
+    `{"type": "error", "error": ...}`: one frame shape, read by both pages."""
+    from agent6.ui.web._sse import SseChannel, stream_machine
+
+    sent: list[Any] = []
+    chan = SseChannel(send=lambda frame: sent.append(frame) or True, ping=lambda: True)
+    stream_machine(chan, tmp_path / "no-such-machine")
+    assert len(sent) == 1
+    assert sent[0]["type"] == "error" and sent[0]["error"]

@@ -176,7 +176,7 @@ def stream_machine(chan: SseChannel, machine_dir: Path) -> None:
                 "reasoning": model.machine_reasoning_snapshot(machine_dir),
             }
         except MachineError as exc:
-            chan.send({"error": "; ".join(exc.problems)})
+            chan.send({"type": "error", "error": "; ".join(exc.problems)})
             return
         blob = json.dumps(payload, sort_keys=True)
         if blob != prev:
