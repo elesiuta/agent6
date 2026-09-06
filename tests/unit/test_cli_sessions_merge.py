@@ -830,6 +830,53 @@ def test_merge_squash_conventional_style_derives_the_subject(
     assert subject == "feat: implement the thing"  # an added file, no common scope
 
 
+def test_merge_squash_default_style_writes_the_run_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default `agent6` style fell off the end of `_squash_message` and
+    returned None, so the squash commit read git's "Merge agent6/<id>" instead
+    of the run's task and its condensed steps."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(
+        tmp_path,
+        "run-DEF222",
+        commits=[
+            ("a.txt", "a\n", "agent6 iter 1: add a"),
+            ("b.txt", "b\n", "agent6 iter 2: add b"),
+        ],
+    )
+    assert main(["sessions", "merge", "run-DEF222", "--strategy", "squash"]) == 0
+    head = _head_message(tmp_path)
+    assert head.splitlines()[0] == "implement the thing"
+    assert "add a" in head and "add b" in head
+
+
+def test_merge_squash_model_style_degrades_on_a_budget_fault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The narrowed catch let a `BudgetExceeded` from the provider's build
+    escape a finished run's teardown (auto_merge runs the draft there): the
+    draft degrades with its reason on every fault its setup can raise."""
+    from agent6.app import merge as merge_mod
+    from agent6.budget import BudgetExceeded
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
+        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+    )
+
+    def over(*_a: object, **_k: object) -> object:
+        raise BudgetExceeded("the ceiling was crossed on the last call")
+
+    monkeypatch.setattr(merge_mod, "build_role_provider", over)
+    _setup_run(tmp_path, "run-BDG111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    assert main(["sessions", "merge", "run-BDG111", "--strategy", "squash"]) == 0
+    assert "model squash message failed (the ceiling was crossed" in capsys.readouterr().err
+    assert _head_message(tmp_path).splitlines()[0] == "implement the thing"
+
+
 def test_merge_squash_model_style_degrades_with_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

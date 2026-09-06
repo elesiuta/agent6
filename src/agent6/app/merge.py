@@ -20,9 +20,9 @@ from typing import Literal
 from agent6.app._setup import apply_git_ops_policy, budget_tracker
 from agent6.app.manifest import write_manifest
 from agent6.app.providers import InstrumentedProvider, build_role_provider
-from agent6.budget import BudgetTracker
+from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.commit_message import CommitRow, condense_commit_message, conventional_commit_subject
-from agent6.config import Config
+from agent6.config import Config, ConfigError
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -36,7 +36,8 @@ from agent6.git_ops import (
     plumb_merge,
     range_name_status,
 )
-from agent6.providers import TranscriptSink, call_for_text
+from agent6.providers import ProviderError, TranscriptSink, call_for_text
+from agent6.secrets import SecretsError
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import (
     NO_MERGE_COMMIT,
@@ -225,10 +226,10 @@ def _squash_message(
             transcript_dir=transcript_dir,
             budget=budget,
             events=events,
+            warn=warn,
         )
         if msg:
             return msg
-        warn("model squash message failed; using the agent6 style")
     return base_msg
 
 
@@ -243,6 +244,7 @@ def _model_squash_message(
     transcript_dir: Path | None,
     budget: BudgetTracker | None,
     events: EventSink | None,
+    warn: Callable[[str], None] = lambda _m: None,
 ) -> str | None:
     """One provider call writing the squash message from git facts only; None
     on any failure (the caller degrades to the agent6 style).
@@ -275,7 +277,7 @@ def _model_squash_message(
         files = "\n".join(
             f"{s}\t{p}" for s, p in range_name_status(cwd, base_sha, run_branch)[:200]
         )
-        return call_for_text(
+        msg = call_for_text(
             provider,
             system=(
                 "Write a git commit message for a squashed branch: one"
@@ -288,10 +290,15 @@ def _model_squash_message(
             ),
             max_tokens=500,
         )
-    except Exception:
-        # Building the drafting provider is best-effort too; the caller
-        # falls back to a fixed subject.
+    except (BudgetExceeded, ConfigError, GitError, OSError, ProviderError, SecretsError) as exc:
+        # Every fault the draft's setup and call can raise, each degraded with
+        # its reason: the draft is best-effort, and auto_merge runs it in a
+        # finished run's teardown, which must not crash on it.
+        warn(f"model squash message failed ({exc}); using the agent6 style")
         return None
+    if not msg:
+        warn("model squash message failed (the model returned nothing); using the agent6 style")
+    return msg or None
 
 
 def execute_merge(
