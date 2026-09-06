@@ -62,3 +62,17 @@ def test_decisions_prints_the_rulings_or_says_none(
     record_decision(resolved_state_dir(Path.cwd()), question="Q?", answer="A", session="s", when=0)
     assert _cmd_memory_decisions() == 0
     assert capsys.readouterr().out == "- 1970-01-01 00:00Z [s] Q: Q?\n  A: A\n"
+
+
+def test_rm_keeps_the_index_bytes_it_does_not_touch(tmp_path: Path) -> None:
+    """The index rewrite read through the replacing decoder, so `memory rm`
+    turned every byte that is not UTF-8 anywhere in the file into U+FFFD."""
+    from agent6.memory import index_path, remove
+
+    idx = index_path(tmp_path)
+    idx.parent.mkdir(parents=True, exist_ok=True)
+    idx.write_bytes(b"# Memory index\n\n- one: first\n- two: second\nnote: caf\xe9 build\n")
+    (idx.parent / "one.md").write_text("first\n", encoding="utf-8")
+    remove(tmp_path, "one")
+    assert idx.read_bytes() == b"# Memory index\n\n- two: second\nnote: caf\xe9 build\n"
+    assert not (idx.parent / "one.md").exists()

@@ -482,7 +482,7 @@ depends_on = []
 # MemoryStoreError subclasses OperatorError, so a store refusal presents as the
 # operator's at the CLI boundary while the run loop keeps its degrade catches.
 path = "agent6.memory"
-depends_on = ["agent6.errors"]
+depends_on = ["agent6.errors", "agent6.portable"]
 
 [[modules]]
 path = "agent6.skills"

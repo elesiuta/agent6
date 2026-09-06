@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from agent6.errors import OperatorError
+from agent6.portable import atomic_write
 
 MEMORY_DIR_NAME = "memory"
 INDEX_NAME = "MEMORY.md"
@@ -236,13 +237,12 @@ def remove(state_dir: Path, name: str) -> None:
     if not path.is_file() and not had_line:
         raise MemoryStoreError(f"no memory named {name!r}")
     if had_line:
+        # Over bytes: a rewrite through the replacing reader would turn every
+        # byte that is not UTF-8 into U+FFFD, in lines the operator wrote.
         idx = index_path(state_dir)
-        kept = [
-            ln
-            for ln in index_text(state_dir).splitlines()
-            if not re.match(rf"^\s*[-*]\s*{re.escape(name)}\s*:", ln)
-        ]
-        idx.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+        pattern = re.compile(rb"^\s*[-*]\s*" + re.escape(name.encode("utf-8")) + rb"\s*:")
+        kept = [ln for ln in idx.read_bytes().split(b"\n") if not pattern.match(ln)]
+        atomic_write(idx, b"\n".join(kept))
     if path.is_file():
         path.unlink()
 
