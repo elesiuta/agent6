@@ -31,7 +31,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
-from agent6.workflows._session_state import load_session_snapshot
+from agent6.workflows._session_state import SNAPSHOT_VERSION, load_session_snapshot
 from agent6.workflows.loop import (
     LoopState,
     Workflow,
@@ -214,7 +214,9 @@ def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
         cp.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="expected a JSON object"):
             load_session_snapshot(cp)
-    cp.write_text(json.dumps({"version": 2}), encoding="utf-8")  # missing required keys
+    cp.write_text(
+        json.dumps({"version": SNAPSHOT_VERSION}), encoding="utf-8"
+    )  # missing required keys
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
         load_session_snapshot(cp)
     # A torn file is the likeliest corruption of all (a full disk, a power
@@ -290,7 +292,7 @@ def _seed_source_run(
     _seed_graph(layout)
     for turn in turns:
         payload = {
-            "version": 2,
+            "version": SNAPSHOT_VERSION,
             "system": "sys",
             "messages": [{"role": "user", "content": f"turn {turn}"}],
             "tool_calls": 0,
@@ -611,7 +613,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
     state_dir = resolved_state_dir(repo)
     src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1, 2))
     latest_payload = {
-        "version": 2,
+        "version": SNAPSHOT_VERSION,
         "system": "sys",
         "messages": [{"role": "user", "content": "turn 3 from loop_state"}],
         "tool_calls": 0,
@@ -712,7 +714,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
     layout.session_dir.joinpath("loop_state.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [{"role": "user", "content": "rolling"}],
                 "tool_calls": 0,

@@ -96,7 +96,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 
 - **Written by:** workflows/loop
 - **Read by:** app/{_leg, fork, resume}, workflows/_loop_state
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (13 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (15 test files exercise it)
 
 ## ToolResult family
 

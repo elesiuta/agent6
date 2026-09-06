@@ -137,7 +137,7 @@ class ResumeError(Exception):
 # older agent6 then refuses to resume/fork loudly (see load_session_snapshot) rather
 # than parsing into a half-populated run. Finished runs never need a snapshot, so
 # they keep rendering across the bump.
-SNAPSHOT_VERSION = 2
+SNAPSHOT_VERSION = 3
 
 
 class SessionSnapshot(BaseModel):

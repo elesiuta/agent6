@@ -19,6 +19,7 @@ from agent6.config.layer import EffectiveConfig, resolved_state_dir
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import RepoSummary
 from agent6.workflows._prompt_blocks import build_system_prompt
+from agent6.workflows._session_state import SNAPSHOT_VERSION
 from agent6.workflows._verify_verdict import VerifyVerdict
 
 
@@ -290,7 +291,7 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
     (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,

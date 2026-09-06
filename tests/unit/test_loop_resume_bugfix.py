@@ -21,7 +21,11 @@ from agent6.config import Config
 from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._metric import MetricSample as _MetricSample
-from agent6.workflows._session_state import SessionSnapshot, load_session_snapshot
+from agent6.workflows._session_state import (
+    SNAPSHOT_VERSION,
+    SessionSnapshot,
+    load_session_snapshot,
+)
 from agent6.workflows.loop import (
     LoopState,
     Workflow,
@@ -276,12 +280,18 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="expected a JSON object"):
             load_session_snapshot(snap)
     # current version, wrong internals: missing required keys, and a non-list messages
-    snap.write_text(json.dumps({"version": 2, "system": "s"}), encoding="utf-8")
+    snap.write_text(json.dumps({"version": SNAPSHOT_VERSION, "system": "s"}), encoding="utf-8")
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
         load_session_snapshot(snap)
     snap.write_text(
         json.dumps(
-            {"version": 2, "system": "s", "messages": "oops", "tool_calls": 0, "next_iteration": 1}
+            {
+                "version": SNAPSHOT_VERSION,
+                "system": "s",
+                "messages": "oops",
+                "tool_calls": 0,
+                "next_iteration": 1,
+            }
         ),
         encoding="utf-8",
     )

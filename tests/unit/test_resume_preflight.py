@@ -19,6 +19,7 @@ import agent6.app.resume as resume_mod
 from agent6.config.layer import resolved_state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
+from agent6.workflows._session_state import SNAPSHOT_VERSION
 
 
 def _git_repo(path: Path) -> None:
@@ -198,7 +199,7 @@ def _plan_session_dir(repo: Path, session_id: str) -> None:
     (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
@@ -466,7 +467,7 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
-                "version": 2,
+                "version": SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
