@@ -445,13 +445,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # One live run-mode worker per CHECKOUT (see acquire_repo_writer): a
         # resumed run drives the shared working tree exactly like a fresh one.
-        # The lock lives with the checkout's state dir: a fork's worktree has
-        # its own, so it never contends with the repository's checkout.
+        # The lock is keyed on the checkout: a fork's worktree never contends
+        # with the repository's own.
         if mode == "run":
-            checkout_state_dir = state_dir(cwd)
-            repo_lock_fd = acquire_repo_writer(checkout_state_dir, session_id)
+            repo_lock_fd = acquire_repo_writer(state, cwd, session_id)
             if repo_lock_fd is None:
-                holder = repo_writer_holder(checkout_state_dir) or "another run"
+                holder = repo_writer_holder(state, cwd) or "another run"
                 reporter.refuse(
                     f"run {holder!r} is already driving this checkout; a"
                     " second run-mode worker would interleave auto-commits on the"

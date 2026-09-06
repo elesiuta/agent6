@@ -896,15 +896,14 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     assert "its worktree stays: fork-child011 still names it" in out
 
 
-def test_removing_a_worktree_deletes_only_the_lock_it_left_in_its_state_dir(
+def test_removing_a_worktree_deletes_only_its_checkout_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fork's leg takes its checkout lock under the worktree's own state
-    dir. Removing the worktree removes that lock and, when the lock was all
-    the dir held, the dir; a session the operator ran inside the worktree
-    lives there too and stays, named in prune's output. The whole state dir
-    was rmtree'd, sessions included."""
-    from agent6.paths import state_dir as state_dir_of
+    """A fork's worktree is its repository's project, so its leg's checkout
+    lock sits under the repository's state dir. Removing the worktree removes
+    that lock and nothing else there: a session dir beside it stays."""
+    from agent6.paths import state_dir
+    from agent6.sessions.lock import checkout_lock_path
 
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -912,20 +911,21 @@ def test_removing_a_worktree_deletes_only_the_lock_it_left_in_its_state_dir(
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
     merged = _fork_with_worktree(tmp_path, "fork-merged11", merged=True)
-    inner_state = state_dir_of(merged)
-    (inner_state / "repo.lock").parent.mkdir(parents=True, exist_ok=True)
-    (inner_state / "repo.lock").write_text("fork-merged11\n", encoding="utf-8")
-    planted = inner_state / "sessions" / "runs" / "planted-run-AAAA11"
+    state = state_dir(tmp_path)
+    assert state_dir(merged) == state
+    lock = checkout_lock_path(state, merged)
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("fork-merged11\n", encoding="utf-8")
+    planted = state / "sessions" / "runs" / "planted-run-AAAA11"
     planted.mkdir(parents=True)
     (planted / "manifest.json").write_text('{"session_id": "planted-run-AAAA11"}', encoding="utf-8")
 
     assert main(["sessions", "prune"]) == 0
     out = capsys.readouterr().out
     assert not merged.exists()
-    assert not (inner_state / "repo.lock").exists()
+    assert not lock.exists()
     assert (planted / "manifest.json").is_file()
     assert "removed fork-merged11's worktree (merged)" in out
-    assert f"left {inner_state}" in out and "sessions" in out
 
 
 def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(

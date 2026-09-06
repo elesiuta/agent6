@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -284,6 +285,28 @@ def test_a_worktree_is_the_project_it_is_a_worktree_of(tmp_path: Path) -> None:
     (tree / ".git").write_text("gitdir: /elsewhere/.git/worktrees/wt\n", encoding="utf-8")
     (tree / "sub").mkdir()
     assert paths.project_root(tree / "sub") == tree.resolve()
+
+
+def test_a_linked_worktree_is_the_repository_it_belongs_to(tmp_path: Path) -> None:
+    """`git worktree add` writes a `.git` FILE naming the repository's
+    `.git/worktrees/<name>`: the worktree is that repository's project (one
+    state dir, config and memory), the way a subdirectory is. A pointer at a
+    directory that is gone (the pin above) keeps the worktree its own project."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(repo, "add", "a.txt")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
+    worktree = tmp_path / "wt"
+    _git(repo, "worktree", "add", "-q", str(worktree), "HEAD")
+    (worktree / "sub").mkdir()
+    assert paths.project_root(worktree / "sub") == repo.resolve()
+    assert paths.state_dir(worktree) == paths.state_dir(repo)
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
 
 
 def test_outside_a_repo_the_directory_is_the_project(tmp_path: Path) -> None:

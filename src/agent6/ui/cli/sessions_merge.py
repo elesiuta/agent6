@@ -426,7 +426,7 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     return 0
 
 
-def _sweep_workdirs(cwd: Path, state_dir: Path, config_path: Path | None) -> tuple[str, bool]:
+def _sweep_workdirs(cwd: Path, state: Path, config_path: Path | None) -> tuple[str, bool]:
     """Sweep the fan-out clones and fork worktrees under this repo's
     `[parallel].workdir` scope, printing each keep and each worktree removal.
     Returns (the summary-line note, whether anything was swept or kept)."""
@@ -441,9 +441,9 @@ def _sweep_workdirs(cwd: Path, state_dir: Path, config_path: Path | None) -> tup
             f"[agent6] kept {clones_kept} fan-out clone dir(s) holding commits this"
             " repo lacks (merge or archive their lanes first)"
         )
-    worktrees_removed, worktrees_kept = sweep_fork_worktrees(cwd, state_dir)
-    for fork_id, note in worktrees_removed:
-        print(f"[agent6] removed {fork_id}'s worktree (merged)" + (f"; {note}" if note else ""))
+    worktrees_removed, worktrees_kept = sweep_fork_worktrees(cwd, state)
+    for fork_id in worktrees_removed:
+        print(f"[agent6] removed {fork_id}'s worktree (merged)")
     for fork_id, why in worktrees_kept:
         print(f"[agent6] kept {fork_id}'s worktree ({why})")
     note = (
@@ -455,7 +455,7 @@ def _sweep_workdirs(cwd: Path, state_dir: Path, config_path: Path | None) -> tup
 
 
 def _prune_chain_refs(
-    cwd: Path, state_dir: Path, *, delete_squashed: bool
+    cwd: Path, repo_state: Path, *, delete_squashed: bool
 ) -> tuple[int, Counter[str]]:
     """Drop `refs/agent6/<id>/head` chain refs whose manifest confirms the run
     merged, under the same safety rules as branches: reachable-from-base
@@ -468,7 +468,7 @@ def _prune_chain_refs(
     refs_deleted = 0
     kept: Counter[str] = Counter()
     for sid, sha in list_chain_refs(cwd):
-        layout = session_layout(state_dir, sid)
+        layout = session_layout(repo_state, sid)
         if layout is None:
             # A machine's chain (`machine_chain_ref_for`) has no session record.
             kept["machine" if sid.startswith("machine-") else "no session record"] += 1

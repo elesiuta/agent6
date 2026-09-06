@@ -431,9 +431,7 @@ def _fork_git_grant(cfg: Config, ws: Workspace, selected: IsolationLevel) -> Pat
     repository's state dir (the repository is the worktree's git common
     dir's parent), through the leg's own policy builder, which grants it
     once the worktree's `.git` pointer still names it and raises
-    JailUnavailableError otherwise. A fork created from inside another
-    worktree records its manifest under that worktree's state dir, so run
-    from such a nested worktree this finds nothing."""
+    JailUnavailableError otherwise."""
     if selected == "none":
         return None
     try:

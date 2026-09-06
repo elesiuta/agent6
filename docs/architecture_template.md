@@ -29,7 +29,7 @@ Any layer may also use the shared substrate: <!-- generated: substrate-names -->
 
 - `cli_main` is the one error boundary: `OperatorError` (with `ConfigError`, `MemoryStoreError`) prints an `ERROR:` refusal at exit 2; anything else crash-reports with a saved traceback at exit 1
 - config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (defaults, global, per-repo, `--config FILE`); paths and sudo/root through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py); keys through [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secrets.py)
-- per-repo state lives out of the workspace at `$XDG_STATE_HOME/agent6/<repo-id>/`, keyed on the nearest enclosing `.git` (a subdirectory reaches the same runs, memory, config); the base moves with `[agent6].state_dir` or `AGENT6_STATE_HOME`
+- per-repo state lives out of the workspace at `$XDG_STATE_HOME/agent6/<repo-id>/`, keyed on the repository (a subdirectory reaches the same runs, memory and config, and so does a linked worktree, through its `.git` file)
 - every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
 
 Three model roles route independently: `worker` drives `run` and `resume`, `planner` drives `plan`, `reviewer` drives `review` and the in-loop panel.
@@ -220,7 +220,7 @@ One curator per run is an invariant (two live curators cache independently; the 
 - a per-mutation flock on the session dir guards concurrent operator-CLI reads/writes
 - a write-path fault after the in-memory update reloads from disk before surfacing: no read ever observes an unpersisted node
 
-One live run-mode worker per checkout is the level above (`sessions/lock.py`, a repo-wide flock on `<state-dir>/repo.lock`): run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
+One live run-mode worker per checkout is the level above (`sessions/lock.py`, a flock on `<state-dir>/locks/<checkout-id>.lock`, one per checkout of the repository): run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
 A second `agent6 run` parks: the submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings) and `agent6 resume <id>` starts it once the checkout is free; the message also offers a `/parallel 1 <task>` steer that hands it to the live run as an isolated lane.
 Plan and ask expose no edit tools and spawn freely; `--parallel` lanes work in isolated workdirs under the coordinator's one lock.
 
@@ -251,7 +251,7 @@ Ids are one namespace across every bucket, since every surface addresses a sessi
 **A fork** clones a source run's state as of a checkpoint into a new session dir with a new id, and gives it a linked git worktree of its own.
 It adds the worktree detached at the turn's sha (`<[parallel].workdir>/<repo-id>/<new>`), copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`, rebuilds the curator DAG at the checkpoint's `graph_version`, writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `worktree` / `worktree_git_dir` (the repository git dir the worktree points into, recorded here so the jail grant never depends on the worktree's own `.git` pointer), and cuts `agent6/<new>` at the turn's sha.
 The source run and the operator's checkout are never mutated, and one fork edge per line lands in a per-repo `lineage.jsonl`.
-`agent6 resume <new>` runs the leg in that worktree (the repo's state dir and config still apply); the jail policy grants the recorded `worktree_git_dir` read-only there, refusing when the worktree's `.git` pointer no longer resolves to it, and the worktree's `repo.lock` lives in a second state dir keyed on the worktree path, removed with the worktree.
+`agent6 resume <new>` runs the leg in that worktree (the repository's state dir and config apply there); the jail policy grants the recorded `worktree_git_dir` read-only there, refusing when the worktree's `.git` pointer no longer resolves to it, and the worktree's checkout lock is removed with the worktree.
 The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions rm <new>` removes it with the record.
 The manifest is the only thing that names a worktree as agent6's: a directory under `[parallel].workdir` that no manifest records is never deleted, and a worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.
 

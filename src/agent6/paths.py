@@ -282,7 +282,11 @@ def project_root(start: Path) -> Path:
 
     Walks for `.git` rather than asking git: this is on the path of every
     command, read-only ones included, and a subprocess per invocation is not.
-    A worktree's `.git` is a file, hence `exists` and not `is_dir`.
+    A linked worktree's `.git` is a file naming the repository's
+    `.git/worktrees/<name>`, and the worktree is that repository's project;
+    any other `.git` file (a submodule's, a pointer at a directory that is
+    gone, a repository whose git dir sits outside its checkout) makes its
+    directory a project of its own.
 
     No stop at `$HOME`: with `git init $HOME` every directory under it
     really IS one repo, and one repo has to be one project. Breaking the walk
@@ -292,11 +296,48 @@ def project_root(start: Path) -> Path:
     the interleaving the lock exists to prevent. Sharing state across a
     dotfiles repo is the operator's own choice; losing the lock is not.
     """
+    root = checkout_root(start)
+    if (root / ".git").is_file():
+        git_dir = linked_worktree_git_dir(root)
+        if git_dir is not None and git_dir.name == ".git":
+            return git_dir.parent
+    return root
+
+
+def checkout_root(start: Path) -> Path:
+    """The working tree *start* is inside (the nearest directory holding a
+    `.git`, file or directory), or *start* itself outside one. A linked
+    worktree is its own checkout; `project_root` maps it to its repository."""
     start = start.resolve()
     for candidate in (start, *start.parents):
         if (candidate / ".git").exists():
             return candidate
     return start
+
+
+def linked_worktree_git_dir(root: Path) -> Path | None:
+    """The repository git dir the linked worktree at *root* points into, or
+    None for an ordinary checkout: its `.git` file (`gitdir: <repo>/.git/
+    worktrees/<name>`) and that entry's `commondir`, resolved as git does.
+    Both files sit in the workspace, writable by a jailed command under
+    hardened: the pointer keys state and verifies a recorded grant, and never
+    makes one."""
+    pointer = root / ".git"
+    if not pointer.is_file():
+        return None
+    try:
+        text = pointer.read_text(encoding="utf-8", errors="replace").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        admin = Path(text[len("gitdir:") :].strip())
+        if not admin.is_absolute():
+            admin = root / admin
+        common = Path((admin / "commondir").read_text(encoding="utf-8").strip())
+        if not common.is_absolute():
+            common = admin / common
+        return common.resolve()
+    except OSError:
+        return None
 
 
 def state_dir(repo_root: Path) -> Path:

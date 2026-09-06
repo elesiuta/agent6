@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One live run-mode worker per checkout: the repo.lock + park-and-resume flow.
+"""One live run-mode worker per checkout: the checkout lock + park-and-resume flow.
 
 Two concurrent run-mode workers share one working tree; each auto-commit is a
 `git add -A` on whatever HEAD points at, so whichever run's branch was checked
@@ -26,6 +26,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.sessions.lock import (
     acquire_repo_writer,
     acquire_single_writer,
+    checkout_lock_path,
     release_single_writer,
     repo_writer_held,
     repo_writer_holder,
@@ -34,17 +35,17 @@ from agent6.sessions.manifest import read_manifest
 
 
 def test_repo_writer_second_acquire_refused_and_holder_named(tmp_path: Path) -> None:
-    fd = acquire_repo_writer(tmp_path, "run-A")
+    fd = acquire_repo_writer(tmp_path, tmp_path, "run-A")
     assert fd is not None
     try:
-        assert acquire_repo_writer(tmp_path, "run-B") is None
-        assert repo_writer_holder(tmp_path) == "run-A"
-        assert repo_writer_held(tmp_path) is True
+        assert acquire_repo_writer(tmp_path, tmp_path, "run-B") is None
+        assert repo_writer_holder(tmp_path, tmp_path) == "run-A"
+        assert repo_writer_held(tmp_path, tmp_path) is True
     finally:
         release_single_writer(fd)
     # Released: the checkout is free again and the probe agrees.
-    assert repo_writer_held(tmp_path) is False
-    fd2 = acquire_repo_writer(tmp_path, "run-B")
+    assert repo_writer_held(tmp_path, tmp_path) is False
+    fd2 = acquire_repo_writer(tmp_path, tmp_path, "run-B")
     assert fd2 is not None
     release_single_writer(fd2)
 
@@ -58,8 +59,8 @@ def test_one_probe_does_not_read_another_probe_as_a_live_run(tmp_path: Path) -> 
 
     from agent6.portable import lock_shared_nonblocking
 
-    lock_path = tmp_path / "repo.lock"
-    created = acquire_repo_writer(tmp_path, "run-A")  # creates the file
+    lock_path = checkout_lock_path(tmp_path, tmp_path)
+    created = acquire_repo_writer(tmp_path, tmp_path, "run-A")  # creates the file
     assert created is not None
     release_single_writer(created)  # the checkout is free: only a probe holds anything
     probing = threading.Event()
@@ -76,7 +77,7 @@ def test_one_probe_does_not_read_another_probe_as_a_live_run(tmp_path: Path) -> 
     thread.start()
     try:
         assert probing.wait(5.0)
-        assert repo_writer_held(tmp_path) is False, "a probe read as a live writer"
+        assert repo_writer_held(tmp_path, tmp_path) is False, "a probe read as a live writer"
     finally:
         done.set()
         thread.join(5.0)
@@ -84,12 +85,12 @@ def test_one_probe_does_not_read_another_probe_as_a_live_run(tmp_path: Path) -> 
 
 def test_repo_writer_probe_does_not_hold(tmp_path: Path) -> None:
     # The advisory probe must not itself keep the lock (it acquires + releases).
-    assert repo_writer_held(tmp_path) is False  # no lock file yet
-    fd = acquire_repo_writer(tmp_path, "run-A")
+    assert repo_writer_held(tmp_path, tmp_path) is False  # no lock file yet
+    fd = acquire_repo_writer(tmp_path, tmp_path, "run-A")
     assert fd is not None
     release_single_writer(fd)
-    assert repo_writer_held(tmp_path) is False
-    fd2 = acquire_repo_writer(tmp_path, "run-C")
+    assert repo_writer_held(tmp_path, tmp_path) is False
+    fd2 = acquire_repo_writer(tmp_path, tmp_path, "run-C")
     assert fd2 is not None
     release_single_writer(fd2)
 
@@ -135,7 +136,7 @@ def test_second_run_parks_with_the_verbatim_task(repo: Path) -> None:
 
     state = state_dir(repo)
     long_task = "fix the thing " + "x" * 5000  # > the 4000-char display cap
-    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    holder_fd = acquire_repo_writer(state, repo, "run-LIVE")
     try:
         rc = run_task(
             _load_cfg(),
@@ -236,7 +237,7 @@ def test_resume_refuses_while_another_run_drives_the_checkout(
         + "\n",
         encoding="utf-8",
     )
-    holder_fd = acquire_repo_writer(state, "run-A")
+    holder_fd = acquire_repo_writer(state, repo, "run-A")
     try:
         rc = resume_mod.resume_task(None, "run-B", frontend=MagicMock(), force=False)
     finally:
@@ -259,7 +260,7 @@ def test_hub_new_work_preflight_refuses_while_checkout_busy(
 
     monkeypatch.setattr(spawn, "spawn_and_locate", must_not_spawn)
     state = state_dir(repo)
-    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    holder_fd = acquire_repo_writer(state, repo, "run-LIVE")
     try:
         session_dir, err = spawn.spawn_new_work(repo, "run", "another task")
     finally:
@@ -291,7 +292,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
 
     monkeypatch.setattr(spawn, "directive_model_refusal", no_refusal)
     state = state_dir(repo)
-    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    holder_fd = acquire_repo_writer(state, repo, "run-LIVE")
     try:
         session_dir, err = spawn.spawn_new_work(repo, "run", "/parallel 2 another task")
     finally:
@@ -311,7 +312,7 @@ def test_runs_show_reports_a_parked_run_as_parked(
     from agent6.ui.cli.sessions_show import _cmd_status  # pyright: ignore[reportPrivateUsage]
 
     state = state_dir(repo)
-    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    holder_fd = acquire_repo_writer(state, repo, "run-LIVE")
     try:
         rc = run_task(
             _load_cfg(),
@@ -340,7 +341,7 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Pa
     from agent6.config.layer import load_effective
 
     state = state_dir(repo)
-    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    holder_fd = acquire_repo_writer(state, repo, "run-LIVE")
     try:
         rc = run_task(
             _load_cfg(),
@@ -402,7 +403,7 @@ def test_run_task_seeds_initial_steer_on_the_bridge(repo: Path) -> None:
     from agent6.sessions.ipc import read_steer_answer, steer_request_pending
 
     state = state_dir(repo)
-    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    holder_fd = acquire_repo_writer(state, repo, "run-LIVE")
     try:
         rc = run_task(
             _load_cfg(),
@@ -443,7 +444,7 @@ def test_teardown_raise_still_releases_both_writer_locks(
         )
     # Both flocks are free for the next in-process run: the checkout's...
     state = state_dir(repo)
-    fd = acquire_repo_writer(state, "run-NEXT")
+    fd = acquire_repo_writer(state, repo, "run-NEXT")
     assert fd is not None
     release_single_writer(fd)
     # ...and the run dir's.
@@ -491,7 +492,7 @@ def test_resume_keeps_a_stop_request_pending_after_the_previous_leg_ended(
     os.utime(layout.session_dir / "steer.request", (leg_end - 10, leg_end - 10))
     request_stop(layout.session_dir)
     os.utime(layout.session_dir / "stop.request", (leg_end + 1, leg_end + 1))
-    holder_fd = acquire_repo_writer(state, "run-A")
+    holder_fd = acquire_repo_writer(state, repo, "run-A")
     try:
         rc = resume_mod.resume_task(None, "run-C", frontend=MagicMock(), force=False)
     finally:
@@ -631,3 +632,21 @@ def test_resume_treats_a_file_that_arrived_between_legs_as_the_operators(
     seen.clear()
     rc = resume_mod.resume_task(None, "run-U", frontend=MagicMock(), force=False)
     assert rc == 2 and seen == []
+
+
+def test_a_run_started_in_a_subdirectory_shares_the_checkouts_lock(tmp_path: Path) -> None:
+    """The lock is one per CHECKOUT, wherever the operator stood when they
+    started the run: keyed on the cwd, a run from `src/` took a lock of its
+    own and drove the working tree beside the run holding the root's."""
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    state = tmp_path / "state"
+    fd = acquire_repo_writer(state, repo, "run-A")
+    assert fd is not None
+    try:
+        assert repo_writer_held(state, repo / "src") is True
+        assert repo_writer_holder(state, repo / "src") == "run-A"
+        assert acquire_repo_writer(state, repo / "src", "run-B") is None
+    finally:
+        release_single_writer(fd)

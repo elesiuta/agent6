@@ -242,10 +242,10 @@ def test_a_busy_checkout_is_refused_at_once(
     locate wait; the hub says so at once instead (plan/ask spawn freely)."""
     captured = _capture_locate(monkeypatch)
 
-    def _held(_state: Path) -> bool:
+    def _held(_state: Path, _checkout: Path) -> bool:
         return True
 
-    def _holder(_state: Path) -> str:
+    def _holder(_state: Path, _checkout: Path) -> str:
         return "busy-run"
 
     monkeypatch.setattr(spawn, "repo_writer_held", _held)

@@ -101,7 +101,12 @@ from agent6.sessions.layout import (
     read_untracked_at_start,
     write_untracked_at_start,
 )
-from agent6.sessions.lock import acquire_repo_writer, release_single_writer, repo_writer_holder
+from agent6.sessions.lock import (
+    acquire_repo_writer,
+    checkout_lock_path,
+    release_single_writer,
+    repo_writer_holder,
+)
 from agent6.sessions.manifest import (
     ManifestError,
     SessionManifest,
@@ -449,10 +454,9 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         return None
     lock_fd: int | None = None
     if read_worker_pid(undone.session_dir) != os.getpid():
-        lock_state_dir = state_dir(checkout)
-        lock_fd = acquire_repo_writer(lock_state_dir, undone.session_id)
+        lock_fd = acquire_repo_writer(state, checkout, undone.session_id)
         if lock_fd is None:
-            holder = repo_writer_holder(lock_state_dir) or "another run"
+            holder = repo_writer_holder(state, checkout) or "another run"
             reporter.refuse(
                 f"run {holder!r} is driving this checkout, and /undo would put the tree back"
                 " under it. Stop it first:\n"
@@ -695,13 +699,11 @@ def _plan_fork(
 
 def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> tuple[bool, str]:
     """Delete a fork's worktree (only a linked worktree of *repo*, see
-    `git_ops.remove_worktree`) and the checkout lock its legs took under the
-    worktree's own state dir, unless it holds work none of *tips* (the commits
-    its sessions landed) has. Returns `(removed, note)`: removed is False when
-    *worktree* is not one, could not be deleted, or holds such work -- the
-    note then says which. On success the note names the state dir when it holds more than the
-    lock (a session the operator ran inside the worktree) and so stays, ""
-    otherwise.
+    `git_ops.remove_worktree`) and the checkout lock its legs took, unless it
+    holds work none of *tips* (the commits its sessions landed) has. Returns
+    `(removed, note)`: removed is False when *worktree* is not one, could not
+    be deleted, or holds such work, and the note then says which; "" on
+    success.
 
     The dirty check is git's own rule for `worktree remove`: prune and rm land
     on a merged fork, and the tree can still carry an uncommitted edit or a
@@ -709,13 +711,14 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
     dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
-    state = state_dir(worktree)
+    lock_path = checkout_lock_path(state_dir(worktree), worktree)
     if not remove_worktree(repo, worktree):
         return False, (
             "could not be removed: not a linked worktree of this repository,"
             " or a file in it would not delete"
         )
-    return True, _drop_checkout_lock(state)
+    lock_path.unlink(missing_ok=True)
+    return True, ""
 
 
 def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
@@ -744,22 +747,6 @@ def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
         return ""
     named = ", ".join(held[:4]) + (", ..." if len(held) > 4 else "")
     return f"holds work no commit has: {named}"
-
-
-def _drop_checkout_lock(state_dir: Path) -> str:
-    """Remove the `repo.lock` a fork's leg took in *state_dir* and the dir
-    itself when that lock was all it held. Anything else there is not the
-    fork's (a session the operator ran inside the worktree, memory) and
-    stays: returns the note naming it, "" when nothing was left behind."""
-    (state_dir / "repo.lock").unlink(missing_ok=True)
-    try:
-        state_dir.rmdir()
-    except FileNotFoundError:
-        return ""
-    except OSError:
-        held = ", ".join(sorted(p.name for p in state_dir.iterdir()))
-        return f"left {state_dir} ({held} inside, not the fork's)"
-    return ""
 
 
 def worktree_owners(state_dir: Path) -> dict[Path, list[tuple[Path, SessionManifest]]]:
@@ -800,17 +787,14 @@ def _landed_tips(repo: Path, sessions: Sequence[tuple[Path, SessionManifest]]) -
     return tuple(tip for tip in tips if tip)
 
 
-def sweep_fork_worktrees(
-    repo: Path, state_dir: Path
-) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+def sweep_fork_worktrees(repo: Path, state: Path) -> tuple[list[str], list[tuple[str, str]]]:
     """Remove every fork worktree whose sessions have all landed their work
-    (merged, none live), and keep the rest. Returns `([(removed id, note)],
-    [(kept id, why)])`: the note names a worktree state dir left behind
-    (`remove_fork_worktree`); a session sharing a kept worktree is kept for
-    the session that needs it."""
-    removed: list[tuple[str, str]] = []
+    (merged, none live), and keep the rest. Returns `([removed id], [(kept
+    id, why)])`; a session sharing a kept worktree is kept for the session
+    that needs it."""
+    removed: list[str] = []
     kept: list[tuple[str, str]] = []
-    for worktree, sessions in worktree_owners(state_dir).items():
+    for worktree, sessions in worktree_owners(state).items():
         if not worktree.exists():
             continue
         needs = {d.name: why for d, m in sessions if (why := _still_needs_worktree(repo, d, m))}
@@ -820,7 +804,7 @@ def sweep_fork_worktrees(
             continue
         gone, note = remove_fork_worktree(repo, worktree, _landed_tips(repo, sessions))
         if gone:
-            removed.extend((d.name, note) for d, _ in sessions)
+            removed.extend(d.name for d, _ in sessions)
         elif note:
             # Merged, but the tree carries work no commit has, or would not
             # delete: keeping it is the only safe answer, and the operator

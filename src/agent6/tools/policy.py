@@ -20,6 +20,7 @@ from agent6.paths import (
     effective_user,
     hidden_paths,
     jail_cache_home,
+    linked_worktree_git_dir,
     mkdir_for_real_user,
     private_dirs,
 )
@@ -152,30 +153,6 @@ def resolve_network(
     if override is not None:
         return override
     return "host" if config.sandbox.network == "host" else "session"
-
-
-def linked_worktree_git_dir(root: Path) -> Path | None:
-    """The repository git dir the linked worktree at *root* points into, or
-    None for an ordinary checkout: its `.git` file (`gitdir: <repo>/.git/
-    worktrees/<name>`) and that entry's `commondir`, resolved as git does.
-    Read to VERIFY a recorded grant, never to make one: both files sit in the
-    workspace, writable by a jailed command under hardened."""
-    pointer = root / ".git"
-    if not pointer.is_file():
-        return None
-    try:
-        text = pointer.read_text(encoding="utf-8", errors="replace").strip()
-        if not text.startswith("gitdir:"):
-            return None
-        admin = Path(text[len("gitdir:") :].strip())
-        if not admin.is_absolute():
-            admin = root / admin
-        common = Path((admin / "commondir").read_text(encoding="utf-8").strip())
-        if not common.is_absolute():
-            common = admin / common
-        return common.resolve()
-    except OSError:
-        return None
 
 
 def jail_policy(

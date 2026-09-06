@@ -221,7 +221,7 @@ def test_undo_refuses_while_another_live_run_drives_the_checkout(
     state = state_dir(repo)
     for holder in ("other-LIVE11", "run-AAAA11"):
         said: list[str] = []
-        fd = acquire_repo_writer(state, holder)
+        fd = acquire_repo_writer(state, repo, holder)
         try:
             result = undo_fork(
                 None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append)
@@ -249,7 +249,7 @@ def test_undo_from_the_live_session_itself_is_allowed(
     write_worker_pid(
         SessionLayout(state_dir=state, session_id="run-AAAA11").session_dir, os.getpid()
     )
-    fd = acquire_repo_writer(state, "run-AAAA11")
+    fd = acquire_repo_writer(state, repo, "run-AAAA11")
     try:
         result = undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(print, print))
     finally:

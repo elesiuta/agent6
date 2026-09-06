@@ -368,9 +368,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # runs share one worktree, so each would commit the other's
             # in-flight edits into its own chain. Taken BEFORE any tree mutation
             # (auto-stash, branch cut). plan/ask are read-only and skip it.
-            repo_lock_fd = acquire_repo_writer(layout.state_dir, effective_session_id)
+            repo_lock_fd = acquire_repo_writer(layout.state_dir, cwd, effective_session_id)
             if repo_lock_fd is None:
-                holder = repo_writer_holder(layout.state_dir) or "another run"
+                holder = repo_writer_holder(layout.state_dir, cwd) or "another run"
                 return _park(
                     "checkout busy",
                     f"run {holder!r} is already driving this checkout, and a second run-mode"

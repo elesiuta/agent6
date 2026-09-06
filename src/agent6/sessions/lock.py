@@ -13,7 +13,7 @@ import contextlib
 import os
 from pathlib import Path
 
-from agent6.paths import mkdir_for_real_user
+from agent6.paths import checkout_root, mkdir_for_real_user, repo_id
 from agent6.portable import lock_exclusive, lock_shared_nonblocking, unlock
 
 
@@ -66,9 +66,17 @@ SINGLE_WRITER_BUSY = (
 )
 
 
-def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
-    """Take a non-blocking exclusive lock on `<state-dir>/repo.lock`: one live
-    `run`-mode worker per CHECKOUT.
+def checkout_lock_path(state_dir: Path, checkout: Path) -> Path:
+    """The writer lock of the checkout *checkout* is in (its root, wherever
+    the caller stood): `<state-dir>/locks/<checkout-id>.lock`. A repository's
+    checkouts (its working tree, each linked worktree) share one state dir
+    and hold one lock each."""
+    return state_dir / "locks" / f"{repo_id(checkout_root(checkout))}.lock"
+
+
+def acquire_repo_writer(state_dir: Path, checkout: Path, session_id: str) -> int | None:
+    """Take a non-blocking exclusive lock on *checkout*'s lock
+    (`checkout_lock_path`): one live `run`-mode worker per CHECKOUT.
 
     Run-mode workers share one working tree, and each commit stages that whole
     tree (into a temp index, `chain_commit`), so a second concurrent run would
@@ -81,8 +89,9 @@ def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
     process death, so a crashed worker never wedges the checkout. Release with
     `release_single_writer`.
     """
-    mkdir_for_real_user(state_dir)
-    fd = os.open(state_dir / "repo.lock", os.O_CREAT | os.O_RDWR, 0o644)
+    lock_path = checkout_lock_path(state_dir, checkout)
+    mkdir_for_real_user(lock_path.parent)
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
         lock_exclusive(fd, blocking=False)
     except OSError:
@@ -93,17 +102,17 @@ def acquire_repo_writer(state_dir: Path, session_id: str) -> int | None:
     return fd
 
 
-def repo_writer_holder(state_dir: Path) -> str:
-    """The session id the current `repo.lock` holder stamped, or "" unknown.
-    Advisory (for refusal messages); the flock is the boundary."""
+def repo_writer_holder(state_dir: Path, checkout: Path) -> str:
+    """The session id the current holder of *checkout*'s lock stamped, or ""
+    unknown. Advisory (for refusal messages); the flock is the boundary."""
     try:
-        return (state_dir / "repo.lock").read_text(encoding="utf-8").strip()
+        return checkout_lock_path(state_dir, checkout).read_text(encoding="utf-8").strip()
     except OSError:
         return ""
 
 
-def repo_writer_held(state_dir: Path) -> bool:
-    """True when a live worker holds the checkout's `repo.lock`.
+def repo_writer_held(state_dir: Path, checkout: Path) -> bool:
+    """True when a live worker holds *checkout*'s lock.
 
     An advisory probe for front-end preflight (the web hub refuses a New Work
     submission up front instead of spawning a doomed run): it takes a SHARED
@@ -112,7 +121,7 @@ def repo_writer_held(state_dir: Path) -> bool:
     itself remains the hard boundary -- a race past this probe still parks at
     `acquire_repo_writer`.
     """
-    lock_path = state_dir / "repo.lock"
+    lock_path = checkout_lock_path(state_dir, checkout)
     if not lock_path.exists():
         return False
     try:

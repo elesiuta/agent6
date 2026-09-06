@@ -88,8 +88,8 @@ def spawn_new_work(  # noqa: PLR0911
         except DirectiveError as exc:
             return None, str(exc)
     if segments is None:
-        if mode == "run" and repo_writer_held(state := state_dir(cwd)):
-            holder = repo_writer_holder(state) or "another run"
+        if mode == "run" and repo_writer_held(state := state_dir(cwd), cwd):
+            holder = repo_writer_holder(state, cwd) or "another run"
             return None, (
                 f"run {holder} is already driving this checkout; steer it with this task"
                 " (or /parallel it) from its run view, or wait for it to finish"
