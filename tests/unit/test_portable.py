@@ -332,3 +332,49 @@ def test_a_cut_stderr_tail_says_it_was_cut() -> None:
     assert tail.startswith("…[agent6: ") and "earlier chars cut]" in tail
     assert tail.endswith("x" * 60)
     assert stderr_tail([b"short\n"]) == "short"
+
+
+def test_the_stderr_drain_keeps_what_a_live_child_said() -> None:
+    """Through a buffered pipe, `read(4096)` returned only at 4 KB or EOF: a
+    server that logged its reason and then waited on stdin had that reason in
+    the drain only after it died, so a startup timeout carried none of it."""
+    import threading
+    import time
+
+    from agent6.portable import drain_stderr
+
+    r, w = os.pipe()
+    reader = os.fdopen(r, "rb")  # buffered, as a Popen pipe is by default
+    kept: list[bytes] = []
+    threading.Thread(target=drain_stderr, args=(reader, kept), daemon=True).start()
+    os.write(w, b"FATAL: missing API token\n")
+    deadline = time.monotonic() + 2.0
+    while not kept and time.monotonic() < deadline:
+        time.sleep(0.01)
+    try:
+        assert kept == [b"FATAL: missing API token\n"], kept
+    finally:
+        os.close(w)
+        reader.close()
+
+
+def test_the_stderr_drain_keeps_a_byte_budget_of_tail() -> None:
+    """Capped at two chunks, a drain reading write by write kept two lines of a
+    chatty child; the cap is STDERR_KEEP_BYTES of tail, whatever the writes."""
+    import threading
+
+    from agent6.portable import STDERR_KEEP_BYTES, drain_stderr
+
+    r, w = os.pipe()
+    reader = os.fdopen(r, "rb")
+    kept: list[bytes] = []
+    drain = threading.Thread(target=drain_stderr, args=(reader, kept), daemon=True)
+    drain.start()
+    for i in range(3000):
+        os.write(w, f"line {i:05d}\n".encode())
+    os.close(w)
+    drain.join(timeout=5.0)
+    reader.close()
+    tail = b"".join(kept)
+    assert STDERR_KEEP_BYTES <= len(tail) <= STDERR_KEEP_BYTES + 4096, len(tail)
+    assert tail.endswith(b"line 02999\n")

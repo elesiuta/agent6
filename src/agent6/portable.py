@@ -303,13 +303,17 @@ def drain_stderr(pipe: IO[bytes], keep: list[bytes], *, close: bool = False) -> 
     """Read a child's stderr forever, keeping only the tail.
 
     Forever, because a pipe nobody reads stops the writer at 64 KB (a child
-    that logs would wedge itself). Only the tail, because the writer has no
-    reason to be polite about volume."""
+    that logs would wedge itself). The last STDERR_KEEP_BYTES, because the
+    writer has no reason to be polite about volume. Read at the descriptor: a
+    buffered pipe's read(4096) returns only at 4 KB or EOF, so what a live
+    child said would reach a failure message only after it died. The drain is
+    the pipe's only reader: bytes another reader had buffered would be
+    skipped."""
     with contextlib.suppress(OSError, ValueError):
-        while chunk := pipe.read(4096):
+        while chunk := os.read(pipe.fileno(), 4096):
             keep.append(chunk)
-            while len(keep) > 2:
-                keep.pop(0)
+            if len(keep) > 2:
+                keep[:] = [b"".join(keep)[-STDERR_KEEP_BYTES:]]
     if close:
         pipe.close()
 
