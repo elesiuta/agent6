@@ -39,6 +39,20 @@ def _sub(
     return subparsers.add_parser(name, help=summary + "." if rest else summary, description=help)
 
 
+SESSION_ID = "Session id or unambiguous prefix"
+SESSION_ID_HELP = f"{SESSION_ID}; omit for the newest."
+
+
+def _add_session_id(
+    parser: argparse.ArgumentParser, completer: object, *, help_text: str = SESSION_ID_HELP
+) -> None:
+    """The positional a verb acting on a session takes: an id or unambiguous
+    prefix, omitted for the newest; *completer* offers the ids the verb
+    accepts (passed in: `completers` imports this module)."""
+    arg = parser.add_argument("session_id", nargs="?", default="", help=help_text)
+    arg.completer = completer  # type: ignore[attr-defined]
+
+
 def _add_config_flag(parser: argparse.ArgumentParser) -> None:
     """A subcommand's `--config FILE`. Its default is SUPPRESS, not None: the
     subparser sets `config` only when the flag follows the subcommand, so both
@@ -163,8 +177,6 @@ warn = STDIO_REPORTER.warn
 
 # The one sentence every command's id argument prints; a command whose default
 # differs appends its own clause.
-SESSION_ID = "Session id or unambiguous prefix"
-SESSION_ID_HELP = f"{SESSION_ID}; omit for the newest."
 MACHINE_ID_HELP = "Machine id (a directory under the per-repo state dir's machines/)."
 REPO_FLAG_HELP = "Write to the per-repo config instead of the global config."
 

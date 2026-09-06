@@ -9,10 +9,10 @@ import argparse
 
 from agent6.config.layer import BUILTIN_PRESETS
 from agent6.ui.cli._common import (
-    SESSION_ID_HELP,
     _add_budget_flags,
     _add_config_flag,
     _add_sandbox_flags,
+    _add_session_id,
     _sub,
 )
 from agent6.ui.cli.completers import (
@@ -141,13 +141,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     resume_p = _sub(sub, "resume", help="Resume a paused run from its snapshot.")
-    resume_run = resume_p.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    resume_run.completer = _complete_resumable_ids  # type: ignore[attr-defined]
+    _add_session_id(resume_p, _complete_resumable_ids)
     _add_config_flag(resume_p)
     resume_preset = resume_p.add_argument(
         "--preset",
@@ -202,13 +196,11 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " worktree and continue it (the source run and your checkout are never touched)."
         ),
     )
-    fork_src = fork_p.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help="Source run id or unambiguous prefix; omit for the newest run.",
+    _add_session_id(
+        fork_p,
+        _complete_resumable_ids,
+        help_text="Source run id or unambiguous prefix; omit for the newest run.",
     )
-    fork_src.completer = _complete_resumable_ids  # type: ignore[attr-defined]
     fork_p.add_argument(
         "--at-turn",
         type=int,

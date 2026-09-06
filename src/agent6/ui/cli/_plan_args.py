@@ -9,7 +9,13 @@ from __future__ import annotations
 import argparse
 import os
 
-from agent6.ui.cli._common import _add_budget_flags, _add_config_flag, _add_sandbox_flags, _sub
+from agent6.ui.cli._common import (
+    _add_budget_flags,
+    _add_config_flag,
+    _add_sandbox_flags,
+    _add_session_id,
+    _sub,
+)
 from agent6.ui.cli.completers import (
     _complete_plan_session_ids,
     _complete_presets,
@@ -60,13 +66,11 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     _add_budget_flags(plan_run)
     _add_sandbox_flags(plan_run)
     plan_show = _sub(plan_sub, "show", help="Print the plan.md for a prior plan run and exit.")
-    plan_show_id = plan_show.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help="Plan id or unambiguous prefix; omit for the newest plan.",
+    _add_session_id(
+        plan_show,
+        _complete_plan_session_ids,
+        help_text="Plan id or unambiguous prefix; omit for the newest plan.",
     )
-    plan_show_id.completer = _complete_plan_session_ids  # type: ignore[attr-defined]
     plan_edit = _sub(
         plan_sub,
         "edit",
@@ -75,13 +79,11 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             f" (currently: {os.environ.get('EDITOR', '') or 'vi'}) and exit."
         ),
     )
-    plan_edit_id = plan_edit.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help="Plan id or unambiguous prefix; omit for the newest plan.",
+    _add_session_id(
+        plan_edit,
+        _complete_plan_session_ids,
+        help_text="Plan id or unambiguous prefix; omit for the newest plan.",
     )
-    plan_edit_id.completer = _complete_plan_session_ids  # type: ignore[attr-defined]
 
 
 def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

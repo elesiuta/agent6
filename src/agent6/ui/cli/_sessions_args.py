@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import SESSION_ID, SESSION_ID_HELP, _sub
+from agent6.ui.cli._common import SESSION_ID, _add_session_id, _sub
 from agent6.ui.cli.completers import _complete_live_session_ids, _complete_session_ids
 
 
@@ -45,13 +45,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "show",
         help="One-shot liveness + progress of a session, then exit (`agent6 attach` follows live).",
     )
-    sessions_show_id = sessions_show.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    sessions_show_id.completer = _complete_session_ids  # type: ignore[attr-defined]
+    _add_session_id(sessions_show, _complete_session_ids)
     sessions_show.add_argument(
         "--json",
         action="store_true",
@@ -63,13 +57,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "diff",
         help="Print the git diff produced by a session (manifest.base_sha -> HEAD of run branch).",
     )
-    sessions_diff_id = sessions_diff.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    sessions_diff_id.completer = _complete_session_ids  # type: ignore[attr-defined]
+    _add_session_id(sessions_diff, _complete_session_ids)
     sessions_diff.add_argument(
         "--stat",
         action="store_true",
@@ -89,13 +77,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "merge",
         help="Merge a session's branch into a target (default: the branch it was cut from).",
     )
-    sessions_merge_id = sessions_merge.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    sessions_merge_id.completer = _complete_session_ids  # type: ignore[attr-defined]
+    _add_session_id(sessions_merge, _complete_session_ids)
     sessions_merge.add_argument(
         "--strategy",
         choices=("squash", "merge", "ff"),
@@ -148,26 +130,14 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "commits",
         help="List the per-step commits on a session's branch.",
     )
-    sessions_commits_id = sessions_commits.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    sessions_commits_id.completer = _complete_session_ids  # type: ignore[attr-defined]
+    _add_session_id(sessions_commits, _complete_session_ids)
 
     sessions_stop = _sub(
         sessions_sub,
         "stop",
         help="Ask a running detached session to stop cleanly after its current step (resumable).",
     )
-    sessions_stop_id = sessions_stop.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    sessions_stop_id.completer = _complete_live_session_ids  # type: ignore[attr-defined]
+    _add_session_id(sessions_stop, _complete_live_session_ids)
 
     sessions_dir = _sub(
         sessions_sub,
@@ -175,13 +145,11 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help="Print the directory this repo's session history lives in, or a session's own"
         " directory when given its id (one line, scriptable).",
     )
-    sessions_dir_id = sessions_dir.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=f"{SESSION_ID}; omit for the repo's session root.",
+    _add_session_id(
+        sessions_dir,
+        _complete_session_ids,
+        help_text=f"{SESSION_ID}; omit for the repo's session root.",
     )
-    sessions_dir_id.completer = _complete_session_ids  # type: ignore[attr-defined]
 
     sessions_rm = _sub(
         sessions_sub,
@@ -191,13 +159,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " worktree; its branch, if any, is left alone."
         ),
     )
-    sessions_rm_id = sessions_rm.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    sessions_rm_id.completer = _complete_session_ids  # type: ignore[attr-defined]
+    _add_session_id(sessions_rm, _complete_session_ids)
     sessions_rm.add_argument(
         "--asks",
         action="store_true",
@@ -228,13 +190,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "transcript",
         help="Render a session's full LLM conversation (the lossless transcripts) as Markdown.",
     )
-    sessions_tr_id = sessions_tr.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    sessions_tr_id.completer = _complete_session_ids  # type: ignore[attr-defined]
+    _add_session_id(sessions_tr, _complete_session_ids)
     sessions_tr.add_argument(
         "--json",
         dest="as_json",
@@ -261,10 +217,4 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "graph",
         help="Render the persisted task graph for a session as a DFS tree.",
     )
-    sessions_graph_id = sessions_graph.add_argument(
-        "session_id",
-        nargs="?",
-        default="",
-        help=SESSION_ID_HELP,
-    )
-    sessions_graph_id.completer = _complete_session_ids  # type: ignore[attr-defined]
+    _add_session_id(sessions_graph, _complete_session_ids)
