@@ -550,12 +550,15 @@ def test_machine_run_rejects_unknown_file(server: tuple[WebServer, int]) -> None
     assert "unknown machine file" in str(body["error"])
 
 
-def test_bad_post_body_is_400(server: tuple[WebServer, int]) -> None:
+def test_bad_post_body_is_400_with_the_field_named(server: tuple[WebServer, int]) -> None:
+    """One human line per failed field, not the repr of pydantic's error list
+    (`[{'type': 'missing', 'loc': ('task',), ...}]`) in the toast."""
     _srv, port = server
+    status, body = _post(port, "/api/new", {"mode": "run"})
+    assert (status, body["error"]) == (400, "task: field required")
     # extra="forbid": an unknown field fails validation loudly.
     status, body = _post(port, "/api/new", {"mode": "run", "task": "x", "bogus": 1})
-    assert status == 400
-    assert "bad request" in str(body["error"])
+    assert (status, body["error"]) == (400, "bogus: extra inputs are not permitted")
 
 
 def _read_until(

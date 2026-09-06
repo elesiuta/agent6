@@ -125,6 +125,17 @@ class ConfigSetBody(_Body):
     unset: bool = False  # remove the key from the target layer instead of setting it
 
 
+def _validation_message(exc: ValidationError) -> str:
+    """The failed fields as one line (`task: field required`), not the repr of
+    pydantic's error list."""
+    clauses: list[str] = []
+    for err in exc.errors():
+        field = ".".join(str(part) for part in err["loc"]) or "body"
+        msg = str(err["msg"])
+        clauses.append(f"{field}: {msg[:1].lower()}{msg[1:]}")
+    return "; ".join(clauses)
+
+
 class WebServer(ThreadingHTTPServer):
     """A ThreadingHTTPServer that carries the repo cwd its handlers read from,
     and tracks which runs a browser is actively watching so it can register this
@@ -275,7 +286,7 @@ class _Handler(BaseHTTPRequestHandler):
         except ValidationError as exc:
             # The body was read (validation runs on the parsed body), so the
             # connection framing is intact and may stay open.
-            self._send_json({"error": f"bad request: {exc.errors()}"}, status=400)
+            self._send_json({"error": _validation_message(exc)}, status=400)
         except ValueError as exc:
             # A body that is not JSON, or not an object: `_read_body` consumed
             # it, so the connection may stay open too.
