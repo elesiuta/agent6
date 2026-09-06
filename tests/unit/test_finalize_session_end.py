@@ -897,3 +897,37 @@ def test_the_sandbox_warning_states_its_remedy_once(
     assert out.count("- run with --dangerously-disable-sandbox") == 1
     for binary in ("cargo", "node", "pyenv"):
         assert f"`{binary}`" in out
+
+
+def test_the_run_total_rides_the_receipt_channel(tmp_path: Path) -> None:
+    """A front-end with a live view routes the cost receipt to its log; the
+    RUN TOTAL line went through `out`, so on a resumed ACP turn it was the one
+    receipt line the editor saw, split from the block it belongs to."""
+    from agent6.app.reporter import Reporter
+
+    layout = _layout(
+        tmp_path,
+        "r8",
+        [
+            {"type": "session.start", "session_id": "r8", "user_task": "t"},
+            {"type": "budget.update", "usd_total": 0.019},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "loop.resume.start", "iteration": 4},
+            {"type": "budget.update", "usd_total": 0.0126},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    out: list[str] = []
+    receipt: list[str] = []
+    print_session_end(
+        SessionResult(
+            completed=True, reason="finish_session", summary="", iterations=5, tool_calls=2
+        ),
+        layout=layout,
+        cwd=tmp_path,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=Reporter(out=out.append, err=out.append, receipt=receipt.append),
+    )
+    assert any("RUN TOTAL (all 2 legs)" in line for line in receipt)
+    assert not any("RUN TOTAL" in line for line in out)

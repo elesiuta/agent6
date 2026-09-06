@@ -377,7 +377,7 @@ def _print_run_total_across_legs(layout: SessionLayout, *, reporter: Reporter) -
     scan = scan_session_log(layout.session_dir / LOGS_NAME)
     if scan.legs > 1 and scan.cost_usd is not None:
         cost = format_usd(scan.cost_usd, partial=scan.usd_partial)
-        reporter.out(f"  RUN TOTAL (all {scan.legs} legs): {cost}")
+        reporter.cost(f"  RUN TOTAL (all {scan.legs} legs): {cost}")
 
 
 def print_interrupt_end(
