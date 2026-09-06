@@ -136,6 +136,19 @@ def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text
 # one with a follow-up, or start a new session from a draft.
 
 
+def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
+    """The empty-conversation placeholder: a parked run says why it is parked
+    and how to start it (the dashboard row carried the reason; this view said
+    only "no conversation yet"); otherwise past tense only when the session
+    positively ended."""
+    if word == "parked":
+        why = f": {detail}" if detail else ""
+        return f"(parked{why} \u2014 type below to start it)"
+    if ended:
+        return "this run made no conversation"
+    return "(no conversation yet; it appears as the run streams)"
+
+
 class _ChromeStatic(Static):
     """A Static that never joins a text selection, so dragging over the title or
     the live pane doesn't grab their text (or stall the auto-scroll) mid-select.
@@ -589,11 +602,8 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             # simply not started streaming yet -- the same lie, inverted.
             live_fn = getattr(self.app, "session_controllable", None)
             ended = callable(live_fn) and not live_fn()
-            empty = (
-                "this run made no conversation"
-                if ended
-                else "(no conversation yet; it appears as the run streams)"
-            )
+            word, detail = getattr(self.app, "dir_status", ("", ""))
+            empty = empty_conversation_note(word, detail, ended=ended)
             self._tail_widget().update(Text(empty, style="dim italic"))
         self._render_live()
         self._sync_input()

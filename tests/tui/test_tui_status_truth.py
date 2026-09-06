@@ -689,3 +689,16 @@ def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:
     # show too: the test socket is among them, and the forward line names one.
     serving = next(line for line in top.splitlines() if line.startswith("serving: "))
     assert str(port) in serving and "· agent6 forward serving " in serving
+
+
+def test_a_parked_sessions_empty_view_names_the_reason() -> None:
+    """The dashboard row said "parked · uncommitted changes" while the opened
+    conversation said only "(no conversation yet)"; the placeholder now
+    carries the parked reason and the way forward."""
+    from agent6.ui.tui.conversation import empty_conversation_note
+
+    note = empty_conversation_note("parked", "uncommitted changes", ended=False)
+    assert "parked" in note and "uncommitted changes" in note and "type below" in note
+    assert empty_conversation_note("parked", "", ended=False).startswith("(parked ")
+    assert empty_conversation_note("", "", ended=True) == "this run made no conversation"
+    assert "appears as the run streams" in empty_conversation_note("", "", ended=False)
