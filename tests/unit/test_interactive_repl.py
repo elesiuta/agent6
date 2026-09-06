@@ -329,3 +329,65 @@ def test_i_on_a_pipe_refuses_up_front(
     assert "-i needs a TTY" in capsys.readouterr().err
     assert cli.main(["resume", "some-run-AAAAAA", "-i"]) == 2
     assert "-i needs a TTY" in capsys.readouterr().err
+
+
+def test_init_wizard_ctrl_c_aborts_init_not_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ctrl-C at an /init wizard question aborts /init and returns to the
+    REPL. The prompt session is idle, so the leg's escalating steer handler
+    must not own SIGINT inside the wizard's nested input(): it printed
+    "pausing after this step" for a step that does not exist, and its third
+    press escaped the hook and ended the whole run as interrupted."""
+    import os
+    import signal
+
+    seen: dict[str, Any] = {}
+
+    def _leg_handler(_signum: int, _frame: Any) -> None:
+        seen["leg_handler_ran"] = True
+
+    def _wizard(*_a: Any, **_kw: Any) -> int:
+        os.kill(os.getpid(), signal.SIGINT)  # the operator's Ctrl-C at the y/n question
+        return 0
+
+    monkeypatch.setattr("agent6.ui.cli._repl.init_workspace", _wizard)
+    answers = iter(["/init", "/continue"])
+    monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
+
+    previous = signal.signal(signal.SIGINT, _leg_handler)
+    try:
+        directive = build_repl_hook(tmp_path, _budget())(1, "a" * 40)
+    except KeyboardInterrupt:
+        pytest.fail("Ctrl-C in the /init wizard escaped the REPL hook: the run ends")
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    assert directive == "continue"
+    assert "leg_handler_ran" not in seen
+    assert "/init cancelled." in capsys.readouterr().err
+
+
+def test_diff_ctrl_c_aborts_diff_not_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ctrl-C while /diff prints aborts /diff and returns to the REPL: a
+    KeyboardInterrupt walked past the /diff failure handler, out of the hook,
+    and the leg journaled the run as interrupted."""
+    import signal
+
+    def _diff(**_kw: Any) -> int:
+        raise KeyboardInterrupt  # the operator's Ctrl-C while the patch prints
+
+    monkeypatch.setattr("agent6.ui.cli._repl._cmd_diff", _diff)
+    answers = iter(["/diff", "/continue"])
+    monkeypatch.setattr("builtins.input", lambda _p="": next(answers))
+
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        directive = build_repl_hook(tmp_path, _budget(), session_id="run-AAAAAA")(1, "a" * 40)
+    except KeyboardInterrupt:
+        pytest.fail("Ctrl-C during /diff escaped the REPL hook: the run ends interrupted")
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    assert directive == "continue"
+    assert "/diff cancelled." in capsys.readouterr().err

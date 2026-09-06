@@ -76,8 +76,10 @@ def build_repl_hook(
         # is waiting on the OPERATOR, and the heartbeat's per-tick line-erase
         # would otherwise wipe the "agent6> " prompt and the typed characters,
         # replacing them with a lying "working…" spinner (same wiring as the
-        # approval/question prompts).
-        with _pause(console_view):
+        # approval/question prompts). The whole session is an idle prompt,
+        # nested wizard questions included, so the run's escalating Ctrl-C
+        # handler stands aside for all of it.
+        with _pause(console_view), repl_prompt_sigint():
             return _prompt_loop(iteration, sha)
 
     def _prompt_loop(iteration: int, sha: str) -> AutoCommitDirective:
@@ -88,8 +90,7 @@ def build_repl_hook(
         )
         while True:
             try:
-                with repl_prompt_sigint():
-                    raw = input("agent6> ").strip()
+                raw = input("agent6> ").strip()
             except (EOFError, KeyboardInterrupt):
                 print("[agent6] EOF - stopping interactively.", file=sys.stderr)
                 return "stop"
@@ -100,30 +101,31 @@ def build_repl_hook(
                 return "stop"
             if cmd == "/exit":
                 return "exit"
-            if cmd in {"/help", "/h", "?"}:
-                print(REPL_HELP, file=sys.stderr)
-                continue
-            if cmd == "/cost":
-                print(budget.format_summary(), file=sys.stderr)
-                continue
-            if cmd == "/diff":
-                repl_run_diff(session_id)
-                continue
-            if cmd == "/watch":
-                repl_show_recent_events(root, session_id, n=20)
-                continue
-            if cmd == "/mcp":
-                repl_list_mcp(mcp_manager)
-                continue
-            if cmd == "/init":
-                repl_run_init(root)
-                continue
             if cmd == "/undo":
                 return "undo"
-            print(
-                f"[agent6] unknown command {raw!r}; try /help",
-                file=sys.stderr,
-            )
+            # The idle-prompt guard raises KeyboardInterrupt here, so one
+            # Ctrl-C cancels the command it lands in and returns to the
+            # prompt; escaping the hook would end the run as interrupted.
+            try:
+                _run_command(cmd, raw)
+            except KeyboardInterrupt:
+                print(f"\n[agent6] {cmd} cancelled.", file=sys.stderr)
+
+    def _run_command(cmd: str, raw: str) -> None:
+        if cmd in {"/help", "/h", "?"}:
+            print(REPL_HELP, file=sys.stderr)
+        elif cmd == "/cost":
+            print(budget.format_summary(), file=sys.stderr)
+        elif cmd == "/diff":
+            repl_run_diff(session_id)
+        elif cmd == "/watch":
+            repl_show_recent_events(root, session_id, n=20)
+        elif cmd == "/mcp":
+            repl_list_mcp(mcp_manager)
+        elif cmd == "/init":
+            repl_run_init(root)
+        else:
+            print(f"[agent6] unknown command {raw!r}; try /help", file=sys.stderr)
 
     return hook
 
