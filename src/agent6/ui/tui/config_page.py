@@ -593,8 +593,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         self.config_path = config_path
         self._eff: EffectiveConfig | None = None
         self._view: ConfigView | None = None
-        self._settings: dict[str, ConfigSetting] = {}
-        self._table_keys: dict[str, list[str]] = {}
+        self._table_rows: dict[str, list[ConfigSetting]] = {}  # per section, in row order
         self._modified_only = False
 
     def palette_commands(self) -> Iterator[PaletteCommand]:
@@ -636,7 +635,6 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         eff = load_effective(self.repo_root, self.config_path)
         self._eff = eff
         self._view = build_config_view(eff, resolved=resolved_config_values(eff.config))
-        self._settings = {s.key: s for s in self._view.settings}
 
     def _reload(self) -> None:
         # Every interactive re-read funnels through here. An external hand-edit
@@ -695,7 +693,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         shown = 0
         for section in self._view.sections:
             rows = by_section.get(section, [])
-            self._table_keys[section] = [s.key for s in rows]
+            self._table_rows[section] = rows
             table = self.query_one(f"#tbl-{section}", DataTable)
             table.clear()
             for s in rows:
@@ -718,10 +716,10 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         focused = self.focused
         if isinstance(focused, DataTable) and focused.id and focused.id.startswith("tbl-"):
             section = focused.id[4:]
-            keys = self._table_keys.get(section, [])
+            rows = self._table_rows.get(section, [])
             row = focused.cursor_row
-            if 0 <= row < len(keys):
-                return self._settings.get(keys[row])
+            if 0 <= row < len(rows):
+                return rows[row]
         return None
 
     # --- continuous arrow nav across section headers + their rows -----------
