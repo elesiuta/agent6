@@ -310,6 +310,17 @@ def test_predicate_len_of_int_rejected_at_load(tmp_path: Path) -> None:
     assert any("`len()` does not apply to int" in p and "poll_secs" in p for p in problems)
 
 
+def test_template_len_of_int_rejected_at_load(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace("{{ pending | json }}", "{{ poll_secs | len }}")
+    problems = _problems(tmp_path, body)
+    assert any("`| len` does not apply to int" in p and "poll_secs" in p for p in problems)
+
+
+def test_template_len_of_list_allowed(tmp_path: Path) -> None:
+    body = VALID_MACHINE.replace("{{ pending | json }}", "{{ pending | len }}")
+    load_machine(_write(tmp_path, body))
+
+
 def test_predicate_len_of_str_allowed(tmp_path: Path) -> None:
     # `len(cursor)` (cursor is str) is fine and must NOT be flagged.
     body = VALID_MACHINE.replace("len(pending) == 0", "len(cursor) == 0")
