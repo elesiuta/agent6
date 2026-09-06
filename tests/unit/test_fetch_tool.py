@@ -348,3 +348,31 @@ def test_a_machine_state_gets_no_network(tmp_path: Path) -> None:
     assert "fetch" in mode_tools("ask").names
     assert "fetch" not in mode_tools("machine").names
     assert "fetch" not in mode_tools("agent").names
+
+
+def test_a_port_out_of_range_is_a_fetch_refusal_and_a_note_needs_a_30x() -> None:
+    """`check_url` never touched the port, so a URL with port 99999 passed
+    the gate and `fetch` raised a bare ValueError after the approval was
+    answered; and the redirect note rode on any Location, a 201's included."""
+    from agent6.tools.fetch import FetchRefused, check_url
+    from agent6.tools.results import FetchResult
+
+    with pytest.raises(FetchRefused, match="cannot be read"):
+        check_url("https://example.com:99999/x")
+    created = FetchResult(
+        url="https://x", status=201, content_type="text/plain", body="", location="/new"
+    )
+    assert "note" not in created.to_wire() and "location" not in created.to_wire()
+    moved = FetchResult(
+        url="https://x", status=302, content_type="text/plain", body="", location="/new"
+    )
+    assert "redirects are not followed" in moved.to_wire()["note"]
+
+
+def test_the_approval_line_names_a_port_other_than_443() -> None:
+    """`https://h.example:8443/admin` was approved as `h.example /admin` and
+    dialled on 8443: the operator consented to a host, not the port."""
+    from agent6.tools.fetch import check_url
+
+    assert check_url("https://h.example:8443/admin").prompt() == "h.example:8443 /admin"
+    assert check_url("https://h.example/admin").prompt() == "h.example /admin"

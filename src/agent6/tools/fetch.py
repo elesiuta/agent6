@@ -86,14 +86,16 @@ class Checked:
     def prompt(self) -> str:
         """The approval line: the parsed host (never the raw URL, so the name
         shown is exactly the one the connection is proved against and the one
-        `fetch_hosts` would have to name), then the full path and query. A GET
+        `fetch_hosts` would have to name), a port other than 443, then the
+        full path and query. A GET
         carries data out in its query string, so clipping the path or dropping
         the query is consent to an exfiltration the operator never saw."""
         parts = urlsplit(self.url)
         tail = parts.path or "/"
         if parts.query:
             tail += f"?{parts.query}"
-        return f"{self.host} {tail}"
+        port = "" if parts.port in (None, 443) else f":{parts.port}"
+        return f"{self.host}{port} {tail}"
 
 
 def check_url(url: str) -> Checked:
@@ -107,10 +109,11 @@ def check_url(url: str) -> Checked:
     """
     try:
         parts = urlsplit(url)
+        _ = parts.port  # a port outside 0-65535 raises here, before the approval
     except ValueError as exc:
-        # urlsplit itself refuses a malformed literal ("http://[::1"); as a
-        # FetchRefused it reads like every other fetch refusal instead of the
-        # dispatcher's "failed:".
+        # urlsplit refuses a malformed literal ("http://[::1") and the port
+        # accessor an out-of-range port; as a FetchRefused either reads like
+        # every other fetch refusal instead of the dispatcher's "failed:".
         raise FetchRefused(f"the URL cannot be read: {exc}") from exc
     if parts.scheme != "https":
         raise FetchRefused(f"only https is fetched, not {parts.scheme or 'a bare path'!r}")
@@ -150,7 +153,7 @@ def fetch(checked: Checked) -> Fetched:
     how one allowed host becomes an open proxy to every other.
     """
     parts = urlsplit(checked.url)
-    port = parts.port or 443
+    port = 443 if parts.port is None else parts.port
     try:
         infos = socket.getaddrinfo(checked.host, port, proto=socket.IPPROTO_TCP)
     except OSError as exc:

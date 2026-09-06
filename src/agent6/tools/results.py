@@ -282,7 +282,7 @@ class FetchResult(ToolResult):
             "content_type": self.content_type,
             "body": self.body,
         }
-        if self.location:
+        if self.location and 300 <= self.status < 400:
             wire["location"] = self.location
             wire["note"] = "redirects are not followed; fetch this URL if you still want it"
         return wire
