@@ -147,7 +147,13 @@ def _plans_dir(repo_root: Path) -> Path:
 # What a fresh install is told when it has nothing yet. One string: the same
 # first contact whichever command the operator happened to type, and it names
 # the way out rather than the directory that is missing.
-NOTHING_YET = 'no sessions yet. Start one with `agent6 run "<task>"`.'
+
+
+def nothing_yet(what: str = "sessions") -> str:
+    return f'no {what} yet. Start one with `agent6 run "<task>"`.'
+
+
+NOTHING_YET = nothing_yet()
 
 # The stderr conventions belong to app.reporter (REFUSING:, ERROR:, [agent6]
 # WARNING:); every CLI message goes through these, so the wording has one owner.
@@ -163,14 +169,14 @@ MACHINE_ID_HELP = "Machine id (a directory under the per-repo state dir's machin
 REPO_FLAG_HELP = "Write to the per-repo config instead of the global config."
 
 
-def print_nothing_yet() -> None:
+def print_nothing_yet(what: str = "sessions") -> None:
     """Say there is nothing yet, and how to change that.
 
     An empty state dir is not a fault, so it must not read as one: an ERROR
     about a missing directory would tell a new operator their install is
     broken.
     """
-    print(NOTHING_YET, file=sys.stderr)
+    print(nothing_yet(what), file=sys.stderr)
 
 
 def print_no_session_match(query: str, state: Path) -> None:

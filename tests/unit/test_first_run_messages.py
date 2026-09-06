@@ -63,3 +63,21 @@ def test_it_says_how_to_make_one(
     main(argv)
     said = capsys.readouterr()
     assert "agent6 " in said.out + said.err, said.out + said.err
+
+
+def test_a_run_verb_over_a_plan_alone_says_no_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions commits` (and diff, merge) act on a run's branch: with a plan
+    recorded and no run, they said "no sessions yet" over a real session."""
+    from agent6.config.layer import resolved_state_dir
+    from agent6.sessions.layout import bucket_dir
+
+    monkeypatch.chdir(tmp_path)
+    session = bucket_dir(resolved_state_dir(tmp_path), "plans") / "brave-oak-AAAAAA"
+    session.mkdir(parents=True)
+    (session / "logs.jsonl").write_text(
+        '{"type": "session.start", "mode": "plan", "user_task": "t"}\n', encoding="utf-8"
+    )
+    assert main(["sessions", "commits"]) == 2
+    assert 'no runs yet. Start one with `agent6 run "<task>"`.' in capsys.readouterr().err

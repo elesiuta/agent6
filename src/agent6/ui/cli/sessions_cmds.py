@@ -308,7 +308,9 @@ def _resolve_session_manifest(
         # question the operator did not ask.
         latest = newest_session_dir([runs_dir]) if runs_dir.is_dir() else None
         if latest is None:
-            print_nothing_yet()
+            # Over a plan or an ask alone (sessions without a run branch) the
+            # verb says so; a fresh state dir keeps the first-contact copy.
+            print_nothing_yet("runs" if session_dirs(resolved_state_dir(cwd)) else "sessions")
             return 2
         layout = layout_of(latest)
         print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
