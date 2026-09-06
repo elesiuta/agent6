@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -845,6 +846,10 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
 
 
 def main(argv: list[str] | None = None) -> int:
+    # A redirected stdout is block-buffered: a run's log file stayed empty
+    # until exit. Line-buffer it so every line lands as it is printed.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
     parser = build_parser()
     argcomplete.autocomplete(parser)
     raw = sys.argv[1:] if argv is None else argv
