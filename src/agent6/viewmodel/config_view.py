@@ -237,15 +237,16 @@ def build_config_view(
 
 
 def format_value(val: Any) -> str:
-    """A config leaf value as every surface prints it: `(unset)`, TOML
-    booleans, `[a, b]` lists, `{...}` for a non-empty table."""
+    """A config leaf value as every surface prints it: `(unset)`, `(empty)`
+    for an empty string, TOML booleans, `[a, b]` lists, `{...}` for a
+    non-empty table."""
     if val is None:
         return "(unset)"
+    if isinstance(val, str):
+        return val or "(empty)"
     if isinstance(val, bool):
         return "true" if val else "false"
     if isinstance(val, (list, tuple)):
-        if not val:
-            return "[]"
         return "[" + ", ".join(format_value(v) for v in val) + "]"
     if isinstance(val, dict):
         return "{...}" if val else "{}"

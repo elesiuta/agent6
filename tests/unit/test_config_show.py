@@ -220,3 +220,13 @@ def test_the_env_override_is_the_value_shown(
     )
 
     assert resolved_adaptive_values(eff.config)["models.worker.effort"] == "medium"
+
+
+def test_an_empty_string_default_renders_a_visible_token(tmp_path: Path) -> None:
+    """`preset`, `git.commit.trailer`, `prompt.system_prompt_file` and
+    `parallel.workdir` default to "" and rendered a blank cell, which reads as
+    a rendering failure next to `(unset)`, `[]` and `{}`."""
+    eff = _effort_config(tmp_path, "")
+    rows = render_show(eff, resolved=resolved_adaptive_values(eff.config)).splitlines()
+    preset = next(line for line in rows if line.split()[:1] == ["preset"])
+    assert "(empty)" in preset, preset
