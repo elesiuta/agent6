@@ -7,7 +7,6 @@ policy applied when a launcher spawns a run detached."""
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -17,6 +16,7 @@ from typing import Protocol
 from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
+from agent6.portable import has_controlling_tty
 from agent6.sessions.ipc import (
     AWAY_MODES,
     COMMAND_SCOPE,
@@ -78,11 +78,11 @@ def approval_scopes(cfg: Config) -> tuple[str, ...]:
 
 
 def settle_away_mode(session_dir: Path, cfg: Config) -> None:
-    """At a leg's start: a foreground start (a terminal on stdin) drops a
+    """At a leg's start: a foreground start (a controlling terminal) drops a
     stale detach answer and every approve-all grant, since the operator is
     back to answer; a spawned start honours the away marker the front-end or
     detach set (`apply_spawned_away_default`)."""
-    if sys.stdin.isatty():
+    if has_controlling_tty():
         clear_away_mode(session_dir)
         clear_session_grants(session_dir)
     else:

@@ -352,3 +352,25 @@ def test_the_pause_menu_takes_a_steer_written_while_it_is_open(tmp_path: Path) -
         assert os.waitstatus_to_exitcode(status) == 0, buf[-800:]
     finally:
         os.close(master)
+
+
+def test_detach_away_mode_asks_on_the_terminal_with_stdin_redirected(tmp_path: Path) -> None:
+    """A foreground run started with stdin redirected (`agent6 run TASK
+    </dev/null`) still has the terminal the away-mode question is asked on:
+    /dev/tty carries it, as it carried the pause prompt that produced the
+    detach. Gated on `sys.stdin.isatty()`, the detach recorded `wait` in
+    silence: no question, and no notice that the run would block at its first
+    approval."""
+
+    def child() -> int:
+        from agent6.sessions.ipc import COMMAND_SCOPE, away_mode, session_allow_set
+        from agent6.ui.cli._interact import prompt_detach_away_mode
+
+        os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
+        assert not sys.stdin.isatty()
+        prompt_detach_away_mode(tmp_path, (COMMAND_SCOPE,))
+        if away_mode(tmp_path) != "" or not session_allow_set(tmp_path, COMMAND_SCOPE):
+            return 13  # the answer typed at the prompt was not recorded
+        return 0
+
+    assert _drive_pty(child, b"While away", b"a\n") == 0

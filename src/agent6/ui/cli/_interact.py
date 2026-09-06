@@ -12,6 +12,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from agent6.portable import has_controlling_tty
 from agent6.sessions.ipc import (
     AWAY_MODES,
     AwayMode,
@@ -51,19 +52,6 @@ def _pause(cv: ConsoleView | None) -> contextlib.AbstractContextManager[None]:
     cannot erase the question and the operator's keystrokes. No-op when headless
     (no ConsoleView: a TUI-bridged, detached, or piped run)."""
     return cv.pause() if cv is not None else contextlib.nullcontext()
-
-
-def has_controlling_tty() -> bool:
-    """True iff a controlling terminal exists (so the stdin approver can actually
-    prompt). A foreground run has one; a web/hub-spawned or fully headless run
-    does not, and there falls back to waiting for a front-end rather than a
-    no-terminal deny."""
-    try:
-        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
-    except OSError:
-        return False
-    os.close(fd)
-    return True
 
 
 def lane_away_mode() -> AwayMode:
@@ -134,8 +122,8 @@ def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:
     The default is WAIT: a deny throws away the run's work (the model's commands
     are refused and it flails, burning tokens for nothing), while wait pauses
     cleanly at the approval and is resumable -- re-attach with `agent6 attach`
-    and answer. Non-interactive (no tty) also defaults to wait."""
-    if not sys.stdin.isatty():
+    and answer. With no controlling terminal it defaults to wait."""
+    if not has_controlling_tty():
         set_away_mode(session_dir, "wait")
         return
     print(

@@ -331,3 +331,15 @@ def stderr_tail(keep: list[bytes], limit: int = 400) -> str:
     if 0 <= nl < len(tail) - 1:
         tail = tail[nl + 1 :]
     return f"…[agent6: {len(text) - len(tail)} earlier chars cut]\n{tail.strip()}"
+
+
+def has_controlling_tty() -> bool:
+    """True iff a controlling terminal exists: the operator can be prompted.
+    A foreground run has one; a web/hub-spawned or fully headless run does not
+    and waits for a front-end instead."""
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        return False
+    os.close(fd)
+    return True
