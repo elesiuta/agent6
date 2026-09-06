@@ -438,8 +438,14 @@ class FindReferencesInput(_ToolInput):
 class UserQuestion(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    question: str = Field(min_length=1)
-    options: tuple[str, ...] = ()
+    # Operator-facing model text, capped like every other model-written string
+    # in this file: it reaches the journal, an ACP permission title, the TUI
+    # modal and the web composer verbatim, and a model that runs away writes
+    # every one of them. A question is a sentence and an option is a label.
+    question: str = Field(min_length=1, max_length=2_000)
+    options: tuple[Annotated[str, StringConstraints(max_length=200)], ...] = Field(
+        default=(), max_length=10
+    )
 
 
 class AskUserInput(_ToolInput):

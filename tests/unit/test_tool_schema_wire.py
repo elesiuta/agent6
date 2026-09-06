@@ -115,6 +115,27 @@ def test_status_pattern_bytes_are_pinned() -> None:
         assert [s.get("pattern") for s in anyof if s.get("type") == "string"] == [expected], cls
 
 
+def test_an_ask_user_question_is_bounded_like_every_other_model_string() -> None:
+    """The question and its options reach the journal, an ACP permission title,
+    the TUI modal and the web composer verbatim. Uncapped, a model that ran
+    away wrote all of them: every sibling string in this schema is bounded, and
+    this one was the exception."""
+    import pytest
+    from pydantic import ValidationError
+
+    from agent6.tools.schema import AskUserInput
+
+    ok = AskUserInput.model_validate(
+        {"questions": [{"question": "which port?", "options": ["80"]}]}
+    )
+    assert ok.questions[0].question == "which port?"
+
+    with pytest.raises(ValidationError, match="at most 2000 characters"):
+        AskUserInput.model_validate({"questions": [{"question": "x" * 2_001}]})
+    with pytest.raises(ValidationError, match="at most 200 characters"):
+        AskUserInput.model_validate({"questions": [{"question": "q", "options": ["y" * 201]}]})
+
+
 def test_add_task_parent_id_carries_the_ulid_constraint() -> None:
     """parent_id was the one task-ULID param without the 26-char rule its
     siblings enforce; "" passed the schema and silently attached the task to
