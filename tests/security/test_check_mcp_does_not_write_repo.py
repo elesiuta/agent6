@@ -142,6 +142,7 @@ def test_mcp_connect_with_no_jail_writes_the_entry_unproved(
     and the operator is told what was not proved."""
     repo = _repo_with_server(tmp_path, monkeypatch)
     monkeypatch.setenv("AGENT6_DANGEROUSLY_DISABLE_SANDBOX", "1")
+    _never_started(monkeypatch)
     rc = cmd_mcp_connect(
         "notes",
         command=[_JAIL_PYTHON, "server.py"],

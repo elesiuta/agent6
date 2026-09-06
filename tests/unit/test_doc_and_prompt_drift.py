@@ -8,7 +8,9 @@ match the Config field, a dependency count written as a word."""
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -110,6 +112,15 @@ def test_bench_container_config_template_validates() -> None:
     script = (REPO / "bench" / "swebench" / "in_container.sh").read_text()
     m = re.search(r"cat > /root/agent6\.toml <<EOF\n(.*?)\nEOF\n", script, re.S)
     assert m is not None, "config heredoc not found in in_container.sh"
+    # The two blocks the script computes in shell run ahead of the heredoc,
+    # under its own options: a stub for either validates the stub.
+    review = re.search(r'^REVIEW_LINES=""\n.*?^fi\n', script, re.S | re.M)
+    verify = re.search(
+        r'^if \[ "\$\{AGENT6_SB_VERIFY:-\}" = "none" \].*?^  VERIFY_TOML="verify_command.*?\nfi\n',
+        script,
+        re.S | re.M,
+    )
+    assert review is not None and verify is not None, "the config blocks moved"
     stub = {
         "PROVIDER_BLOCK": (
             '[providers.openrouter]\napi_format = "openai"\napi_key_env = "K"\n'
@@ -118,30 +129,49 @@ def test_bench_container_config_template_validates() -> None:
         "PROVIDER": "openrouter",
         "MODEL": "moonshotai/stub",
         "MAX_USD": "1.0",
-        "REVIEW_LINES": "",
-        "VERIFY_TOML": 'verify_command = ["true"]',
+        "CONDA_PY": "python3",
         "PROMPT_FILE_LINE": "",
         "AGENT6_SB_STRUCTURAL_PRIORS": "",
     }
 
     def _render(env: dict[str, str]) -> str:
-        def _sub(mo: re.Match[str]) -> str:
-            name = mo.group(1) or mo.group(2)
-            op, text = mo.group(3), mo.group(4)
-            val = env.get(name, "")
-            if op == "+":  # ${VAR:+text}: text (with \" unescaped) iff VAR set
-                return text.replace('\\"', '"') if val else ""
-            return val if val else (text or "")
+        # bash renders the heredoc, as the container does: a hand-rolled
+        # `${VAR:+...}` reimplementation rendered the conditional lines an A/B
+        # arm flips differently from the shell, and a key typo in one stayed
+        # green while a real arm was refused.
+        script = "set -uo pipefail\n" + review.group(0) + verify.group(0)
+        script += "cat <<EOF\n" + m.group(1) + "\nEOF\n"
+        return subprocess.run(
+            ["bash", "-c", script],
+            env={"PATH": os.environ.get("PATH", ""), **env},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
 
-        out = m.group(1)
-        for _ in range(2):  # ${VAR:+...$VAR...} nests one level
-            out = re.sub(r"\$(?:([A-Z0-9_]+)|\{([A-Z0-9_]+)(?::([-+])([^}]*))?\})", _sub, out)
-        return out
-
-    for env in (stub, {**stub, "AGENT6_SB_EFFORT": "medium"}):
+    cases = (
+        stub,
+        {**stub, "AGENT6_SB_EFFORT": "medium"},
+        {**stub, "AGENT6_SB_VERIFY_WHEN": "step"},
+        {**stub, "AGENT6_SB_MAX_PERCENT": "40"},
+        {**stub, "AGENT6_SB_REVIEW_SEATS": "security@openrouter/a;tests@anthropic/b"},
+        {**stub, "AGENT6_SB_VERIFY": "none"},
+    )
+    for env in cases:
         rendered = _render(env)
         data = tomllib.loads(rendered)
         data.pop("agent6", None)
         Config.model_validate(data)
         if env.get("AGENT6_SB_EFFORT"):
             assert data["models"]["worker"]["effort"] == "medium"
+        if env.get("AGENT6_SB_VERIFY_WHEN"):
+            assert data["workflow"]["verify_when"] == "step"
+        if env.get("AGENT6_SB_MAX_PERCENT"):
+            assert data["budget"]["max_percent"] == 40
+        if env.get("AGENT6_SB_REVIEW_SEATS"):
+            assert data["review"]["seats"] == ["security@openrouter/a", "tests@anthropic/b"]
+        if env.get("AGENT6_SB_VERIFY") == "none":
+            assert data["workflow"]["verify_infer"] is False
+            assert "verify_command" not in data["workflow"]
+        else:
+            assert data["workflow"]["verify_command"][0] == "python3"

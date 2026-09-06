@@ -11,6 +11,7 @@ never use there.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -260,3 +261,18 @@ def test_check_config_runs_the_refusal_ladder_a_run_applies(
     ok = Config.model_validate({"sandbox": {"isolation": "hardened"}})
     checks = check_cmds._check_config_section(ok)  # pyright: ignore[reportPrivateUsage]
     assert next(c for c in checks if c.name == "config.refusal").status == "PASS"
+
+
+@pytest.mark.needs_namespaces
+def test_check_sandbox_runs_its_probes_unstubbed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every other test here stubs `landlock_abi` and `run_in_jail`, so the
+    operator's one "is my sandbox working" command never ran for real."""
+    if check_cmds.landlock_abi() < 1:
+        pytest.skip("no Landlock: the command's own landlock_abi row fails here")
+    monkeypatch.chdir(tmp_path)
+    rc = check_cmds._cmd_check_sandbox()  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "effective isolation" in out

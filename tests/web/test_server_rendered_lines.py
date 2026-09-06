@@ -13,7 +13,6 @@ half to even on the binary value and JS `toFixed` rounds half away, so
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -121,4 +120,3 @@ def test_machine_transitions_and_spend_arrive_rendered(
     assert snap["spend"]["text"] == "$0.0000"
     marks = {st["name"]: st["mark"] for st in snap["states"]}
     assert marks["done"] == "▸" and marks["route"] == "·"
-    assert os.environ["XDG_STATE_HOME"]  # the run wrote under the isolated state home
