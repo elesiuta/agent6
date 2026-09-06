@@ -384,10 +384,10 @@ def headless_approval_refusal(
         if clamped
         else "sandbox.run_commands = 'yes' (or --auto-approve)"
     )
+    gate = "" if clamped else ", the verify gate included"
     return (
         "sandbox.run_commands = 'ask' needs someone to answer, and this run has no"
-        " TUI and no away-mode. Every command, the verify gate included, would wait"
-        " forever.\n"
+        f" TUI and no away-mode. Every command{gate} would wait forever.\n"
         f"  - unattended: {unattended}, or 'no' to withhold commands entirely\n"
         "  - attended: start it from a terminal, or set an away-mode"
         " (AGENT6_DETACHED_AWAY=wait|deny) so an absent operator's intent is known"

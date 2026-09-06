@@ -118,7 +118,7 @@ agent6 ask "how does the task-graph curator work?"
 ```
 
 - `agent6 review --reviewers 3 --personas security,correctness,tests`: a panel whose findings are checked against the diff, so only real problems gate
-- `ask` runs in any directory
+- `ask` runs in any directory; headless (no TTY) under the default `run_commands = "ask"` it needs `--auto-approve`, `--no-commands`, or `AGENT6_DETACHED_AWAY=deny`
 - `run` and `plan` need a git repository (branches, diffs, merges)
 
 ## Run options
