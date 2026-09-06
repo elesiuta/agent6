@@ -51,7 +51,7 @@ from agent6.config.write import (
 )
 from agent6.errors import OperatorError
 from agent6.models.cache import cached_models
-from agent6.models.choices import config_value_choices
+from agent6.models.choices import config_value_choices, model_role_provider
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.screen_chrome import (
     MenuCommands,
@@ -144,15 +144,6 @@ class _NavTable(DataTable[str]):
         section = self.id[4:] if self.id else ""
         if isinstance(screen, ConfigScreen):
             screen.nav_from_table(section, direction)
-
-
-def _model_provider(eff: EffectiveConfig | None, key: str) -> str | None:
-    """The provider a `models.<role>.model` leaf's ids come from, else None."""
-    parts = key.split(".")
-    if eff is None or len(parts) != 3 or parts[0] != "models" or parts[2] != "model":
-        return None
-    role_cfg = getattr(eff.config.models, parts[1], None)
-    return getattr(role_cfg, "provider", None) or None
 
 
 def _provider_preset_base_url(key: str) -> str:
@@ -918,7 +909,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         # A model-id field gets a type-to-narrow picker over the provider's
         # models (the cache now, refreshed live in a worker); everything else
         # the plain edit, with the view's choices as its picker.
-        provider = _model_provider(self._eff, setting.key)
+        provider = model_role_provider(self._eff, setting.key) if self._eff is not None else None
         if provider is not None:
             repo, overlay, key = self.repo_root, self.config_path, setting.key
             modal = EditModal(

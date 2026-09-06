@@ -42,6 +42,16 @@ def provider_model_choices(cfg: Config, provider: str) -> list[str]:
     return sorted(out)
 
 
+def model_role_provider(eff: EffectiveConfig, key: str) -> str | None:
+    """The provider whose model ids a `models.<role>.model` leaf takes, else
+    None. The TUI's editor and `config_value_choices` decide on it alike."""
+    parts = key.split(".")
+    if len(parts) != 3 or parts[0] != "models" or parts[2] != "model":
+        return None
+    role = getattr(eff.config.models, parts[1], None)
+    return getattr(role, "provider", None) or None
+
+
 def config_value_choices(eff: EffectiveConfig, key: str) -> list[str]:
     """What a chooser offers for an open-text config leaf: `models.<role>.model`
     is that role's provider's model ids; the pseudo-key `parallel.models` (a
@@ -51,9 +61,5 @@ def config_value_choices(eff: EffectiveConfig, key: str) -> list[str]:
     nothing."""
     if key == "parallel.models":
         return sorted(known_models(eff.config))
-    parts = key.split(".")
-    if len(parts) == 3 and parts[0] == "models" and parts[2] == "model":
-        role = getattr(eff.config.models, parts[1], None)
-        provider = getattr(role, "provider", None)
-        return provider_model_choices(eff.config, provider) if provider else []
-    return []
+    provider = model_role_provider(eff, key)
+    return provider_model_choices(eff.config, provider) if provider else []
