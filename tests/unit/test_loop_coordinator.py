@@ -369,6 +369,9 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     assert dispatched and dispatched[0] == {"group": "p1", "tasks": ["task one", "task two"]}
     assert joined and [ln["status"] for ln in joined[0]["lanes"]] == ["joined", "joined"]
     assert [ln["session_id"] for ln in joined[0]["lanes"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
+    # The join names the group the lanes were stamped with -- the id
+    # `sessions compare` takes -- not the loop's local counter.
+    assert joined[0]["group"] == "run-abc-p1"
     assert not events.of("loop.parallel.failed")
     # One summary message names both joined lanes.
     summary = [

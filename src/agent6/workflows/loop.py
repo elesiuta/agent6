@@ -4852,6 +4852,13 @@ class Workflow:
             )
             return
 
+        # The spawner names the group `<coordinator>-<group>` and stamps that on
+        # every lane's manifest, so it is the id `sessions compare` takes. Read
+        # it back off a lane (each is `<group id>-l<n>`, the derivation
+        # `run_parallel` uses too) rather than printing the local counter, which
+        # names no group on disk.
+        group = results[0].spec.session_id.rsplit("-l", 1)[0] if results else group
+
         # Join every lane sequentially in dispatch order (a merge mutates the one
         # workspace, so joins can never run concurrently), then stamp one DAG node
         # per segment from its lanes' joins.
