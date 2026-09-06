@@ -535,13 +535,24 @@ Mirrors the existing per-run layout under the per-repo state dir, out of the wor
 
 ```
 <state-dir>/<repo-id>/machines/<machine-id>/
+  machine.asm.toml           # the exact source the run started from (replay, status)
   journal.jsonl              # append-only, fsync'd, one event per line
   snapshots/<n>.json         # blackboard + current state, atomic temp+rename
   agent_transcripts/<ts>.json  # full lossless conversation per agent-state run
   states/<seq>-<state>/logs.jsonl  # per-execution event stream (role.*/tool.*),
                                    #   the watchable live view; pruned to recent
+  states/<seq>-<state>/approvals/, questions/  # that execution's answer bridge
+                                   #   (`<id>.answer` from a front-end), steer files beside them
   data/                      # writable scratch ($AGENT6_MACHINE_DATA_DIR)
   machine.lock               # single-writer guard (one process per machine)
+  worker.pid                 # the live worker; absent or stale once it exits
+  wait.json                  # the armed wait (state, next wake), written before a
+                             #   wait sleeps or parks, cleared when it fires
+  signal                     # a poke awaiting the wait's next check (payload inside)
+  signal.consuming           # a claimed poke, until the wake's step is acked
+  stop                       # a stop request awaiting the next transition boundary
+  frontends/<pid>            # live front-end claims (a TUI or web watcher)
+  approvals/away.mode        # a hub-spawned instance's away mode ("wait")
 ```
 
 - each `agent` state execution emits a `logs.jsonl` stream under `states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run emits): a running machine follows live exactly like a run
