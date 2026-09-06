@@ -236,6 +236,18 @@ def _clip_tail(text: str, limit: int = 20_000) -> str:
     return f"... {len(text) - limit} earlier chars clipped ...\n" + text[-limit:]
 
 
+def _exec_result(res: CommandResult, *, timeout_s: float = 0.0) -> ExecResult:
+    """The model's view of a finished command: the tails of both streams."""
+    return ExecResult(
+        returncode=res.returncode,
+        stdout=_clip_tail(res.stdout),
+        stderr=_clip_tail(res.stderr),
+        duration_s=res.duration_s,
+        exec_failed=res.exec_failed,
+        timeout_s=timeout_s,
+    )
+
+
 # Every tool that runs a command in the jail. They all execute model-influenced
 # argv with the same reach, so one knob governs them: `run_commands = "no"`
 # hides them, "ask" prompts (the session-allow marker keeps that to one prompt
@@ -443,10 +455,6 @@ class ToolDispatcher:
         # of the configured skill dirs). None = not yet resolved.
         self._skills_cache: ResolvedSkills | None = None
 
-    @property
-    def root(self) -> Path:
-        return self._root
-
     def set_run_root_node_id(self, node_id: str | None) -> None:
         """Workflow sets this after seeding the run's root task.
         `add_task` with parent_id=None falls back to this as the parent."""
@@ -608,7 +616,7 @@ class ToolDispatcher:
                 raise ToolError(str(exc)) from exc
         if name not in self._handlers:
             raise ToolError(f"Unknown tool: {name}")
-        if name in _COMMAND_TOOLS and self.command_policy() == "no":
+        if self.tool_is_withheld(name):
             raise ToolError("not available (run_commands = 'no')")
         if name == FetchInput.TOOL_NAME and self._commands_have_the_network():
             raise ToolError("not available (a jailed command has the network)")
@@ -943,13 +951,7 @@ class ToolDispatcher:
         except JailUnavailableError as exc:
             raise ToolError(f"jail unavailable: {exc}") from exc
         if isinstance(outcome, CommandResult):
-            return ExecResult(
-                returncode=outcome.returncode,
-                stdout=_clip_tail(outcome.stdout),
-                stderr=_clip_tail(outcome.stderr),
-                duration_s=outcome.duration_s,
-                exec_failed=outcome.exec_failed,
-            )
+            return _exec_result(outcome)
         view = shells.adopt(outcome, session=session)
         self._emit("command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s)
         return ExecResult(
@@ -1218,12 +1220,4 @@ class ToolDispatcher:
             raise ToolError(f"{label}: jail unavailable: {exc}") from exc
         if isinstance(outcome, BackgroundHandoff):  # pragma: no cover - no check-in was asked for
             raise ToolError(f"{label}: the jail handed back a command that was never detachable")
-        res: CommandResult = outcome
-        return ExecResult(
-            returncode=res.returncode,
-            stdout=_clip_tail(res.stdout),
-            stderr=_clip_tail(res.stderr),
-            duration_s=res.duration_s,
-            exec_failed=res.exec_failed,
-            timeout_s=policy.timeout_s,
-        )
+        return _exec_result(outcome, timeout_s=policy.timeout_s)
