@@ -20,7 +20,8 @@ def test_no_providers_is_info_not_pass(capsys: pytest.CaptureFixture[str]) -> No
     assert by_name["config.provider_keys"].status == "INFO"
     assert "agent6 connect" in by_name["config.provider_keys"].detail
     assert by_name["config.git_policy"].status == "PASS"
-    assert "[INFO] config.provider_keys" in capsys.readouterr().out
+    # Sections state facts; the one summary states every verdict.
+    assert "[INFO]" not in capsys.readouterr().out
 
 
 def test_check_summary_carries_info_through(

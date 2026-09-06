@@ -53,4 +53,4 @@ def test_a_server_script_inside_the_workspace_is_checked(
 
     assert [(c.name, c.status) for c in checks] == [("mcp.inrepo", "PASS")], checks
     assert "1 tool," in checks[0].detail
-    assert "[PASS] mcp.inrepo" in capsys.readouterr().out
+    assert "inrepo: 1 tool," in capsys.readouterr().out

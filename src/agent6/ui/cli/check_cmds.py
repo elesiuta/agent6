@@ -582,7 +582,7 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
         f"  secrets: {secrets_path()}  (0600; never mounted into any jail,"
         " never passed into a child's env)"
     )
-    return [_DoctorCheck(name="boundaries", status="PASS", detail="reported (informational)")]
+    return []
 
 
 def _probe_refusal(
@@ -648,10 +648,10 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             continue
         if (refusal := mcp_network_refusal(name, srv, isolation)) is not None:
             detail = f"a run would refuse: {refusal}"
-            print(f"[FAIL] mcp.{name}: {detail}")
+            print(f"  {name}: {detail}")
             out.append(_DoctorCheck(name=f"mcp.{name}", status="FAIL", detail=detail))
         elif (reason := _probe_refusal(cfg, env, name, srv, isolation)) is not None:
-            print(f"[WARN] mcp.{name}: {reason}")
+            print(f"  {name}: {reason}")
             out.append(_DoctorCheck(name=f"mcp.{name}", status="WARN", detail=reason))
         else:
             probed[name] = srv
@@ -693,7 +693,7 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
                 if ok
                 else why_missing.get(name, "started but exposed no tools")
             )
-            print(f"[{'PASS' if ok else 'FAIL'}] mcp.{name}: {detail}")
+            print(f"  {name}: {detail}")
             out.append(
                 _DoctorCheck(name=f"mcp.{name}", status="PASS" if ok else "FAIL", detail=detail)
             )
@@ -720,15 +720,15 @@ def _doctor_check_verify(cfg: Config) -> list[_DoctorCheck]:
             else "unset; nothing here to infer from (a run asks the reviewer model over the"
             " manifests, else goes gateless)"
         )
-        print(f"[INFO] verify.argv: {detail}")
+        print(f"  {detail}")
         return [_DoctorCheck(name="verify.argv", status="INFO", detail=detail)]
     head = argv[0]
     resolved = shutil.which(head)
     ok = resolved is not None
     detail = f"resolves to {resolved}" if resolved else f"not found on PATH: {head!r}"
-    print(f"[{'PASS' if ok else 'FAIL'}] verify.head: {detail}")
-    print(f"       argv = {argv}")
-    print(f"       timeout = {cfg.workflow.verify_timeout_s}s")
+    print(f"  {head}: {detail}")
+    print(f"  argv = {argv}")
+    print(f"  timeout = {cfg.workflow.verify_timeout_s}s")
     return [_DoctorCheck(name="verify.head", status="PASS" if ok else "FAIL", detail=detail)]
 
 
@@ -741,13 +741,11 @@ def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
         detail_env = (
             "no providers configured yet; run `agent6 connect` (required before `agent6 run`)"
         )
-        print(f"[INFO] config.provider_keys: {detail_env}")
         out.append(_DoctorCheck(name="config.provider_keys", status="INFO", detail=detail_env))
     else:
         env_err = check_provider_keys(cfg)
         ok_env = env_err is None
         detail_env = "all referenced provider keys resolve" if ok_env else env_err or ""
-        print(f"[{'PASS' if ok_env else 'FAIL'}] config.provider_keys: {detail_env}")
         out.append(
             _DoctorCheck(
                 name="config.provider_keys",
@@ -757,6 +755,5 @@ def _doctor_check_config(cfg: Config) -> list[_DoctorCheck]:
         )
 
     detail_git = "push/--force/history rewrites are refused unconditionally (git_ops, no override)"
-    print(f"[PASS] config.git_policy: {detail_git}")
     out.append(_DoctorCheck(name="config.git_policy", status="PASS", detail=detail_git))
     return out

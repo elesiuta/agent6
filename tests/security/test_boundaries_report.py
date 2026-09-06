@@ -63,7 +63,7 @@ def test_boundaries_report_covers_every_actor(
     cfg = Config(sandbox=SandboxConfig(hide_paths=("/work/secrets",)))
     checks = check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
-    assert [c.status for c in checks] == ["PASS"]
+    assert checks == [], "the section reports facts; the summary owns verdicts"
     assert "in-process file tools" in out
     assert "jailed commands" in out
     assert "(the workspace; .git re-bound read-only)" in out
@@ -86,7 +86,7 @@ def test_boundaries_report_is_level_aware(
     _force(monkeypatch, "hardened", reason="userns blocked (test)")
     checks = check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
-    assert [c.status for c in checks] == ["PASS"]
+    assert checks == [], "the section reports facts; the summary owns verdicts"
     assert "not strict: userns blocked (test)" in out
     assert "ro  system (Landlock): /usr /bin /sbin /lib /lib64 /etc /dev" in out
     assert f"rw  {jail_cache_home()}  (HOME" in out and "persists" in out
@@ -168,7 +168,7 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
 
     monkeypatch.chdir(worktree)
     checks = check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
-    assert [c.status for c in checks] == ["PASS"]
+    assert checks == [], "the section reports facts; the summary owns verdicts"
     assert grant in capsys.readouterr().out
 
     monkeypatch.chdir(repo)

@@ -195,7 +195,7 @@ def test_a_server_it_cannot_hold_read_only_is_reported_not_started(
         "not probed: mcp.servers.writer.sandbox.write_paths grants writes (/srv/data); a run"
         " starts it as configured"
     )
-    assert "[WARN] mcp.unconf" in capsys.readouterr().out
+    assert "unconf: not probed:" in capsys.readouterr().out  # the section states the fact
     assert sorted(p.name for p in repo.iterdir()) == ["server.py"]
 
 
@@ -237,7 +237,7 @@ def test_a_server_a_run_would_refuse_fails_the_check_unstarted(
     assert [(c.name, c.status) for c in checks] == [("mcp.quiet", "FAIL")], checks
     assert checks[0].detail.startswith("a run would refuse: MCP server 'quiet' sets")
     assert "network: host" not in checks[0].detail
-    assert "[FAIL] mcp.quiet: a run would refuse" in capsys.readouterr().out
+    assert "quiet: a run would refuse" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
