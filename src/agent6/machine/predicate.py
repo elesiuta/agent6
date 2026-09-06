@@ -27,6 +27,7 @@ __all__ = [
     "Predicate",
     "PredicateError",
     "Reference",
+    "as_reference",
     "evaluate",
     "parse_predicate",
 ]
@@ -131,7 +132,7 @@ def _check(node: ast.expr, references: list[Reference]) -> None:  # noqa: PLR091
             raise PredicateError(f"unsupported literal: {node.value!r}")
         return
     if isinstance(node, (ast.Name, ast.Attribute)):
-        references.append(_as_reference(node))
+        references.append(as_reference(node))
         return
     if isinstance(node, ast.BinOp):
         raise PredicateError(
@@ -158,7 +159,8 @@ def _check_call(node: ast.Call, references: list[Reference]) -> None:
     _check(arg, references)
 
 
-def _as_reference(node: ast.expr) -> Reference:
+def as_reference(node: ast.expr) -> Reference:
+    """The blackboard reference a `Name` or `Attribute` chain spells."""
     parts: list[str] = []
     current = node
     while isinstance(current, ast.Attribute):
@@ -213,7 +215,7 @@ def _eval(node: ast.expr, blackboard: Mapping[str, object]) -> object:  # noqa: 
         # Allow-list guarantees one of the fixed builtins with one argument.
         assert isinstance(node.func, ast.Name)
         if node.func.id == "has":
-            return _has(_as_reference(node.args[0]), blackboard)
+            return _has(as_reference(node.args[0]), blackboard)
         value = _eval(node.args[0], blackboard)
         if not isinstance(value, (str, list, tuple, dict, bytes)):
             raise PredicateError(f"len() argument has no length: {value!r}")
@@ -223,7 +225,7 @@ def _eval(node: ast.expr, blackboard: Mapping[str, object]) -> object:  # noqa: 
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, (ast.Name, ast.Attribute)):
-        return _resolve(_as_reference(node), blackboard)
+        return _resolve(as_reference(node), blackboard)
     raise PredicateError(f"unsupported syntax: {type(node).__name__}")
 
 

@@ -51,6 +51,7 @@ from agent6.machine.model import (
 from agent6.machine.predicate import (
     PredicateError,
     Reference,
+    as_reference,
     parse_predicate,
 )
 from agent6.machine.template import (
@@ -800,37 +801,6 @@ def _validate_wait(
     return problems
 
 
-def _timing_literal(text: str) -> str | None:
-    """The constant value of a timing template, or None if it interpolates a
-    variable (validated against the variable's type instead). Returns None on a
-    malformed template, which `_validate_template` already reported."""
-    try:
-        template = parse_template(text)
-    except TemplateError:
-        return None
-    if any(isinstance(part, Interp) for part in template.parts):
-        return None
-    return "".join(part for part in template.parts if isinstance(part, str))
-
-
-def _timing_ref(text: str) -> Reference | None:
-    """The lone reference in a timing template, else None.
-
-    Malformed templates and composite templates return None. `_validate_template`
-    already reports parse errors, and composite templates are data-dependent: the
-    engine validates the rendered value at runtime.
-    """
-    try:
-        template = parse_template(text)
-    except TemplateError:
-        return None
-    if not template.is_lone_ref:
-        return None
-    interp = template.parts[0]
-    assert isinstance(interp, Interp)
-    return interp.ref
-
-
 def _static_ref_value(ref: Reference, var_values: dict[str, Any]) -> Any:
     current: Any = var_values.get(ref.root)
     for key in ref.path:
@@ -886,13 +856,19 @@ def _timing_problems(
     kinds share this reference-resolution skeleton and differ only in the parser,
     the required scalar type, and the constant check."""
     problems: list[str] = []
-    literal = _timing_literal(text)
-    if literal is not None:
+    try:
+        template = parse_template(text)
+    except TemplateError:
+        return problems  # `_validate_template` reported it
+    if not any(isinstance(part, Interp) for part in template.parts):
+        literal = "".join(part for part in template.parts if isinstance(part, str))
         return _timing_literal_problems(name, key, literal, kind)
-
-    ref = _timing_ref(text)
-    if ref is None:
+    if not template.is_lone_ref:
+        # Composite: data-dependent, the engine validates the rendered value.
         return problems
+    interp = template.parts[0]
+    assert isinstance(interp, Interp)
+    ref = interp.ref
     ref_type, error = _resolve_ref_type(ref, var_types, schemas, None)
     if error is None:
         assert ref_type is not None
@@ -972,22 +948,6 @@ def _validate_predicate(
     return problems
 
 
-def _ast_reference(node: ast.expr) -> Reference | None:
-    """Reconstruct a blackboard :class:`Reference` from an already-allow-listed
-    predicate AST node (a `Name` or `Attribute` chain), or None for anything
-    else. The structure was validated by `parse_predicate`."""
-    parts: list[str] = []
-    current: ast.expr = node
-    while isinstance(current, ast.Attribute):
-        parts.append(current.attr)
-        current = current.value
-    if not isinstance(current, ast.Name):
-        return None
-    parts.append(current.id)
-    parts.reverse()
-    return Reference(root=parts[0], path=tuple(parts[1:]))
-
-
 def _predicate_len_problems(
     name: str,
     source: str,
@@ -1005,7 +965,7 @@ def _predicate_len_problems(
         ):
             continue
         arg = node.args[0]
-        ref = _ast_reference(arg)
+        ref = as_reference(arg) if isinstance(arg, (ast.Name, ast.Attribute)) else None
         if ref is not None:
             ftype, error = _resolve_ref_type(ref, var_types, schemas, None)
             if error is None and isinstance(ftype, ScalarT) and ftype.name != "str":
