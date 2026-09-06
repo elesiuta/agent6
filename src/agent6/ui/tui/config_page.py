@@ -38,6 +38,7 @@ try:
 except ImportError as e:  # pragma: no cover - clear runtime message
     raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
 
+from agent6.app.confine import resolved_config_values
 from agent6.config import ConfigError
 from agent6.config.io import ConfigLeafValue, format_toml_value
 from agent6.config.layer import EffectiveConfig, load_effective
@@ -51,7 +52,6 @@ from agent6.config.write import (
 from agent6.errors import OperatorError
 from agent6.models.cache import cached_models
 from agent6.models.choices import config_value_choices
-from agent6.models.registry import resolved_adaptive_values
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.screen_chrome import (
     MenuCommands,
@@ -644,7 +644,7 @@ class ConfigScreen(ScreenChrome, Screen[None]):
     def _rebuild_view(self) -> None:
         eff = load_effective(self.repo_root, self.config_path)
         self._eff = eff
-        self._view = build_config_view(eff, resolved=resolved_adaptive_values(eff.config))
+        self._view = build_config_view(eff, resolved=resolved_config_values(eff.config))
         self._settings = {s.key: s for s in self._view.settings}
 
     def _reload(self) -> None:

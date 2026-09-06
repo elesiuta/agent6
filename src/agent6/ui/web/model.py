@@ -17,12 +17,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from agent6.app.confine import resolved_config_values
 from agent6.app.parallel import subordinate_workdir_root
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
 from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_branch_tips
 from agent6.models.choices import config_value_choices
-from agent6.models.registry import resolved_adaptive_values
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -296,7 +296,7 @@ def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]
     thresholds, `prompt.decompose = auto`) resolved from the worker model the
     same way; never includes secrets."""
     eff = load_effective(cwd, config_path)
-    resolved = resolved_adaptive_values(eff.config)
+    resolved = resolved_config_values(eff.config)
     return json.loads(render_show(eff, as_json=True, resolved=resolved))
 
 

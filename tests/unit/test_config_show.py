@@ -230,3 +230,24 @@ def test_an_empty_string_default_renders_a_visible_token(tmp_path: Path) -> None
     rows = render_show(eff, resolved=resolved_adaptive_values(eff.config)).splitlines()
     preset = next(line for line in rows if line.split()[:1] == ["preset"])
     assert "(empty)" in preset, preset
+
+
+def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(tmp_path: Path) -> None:
+    """`sandbox.isolation = auto` and `sandbox.network = auto` resolved at one
+    place, `agent6 check config`; the config views on every surface showed
+    `auto` with no resolution, so a browser-only operator never learned what
+    a run here would get."""
+    from agent6.app.confine import resolved_config_values
+    from agent6.viewmodel.config_view import build_config_view
+
+    eff = _effort_config(tmp_path, "")
+    view = build_config_view(eff, resolved=resolved_config_values(eff.config))
+    rows = {s.key: s for s in view.settings}
+    assert rows["sandbox.isolation"].is_adaptive
+    assert rows["sandbox.isolation"].effective_value in ("strict", "hardened", "none")
+    assert rows["sandbox.network"].is_adaptive
+    assert "(adaptive)" in render_show(eff, resolved=resolved_config_values(eff.config))
+
+    explicit = _effort_config(tmp_path, '[sandbox]\nisolation = "none"\n')
+    view = build_config_view(explicit, resolved=resolved_config_values(explicit.config))
+    assert not {s.key: s for s in view.settings}["sandbox.isolation"].is_adaptive

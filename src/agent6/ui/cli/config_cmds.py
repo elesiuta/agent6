@@ -9,6 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from agent6.app.confine import resolved_config_values
 from agent6.config import (
     ConfigError,
 )
@@ -50,7 +51,6 @@ from agent6.machine import (
     MachineError,
     load_machine,
 )
-from agent6.models import registry as models_registry
 from agent6.paths import (
     cache_dir,
     chown_to_real_user,
@@ -90,7 +90,7 @@ def _cmd_config_show(
     machine: Path | None = None,
 ) -> int:
     eff = _effective_with_overlay(config_path, machine)
-    resolved = models_registry.resolved_adaptive_values(eff.config)
+    resolved = resolved_config_values(eff.config)
     if keys:
         # `config show <key>...`: leaves or whole section prefixes, untruncated
         # (JSON mode filters to the same match set). The detail view always
