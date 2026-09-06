@@ -1262,6 +1262,27 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
     return BackgroundJob(launcher, outcome_dir)
 
 
+def _abandon_launcher(proc: subprocess.Popen[bytes], interrupt_w: int) -> None:
+    """A launcher that failed setup: out of the live set, every pipe closed,
+    and the child reaped. Closing stdin here swallows the EPIPE a dead peer
+    forces on the buffered spec write; left to garbage collection, that close
+    re-raises as unraisable BrokenPipeError noise in the caller's log, and the
+    unreaped child sits as a zombie for the rest of the process."""
+    with _sweep_lock:
+        _live_launchers.discard(proc.pid)
+    with contextlib.suppress(OSError):
+        os.close(interrupt_w)
+    for pipe in (proc.stdin, proc.stdout, proc.stderr):
+        if pipe is not None:
+            with contextlib.suppress(OSError, ValueError):
+                pipe.close()
+    if proc.poll() is None:
+        with contextlib.suppress(OSError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+        proc.wait(timeout=5.0)
+
+
 @dataclass(slots=True)
 class JailSession:
     """One long-lived launcher, serving every command of one run.
@@ -1328,20 +1349,26 @@ class JailSession:
         spec = json.loads(_policy_to_json(policy))
         spec["mode"] = "serve"
         assert proc.stdin is not None and proc.stdout is not None
-        proc.stdin.write((json.dumps(spec) + "\n").encode())
-        proc.stdin.flush()
-        # The launcher prints one ready line once setup is done; consuming it
-        # before the first request keeps the request/answer lockstep AND marks
-        # the point where any setup warning (a refused /proc mount, a skipped
-        # grant) is on stderr. Read it there, once -- a degraded jail that still
-        # runs otherwise says so instead of only surfacing as a puzzling command
-        # failure later. A launcher that died in setup gives EOF here.
-        ready = proc.stdout.readline()
-        if not ready:
-            with _sweep_lock:
-                _live_launchers.discard(proc.pid)
-            os.close(interrupt_w)
+        try:
+            proc.stdin.write((json.dumps(spec) + "\n").encode())
+            proc.stdin.flush()
+            # The launcher prints one ready line once setup is done; consuming
+            # it before the first request keeps the request/answer lockstep AND
+            # marks the point where any setup warning (a refused /proc mount, a
+            # skipped grant) is on stderr. Read it there, once -- a degraded
+            # jail that still runs otherwise says so instead of only surfacing
+            # as a puzzling command failure later. A launcher that died in
+            # setup gives EOF here.
+            ready = proc.stdout.readline()
+        except OSError as exc:
+            # The launcher died before consuming the spec (EPIPE at the
+            # write/flush): same failure as the EOF below, one error type.
             err = _lossy_text(_read_available(proc.stderr)).strip()
+            _abandon_launcher(proc, interrupt_w)
+            raise JailUnavailableError(f"jail session died during setup: {err or exc}") from exc
+        if not ready:
+            err = _lossy_text(_read_available(proc.stderr)).strip()
+            _abandon_launcher(proc, interrupt_w)
             raise JailUnavailableError(f"jail session died during setup: {err or 'no output'}")
         startup_stderr = _lossy_text(_read_available(proc.stderr, budget_s=0.1)).strip()
         return cls(
