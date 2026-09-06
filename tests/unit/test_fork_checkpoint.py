@@ -26,7 +26,7 @@ import pytest
 from agent6.app._setup import SandboxOverrides
 from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import chain_ref_for
-from agent6.graph.storage import list_checkpoint_turns
+from agent6.graph.storage import list_checkpoint_turns, load_graph
 from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
@@ -938,6 +938,32 @@ def test_fork_steer_with_no_run_is_refused(
     assert "--steer" in capsys.readouterr().err
 
 
+def test_a_past_turn_fork_starts_on_the_task_that_turn_was_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cursor is the run's focus, and a fork replays it like every other
+    fact. Falling back to the SOURCE's current cursor when the prefix set none
+    handed the child the last turn's task: it worked the newest task first and
+    the earlier ones after it."""
+    from agent6.graph.curator import GraphCurator
+    from agent6.graph.models import SetCursorIntent
+
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    # The focus lands AFTER turn 1's graph_version: turn 1 had no cursor.
+    late = next(n for n in load_graph(src).values() if n.title == "late subtask")
+    GraphCurator(src).set_cursor(SetCursorIntent(id=late.id))
+    assert json.loads(src.cursor_path.read_text(encoding="utf-8"))["node_id"] == late.id
+
+    assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
+
+    dst = SessionLayout(state_dir=state_dir, session_id="kid-DDDD44")
+    assert json.loads(dst.cursor_path.read_text(encoding="utf-8"))["node_id"] is None
+
+
 def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -964,11 +990,11 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     assert [n.title for n in nodes.values()] == ["root task"]
     assert [n.status for n in nodes.values()] == ["pending"]
     assert [n.children for n in nodes.values()] == [()]
-    # The cursor cannot point into the future, and the journal stops at turn 1.
-    assert json.loads(dst.cursor_path.read_text(encoding="utf-8"))["node_id"] in (
-        None,
-        next(iter(nodes)),
-    )
+    # The cursor cannot point into the future: the run held none at turn 1, and
+    # inheriting the SOURCE's current one started the child on the last turn's
+    # task with every earlier one pending. `in (None, first)` accepted that
+    # while the graph had one node.
+    assert json.loads(dst.cursor_path.read_text(encoding="utf-8"))["node_id"] is None
     versions = [
         json.loads(line)["graph_version"]
         for line in dst.journal_path.read_text(encoding="utf-8").splitlines()

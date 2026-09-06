@@ -113,8 +113,19 @@ def graph_at_version(
         nid, dep = _str_field(e, "id"), _str_field(e, "depends_on")
         if nid is not None and dep is not None:
             deps_after.setdefault(nid, set()).add(dep)
+    # The cursor as of *version*: the last one the prefix set. With none in the
+    # prefix but some later in the journal, the run held NO cursor here --
+    # falling back to the CURRENT one gave a fork at turn 1 the focus of the
+    # last turn, so the child worked the newest task first. *current_cursor* is
+    # for a graph whose journal records no cursor at all (a pre-journal graph,
+    # where the cursor file is the only record).
     cursors = [e for e in at if e["op"] == "set_cursor"]
-    cursor = _str_field(cursors[-1], "id") if cursors else current_cursor
+    if cursors:
+        cursor = _str_field(cursors[-1], "id")
+    elif any(e["op"] == "set_cursor" for e in past):
+        cursor = None
+    else:
+        cursor = current_cursor
 
     rebuilt = {
         nid: node.model_copy(
