@@ -67,6 +67,7 @@ _STYLE_ANSI: dict[StyleName, str] = {
     "marker": _ANSI["dim"] + _ANSI["italic"],
     "done-ok": _ANSI["bold"] + _ANSI["green"],
     "done-fail": _ANSI["bold"] + _ANSI["yellow"],
+    "done-neutral": _ANSI["bold"],
     "body": "",
     "done-detail": _ANSI["dim"],
     "operator": _ANSI["bold"] + _ANSI["green"],
@@ -156,7 +157,7 @@ class ConsoleView:
         age = 0.0 if self._event_ep is None else max(0.0, time.time() - self._event_ep)
         self._last_output_at = time.monotonic() - age
 
-    def feed(self, event: dict[str, Any]) -> None:
+    def feed(self, event: dict[str, Any]) -> None:  # noqa: PLR0911 - one per event kind
         etype = event.get("type", "")
         with self._lock:
             # Anchor per EVENT, not only per rendered line: a replay can end on
@@ -208,6 +209,19 @@ class ConsoleView:
                 return
             if etype == "graph.update":
                 self._render_plan(event)
+                return
+            if etype == "loop.provider.retry":
+                # A retry resets the idle clock, so without a line the "working…
+                # Ns" counter restarts with nothing said: a run wedged behind
+                # four provider failures read as freshly started, and the
+                # Ctrl-C hint (idle >= 20s) never appeared.
+                self._end_block()
+                attempt = event.get("attempt")
+                self._line(
+                    self._c("dim", f"  retrying after a provider error (attempt {attempt}): ")
+                    + self._c("dim", str(event.get("error", "")))
+                    + "\n"
+                )
                 return
             for item in self._fold.feed(event):
                 self._end_block()

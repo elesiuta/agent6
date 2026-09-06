@@ -377,3 +377,21 @@ def test_the_cli_prints_a_tool_once_when_it_settles() -> None:
     )
     assert out.count("→ read_file") == 1
     assert "running" not in out
+
+
+def test_a_provider_retry_says_so_instead_of_resetting_the_clock() -> None:
+    """The retry event bumps the idle clock, so with nothing rendered the
+    "working… Ns" counter restarted with no explanation: a run wedged behind
+    four provider failures read as freshly started, and the Ctrl-C hint (which
+    needs 20s idle) never appeared."""
+    out = _render(
+        [
+            {
+                "type": "loop.provider.retry",
+                "attempt": 2,
+                "error": "HTTP error calling https://api.example/v1: connection refused",
+            }
+        ]
+    )
+    assert "retrying after a provider error (attempt 2)" in out
+    assert "connection refused" in out
