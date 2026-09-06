@@ -15,7 +15,7 @@ An edge is "imports from"; a dashed edge would mark an import climbing the stack
 Any layer may also use the shared substrate: <!-- generated: substrate-names -->.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root.
-  The four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`), `ui/mcp_server.py` (agent6 as an MCP server), and the write helpers `ui/spawn` and `ui/notify`, over the shared read-model fold (`viewmodel`).
+  The four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`), `ui/mcp_server.py` (agent6 as an MCP server), and the write helpers `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place), over the shared read-model fold (`viewmodel`).
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
     - never imports `agent6.ui`
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
@@ -282,11 +282,17 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `memory/DECISIONS.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
 | `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`agents_md` / manifest / `llm` / `none` / `disabled` / `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
 | `role.call` | `role`, `model`, `provider` |
-| `role.result` | `role`, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason` (`error` when `ok` is false) |
+| `role.result` | `role`, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason`; a failure carries `error` (the reason, clipped) instead |
 | `role.text_delta` | streamed assistant text chunk |
 | `role.thinking_delta` | streamed reasoning chunk |
 | `session.steer_requested` | `source` (`"sigint"`): mid-run Ctrl-C |
-| `budget.update` | totals and caps for input and output tokens |
+| `session.undone` | `/undo`: the turn taken back and the fork that continues from it |
+| `btw.opened` / `.answered` | a `/btw` side question and its answer block |
+| `command.backgrounded` | a `run_command` handed back as a background job (`id`, argv) |
+| `metric.start` | the metric command about to run (argv) |
+| `jail.degraded` | the sandbox came up weaker than asked, with the reason |
+| `mcp.server_unavailable` | a configured MCP server that did not start; the run continues without it |
+| `budget.update` | input/output token totals and the fallback cap, plus `usd_total`, `usd_partial`, `usd_cap`, `tokens_unmetered`, and the plan meter (`plan_used_percent`, `plan_consumed`, `plan_cap`, `plan_resets_at`) |
 | `approval.prompt` / `.answer` | `id`, `prompt`, `standing`, `call_id` (the gated tool call; null for a verify the harness runs itself) / `id`, `approved`, `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `session`, `headless`, `acp`) |
 | `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-wait`, `headless-default`, `headless`, `acp`): the `ask_user` tool and the start question |
 | `graph.update` | the task DAG after this turn: `nodes` (title, status, parent_id, children), `cursor` |
@@ -309,7 +315,7 @@ A `run_command` approval publishes as `approval.prompt`.
 
 | Concern | File or directory |
 | --- | --- |
-| Config schema | [config/model.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/model.py) |
+| Config schema | [config/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config) (`model.py` holds `Config` and the model roles; each section has its own module: `_sandbox.py`, `_workflow.py`, `_git.py`, `_surfaces.py`, `_providers.py`) |
 | Tool surface | [tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py) |
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [workflows/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/loop.py) |
@@ -331,13 +337,14 @@ A `run_command` approval publishes as `approval.prompt`.
 
 ## Bench and development switches
 
-Five env vars exist for benchmark arms and harness experiments rather than product configuration, listed here so no behaviour keys off undocumented state:
+Six env vars exist for benchmark arms, harness experiments and debugging rather than product configuration, listed here so no behaviour keys off undocumented state:
 
 - `AGENT6_SYMBOL_TOOLS`: selects a symbol-tool arm, hiding part of the navigation surface; a call to a hidden tool says so.
 - `AGENT6_DISABLE_APPLY_EDIT=1`: withholds `apply_edit`, forcing the patch path; the refusal names the switch.
 - `AGENT6_WENT_QUIET_MAX_NUDGES`: overrides the empty-turn nudge cap.
 - `AGENT6_REASONING_EFFORT`: a default reasoning effort for OpenAI-compatible reasoning models, below any configured `[models.<role>].effort`.
 - `AGENT6_FORCE_STREAM=1`: streams the run's reasoning to stderr with no TTY, for a bench or CI log.
+- `AGENT6_DEBUG=1`: re-raises an unexpected error with its traceback instead of writing a crash-report file, and prints the notices a run would keep to its log.
 
 ## Pre-1.0 stability
 
