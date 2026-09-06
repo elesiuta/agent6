@@ -74,8 +74,10 @@ def _trim(text: str) -> str:
     return "\n".join(kept).strip() + f"\n... ({len(lines) - _MAX_DIAG_LINES} more lines)"
 
 
-def _run_static(argv: list[str], cwd: Path, label: str) -> str | None:
-    """Run a static checker; return a problem string on failure, else None."""
+def _run_static(argv: list[str], cwd: Path, label: str, *, strip: Path | None = None) -> str | None:
+    """Run a static checker; return a problem string on failure, else None.
+    Diagnostics lose the *strip* prefix (default *cwd*) so they read as bundle
+    paths."""
     # Fixed argv (an operator-installed tool + flags); the only LLM-derived input
     # is the *files* it statically reads, it never executes them. See AGENTS.md.
     env = os.environ.copy()
@@ -91,7 +93,8 @@ def _run_static(argv: list[str], cwd: Path, label: str) -> str | None:
     out = (res.stdout + ("\n" + res.stderr if res.stderr else "")).strip()
     # Diagnostics name the private temp copy; relativize so they read as bundle
     # paths (scripts/...), mirroring the run_offline_tests cleanup.
-    out = out.replace(str(cwd.resolve()) + "/", "").replace(str(cwd) + "/", "")
+    base = strip or cwd
+    out = out.replace(str(base.resolve()) + "/", "").replace(str(base) + "/", "")
     return f"{label} found problems:\n{_trim(out)}"
 
 
@@ -115,6 +118,29 @@ def _nearest_ruff_config(start: Path) -> Path | None:
                     continue
             return candidate
     return None
+
+
+def _ruff_invocation(
+    ruff: list[str], scripts_dir: Path, ruff_config_from: Path | None, *, fix: bool
+) -> tuple[list[str], Path]:
+    """ruff's argv and cwd. Native discovery runs from the bundle dir. A config
+    resolved from *ruff_config_from* runs from that config's own directory on
+    the absolute scripts path: `--config` anchors a relative pattern
+    (per-file-ignores, extend-exclude) to the cwd, where discovery anchors it to
+    the config's directory, so a glob must not match here and not after
+    publish."""
+    argv = [*ruff, "check", "--no-cache", "--output-format", "concise"]
+    cwd, target = scripts_dir.resolve().parent, scripts_dir.name
+    if ruff_config_from is not None:
+        found = _nearest_ruff_config(ruff_config_from)
+        if found is None:
+            argv.append("--isolated")
+        else:
+            argv += ["--config", str(found)]
+            cwd, target = found.parent, str(scripts_dir.resolve())
+    if fix:
+        argv.append("--fix")
+    return [*argv, target], cwd
 
 
 def lint_and_typecheck(
@@ -143,14 +169,8 @@ def lint_and_typecheck(
         return []
     problems: list[str] = []
     if ruff := _resolve_tool("ruff"):
-        argv = [*ruff, "check", "--no-cache", "--output-format", "concise"]
-        if ruff_config_from is not None:
-            found = _nearest_ruff_config(ruff_config_from)
-            argv += ["--config", str(found)] if found is not None else ["--isolated"]
-        if fix:
-            argv.append("--fix")
-        bundle_dir = scripts_dir.resolve().parent
-        problem = _run_static([*argv, scripts_dir.name], bundle_dir, "ruff (lint)")
+        argv, cwd = _ruff_invocation(ruff, scripts_dir, ruff_config_from, fix=fix)
+        problem = _run_static(argv, cwd, "ruff (lint)", strip=scripts_dir.resolve().parent)
         if problem:
             problems.append(problem)
     else:

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -339,3 +340,37 @@ def test_fix_mode_applies_safe_fixes_and_writes_back(tmp_path: Path) -> None:
     fixed = (tmp_path / "scripts" / "fixable.py").read_text()
     assert "import os" not in fixed
     assert not any("ruff" in p for p in problems)
+
+
+def test_the_create_lint_anchors_relative_patterns_where_machine_check_does(
+    tmp_path: Path,
+) -> None:
+    """`--config` anchors a relative per-file-ignores glob to the cwd, so a
+    `scripts/*` ignore in the repo's pyproject silenced the draft (linted from
+    its workspace) and fired on the published bundle under `machine check`."""
+    from agent6.app.machine._scriptcheck import (
+        _resolve_tool,  # pyright: ignore[reportPrivateUsage]
+        lint_and_typecheck,
+    )
+
+    if _resolve_tool("ruff") is None:
+        pytest.skip("ruff is not installed")
+    repo = tmp_path / "repo"
+    (repo / "machines").mkdir(parents=True)
+    (repo / "pyproject.toml").write_text(
+        '[tool.ruff]\nline-length = 20\n[tool.ruff.lint]\nselect = ["E501"]\n'
+        '[tool.ruff.lint.per-file-ignores]\n"scripts/*" = ["E501"]\n',
+        encoding="utf-8",
+    )
+    workspace = tmp_path / "ws"
+    (workspace / "scripts").mkdir(parents=True)
+    (workspace / "scripts" / "helper.py").write_text(
+        "VALUE = 'a line that is longer than twenty characters'\n", encoding="utf-8"
+    )
+    drafted = lint_and_typecheck(workspace / "scripts", ruff_config_from=repo / "machines")
+    published = repo / "machines" / "m"
+    shutil.copytree(workspace, published)
+    checked = lint_and_typecheck(published / "scripts")
+    assert any("E501" in p for p in checked), checked
+    assert any("E501" in p for p in drafted), drafted
+    assert not any(str(workspace) in p for p in drafted), drafted  # bundle-relative paths
