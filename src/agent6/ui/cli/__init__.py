@@ -611,7 +611,11 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
 
     if args.config_command == "show":
         return _cmd_config_show(
-            args.config, as_json=args.as_json, keys=args.keys, descriptions=args.descriptions
+            args.config,
+            as_json=args.as_json,
+            keys=args.keys,
+            descriptions=args.descriptions,
+            machine=args.machine_file,
         )
     if args.config_command == "fill":
         return _cmd_config_fill(force=args.force)

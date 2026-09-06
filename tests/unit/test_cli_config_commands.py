@@ -255,6 +255,25 @@ def test_machine_overlay_set_and_get(iso: Path, capsys: pytest.CaptureFixture[st
     assert "[machine]" in capsys.readouterr().out
 
 
+def test_config_show_reads_through_a_machine_overlay(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every write verb, `get` and `fix` took --machine-file; `show`, the audit
+    of every leaf, did not, so "what will this machine see" was answerable one
+    leaf at a time."""
+    mf = _machine_file(iso)
+    assert (
+        _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
+    )
+    capsys.readouterr()
+    assert _run(["config", "show", "--machine-file", str(mf)]) == 0
+    row = next(line for line in capsys.readouterr().out.splitlines() if "review.trigger" in line)
+    assert "on_verify_fail" in row and "machine" in row, row
+    assert _run(["config", "show", "review.trigger", "--machine-file", str(mf)]) == 0
+    assert "on_verify_fail" in capsys.readouterr().out
+    assert _refuse(["config", "show", "--machine-file", str(iso / "missing.asm.toml")]) == 2
+
+
 def test_machine_overlay_rejects_providers(iso: Path) -> None:
     mf = _machine_file(iso)
     assert _run(["config", "set", "providers.x.kind", "anthropic", "--machine-file", str(mf)]) == 2

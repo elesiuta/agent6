@@ -61,6 +61,15 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Print each value's meaning under its row (the docs table cell).",
     )
+    config_show_machine = config_show.add_argument(
+        "--machine-file",
+        dest="machine_file",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="View every leaf with a machine file's [config] overlay applied.",
+    )
+    config_show_machine.completer = _complete_machine_files  # type: ignore[attr-defined]
     config_fill = _sub(
         config_sub,
         "fill",

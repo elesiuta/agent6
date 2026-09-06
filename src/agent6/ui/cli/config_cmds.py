@@ -21,6 +21,7 @@ from agent6.config.io import (
     upsert_toml_leaf,
 )
 from agent6.config.layer import (
+    EffectiveConfig,
     InvalidEntry,
     effective_leaf,
     find_invalid_entries,
@@ -64,14 +65,31 @@ from agent6.portable import atomic_write, locked_file
 from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
 
 
+def _effective_with_overlay(config_path: Path | None, machine: Path | None) -> EffectiveConfig:
+    """The effective config, with a machine file's `[config]` overlay on top
+    when one is named."""
+    if machine is None:
+        return load_effective(Path.cwd(), config_path)
+    if not machine.is_file():
+        # read_toml_file answers {} for a missing path, so a typo'd machine file
+        # would read as "an empty overlay" and answer confidently from the
+        # stack below it.
+        raise OperatorError(f"no such machine file: {machine}")
+    overlay = read_toml_file(machine).get("config", {})
+    return load_effective_with_overlay(
+        Path.cwd(), overlay if isinstance(overlay, dict) else {}, explicit_path=config_path
+    )
+
+
 def _cmd_config_show(
     config_path: Path | None,
     *,
     as_json: bool,
     keys: list[str] | None = None,
     descriptions: bool = False,
+    machine: Path | None = None,
 ) -> int:
-    eff = load_effective(Path.cwd(), config_path)
+    eff = _effective_with_overlay(config_path, machine)
     resolved = models_registry.resolved_adaptive_values(eff.config)
     if keys:
         # `config show <key>...`: leaves or whole section prefixes, untruncated
@@ -298,20 +316,7 @@ def _warn_if_still_broken() -> None:
 
 def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None) -> int:
     """Print a leaf's effective value + the layer that set it."""
-    if machine is not None and not machine.is_file():
-        # read_toml_file answers {} for a missing path, so a typo'd machine file
-        # would read as "an empty overlay" and answer confidently from the
-        # stack below it.
-        raise OperatorError(f"no such machine file: {machine}")
-    if machine is not None:
-        overlay = read_toml_file(machine).get("config", {})
-        eff = load_effective_with_overlay(
-            Path.cwd(),
-            overlay if isinstance(overlay, dict) else {},
-            explicit_path=config_path,
-        )
-    else:
-        eff = load_effective(Path.cwd(), config_path)
+    eff = _effective_with_overlay(config_path, machine)
     found = effective_leaf(eff, key)
     if found is None:
         print(f"ERROR: {key!r} is not a config leaf (see `agent6 config show`).", file=sys.stderr)
