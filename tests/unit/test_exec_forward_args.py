@@ -200,7 +200,7 @@ def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
     """Each rolled its own id lookup, so an ambiguous prefix -- which `attach`
     and `sessions show` name as ambiguous -- read as "no session 'ambig'",
     which is false: two matched."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -280,7 +280,7 @@ def test_exec_refuses_a_run_that_is_over(
     from agent6.types import JailPolicy
     from agent6.ui.cli.net_cmds import exec_in_session
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     from agent6.config.layer import resolved_state_dir

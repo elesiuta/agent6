@@ -20,10 +20,10 @@ _ENV_SECRET = "env-secret-also-hidden"
 @pytest.fixture
 def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "agent6-config"
-    home.mkdir()
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(home))
+    (home / "agent6").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home))
     monkeypatch.chdir(tmp_path)  # no repo config in play
-    (home / "config.toml").write_text(
+    (home / "agent6" / "config.toml").write_text(
         "\n".join(
             (
                 "[agent6]",
@@ -35,7 +35,7 @@ def config_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         ),
         encoding="utf-8",
     )
-    secrets = home / "secrets.toml"
+    secrets = home / "agent6" / "secrets.toml"
     secrets.write_text(f'[providers.anthropic]\napi_key = "{_SECRET}"\n', encoding="utf-8")
     secrets.chmod(0o600)
     monkeypatch.setenv("AGENT6_TEST_KEY", _ENV_SECRET)

@@ -12,6 +12,7 @@ import pytest
 
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.models.registry import resolved_adaptive_values
+from agent6.paths import global_config_dir
 from agent6.sessions.layout import bucket_dir, machines_root
 from agent6.ui.web import model
 from agent6.viewmodel import machine_snapshot, session_snapshot
@@ -370,7 +371,8 @@ def test_config_suggestions_providers_and_models(
     # listing the TUI config page and CLI completion use (`models.choices`).
     from agent6.models import choices
 
-    cfg_home = Path(os.environ["AGENT6_CONFIG_HOME"])
+    cfg_home = global_config_dir()
+    cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
         '[providers.openrouter]\napi_format = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
@@ -406,15 +408,16 @@ def test_config_suggestions_parallel_models_pseudo_key(
 ) -> None:
     # The /parallel composer autocomplete: the worker's configured model plus the
     # worker provider's cached listing, cache-only so it never blocks.
-    cfg_home = Path(os.environ["AGENT6_CONFIG_HOME"])
+    cfg_home = global_config_dir()
+    cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
         '[providers.openrouter]\napi_format = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
         '[models.worker]\nprovider = "openrouter"\nmodel = "role-only-model"\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
-    cache = tmp_path / "cache" / "models"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    cache = tmp_path / "cache" / "agent6" / "models"
     cache.mkdir(parents=True)
     (cache / "openrouter.json").write_text(
         json.dumps({"models": ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"]}), encoding="utf-8"
@@ -429,15 +432,16 @@ def test_parallel_models_suggestions_scoped_to_worker_provider(
     # Lanes inherit the WORKER provider (only the model is overridden per lane),
     # so the suggestions offer only models the lanes can actually run: a sibling
     # provider's cached catalog is excluded.
-    cfg_home = Path(os.environ["AGENT6_CONFIG_HOME"])
+    cfg_home = global_config_dir()
+    cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
         '[providers.w]\napi_format = "openai"\nbase_url = "https://w.example/v1"\n'
         '[providers.s]\napi_format = "openai"\nbase_url = "https://s.example/v1"\n'
         '[models.worker]\nprovider = "w"\nmodel = "w/base-model"\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
-    cache = tmp_path / "cache" / "models"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    cache = tmp_path / "cache" / "agent6" / "models"
     cache.mkdir(parents=True)
     (cache / "w.json").write_text(json.dumps({"models": ["w/model-a"]}), encoding="utf-8")
     (cache / "s.json").write_text(json.dumps({"models": ["s/only-model"]}), encoding="utf-8")

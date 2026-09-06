@@ -33,9 +33,9 @@ def cache_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     if not (base.is_dir() and os.access(base, os.W_OK)):
         pytest.skip("/var/tmp is not writable here")
     scratch = Path(tempfile.mkdtemp(prefix="agent6-jail-home-", dir=base))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(scratch / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(scratch / "cache"))
     try:
-        yield scratch / "cache" / "home"
+        yield scratch / "cache" / "agent6" / "home"
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

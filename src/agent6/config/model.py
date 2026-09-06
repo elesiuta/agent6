@@ -34,7 +34,6 @@ from pydantic import (
     BaseModel,
     Field,
     ValidationError,
-    field_validator,
     model_validator,
 )
 
@@ -204,31 +203,6 @@ class Agent6Section(BaseModel):
         default=1,
         description="Config schema version; only `1` is accepted.",
     )
-    # Absolute base directory for per-repo agent6 state (this per-repo config +
-    # all run state), which lives OUT of the workspace under `<base>/<repo-id>/`
-    # (default `$XDG_STATE_HOME/agent6`; see `agent6.paths.state_base`). Can
-    # ONLY be set in the GLOBAL config: it locates the per-repo config, so a
-    # per-repo/flag value would be chicken-and-egg. Must be absolute. Point it
-    # at a persisted, out-of-cwd path (e.g. a mounted volume) to keep run state
-    # across devcontainer rebuilds.
-    state_dir: str | None = Field(
-        default=None,
-        description=(
-            "Absolute base directory for all per-repo state (runs, machines, memory), as "
-            "`<state_dir>/<repo-id>/`. Global config only. Unset: `AGENT6_STATE_HOME`, else "
-            "`$XDG_STATE_HOME/agent6`. In a devcontainer the default is wiped on rebuild; point it "
-            "at a persisted volume to keep runs."
-        ),
-    )
-
-    @field_validator("state_dir")
-    @classmethod
-    def _check_state_dir(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        if not Path(v).expanduser().is_absolute():
-            raise ValueError(f"[agent6].state_dir must be an absolute path, got {v!r}")
-        return v
 
 
 class Config(BaseModel):

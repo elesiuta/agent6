@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6 import paths as paths_mod
 from agent6.config import (
     AnthropicProviderEntry,
     ConfigError,
@@ -52,9 +53,9 @@ run_commands = "yes"
 @pytest.fixture
 def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text(_GLOBAL, encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text(_GLOBAL, encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True)
     rcfg = repo_config_path_for(repo_root)  # out of the workspace, under the state base
@@ -80,7 +81,7 @@ def test_an_unknown_key_points_at_config_fix(repo: Path) -> None:
     an extra_forbidden leaf at it sends the operator to a second error. The
     remedy that works is `agent6 config fix`, which drops the key. A bad VALUE
     on a real key still points at `config set`."""
-    gcfg = Path(repo).parent / "g" / "config.toml"
+    gcfg = Path(repo).parent / "g" / "agent6" / "config.toml"
     gcfg.write_text('[sandbox]\nnonexistent_key = 1\nisolation = "srtict"\n', encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
         load_effective(repo)
@@ -177,7 +178,7 @@ def test_config_write_keeps_the_edit_when_another_layer_was_already_invalid(
     it exited having stored a key with no provider stanza to use it, and nothing
     said `agent6 config fix`."""
     # A pre-existing, unrelated error in the GLOBAL layer.
-    (tmp_path / "g" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
+    (tmp_path / "g" / "agent6" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
 
     err = set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
 
@@ -233,7 +234,7 @@ def test_set_config_value_rejects_a_value_masked_by_a_higher_layer(repo: Path) -
     sandbox.run_commands="yes", so a GLOBAL write of a bad enum merges valid; only
     the standalone written-value check catches it. Shares the CLI's guard now, so
     the TUI/web/init/connect writers validate identically (the promised contract)."""
-    gpath = repo.parent / "g" / "config.toml"
+    gpath = repo.parent / "g" / "agent6" / "config.toml"
     before = gpath.read_text(encoding="utf-8")
 
     err = set_config_value(repo, "sandbox.run_commands", "garbage_not_an_enum", to_repo=False)
@@ -252,7 +253,7 @@ def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: Path)
         '[providers.x]\napi_format = "openai"\nbase_url = "https://good.example/v1"\n',
         encoding="utf-8",
     )
-    gpath = repo.parent / "g" / "config.toml"
+    gpath = repo.parent / "g" / "agent6" / "config.toml"
     before = gpath.read_text(encoding="utf-8")
 
     err = set_config_value(repo, "providers.x.base_url", "not a url", to_repo=False)
@@ -295,12 +296,12 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
     from agent6.config.write import set_config_value
 
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text(
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text(
         "[context]\n# my tuning\nkeep_recent_chars = 50000\nsummary_max_tokens = 4096\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
@@ -309,7 +310,7 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
     )
 
     assert err is None, err
-    text = (gdir / "config.toml").read_text(encoding="utf-8")
+    text = (gdir / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "# my tuning" in text
     assert "keep_recent_chars = 50000" in text
     assert "summary_max_tokens = 4096" in text
@@ -327,22 +328,22 @@ def test_a_dict_typed_leaf_is_replaced_whole(
     from agent6.config.write import set_config_value
 
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text(
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text(
         "[providers.openrouter]\n"
         'api_format = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
         'extra_body = { provider = { sort = "throughput" } }  # prefer fast backends\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
     err = set_config_value(repo_root, "providers.openrouter.extra_body", '{ order = ["x"] }')
 
     assert err is None, err
-    text = (gdir / "config.toml").read_text(encoding="utf-8")
+    text = (gdir / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert 'extra_body = { order = ["x"] }' in text
     assert "sort" not in text, "the old value was merged into, not replaced"
     assert "# prefer fast backends" in text
@@ -357,17 +358,17 @@ def test_a_write_that_breaks_the_toml_is_rolled_back(
     from agent6.config.write import set_config_value
 
     gdir = tmp_path / "g"
-    gdir.mkdir()
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     before = '[sandbox]\nnetwork = "none"\n'
-    (gdir / "config.toml").write_text(before, encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    (gdir / "agent6" / "config.toml").write_text(before, encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
     err = set_config_value(repo_root, "providers.openai.extra_headers.X Title", "b")
 
     assert err is not None and "invalid TOML" in err
-    assert (gdir / "config.toml").read_text(encoding="utf-8") == before
+    assert (gdir / "agent6" / "config.toml").read_text(encoding="utf-8") == before
 
 
 def test_written_value_error_catches_a_section_wide_rule() -> None:
@@ -406,7 +407,7 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude"\nthinking = "off"\n',
         encoding="utf-8",
     )
-    gpath = repo.parent / "g" / "config.toml"
+    gpath = repo.parent / "g" / "agent6" / "config.toml"
     before = gpath.read_text(encoding="utf-8")
 
     err = set_config_table(
@@ -450,34 +451,6 @@ def test_empty_overlay_matches_load_effective(repo: Path) -> None:
     assert eff.config.sandbox.run_commands == "yes"
 
 
-def test_overlay_forbids_state_dir(repo: Path) -> None:
-    from agent6.config.layer import load_effective_with_overlay
-
-    overlay = {"agent6": {"state_dir": "/other"}}
-    with pytest.raises(ConfigError, match="state_dir"):
-        load_effective_with_overlay(repo, overlay)
-
-
-@pytest.mark.parametrize("bad", ["relative/path", "also-relative", "."])
-def test_global_state_dir_rejects_relative(repo: Path, bad: str) -> None:
-    # The raw pre-model read of the GLOBAL config must reject a non-absolute
-    # state_dir (it is the base the per-repo config + run state live under).
-    from agent6.config.layer import _global_state_dir  # pyright: ignore[reportPrivateUsage]
-
-    gpath = repo.parent / "g" / "config.toml"
-    gpath.write_text(f'[agent6]\nstate_dir = "{bad}"\n', encoding="utf-8")
-    with pytest.raises(ConfigError, match="state_dir"):
-        _global_state_dir()
-
-
-def test_global_state_dir_accepts_absolute(repo: Path) -> None:
-    from agent6.config.layer import _global_state_dir  # pyright: ignore[reportPrivateUsage]
-
-    gpath = repo.parent / "g" / "config.toml"
-    gpath.write_text('[agent6]\nstate_dir = "/srv/agent6-state"\n', encoding="utf-8")
-    assert _global_state_dir() == "/srv/agent6-state"
-
-
 def test_deep_merge_replaces_provider_when_kind_changes() -> None:
     # A lower layer's kind-specific keys must not survive a kind change, or they
     # surface as a confusing extra_forbidden error under the new kind.
@@ -515,7 +488,7 @@ def test_materialize_roundtrips_nested_objects_in_arrays(repo: Path, tmp_path: P
     a dict inside a plain list printed as Python repr -- so `config fill` (and
     a --parallel lane's snapshot) silently changed a valid provider request.
     Every JSON-shaped extra_body value must survive materialize -> parse."""
-    gpath = repo.parent / "g" / "config.toml"
+    gpath = repo.parent / "g" / "agent6" / "config.toml"
     gpath.write_text(
         gpath.read_text(encoding="utf-8")
         + "\n[providers.gw]\n"
@@ -552,7 +525,7 @@ def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> N
     DEFAULTS (base_url, timeouts) to a file holding different values -- with
     the operator-set marker. Provenance is now stamped in the same walk as
     the merge."""
-    gpath = repo.parent / "g" / "config.toml"
+    gpath = repo.parent / "g" / "agent6" / "config.toml"
     gpath.write_text(
         gpath.read_text(encoding="utf-8")
         + "\n[providers.foo]\n"
@@ -694,8 +667,16 @@ def test_prepare_write_target_hands_back_the_created_state_base(
 
     from agent6.config import write as write_mod
 
-    base = tmp_path / "nested" / "state-base"  # two levels, neither exists yet
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
+    # Through sudo the XDG vars are root's and ignored: the base is the real
+    # user's `~/.local/state/agent6`, two levels of which do not exist yet.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(
+        paths_mod,
+        "effective_user",
+        lambda: paths_mod.RealUser(uid=1234, gid=1234, name="op", home=home, via_sudo=True),
+    )
+    base = home / ".local" / "state" / "agent6"
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     monkeypatch.setattr(os, "geteuid", lambda: 0)
@@ -714,7 +695,7 @@ def test_prepare_write_target_hands_back_the_created_state_base(
     target = write_mod._prepare_write_target(repo_root, to_repo=True)  # pyright: ignore[reportPrivateUsage]
     assert target.parent.is_dir()
     assert base in chowned  # the created base is handed back...
-    assert tmp_path / "nested" in chowned  # ...and every created level above it
+    assert home / ".local" in chowned  # ...and every created level above it
 
 
 def test_config_write_hands_the_dir_over_before_writing(
@@ -759,7 +740,7 @@ def test_engine_writers_refuse_a_write_into_an_unparseable_target(
     (a malformed header is invisible to the lookups, so the write lands as a
     duplicate table): every writer refuses up front with the parse error, the
     same refusal the CLI always gave."""
-    gcfg = tmp_path / "g" / "config.toml"
+    gcfg = tmp_path / "g" / "agent6" / "config.toml"
     gcfg.write_text("[sandbox\nprotect_git = true\n", encoding="utf-8")  # missing ]
     before = gcfg.read_text(encoding="utf-8")
 

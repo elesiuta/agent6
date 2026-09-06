@@ -14,8 +14,7 @@ from agent6.ui.cli.completions_cmd import cmd_completions, detect_shell
 @pytest.fixture
 def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / ".config" / "agent6"))
-    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.delenv("ZDOTDIR", raising=False)
     # Point the process-tree walk at an empty dir so detection falls back to
     # $SHELL deterministically (the real tree ends in whatever shell runs pytest).
@@ -48,13 +47,13 @@ def test_bash_block_does_not_execute_a_path_with_shell_metacharacters(
     home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The script path is serialized into rc text the operator's shell sources,
-    so a `$(...)` in AGENT6_CONFIG_HOME must be inert on source, not executed."""
+    so a `$(...)` in XDG_CONFIG_HOME must be inert on source, not executed."""
     import shlex
     import subprocess
 
     # A config dir whose name is a command substitution (no slash, so it stays
     # one path component); if it executes on source it creates PWNED in cwd.
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "$(touch PWNED)" / "agent6"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "$(touch PWNED)" / "agent6"))
     assert cmd_completions("bash", print_only=False) == 0
     rc = home / ".bashrc"
     subprocess.run(["bash", "-c", f"source {shlex.quote(str(rc))}"], cwd=tmp_path, check=False)
@@ -181,10 +180,10 @@ def test_a_moved_config_home_updates_the_stale_source_block(
     rc = home / ".bashrc"
     old_block = rc.read_text(encoding="utf-8")
     moved = home / "elsewhere"
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(moved))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(moved))
     assert cmd_completions("bash", print_only=False) == 0
     text = rc.read_text(encoding="utf-8")
-    assert str(moved / "completions.bash") in text
+    assert str(moved / "agent6" / "completions.bash") in text
     assert str(home / ".config" / "agent6" / "completions.bash") not in text
     assert text.count(">>> agent6 completions >>>") == 1
     assert text != old_block

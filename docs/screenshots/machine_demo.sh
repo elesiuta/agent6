@@ -37,13 +37,13 @@ TMP="$(mktemp -d)"
 # A clean, project-looking path so the Machines header reads `.../acme-stats`.
 DEMO_REPO="/tmp/acme-stats"
 trap 'kill "${PROXY_PID:-0}" 2>/dev/null || true; rm -rf "$TMP" "$DEMO_REPO"' EXIT
-export AGENT6_CONFIG_HOME="$TMP/config"
-export AGENT6_STATE_HOME="$TMP/state"
+export XDG_CONFIG_HOME="$TMP/config"
+export XDG_STATE_HOME="$TMP/state"
 export AGENT6_DEMO_REPO="$DEMO_REPO"
-mkdir -p "$AGENT6_CONFIG_HOME"
+mkdir -p "$XDG_CONFIG_HOME/agent6"
 
 # The agent state inherits the worker model, which points at the proxy. open
-cat > "$AGENT6_CONFIG_HOME/config.toml" <<EOF
+cat > "$XDG_CONFIG_HOME/agent6/config.toml" <<EOF
 [sandbox]
 network = "session"
 run_commands = "yes"
@@ -81,8 +81,8 @@ git -C "$DEMO_REPO" -c user.email=demo@agent6.dev -c user.name="agent6 demo" com
 if [ "$MODE" = record ]; then
   command -v agent6 >/dev/null || { echo "machine_demo.sh: missing agent6" >&2; exit 1; }
   [ -r "$HOME/.config/agent6/secrets.toml" ] || { echo "machine_demo.sh record: need ~/.config/agent6/secrets.toml" >&2; exit 1; }
-  cp "$HOME/.config/agent6/secrets.toml" "$AGENT6_CONFIG_HOME/secrets.toml"
-  chmod 600 "$AGENT6_CONFIG_HOME/secrets.toml"
+  cp "$HOME/.config/agent6/secrets.toml" "$XDG_CONFIG_HOME/agent6/secrets.toml"
+  chmod 600 "$XDG_CONFIG_HOME/agent6/secrets.toml"
   echo "machine demo: RECORD -> $CASSETTE"
   AGENT6_PROXY_MODE=record AGENT6_PROXY_UPSTREAM=https://openrouter.ai \
     AGENT6_PROXY_CASSETTE="$CASSETTE" AGENT6_PROXY_PORT="$PORT" \
@@ -100,8 +100,8 @@ for bin in vhs ttyd ffmpeg agent6 python3; do
   command -v "$bin" >/dev/null 2>&1 || { echo "machine_demo.sh: missing required tool: $bin" >&2; exit 1; }
 done
 [ -s "$CASSETTE" ] || { echo "machine_demo.sh: missing cassette $CASSETTE (run 'machine_demo.sh record' first)" >&2; exit 1; }
-printf '[providers.openrouter]\napi_key = "unused-in-replay"\n' > "$AGENT6_CONFIG_HOME/secrets.toml"
-chmod 600 "$AGENT6_CONFIG_HOME/secrets.toml"
+printf '[providers.openrouter]\napi_key = "unused-in-replay"\n' > "$XDG_CONFIG_HOME/agent6/secrets.toml"
+chmod 600 "$XDG_CONFIG_HOME/agent6/secrets.toml"
 
 echo "machine demo: REPLAY proxy on :$PORT <- $CASSETTE"
 AGENT6_PROXY_MODE=replay AGENT6_PROXY_CASSETTE="$CASSETTE" AGENT6_PROXY_PORT="$PORT" \

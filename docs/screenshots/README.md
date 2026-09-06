@@ -26,7 +26,7 @@ framing the product in an unrelated theme's.
   parsing the tape and scaling the keypress timeline to the actual duration.
 - `seed/`: committed, sanitized run fixtures (trimmed `logs.jsonl` + a few
   transcripts). The TUI renders the hub and dashboard entirely from these.
-- `seed.py`: installs `seed/` into an isolated `$AGENT6_STATE_HOME` under the demo
+- `seed.py`: installs `seed/` into an isolated `$XDG_STATE_HOME/agent6` under the demo
   repo's id and writes a demo `config.toml` + `ui.toml` (theme `agent6-dark`).
 - `generate.sh`: the orchestrator. Seeds a temp home, runs `tour.tape` for the
   PNGs (1920x1080), then records `reel.tape` (`hero-tui.webm`) and overlays

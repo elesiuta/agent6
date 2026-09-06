@@ -17,7 +17,7 @@ from agent6.ui.cli import main
 def test_main_line_buffers_a_redirected_stdout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", line_buffering=False)
     monkeypatch.setattr(sys, "stdout", out)

@@ -528,10 +528,6 @@ def _known_skill_names(repo_root: Path, config_path: Path | None = None) -> tupl
 
 
 def _state_target(repo: bool) -> Path:
-    # Through the resolved owner: the raw path helper ignores the global
-    # [agent6].state_dir override, so a custom-state setup wrote skill state
-    # into the DEFAULT tree while the effective config read the override --
-    # success printed, nothing changed.
     return repo_config_path_for(Path.cwd()) if repo else global_config_path()
 
 

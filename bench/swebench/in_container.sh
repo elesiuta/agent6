@@ -14,7 +14,7 @@ export PATH="/root/.local/bin:$PATH"
 # argv -- crashing BEFORE agent6 starts and silently yielding an empty patch.
 export LC_ALL=C.UTF-8 LANG=C.UTF-8
 export PYTHONUTF8=1
-export AGENT6_STATE_HOME=/root/a6state   # keep agent6's run state OUT of /testbed
+export XDG_STATE_HOME=/root/a6state   # keep agent6's run state OUT of /testbed
 export AGENT6_FORCE_STREAM=1             # OpenRouter SSE heartbeat-safe path
 export AGENT6_ALLOW_ROOT=1               # SWE-bench images run as root; the container IS the boundary
 
@@ -272,7 +272,7 @@ echo "[in_container] patch lines: $(wc -l < /out/patch.diff), new files: $(grep 
 # Export the run's agent6 state (logs.jsonl + provider transcripts) so
 # tool-call failures are diagnosable after the container is gone (observed:
 # kimi-k2.7 malformed-JSON grep args, undiagnosable from run.log alone).
-STATE_DIR="${AGENT6_STATE_HOME:-${XDG_STATE_HOME:-/root/.local/state}/agent6}"
+STATE_DIR="${XDG_STATE_HOME:-/root/.local/state}/agent6"
 if [ -d "$STATE_DIR" ]; then
   mkdir -p /out/state
   cp -r "$STATE_DIR"/. /out/state/ 2>/dev/null || true

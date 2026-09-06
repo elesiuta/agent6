@@ -535,7 +535,7 @@ def test_cmd_history_transcript_end_to_end(
         _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
     )
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "st"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -570,7 +570,7 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
         _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
     )
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "st"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)

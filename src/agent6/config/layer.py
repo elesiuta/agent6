@@ -48,7 +48,6 @@ from agent6.config.model import (
 )
 from agent6.paths import (
     global_config_path,
-    read_global_state_dir,
     repo_config_path,
     state_dir,
 )
@@ -100,27 +99,6 @@ def _read_toml(path: Path) -> dict[str, Any]:
         raise ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
 
 
-def _global_state_dir() -> str | None:
-    """`[agent6].state_dir` (the state BASE) from the GLOBAL config only,
-    with the loud validation a config load owes.
-
-    Resolved *before* the layered merge because it locates the directory the
-    per-repo config lives in; `_forbid_repo_state_dir` rejects the key in any
-    other layer. ONE parser of the key (`paths.read_global_state_dir`, the
-    same one `state_base` reads best-effort), so the masker and the writer
-    cannot drift; this wrapper adds the absolute-path refusal the pre-model
-    read needs (the Config model validates it again later)."""
-    try:
-        sd = read_global_state_dir(strict=True)
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
-    if sd is not None and not Path(sd).expanduser().is_absolute():
-        raise ConfigError(
-            f"[agent6].state_dir in {global_config_path()} must be an absolute path, got {sd!r}"
-        )
-    return sd
-
-
 def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
     """Reject a top-level `preset` key in a layer that cannot SELECT one.
 
@@ -138,48 +116,32 @@ def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
         )
 
 
-def _forbid_repo_state_dir(layer_name: str, data: dict[str, Any]) -> None:
-    """Refuse `state_dir` in a repo/flag/overlay layer (global-only setting)."""
-    section = data.get("agent6")
-    if isinstance(section, dict) and "state_dir" in section:
-        raise ConfigError(
-            f"[agent6].state_dir may only be set in the global config"
-            f" ({global_config_path()}), not in the {layer_name} config: it"
-            " locates the directory the per-repo config itself lives in."
-        )
-
-
 def resolved_state_dir(repo_root: Path) -> Path:
-    """The per-repo state dir for *repo_root*, honoring the global base override."""
-    return state_dir(repo_root, _global_state_dir())
+    """The per-repo state dir for *repo_root* (`paths.state_dir`)."""
+    return state_dir(repo_root)
 
 
 def repo_config_path_for(repo_root: Path) -> Path:
     """The per-repo config path for *repo_root* (out of the workspace)."""
-    return repo_config_path(repo_root, _global_state_dir())
+    return repo_config_path(repo_root)
 
 
 def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:
     """The config layers that exist, in precedence order (low -> high).
 
-    The repo config lives out of the workspace under the state dir, whose base
-    comes from the global config's `[agent6].state_dir` (or the XDG default).
+    The repo config lives out of the workspace under the state dir.
     """
     layers: list[Layer] = []
     gpath = global_config_path()
     if gpath.is_file():
         layers.append(Layer("global", gpath, _read_toml(gpath)))
-    base = _global_state_dir()
-    rpath = repo_config_path(repo_root, base)
+    rpath = repo_config_path(repo_root)
     if rpath.is_file():
-        data = _read_toml(rpath)
-        _forbid_repo_state_dir("repo", data)
-        layers.append(Layer("repo", rpath, data))
+        layers.append(Layer("repo", rpath, _read_toml(rpath)))
     if explicit_path is not None:
         if not explicit_path.is_file():
             raise ConfigError(f"--config file not found: {explicit_path}")
         data = _read_toml(explicit_path)
-        _forbid_repo_state_dir("--config", data)
         _forbid_layer_preset("--config", data)
         layers.append(Layer("flag", explicit_path, data))
     return layers
@@ -594,7 +556,6 @@ def load_effective_with_overlay(
     """
     layers = discover_layers(repo_root, explicit_path)
     if overlay:
-        _forbid_repo_state_dir("machine overlay", overlay)
         _forbid_layer_preset("machine overlay", overlay)
         layers = [*layers, Layer("machine", None, overlay)]
     # Apply the selected preset (and strip [presets] tables) just like
@@ -639,7 +600,6 @@ def _fix_scope_layers(repo_root: Path, machine: Path | None) -> list[Layer]:
     if machine is not None:
         overlay = read_toml_file(machine).get("config", {})
         if isinstance(overlay, dict) and overlay:
-            _forbid_repo_state_dir("machine overlay", overlay)
             _forbid_layer_preset("machine overlay", overlay)
             layers = [*layers, Layer("machine", machine, overlay)]
     return _apply_preset(layers, "")
@@ -817,7 +777,6 @@ def _is_table_array(value: Any) -> bool:
 def materialize(
     config: Config,
     *,
-    for_repo: bool = False,
     keep_presets_from: Path | None = None,
     keep_preset_selector: bool = False,
 ) -> str:
@@ -825,8 +784,6 @@ def materialize(
 
     Used by `agent6 config fill` to snapshot every effective value into
     one explicit file (handy before tightening defaults or for an audit).
-    When `for_repo` is set, the global-only `[agent6].state_dir`
-    is dropped (it is invalid in a per-repo config).
 
     `keep_presets_from` carries that file's own `[presets.*]` tables into the
     document. They are meta-config -- stripped before validation, so no `Config`
@@ -834,8 +791,6 @@ def materialize(
     otherwise delete the definitions it cannot see.
     """
     data = config.model_dump(mode="python")
-    if for_repo and isinstance(data.get("agent6"), dict):
-        data["agent6"].pop("state_dir", None)
     # A `--config FILE` layer refuses a top-level `preset`, so a document
     # destined for one (a `--parallel` lane's snapshot) must not carry the
     # selector. `config fill` writes the GLOBAL config, which does accept it,

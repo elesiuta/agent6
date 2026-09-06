@@ -91,9 +91,9 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     from agent6.ui.cli import main
 
     cfg_home = tmp_path / "cfg"
-    cfg_home.mkdir()
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
-    (cfg_home / "config.toml").write_text(
+    (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
+    (cfg_home / "agent6" / "config.toml").write_text(
         'preset = "myfast"\n\n[presets.myfast.sandbox]\nrun_commands = "yes"\n',
         encoding="utf-8",
     )
@@ -103,7 +103,7 @@ def test_config_fill_keeps_the_presets_the_file_defines(
 
     after = load_effective(tmp_path)
     assert after.config.sandbox.run_commands == "yes", "the preset stopped applying"
-    text = (cfg_home / "config.toml").read_text(encoding="utf-8")
+    text = (cfg_home / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[presets.myfast" in text, f"config fill deleted the operator's preset:\n{text}"
     # The SELECTOR survives, and the preset's EFFECT is not baked: the filled
     # leaf is the default, with the preset still applying over it at runtime.

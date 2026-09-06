@@ -75,7 +75,7 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
     from agent6.ui.acp import runner as acp_runner
     from agent6.ui.acp.session import Session
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     seen: list[Path | None] = []
 
     def fake_load(cwd: Path, explicit: Path | None = None, **_kw: Any) -> Any:

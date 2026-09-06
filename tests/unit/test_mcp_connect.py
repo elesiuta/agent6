@@ -47,7 +47,7 @@ def test_a_server_that_answers_is_written_with_its_tools_shown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
     rc = cmd_mcp_connect(
         "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=False
@@ -71,7 +71,7 @@ def test_the_enable_hint_names_the_config_the_entry_went_to(
     """Following the hint after `--repo` must enable MCP for this repository,
     not for every repository on the machine."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
     rc = cmd_mcp_connect(
         "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=True
@@ -89,7 +89,7 @@ def test_a_second_connect_under_the_same_name_says_it_replaces(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     args: dict[str, object] = {"url": "", "token_env": "", "pass_env": [], "to_repo": False}
 
     assert cmd_mcp_connect("browser", command=_server_argv(), **args) == 0  # pyright: ignore[reportArgumentType]
@@ -108,7 +108,7 @@ def test_an_entry_in_the_other_layer_is_named_not_called_replaced(
     plus a global connect leaves the repo entry winning, and the inverse
     shadows the global one; each write says which."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     args: dict[str, object] = {"url": "", "token_env": "", "pass_env": []}
 
     assert cmd_mcp_connect("b", command=_server_argv(), to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
@@ -134,7 +134,7 @@ def test_a_binary_missing_on_the_host_is_named_without_a_sandbox_hint(
     """A path that exists nowhere is a plain ENOENT: no `read_paths` grant
     would change it, so the sandbox hint stays out."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
     rc = cmd_mcp_connect(
         "dead",
@@ -155,7 +155,7 @@ def test_an_existing_file_that_is_not_executable_is_named_as_such(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     script = tmp_path / "server.py"
     script.write_text("print(1)\n", encoding="utf-8")
     script.chmod(0o644)
@@ -173,7 +173,7 @@ def test_a_server_that_does_not_answer_writes_nothing(
 ) -> None:
     """The whole point of the order: config never names a server that failed."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
     rc = cmd_mcp_connect(
         "dead",
@@ -195,7 +195,7 @@ def test_a_server_with_no_tools_writes_nothing(
     """It handshakes fine and is still useless: naming it would add a server
     the model can never call."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
     rc = cmd_mcp_connect(
         "empty",
@@ -229,7 +229,7 @@ def test_a_mismatched_transport_and_env_flag_is_named(
     """Each transport owns one env flag, so the wrong pairing is a mistake
     worth naming rather than a setting that silently does nothing."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     args: dict[str, object] = {"token_env": "", "pass_env": [], "to_repo": False, **kwargs}
 
     rc = cmd_mcp_connect("s", **args)  # pyright: ignore[reportArgumentType]
@@ -245,7 +245,7 @@ def test_an_argv_round_trips_through_config(
     """Written as a TOML array, not a shell string: a string would validate as
     a tuple of characters and the server would never start again."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     argv = [*_server_argv(), "--flag=a b", 'quote"inside']
 
     assert cmd_mcp_connect("q", command=argv, url="", token_env="", pass_env=[], to_repo=False) == 0
@@ -256,7 +256,7 @@ def test_the_listing_says_how_each_server_is_reached(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     from agent6.paths import global_config_path
 
     cfg_path = global_config_path()
@@ -281,7 +281,7 @@ def test_the_listing_of_nothing_says_how_to_add_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     assert cmd_mcp_list() == 0
     assert "agent6 mcp connect" in capsys.readouterr().out
 
@@ -295,7 +295,7 @@ def test_the_probe_leaves_no_server_running(
     import subprocess
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     # The token rides the -c script, so a leaked server's /proc cmdline would
     # carry it and pgrep -f would find it; pid-suffixed so parallel runs and
     # stale processes cannot collide. The tool it lists proves the probe really
@@ -375,7 +375,7 @@ def test_connect_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
     from agent6.ui.cli import mcp_connect
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
     class _Tty:
         def isatty(self) -> bool:
@@ -398,7 +398,7 @@ def test_connect_confirms_a_plaintext_nonloopback_token_and_no_is_the_default(
     assert rc == 1
     err = capsys.readouterr().err
     assert "WARNING" in err and "readable on the network" in err
-    assert not (tmp_path / "cfg" / "config.toml").exists()
+    assert not (tmp_path / "cfg" / "agent6" / "config.toml").exists()
 
 
 def test_connect_headless_warns_and_proceeds_on_plaintext_nonloopback(
@@ -412,7 +412,7 @@ def test_connect_headless_warns_and_proceeds_on_plaintext_nonloopback(
     from agent6.ui.cli import mcp_connect
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setattr(sys, "stdin", io.StringIO())
 
     def _fake_probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
@@ -460,7 +460,7 @@ def test_mcp_connect_without_a_transport_refuses_cleanly(
     from agent6.ui.cli import cli_main
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     assert cli_main(["mcp", "connect", "x"]) == 2
     err = capsys.readouterr().err
@@ -477,7 +477,7 @@ def test_connect_probes_a_spawned_server_under_the_runs_sandbox(
     from agent6.ui.cli import mcp_connect
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     seen: list[MCPServerSpec] = []
 
     def _fake_probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
@@ -512,7 +512,7 @@ def test_remove_drops_the_entry_from_the_layer_that_declares_it(
 ) -> None:
     """`mcp remove` is the inverse of connect: the entry goes as a unit."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     assert (
         cmd_mcp_connect(
             "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=False
@@ -533,7 +533,7 @@ def test_remove_names_the_other_layer_rather_than_removing_nothing(
     """A global-only entry is not in the repo config: the refusal says which
     command reaches it, instead of "nothing to remove"."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     assert (
         cmd_mcp_connect(
             "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=False
@@ -557,9 +557,9 @@ def test_remove_refuses_an_entry_it_cannot_rewrite_instead_of_claiming_success(
     live and its tools reaching the model."""
     monkeypatch.chdir(tmp_path)
     cfg_home = tmp_path / "cfg"
-    cfg_home.mkdir()
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
-    (cfg_home / "config.toml").write_text(
+    (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
+    (cfg_home / "agent6" / "config.toml").write_text(
         "[agent6]\nconfig_version = 1\n\n[mcp]\nenabled = true\n"
         'servers.dotted = { command = ["true"] }\n',
         encoding="utf-8",

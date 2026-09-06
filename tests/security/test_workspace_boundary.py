@@ -123,9 +123,8 @@ def test_agent6s_own_secrets_are_denied_when_the_workspace_contains_them(
     no hide_paths entry naming it. The builtin private dirs are denied too."""
     root = tmp_path / "home"
     root.mkdir()
-    # The same override the suite's own isolation uses; it outranks XDG.
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(root / ".config" / "agent6"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(root / ".local" / "state" / "agent6"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(root / ".config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(root / ".local" / "state"))
     cfg_dir = root / ".config" / "agent6"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "secrets.toml").write_text('[fake]\nKEY="fake-not-real"\n', encoding="utf-8")
@@ -141,9 +140,8 @@ def test_the_config_a_later_run_loads_cannot_be_written(
     sets `isolation` / `run_commands` for the NEXT run."""
     root = tmp_path / "home"
     root.mkdir()
-    # The same override the suite's own isolation uses; it outranks XDG.
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(root / ".config" / "agent6"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(root / ".local" / "state" / "agent6"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(root / ".config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(root / ".local" / "state"))
     cfg_dir = root / ".config" / "agent6"
     cfg_dir.mkdir(parents=True)
     conf = cfg_dir / "config.toml"
@@ -169,8 +167,8 @@ def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
     failing on every path. One exactly-known case, not an enumeration."""
     from agent6.app.confine import check_workspace_outside_private_dirs
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg" / "agent6"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state" / "agent6"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     inside = tmp_path / "state" / "agent6" / "somerepo"
     inside.mkdir(parents=True)
     refusal = check_workspace_outside_private_dirs(inside)
@@ -184,19 +182,15 @@ def test_a_workspace_inside_a_private_dir_refuses_at_preflight(
 def test_a_state_dir_inside_the_workspace_refuses_at_preflight(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A relocated `[agent6].state_dir` INSIDE the workspace exposes transcripts
-    and keys to jailed commands and stages them into commits, so preflight
-    refuses the overlap in this direction too (masking alone does not stop the
-    auto-commit from staging them)."""
+    """A state base relocated INSIDE the workspace (`XDG_STATE_HOME` pointing
+    into it) exposes transcripts and keys to jailed commands and stages them
+    into commits, so preflight refuses the overlap in this direction too
+    (masking alone does not stop the auto-commit from staging them)."""
     from agent6.app.confine import check_workspace_outside_private_dirs
 
     workspace = tmp_path / "project"
     workspace.mkdir()
-    cfg_home = tmp_path / "cfg"
-    cfg_home.mkdir()
-    a6state = workspace / ".a6state"
-    (cfg_home / "config.toml").write_text(f'[agent6]\nstate_dir = "{a6state}"\n', encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    monkeypatch.setenv("XDG_STATE_HOME", str(workspace / ".a6state"))
 
     refusal = check_workspace_outside_private_dirs(workspace)
     assert refusal is not None and "inside the workspace" in refusal

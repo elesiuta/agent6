@@ -30,8 +30,8 @@ done
   echo "web_demo.sh: \$WEB_DEMO_PY ($PW_PY) has no playwright; see the header." >&2; exit 1; }
 
 TMP="$(mktemp -d)"
-export AGENT6_CONFIG_HOME="$TMP/config"
-export AGENT6_STATE_HOME="$TMP/state"
+export XDG_CONFIG_HOME="$TMP/config"
+export XDG_STATE_HOME="$TMP/state"
 export AGENT6_DEMO_REPO="$TMP/demo-repo"
 mkdir -p "$AGENT6_DEMO_REPO"
 git -C "$AGENT6_DEMO_REPO" init -q

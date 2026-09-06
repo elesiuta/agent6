@@ -26,8 +26,8 @@ done
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-export AGENT6_CONFIG_HOME="$TMP/config"
-export AGENT6_STATE_HOME="$TMP/state"
+export XDG_CONFIG_HOME="$TMP/config"
+export XDG_STATE_HOME="$TMP/state"
 export AGENT6_DEMO_REPO="${AGENT6_DEMO_REPO:-$ROOT}"
 
 echo "screenshots: seeding fixtures into $TMP"

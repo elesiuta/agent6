@@ -13,8 +13,10 @@ from agent6.ui.tui.settings import DEFAULT_THEME, get_theme, load_ui_settings, s
 
 @pytest.fixture
 def cfg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path))
-    return tmp_path
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    home = tmp_path / "agent6"
+    home.mkdir()
+    return home
 
 
 def test_theme_roundtrips_in_own_file(cfg: Path) -> None:

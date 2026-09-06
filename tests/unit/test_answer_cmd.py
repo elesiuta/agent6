@@ -23,7 +23,7 @@ from agent6.ui.cli.answer_cmd import _cmd_answer  # pyright: ignore[reportPrivat
 def _run_with_question(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, questions: list[dict[str, object]]
 ) -> SessionLayout:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -99,7 +99,7 @@ def test_a_short_answer_list_is_refused_rather_than_misaligned(
 def test_answer_refuses_a_run_that_is_not_waiting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -168,7 +168,7 @@ def test_a_live_run_with_no_question_says_so(
 ) -> None:
     """The refusal names the state the run is in, not one it is not: a run that
     is not waiting at all was told it was waiting at its terminal."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)

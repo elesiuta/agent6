@@ -74,9 +74,9 @@ def test_ps_lists_a_linked_lane_once(
     """A fan-out lane's run dir is linked under the coordinator repo as well as
     its own state dir: one live session, one row."""
     base = tmp_path / "state"
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    lane = base / "lane-repo-000000" / "sessions" / "runs" / "fan-l1"
+    monkeypatch.setenv("XDG_STATE_HOME", str(base))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    lane = base / "agent6" / "lane-repo-000000" / "sessions" / "runs" / "fan-l1"
     lane.mkdir(parents=True)
     (lane / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     (lane / "logs.jsonl").write_text(
@@ -84,7 +84,7 @@ def test_ps_lists_a_linked_lane_once(
         encoding="utf-8",
     )
     write_worker_pid(lane, os.getpid())
-    coordinator = base / "coord-repo-111111" / "sessions" / "runs"
+    coordinator = base / "agent6" / "coord-repo-111111" / "sessions" / "runs"
     coordinator.mkdir(parents=True)
     (coordinator / "fan-l1").symlink_to(lane, target_is_directory=True)
     assert cmd_ps() == 0
@@ -97,9 +97,9 @@ def test_ps_json_carries_the_row_facts(
     """`ps` was the one listing with no --json, so the cross-repo view could
     not be read by a script."""
     base = tmp_path / "state"
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    lane = base / "lane-repo-000000" / "sessions" / "runs" / "fan-l1"
+    monkeypatch.setenv("XDG_STATE_HOME", str(base))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    lane = base / "agent6" / "lane-repo-000000" / "sessions" / "runs" / "fan-l1"
     lane.mkdir(parents=True)
     (lane / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     (lane / "logs.jsonl").write_text(

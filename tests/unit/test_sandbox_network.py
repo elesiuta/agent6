@@ -98,13 +98,13 @@ def test_refusal_allow_auto_tools_on_hardened_ok() -> None:
 @pytest.fixture
 def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text(
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n'
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     return tmp_path
 
 

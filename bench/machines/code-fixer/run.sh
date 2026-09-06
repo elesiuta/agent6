@@ -29,7 +29,7 @@ git -C "$WORK" -c user.email=bench@bench -c user.name=bench commit -q -m "seed: 
 # Keep all agent6 state (per-repo config + machine journal) beside the
 # workspace, hermetic per run; a state dir inside it is refused (jailed
 # commands could read transcripts, and commits would stage them).
-export AGENT6_STATE_HOME="${WORK}-state"
+export XDG_STATE_HOME="${WORK}-state"
 # The mode="run" agent commits its fix. This host has no git identity at all, so
 # give agent6 one to commit under (resolved on the host, exported into the
 # confined agent which can't read ~/.gitconfig). A real repo with local or

@@ -35,7 +35,7 @@ def _repo(root: Path) -> None:
 def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     _repo(repo)
     monkeypatch.chdir(repo)
@@ -85,7 +85,7 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
 ) -> None:
     """The teardown clears it on every exit path, so a run that asked and was
     then cancelled does not go on reading as live."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     _repo(repo)
     monkeypatch.chdir(repo)

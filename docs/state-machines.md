@@ -498,7 +498,7 @@ Unset keys read straight through to the lower layers, so a machine only states w
 Two hard rules:
 
 - **No connections/secrets, no sandbox policy, no presets, no MCP servers, no host hooks**
-    - `[config.providers.*]`, `[config.sandbox.*]`, `[config.presets.*]`, `[config.mcp.*]`, a top-level `preset`, `[config.agent6].state_dir`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `notify.on_complete`, `prompt.system_prompt_file`: each a load-time error
+    - `[config.providers.*]`, `[config.sandbox.*]`, `[config.presets.*]`, `[config.mcp.*]`, a top-level `preset`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `notify.on_complete`, `prompt.system_prompt_file`: each a load-time error
     - endpoints, key-env names, and secrets live in the global config / secrets store; sandbox policy, presets, MCP servers, and host-argv hooks are operator decisions in the global/repo config
     - a machine file may be LLM-drafted or shared: it must not widen its own egress, weaken its jail, or run host code through the overlay, directly or via a preset the operator's selection would resolve
     - the overlay only routes to a provider name that already exists, and sets benign knobs (commit identity)

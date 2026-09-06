@@ -4,7 +4,7 @@ Measures `agent6 machine create` on one fixed task (a poll → classify → act
 status monitor) across several providers/models: attempts, spend, wall time, and
 whether the drafted bundle passes `machine check` + `machine test`.
 
-Each model runs in its own throwaway repo with an isolated `AGENT6_STATE_HOME`
+Each model runs in its own throwaway repo with an isolated `XDG_STATE_HOME`
 and its worker model pinned via per-repo config; provider keys come from the
 global secrets store. The generated per-model run dirs are gitignored
 (reproducible via `run.sh`); only this README, `run.sh`, and `results.jsonl` are

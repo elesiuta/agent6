@@ -27,6 +27,7 @@ from agent6.app._setup import SandboxOverrides
 from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import chain_ref_for
 from agent6.graph.storage import list_checkpoint_turns, load_graph
+from agent6.paths import global_config_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
@@ -379,9 +380,9 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     the child manifest's models stamp must come from that profiled config --
     not the base config, which permanently recorded a worker model the forked
     run never used."""
-    import os
 
-    gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
+    gdir = global_config_dir()
+    gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
         "[providers.anthropic]\n"
         'api_format = "anthropic"\n'
@@ -414,11 +415,9 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
     config on fork, so the child stamps the current config's preset name, not the
     source manifest's possibly-stale one -- the fork sibling of the parked-resume
     stamp fix. Only a FLAG-selected preset is pinned by name."""
-    import os
 
-    Path(os.environ["AGENT6_CONFIG_HOME"], "config.toml").write_text(
-        'preset = "quick"\n', encoding="utf-8"
-    )
+    global_config_dir().mkdir(parents=True, exist_ok=True)
+    (global_config_dir() / "config.toml").write_text('preset = "quick"\n', encoding="utf-8")
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
@@ -1209,12 +1208,12 @@ def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
     worktree as its checkout (the process cwd stays the repo: its state dir
     and config are the repo's). Run in the repo instead, the fork committed
     the operator's checkout."""
-    import os
 
     from agent6.app import resume as resume_mod
     from agent6.app._leg import LegEnd, LegInputs
 
-    Path(os.environ["AGENT6_CONFIG_HOME"], "config.toml").write_text(
+    global_config_dir().mkdir(parents=True, exist_ok=True)
+    (global_config_dir() / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n'
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
         encoding="utf-8",
@@ -1475,9 +1474,9 @@ def test_fork_refuses_a_run_the_model_controls_git_in(
     under `[git].control = "model"` the prompt would tell the model to commit
     and the sandbox would refuse every commit. The fork refuses up front, with
     nothing materialized."""
-    import os
 
-    Path(os.environ["AGENT6_CONFIG_HOME"], "config.toml").write_text(
+    global_config_dir().mkdir(parents=True, exist_ok=True)
+    (global_config_dir() / "config.toml").write_text(
         '[git]\ncontrol = "model"\n[sandbox]\nprotect_git = false\n', encoding="utf-8"
     )
     repo = tmp_path / "repo"

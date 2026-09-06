@@ -287,8 +287,7 @@ def _write_lane_config(cfg: Config, spec: LaneSpec) -> Path:
 
     The clone's path-keyed repo id yields an EMPTY per-repo config, so the lane
     would otherwise lose every origin repo setting; a full materialized config
-    layered over the (shared) global config restores them. `for_repo=True` drops
-    the global-only `[agent6].state_dir`, which `--config` forbids. Global config
+    layered over the (shared) global config restores them. Global config
     + secrets apply automatically."""
     lane_cfg = cfg.with_machine_agent_overrides(model=spec.model) if spec.model else cfg
     # A lane's branch IS how its work comes back (the import fetches
@@ -300,7 +299,7 @@ def _write_lane_config(cfg: Config, spec: LaneSpec) -> Path:
     )
     config_path = spec.workdir.parent / f"lane-{spec.lane}-config.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(materialize(lane_cfg, for_repo=True), encoding="utf-8")
+    config_path.write_text(materialize(lane_cfg), encoding="utf-8")
     return config_path
 
 
@@ -337,11 +336,11 @@ def bridge_spawner(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
     config_path = _write_lane_config(cfg, spec)
-    lane_state = state_dir(spec.workdir, cfg.agent6.state_dir)
+    lane_state = state_dir(spec.workdir)
     # The clone is a repo of its own, so the lane's state dir is empty: without
     # this the lanes run blind to the memory and rulings the origin's own runs
     # are given. New rulings come back with `merge_decisions` at import.
-    seed_store(state_dir(origin, cfg.agent6.state_dir), lane_state)
+    seed_store(state_dir(origin), lane_state)
     lane_runs = bucket_dir(lane_state, "runs")
 
     def list_dirs() -> list[Path]:
@@ -481,7 +480,7 @@ def run_lane_to_completion(
             spec=spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
         )
     carry_back(
-        state_dir(spec.workdir, cfg.agent6.state_dir),
+        state_dir(spec.workdir),
         origin_state,
         dest,
         lane=spec.lane,
@@ -760,7 +759,6 @@ def _import_lanes(
     *,
     origin: Path,
     origin_state: Path,
-    state_base: str | None,
     base_sha: str,
     task: str,
     reporter: Reporter = STDIO_REPORTER,
@@ -805,7 +803,7 @@ def _import_lanes(
             continue
         imported.append(res.spec)
         carry_back(
-            state_dir(res.spec.workdir, state_base),
+            state_dir(res.spec.workdir),
             origin_state,
             dest,
             lane=res.spec.lane,
@@ -843,7 +841,7 @@ def _cleanup(imported: list[LaneSpec], *, workdir_root: Path, base: Path, cfg: C
     (`workdir_base`) is removed once empty, never the dir above it. Best-effort:
     a leftover clone is disk waste, never corruption."""
     for spec in imported:
-        shutil.rmtree(state_dir(spec.workdir, cfg.agent6.state_dir), ignore_errors=True)
+        shutil.rmtree(state_dir(spec.workdir), ignore_errors=True)
         shutil.rmtree(spec.workdir, ignore_errors=True)
         (spec.workdir.parent / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
     level = workdir_root
@@ -975,7 +973,6 @@ def run_parallel(
         results,
         origin=origin,
         origin_state=origin_state,
-        state_base=cfg.agent6.state_dir,
         base_sha=base_sha,
         task=task,
         reporter=reporter,

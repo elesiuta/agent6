@@ -61,7 +61,7 @@ Both real vulnerabilities the baseline shipped were caught and fixed under veto,
 with no false-blocks on clean work (veto matched off's iteration count). A clean
 run adds about one panel call; a buggy run costs the iterations to fix it.
 
-Keep `AGENT6_STATE_HOME` out of the repo (the default). An earlier A/B put it
+Keep `XDG_STATE_HOME` out of the repo (the default). An earlier A/B put it
 inside, so agent6's own logs were committed and the panel correctly blocked them
 as off-topic edits.
 

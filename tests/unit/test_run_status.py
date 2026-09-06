@@ -25,7 +25,7 @@ def _ts(off_s: float) -> str:
 def _make_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, events: list[dict[str, object]]
 ) -> Path:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -423,7 +423,7 @@ def test_status_missing_id_and_empty_state_speak_human(
     # A bad id names itself and where it looked, without leaking the
     # bucket alternation under sessions/; an empty state dir gets
     # the same first-contact copy as `runs`.
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -479,7 +479,7 @@ def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
     "running" forever and hung the /parallel lane await permanently."""
     if os.geteuid() == 0:
         pytest.skip("root can signal any pid; the foreign-owner probe needs a non-root euid")
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     d = tmp_path / "run"
     d.mkdir()
     write_worker_pid(d, 1)  # init: exists, foreign-owned -> PermissionError

@@ -18,7 +18,7 @@ from agent6.ui.cli import main
 
 @pytest.fixture
 def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
     # Default to an interactive terminal: the getpass-path tests below assert
     # the masked-input behaviour, which `connect` only takes when stdin is a
@@ -50,12 +50,12 @@ def test_connect_stores_key_and_provider_and_never_execs(
     rc = main(["connect", "anthropic"])
     assert rc == 0
 
-    sp = tmp_path / "g" / "secrets.toml"
+    sp = tmp_path / "g" / "agent6" / "secrets.toml"
     assert sp.is_file()
     assert stat.S_IMODE(sp.stat().st_mode) == 0o600
     assert secrets.resolve_api_key("anthropic", None) == "sk-ant-FAKE"
 
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.anthropic]" in gc
     assert calls == []
 
@@ -66,7 +66,7 @@ def test_connect_preserves_hand_edited_provider_keys(
     """connect is the documented add/UPDATE path; re-running it for a key
     rotation must not erase the operator's hand-added sibling keys (it replaced
     the whole [providers.<name>] block)."""
-    gc = tmp_path / "g" / "config.toml"
+    gc = tmp_path / "g" / "agent6" / "config.toml"
     gc.parent.mkdir(parents=True, exist_ok=True)
     gc.write_text(
         "[providers.openrouter]\n"
@@ -160,8 +160,8 @@ def test_connect_rejects_non_bare_key_provider_name(
     err = capsys.readouterr().err
     assert "not a valid TOML bare key" in err
     # Nothing was written.
-    assert not (tmp_path / "g" / "config.toml").exists()
-    assert not (tmp_path / "g" / "secrets.toml").exists()
+    assert not (tmp_path / "g" / "agent6" / "config.toml").exists()
+    assert not (tmp_path / "g" / "agent6" / "secrets.toml").exists()
 
 
 def test_connect_prints_post_entry_key_summary(
@@ -221,16 +221,16 @@ def test_connect_local_endpoint_no_key(
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept default base_url
     rc = main(["connect", "ollama"])
     assert rc == 0
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.ollama]" in gc
     # No key entered -> no secrets file required.
-    assert not (tmp_path / "g" / "secrets.toml").is_file()
+    assert not (tmp_path / "g" / "agent6" / "secrets.toml").is_file()
 
 
 def test_model_set_and_show(iso: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(["model", "worker", "anthropic", "claude-x", "--effort", "medium"])
     assert rc == 0
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.worker]" in gc
     assert "claude-x" in gc
     assert "medium" in gc
@@ -249,7 +249,7 @@ def test_model_all_sets_every_role(
     # "all" is a pseudo-role: one command writes planner/worker/reviewer alike.
     rc = main(["model", "all", "anthropic", "claude-x"])
     assert rc == 0
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.planner]" in gc
     assert "[models.worker]" in gc
     assert "[models.reviewer]" in gc
@@ -268,7 +268,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
     assert main(["connect", "anthropic"]) == 0
     assert main(["model", "worker", "anthropic", "good-x"]) == 0
-    cfg = tmp_path / "g" / "config.toml"
+    cfg = tmp_path / "g" / "agent6" / "config.toml"
     before = cfg.read_text(encoding="utf-8")
     assert main(["model", "worker", "missing-prov", "gpt"]) == 2
     after = cfg.read_text(encoding="utf-8")
@@ -308,8 +308,8 @@ def test_model_piped_without_model_lists_the_catalog(
     # No tty and no model named: the invocation is a listing (one id per line,
     # exit 0), not a 344-line prompt dump that ends in an EOF error. The set
     # hint goes to stderr so stdout stays pipe-clean.
-    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "g" / "config.toml").write_text(
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
@@ -320,7 +320,9 @@ def test_model_piped_without_model_lists_the_catalog(
     assert captured.out == "claude-a\nclaude-b\n"
     assert "set one with: agent6 model worker anthropic <model>" in captured.err
     # Nothing was written: the listing never touches config.
-    assert "[models.worker]" not in (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    assert "[models.worker]" not in (tmp_path / "g" / "agent6" / "config.toml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_model_set_warns_when_the_provider_has_no_key(
@@ -329,8 +331,8 @@ def test_model_set_warns_when_the_provider_has_no_key(
     # Setting a role to a configured-but-keyless provider succeeds (config is
     # just config) but the first run would refuse; the note closes that loop at
     # set time. README's own quickstart line hits this on a keyless machine.
-    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "g" / "config.toml").write_text(
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", _key_stub(None))
@@ -344,8 +346,8 @@ def test_model_set_warns_when_the_provider_has_no_key(
 def test_model_set_stays_quiet_when_the_key_resolves(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "g" / "config.toml").write_text(
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.ui.cli.model.resolve_api_key", _key_stub("sk-x"))
@@ -371,8 +373,8 @@ def test_model_stdout_piped_lists_even_with_a_tty_stdin(
     # must trigger on the piped stdout, not park the pipe on an invisible
     # numbered prompt. (iso leaves stdin.isatty True; captured stdout is not
     # a tty, exactly the pipe shape.)
-    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "g" / "config.toml").write_text(
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.models.choices.list_models", _models_stub(["claude-a"]))
@@ -397,8 +399,8 @@ def test_model_piped_without_provider_errors_without_prompt_dump(
 def test_model_piped_listing_notes_an_ignored_thinking_flag(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "g" / "config.toml").write_text(
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
@@ -420,8 +422,8 @@ def test_model_interactive_prefill(
 ) -> None:
     # A provider is connected; the model list is served live (mocked). The
     # operator picks the provider by default and the model by number.
-    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "g" / "config.toml").write_text(
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
 
@@ -434,7 +436,7 @@ def test_model_interactive_prefill(
     monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
     rc = main(["model", "worker"])
     assert rc == 0
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.worker]" in gc
     assert "claude-b" in gc
 
@@ -443,8 +445,8 @@ def test_model_all_interactive_prompts_once(
     iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # "all" prompts ONCE for provider/model (not per role), then applies to each.
-    (tmp_path / "g").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "g" / "config.toml").write_text(
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
 
@@ -464,7 +466,7 @@ def test_model_all_interactive_prompts_once(
     rc = main(["model", "all"])
     assert rc == 0
     assert calls["n"] == 2  # one provider prompt + one model prompt, total
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     for role in ("planner", "worker", "reviewer"):
         assert f"[models.{role}]" in gc
     assert gc.count("claude-b") == 3
@@ -480,7 +482,7 @@ def test_model_repo_scope_writes_repo(iso: Path, tmp_path: Path) -> None:
 def test_config_fill_writes_global(iso: Path, tmp_path: Path) -> None:
     rc = main(["config", "fill"])
     assert rc == 0
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[sandbox]" in gc
     assert "[budget]" in gc
 
@@ -561,12 +563,12 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
     assert exchanges[0]["grant_type"] == "authorization_code"
     assert exchanges[0]["code"] == "C1"
 
-    sp = tmp_path / "g" / "secrets.toml"
+    sp = tmp_path / "g" / "agent6" / "secrets.toml"
     assert stat.S_IMODE(sp.stat().st_mode) == 0o600
     tokens = secrets.load_oauth_tokens("chatgpt")
     assert tokens is not None and tokens.account_id == "acct-7"
 
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.chatgpt]" in gc and 'api_format = "chatgpt"' in gc
     out = capsys.readouterr().out
     assert "Signed in (plus plan)" in out
@@ -588,9 +590,9 @@ def test_connect_claude_writes_the_format_only_and_stores_no_secret(
 
     monkeypatch.setattr("agent6.ui.cli.connect.login_status", signed_in)
     assert main(["connect", "claude"]) == 0
-    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.claude]" in gc and 'api_format = "claude_code"' in gc
-    assert not (tmp_path / "g" / "secrets.toml").exists()
+    assert not (tmp_path / "g" / "agent6" / "secrets.toml").exists()
     assert "Claude Code (`claude` on PATH): signed in." in capsys.readouterr().out
 
     monkeypatch.setattr("agent6.ui.cli.connect.login_status", signed_out)

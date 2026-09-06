@@ -15,8 +15,8 @@ from agent6.init import init_workspace
 @pytest.fixture(autouse=True)
 def isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Keep the per-repo config (out of the workspace) inside tmp_path.
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
 
 
 def _repo(tmp_path: Path, name: str = "repo") -> Path:
@@ -49,10 +49,10 @@ def test_cmd_init_reports_invalid_config_cleanly(
 
     repo = _repo(tmp_path)
     # Valid global with a configured provider, so the cross-field validator has a
-    # non-empty "known providers" set to reject the typo against. AGENT6_CONFIG_HOME
+    # non-empty "known providers" set to reject the typo against. XDG_CONFIG_HOME
     # (set by the isolated_state fixture) points at the agent6 dir itself, so the
     # global config is <cfg>/config.toml.
-    global_cfg = tmp_path / "cfg" / "config.toml"
+    global_cfg = tmp_path / "cfg" / "agent6" / "config.toml"
     global_cfg.parent.mkdir(parents=True, exist_ok=True)
     global_cfg.write_text(
         '[providers.openrouter]\napi_format = "openai"\n'
@@ -208,7 +208,7 @@ def test_init_next_steps_name_only_what_is_still_missing(
     out = capsys.readouterr().out
     assert "agent6 connect" in out and "agent6 model worker" in out
     assert "verify is inferred per run" in out
-    global_cfg = tmp_path / "cfg" / "config.toml"
+    global_cfg = tmp_path / "cfg" / "agent6" / "config.toml"
     global_cfg.parent.mkdir(parents=True, exist_ok=True)
     global_cfg.write_text(
         '[providers.openrouter]\napi_format = "openai"\n'

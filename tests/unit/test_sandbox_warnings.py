@@ -255,9 +255,9 @@ def test_hardened_warns_loudly_when_a_grant_exposes_the_private_dirs(
 
     home = tmp_path / "home"
     cfg_dir = home / ".config" / "agent6"
-    cfg_dir.mkdir(parents=True)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    (cfg_dir / "agent6").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_dir))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(home),)))
@@ -279,9 +279,9 @@ def test_the_workspace_itself_counts_as_a_granted_region(
     workspace, a jailed `cat` on hardened printed secrets.toml. The workspace
     is granted implicitly, so it has to be checked like any other region."""
     cfg_dir = tmp_path / ".config" / "agent6"
-    cfg_dir.mkdir(parents=True)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    (cfg_dir / "agent6").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_dir))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
 
@@ -297,8 +297,8 @@ def test_hardened_refuses_an_explicit_hide_entry_it_cannot_mask(
     value refuses rather than being silently ineffective."""
     from agent6.app.confine import check_hide_paths_support
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)
@@ -320,7 +320,7 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     # cache stays where the suite put it: the jail's HOME lives there, and the
     # policy build creates it.
     for var in ("CONFIG", "STATE", "DATA"):
-        monkeypatch.setenv(f"AGENT6_{var}_HOME", f"/nonexistent-private/{var.lower()}")
+        monkeypatch.setenv(f"XDG_{var}_HOME", f"/nonexistent-private/{var.lower()}")
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)

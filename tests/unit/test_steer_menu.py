@@ -320,12 +320,12 @@ def test_pause_menu_status_shows_compaction_truth(
 
 def _skill_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
     """Install fake skills into an isolated data dir and chdir to tmp."""
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(tmp_path / "data"))
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "config"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     for name in names:
-        d = tmp_path / "data" / "skills" / name
+        d = tmp_path / "data" / "agent6" / "skills" / name
         d.mkdir(parents=True)
         (d / "SKILL.md").write_text(
             f"---\nname: {name}\ndescription: Use when testing {name}.\n---\n\nGRUNT {name}\n",
@@ -371,8 +371,8 @@ def test_disabled_skill_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     from agent6.ui.cli._steer_menu import pause_menu
 
     _skill_env(tmp_path, monkeypatch, "caveman")
-    (tmp_path / "config").mkdir(exist_ok=True)
-    (tmp_path / "config" / "config.toml").write_text(
+    (tmp_path / "config" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "config" / "agent6" / "config.toml").write_text(
         '[skills.state]\ncaveman = "disabled"\n', encoding="utf-8"
     )
     out = pause_menu(tmp_path, input_fn=_feed(["/caveman", "steer text"]))

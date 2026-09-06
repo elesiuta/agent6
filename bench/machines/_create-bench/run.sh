@@ -3,7 +3,7 @@
 # task: a poll -> classify -> act loop. Records attempts, spend, wall time, and
 # whether the drafted bundle passes `machine check` + `machine test`.
 #
-# Each model runs in its own throwaway repo with an isolated AGENT6_STATE_HOME,
+# Each model runs in its own throwaway repo with an isolated XDG_STATE_HOME,
 # its worker model pinned via per-repo config. Provider keys come from the
 # global secrets store. Generated bundles are kept under <model-slug>/.
 #
@@ -36,7 +36,7 @@ for entry in "${MODELS[@]}"; do
   rm -rf "$dir"; mkdir -p "$dir"
   git -C "$dir" init -q
   git -C "$dir" -c user.email=b@b -c user.name=b commit -q --allow-empty -m init
-  export AGENT6_STATE_HOME="$dir/.state"
+  export XDG_STATE_HOME="$dir/.state"
   ( cd "$dir" && "$AGENT6" config set models.worker.provider "$provider" --repo >/dev/null \
       && "$AGENT6" config set models.worker.model "$model" --repo >/dev/null )
 

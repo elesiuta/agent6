@@ -147,10 +147,10 @@ def test_a_failed_call_still_reports_what_it_spent(
 
     # The USD assertion needs a table price; the suite isolates the model-price
     # cache, so seed one (the suite never reads the developer's real cache).
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
-    (tmp_path / "models").mkdir()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
     pricing = {"anthropic/claude-haiku-4.5": [1.0, 5.0]}
-    (tmp_path / "models" / "anthropic.json").write_text(
+    (tmp_path / "agent6" / "models" / "anthropic.json").write_text(
         json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
     )
     events = EventSink(tmp_path / "logs.jsonl")

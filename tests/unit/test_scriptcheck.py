@@ -304,7 +304,7 @@ def test_offline_tests_run_from_a_copy_outside_the_state_dir(
     or the launcher failed rootfs setup. The runner must hand the jail a
     private temp copy instead (caught by a live machine-create run; the old
     tmp_path fixtures covered the in-place path vacuously)."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "statehome"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     bundle = tmp_path / "statehome" / "repo-id" / "sessions" / "machines" / "draft"
     _write(bundle / "scripts", "thing_test.py", "print('ok')\n")
     seen_cwds: list[str] = []

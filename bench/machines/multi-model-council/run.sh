@@ -15,7 +15,7 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 cp "$HERE/council.asm.toml" "$WORK/"
 git -C "$WORK" init -q
 git -C "$WORK" -c user.email=b@b -c user.name=b commit -q --allow-empty -m init
-export AGENT6_STATE_HOME="$WORK/.agent6-state"
+export XDG_STATE_HOME="$WORK/.agent6-state"
 
 echo "== running council =="
 (cd "$WORK" && AGENT6_FORCE_STREAM=1 "$AGENT6" machine run council.asm.toml)

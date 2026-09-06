@@ -13,26 +13,19 @@ import pytest
 from agent6 import paths
 
 
-def test_global_config_dir_honors_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
-    assert paths.global_config_dir() == tmp_path / "g"
-    assert paths.global_config_path() == tmp_path / "g" / "config.toml"
-    assert paths.secrets_path() == tmp_path / "g" / "secrets.toml"
-
-
-def test_global_config_dir_uses_xdg_when_not_sudo(
+def test_global_config_dir_follows_xdg_config_home(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.delenv("AGENT6_CONFIG_HOME", raising=False)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    # Not running as root -> via_sudo is False -> XDG is honored.
-    monkeypatch.setattr(os, "geteuid", lambda: 1000)
-    assert paths.global_config_dir() == tmp_path / "xdg" / "agent6"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setattr(os, "geteuid", lambda: 1000)  # not root: XDG is honored
+    assert paths.global_config_dir() == tmp_path / "g" / "agent6"
+    assert paths.global_config_path() == tmp_path / "g" / "agent6" / "config.toml"
+    assert paths.secrets_path() == tmp_path / "g" / "agent6" / "secrets.toml"
 
 
 def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     base = tmp_path / "state"
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
+    monkeypatch.setenv("XDG_STATE_HOME", str(base))
     repo = tmp_path / "myrepo"
     repo.mkdir()
     rid = paths.repo_id(repo)
@@ -42,10 +35,8 @@ def test_state_dir_and_repo_config_path(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert rid.rsplit("-", 1)[1].strip("0123456789abcdef") == ""
     assert "/" not in rid
     assert paths.repo_id(repo) == rid  # deterministic
-    assert paths.state_dir(repo) == base / rid
-    assert paths.repo_config_path(repo) == base / rid / "config.toml"
-    # An explicit base override appends the same repo id.
-    assert paths.state_dir(repo, base_override="/custom") == Path("/custom") / rid
+    assert paths.state_dir(repo) == base / "agent6" / rid
+    assert paths.repo_config_path(repo) == base / "agent6" / rid / "config.toml"
 
 
 def test_state_tree_dirs_are_created_private_0700(tmp_path: Path) -> None:
@@ -60,25 +51,6 @@ def test_state_tree_dirs_are_created_private_0700(tmp_path: Path) -> None:
     for d in (outer / "state" / "agent6", outer / "state" / "agent6" / "repo-x", leaf):
         assert (d.stat().st_mode & 0o777) == 0o700, d
     assert (outer.stat().st_mode & 0o777) == 0o755  # pre-existing, untouched
-
-
-def test_state_base_honors_the_global_state_dir_override(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """`[agent6].state_dir` relocates the state base. `private_dirs` (jail mask,
-    workspace policy, grant validators) must mask THAT base -- the one the writer
-    uses -- not the XDG default it recomputed before, which left a relocated
-    state dir readable and writable inside a jailed command's workspace."""
-    cfg_home = tmp_path / "cfg"
-    cfg_home.mkdir()
-    override = tmp_path / "relocated-state"
-    (cfg_home / "config.toml").write_text(f'[agent6]\nstate_dir = "{override}"\n', encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "xdg-state"))
-
-    assert paths.state_base() == override
-    assert override in paths.private_dirs()
-    assert tmp_path / "xdg-state" not in paths.private_dirs()
 
 
 def test_repo_id_distinguishes_paths(tmp_path: Path) -> None:
@@ -122,26 +94,18 @@ def test_repo_id_stays_a_usable_directory_name(tmp_path: Path, segment: str) -> 
 
 
 def test_state_base_uses_xdg_when_not_sudo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("AGENT6_STATE_HOME", raising=False)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
     monkeypatch.setattr(os, "geteuid", lambda: 1000)
     assert paths.state_base() == tmp_path / "xdg" / "agent6"
 
 
-def test_data_dir_honors_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(tmp_path / "d"))
-    assert paths.data_dir() == tmp_path / "d"
-
-
-def test_data_dir_uses_xdg_when_not_sudo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("AGENT6_DATA_HOME", raising=False)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+def test_data_dir_follows_xdg_data_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "d"))
     monkeypatch.setattr(os, "geteuid", lambda: 1000)
-    assert paths.data_dir() == tmp_path / "xdg" / "agent6"
+    assert paths.data_dir() == tmp_path / "d" / "agent6"
 
 
 def test_data_dir_falls_back_to_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("AGENT6_DATA_HOME", raising=False)
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.setattr(os, "geteuid", lambda: 1000)
     home = paths.effective_user().home
@@ -358,31 +322,6 @@ def test_the_common_case_carries_no_hash_at_all(tmp_path: Path) -> None:
     and means something."""
     assert paths.repo_id(Path("/home/u/agent6")) == "home-u-agent6-3"
     assert paths.repo_id(Path("/tmp")) == "tmp-0"
-
-
-def test_one_state_dir_reader_two_strictness_policies(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """ONE parser of [agent6].state_dir serves both consumers: state_base
-    reads it best-effort (an unreadable global config falls back rather than
-    breaking every path consumer), while the config load reads it strict (a
-    present-but-malformed file refuses loudly). Two parsers of the same file
-    drifted once."""
-    from agent6.paths import read_global_state_dir
-
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path))
-    # Absent file: None either way.
-    assert read_global_state_dir() is None
-    assert read_global_state_dir(strict=True) is None
-    # Present + valid.
-    (tmp_path / "config.toml").write_text('[agent6]\nstate_dir = "/x"\n', encoding="utf-8")
-    assert read_global_state_dir() == "/x"
-    assert read_global_state_dir(strict=True) == "/x"
-    # Present + malformed: best-effort falls back, strict refuses.
-    (tmp_path / "config.toml").write_text("not = valid = toml", encoding="utf-8")
-    assert read_global_state_dir() is None
-    with pytest.raises(ValueError, match="cannot be read"):
-        read_global_state_dir(strict=True)
 
 
 def test_repo_root_of_id_inverts_repo_id() -> None:

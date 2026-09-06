@@ -776,10 +776,10 @@ def test_run_says_where_a_machines_work_landed(
     touches the checkout, so "tests passing" was reported over a tree whose
     tests still fail, with nothing naming where the work went."""
     cfg_home = tmp_path.parent / (tmp_path.name + "-cfg")  # outside the workspace
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
-    cfg_home.mkdir(parents=True)
-    (cfg_home / "config.toml").write_text(
+    (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
+    (cfg_home / "agent6" / "config.toml").write_text(
         "\n".join(
             (
                 "[agent6]",
@@ -827,7 +827,7 @@ def test_run_warns_on_mode_run_states_under_ask_policy(
     # and names both remedies. No provider is configured here, so the run then
     # refuses at require_runnable, which keeps this test spend-free; the note
     # must already have printed.
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "runwarn.asm.toml"
     f.write_text(AGENT_RUN_MACHINE, encoding="utf-8")
@@ -842,7 +842,7 @@ def test_run_auto_approve_suppresses_the_warning_and_sets_the_env_grant(
 ) -> None:
     import os
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.delenv("AGENT6_AUTO_APPROVE", raising=False)  # snapshot: restored at teardown
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "runwarn.asm.toml"
@@ -864,8 +864,8 @@ def test_a_fresh_instance_over_a_stale_chain_is_refused(
     the branch and both remedies."""
     import subprocess
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -958,8 +958,8 @@ def test_a_fresh_instance_over_a_merged_chain_starts_from_head(
     it and starts from HEAD, saying so."""
     import subprocess
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -1017,7 +1017,7 @@ def test_run_no_commands_withholds_them_from_the_machine(
     )
     from agent6.config import Config
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     # setenv, not delenv: monkeypatch records an absent var as nothing to
     # restore, so `main` setting it would leak into the next test.
     monkeypatch.setenv("AGENT6_NO_COMMANDS", "")
@@ -1224,10 +1224,12 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     from agent6.app.machine import run as run_mod
 
     cfg_home = tmp_path / "cfg"
-    cfg_home.mkdir()
-    (cfg_home / "config.toml").write_text("[sandbox]\nprotect_git = true\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
+    (cfg_home / "agent6" / "config.toml").write_text(
+        "[sandbox]\nprotect_git = true\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     workspace = tmp_path / "repo"
     workspace.mkdir()
     monkeypatch.chdir(workspace)
@@ -1257,8 +1259,8 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     from agent6.app import _session as session_mod
     from agent6.app.machine import run as run_mod
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "inside-state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "inside-state"))
     monkeypatch.chdir(tmp_path)
 
     class _Env:

@@ -14,14 +14,14 @@ from agent6.models.pricing import Price, lookup_price
 
 
 def _write_pricing(cache: Path, name: str, pricing: dict[str, list[float]]) -> None:
-    (cache / "models").mkdir(parents=True, exist_ok=True)
-    (cache / "models" / f"{name}.json").write_text(
+    (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
+    (cache / "agent6" / "models" / f"{name}.json").write_text(
         json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
     )
 
 
 def test_lookup_price_reads_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(tmp_path, "openrouter", {"a/model": [0.5, 2.5]})
     assert lookup_price("a/model") == Price(0.5, 2.5)
     assert lookup_price("nobody/else") is None
@@ -32,7 +32,7 @@ def test_lookup_price_sees_cache_written_after_first_miss(
 ) -> None:
     # The CLI preflight refreshes the cache AFTER config construction already
     # did a lookup; the memo must not pin the early empty result.
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     assert lookup_price("a/model") is None
     _write_pricing(tmp_path, "openrouter", {"a/model": [0.5, 2.5]})
     assert lookup_price("a/model") == Price(0.5, 2.5)
@@ -41,9 +41,9 @@ def test_lookup_price_sees_cache_written_after_first_miss(
 def test_lookup_price_ignores_malformed_entries(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
-    (tmp_path / "models").mkdir(parents=True)
-    (tmp_path / "models" / "bad.json").write_text(
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "agent6" / "models" / "bad.json").write_text(
         json.dumps(
             {
                 "pricing": {
@@ -88,7 +88,7 @@ def test_lookup_price_direct_anthropic_alias(
 ) -> None:
     # A direct-Anthropic id resolves through its OpenRouter listing: date
     # suffix stripped, trailing version dotted, `anthropic/` prefixed.
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(
         tmp_path,
         "openrouter",
@@ -106,7 +106,7 @@ def test_lookup_price_direct_anthropic_alias(
 def test_lookup_price_alias_never_shadows_exact(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(
         tmp_path,
         "openrouter",
@@ -118,7 +118,7 @@ def test_lookup_price_alias_never_shadows_exact(
 def test_lookup_price_alias_misses_stay_unpriced(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     _write_pricing(tmp_path, "openrouter", {"anthropic/claude-3.5-sonnet": [3.0, 15.0]})
     # Legacy version-first naming is deliberately not mapped.
     assert lookup_price("claude-3-5-sonnet-20241022") is None
@@ -137,13 +137,13 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
     from agent6.budget import BudgetTracker
     from agent6.models.pricing import lookup_price
 
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
-    (tmp_path / "models").mkdir()
-    (tmp_path / "models" / "aaa_cheap.json").write_text(
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "agent6" / "models" / "aaa_cheap.json").write_text(
         json.dumps({"models": ["openai/gpt-4o"], "pricing": {"openai/gpt-4o": [0.10, 0.20]}}),
         encoding="utf-8",
     )
-    (tmp_path / "models" / "openrouter.json").write_text(
+    (tmp_path / "agent6" / "models" / "openrouter.json").write_text(
         json.dumps({"models": ["openai/gpt-4o"], "pricing": {"openai/gpt-4o": [2.50, 10.00]}}),
         encoding="utf-8",
     )
@@ -192,9 +192,9 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     assert (price.cache_read, price.cache_write) == (pytest.approx(1.0), pytest.approx(2.0))
     assert price.as_list() == pytest.approx([2.0, 8.0, 1.0, 2.0])
 
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
-    (tmp_path / "models").mkdir()
-    (tmp_path / "models" / "openrouter.json").write_text(
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "agent6" / "models" / "openrouter.json").write_text(
         json.dumps(
             {
                 "models": ["openai/gpt-x", "listed-only/plain"],

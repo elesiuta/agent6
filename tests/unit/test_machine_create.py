@@ -218,7 +218,7 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
     NL task + session.end) and points the agent runner at that same path, so the TUI
     can open the dashboard on the draft and follow the authoring live, like a run."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
     captured_log: list[object] = []
 
@@ -257,7 +257,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
     last one showed only the last attempt. create emits the true cumulative total
     at the end, so the watchable draft's cost is the real spend, not the last try."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
@@ -300,7 +300,7 @@ def test_create_saves_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     draft is self-describing (otherwise the task only survives embedded inside the
     authoring transcript)."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
@@ -369,7 +369,7 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     as done on every watch surface. The refusal ends the log as its own
     failure token instead."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     (tmp_path / "greeter.asm.toml").write_text("# do not clobber\n", encoding="utf-8")
     _stub_preflight(monkeypatch)
     _stub_runner(
@@ -394,7 +394,7 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
     claiming success. The write failure ends the log as its own failure token,
     keeps the paid-for draft on stdout, and exits 1."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
@@ -955,7 +955,7 @@ def test_create_failure_end_reason_names_the_failure(
     from agent6.viewmodel.listing import status_word
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
@@ -981,7 +981,7 @@ def test_create_stamps_a_liveness_marker_on_the_draft(
     "running" until the 10-minute log-silence window expired, holding its stream
     open the whole time. Every other watchable run-style dir records one."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
@@ -1006,8 +1006,8 @@ def test_create_runs_the_shared_isolation_preflight(
     from agent6.config.layer import EffectiveConfig
     from agent6.sandbox.detect import Environment, KernelInfo
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "inside-state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "inside-state"))
     monkeypatch.chdir(tmp_path)
     cfg = Config(
         providers={

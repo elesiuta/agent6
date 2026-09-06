@@ -44,7 +44,7 @@ def test_a_server_script_inside_the_workspace_is_checked(
     repo.mkdir()
     (repo / "server.py").write_text(_SERVER, encoding="utf-8")
     monkeypatch.chdir(repo)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     cfg = Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"inrepo": {"command": [_JAIL_PYTHON, "server.py"]}}}}
     )

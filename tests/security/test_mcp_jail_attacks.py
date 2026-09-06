@@ -83,7 +83,7 @@ def test_the_server_cannot_reach_the_operators_secrets(
     cfg_dir = tmp_path / "cfg" / "agent6"
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "secrets.toml").write_text("key = 'sk-SECRET'\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     script = (
         "import pathlib\n"
         f"p = pathlib.Path({str(cfg_dir / 'secrets.toml')!r})\n"

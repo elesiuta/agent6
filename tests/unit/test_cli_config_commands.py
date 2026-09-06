@@ -15,7 +15,7 @@ from agent6.config.layer import resolved_state_dir
 @pytest.fixture
 def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Isolated global config home + cwd inside a fresh repo."""
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -35,7 +35,7 @@ def _refuse(args: list[str]) -> int:
 
 
 def _global_toml(tmp_path: Path) -> dict[str, object]:
-    return tomllib.loads((tmp_path / "g" / "config.toml").read_text(encoding="utf-8"))
+    return tomllib.loads((tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8"))
 
 
 # --- set / get / unset (scalars) -------------------------------------------
@@ -141,8 +141,10 @@ def test_set_profile_heals_a_profile_table_typo(iso: Path) -> None:
     # config; the advertised fix `config set preset <name>` must heal it in one
     # step, not stack a bare key on top of the table (unparseable TOML, kept by
     # the lenient already-invalid path).
-    (iso / "g").mkdir(parents=True, exist_ok=True)
-    (iso / "g" / "config.toml").write_text('[preset]\nporifle = "ultra"\n', encoding="utf-8")
+    (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "agent6" / "config.toml").write_text(
+        '[preset]\nporifle = "ultra"\n', encoding="utf-8"
+    )
     assert _run(["config", "set", "preset", "ultra"]) == 0
     assert _global_toml(iso) == {"preset": "ultra"}
 
@@ -163,7 +165,7 @@ def test_set_profile_repo_targets_repo_config(iso: Path) -> None:
     assert _run(["config", "set", "preset", "quick", "--repo"]) == 0
     repo_cfg = (resolved_state_dir(iso) / "config.toml").read_text(encoding="utf-8")
     assert 'preset = "quick"' in repo_cfg
-    assert not (iso / "g" / "config.toml").is_file()
+    assert not (iso / "g" / "agent6" / "config.toml").is_file()
 
 
 def test_set_profile_machine_file_is_refused(
@@ -184,8 +186,8 @@ def test_set_profile_machine_file_is_refused(
 def test_config_profiles_lists_builtins_and_user(
     iso: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (iso / "g").mkdir(parents=True, exist_ok=True)
-    (iso / "g" / "config.toml").write_text(
+    (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "agent6" / "config.toml").write_text(
         'preset = "ultra"\n\n[presets.myteam.review]\nconcurrency = 2\n', encoding="utf-8"
     )
     assert _run(["config", "presets"]) == 0
@@ -211,8 +213,8 @@ def test_config_profiles_user_shadow_replaces_builtin(
 ) -> None:
     # A user [presets.ultra] REPLACES the built-in wholesale; the listing must
     # show the user's contents (not the dead built-in's) and say so.
-    (iso / "g").mkdir(parents=True, exist_ok=True)
-    (iso / "g" / "config.toml").write_text(
+    (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "agent6" / "config.toml").write_text(
         "[presets.ultra.review]\nconcurrency = 9\n", encoding="utf-8"
     )
     assert _run(["config", "presets"]) == 0
@@ -348,8 +350,8 @@ def test_unset_refuses_a_leaf_inside_an_undeclared_table(
     said "nothing to unset" rc=0 while `config get` showed the leaf set -- the
     one write surface that lied about this shape (set refuses it, fix reports
     it stuck)."""
-    (iso / "g").mkdir(parents=True, exist_ok=True)
-    cfg = iso / "g" / "config.toml"
+    (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    cfg = iso / "g" / "agent6" / "config.toml"
     cfg.write_text("sandbox.protect_git = false\n", encoding="utf-8")
     rc = _refuse(["config", "unset", "sandbox.protect_git"])
     assert rc == 2
@@ -369,7 +371,7 @@ def test_add_rejects_a_value_masked_by_a_higher_layer(
     rc = _refuse(["config", "add", "sandbox.fetch_hosts", "5"])
     assert rc == 2
     assert "fetch_hosts" in capsys.readouterr().err
-    gcfg = iso / "g" / "config.toml"
+    gcfg = iso / "g" / "agent6" / "config.toml"
     assert not gcfg.is_file() or "5" not in gcfg.read_text(encoding="utf-8")
 
 
@@ -379,8 +381,8 @@ def test_set_warns_when_another_layer_is_still_broken(
     """A valid write over a config broken in ANOTHER layer lands, exits 0, and
     warns with the other layer's error; delegating the CLI writers to the
     engine must not silence the warning."""
-    (iso / "g").mkdir(parents=True, exist_ok=True)
-    (iso / "g" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
+    (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "agent6" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
     rc = _run(["config", "set", "--repo", "sandbox.protect_git", "false"])
     assert rc == 0
     assert "a value this edit did not write" in capsys.readouterr().err
@@ -436,7 +438,7 @@ def test_an_unreadable_config_refuses_rather_than_crashing(iso: Path) -> None:
     The reader wrapped a TOML parse error but not an OSError, so a permission
     problem escaped as "unexpected PermissionError" with a saved traceback,
     "please report this", and exit 1."""
-    gdir = iso / "g"
+    gdir = iso / "g" / "agent6"
     gdir.mkdir(parents=True, exist_ok=True)
     cfg = gdir / "config.toml"
     cfg.write_text("[review]\nperiod = 7\n", encoding="utf-8")
@@ -466,7 +468,7 @@ def test_write_commands_refuse_an_unreadable_target(
     """The unreadable-config fix landed in the readers while every write command
     still read the target directly first: `config set`/`unset` crashed through
     the bug reporter at exit 1 on a root-owned config the readers refused."""
-    gdir = iso / "g"
+    gdir = iso / "g" / "agent6"
     gdir.mkdir(parents=True, exist_ok=True)
     cfg = gdir / "config.toml"
     cfg.write_text("[review]\nperiod = 7\n", encoding="utf-8")
@@ -594,8 +596,8 @@ def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: Path)
 
 
 def test_fill_keeps_authored_preset_bodies(iso: Path) -> None:
-    (iso / "g").mkdir(parents=True, exist_ok=True)
-    (iso / "g" / "config.toml").write_text(
+    (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (iso / "g" / "agent6" / "config.toml").write_text(
         "[presets.myteam.review]\nconcurrency = 2\n", encoding="utf-8"
     )
     filled = _fill_and_read(iso)
@@ -611,16 +613,16 @@ def test_config_path_lists_every_directory_agent6_writes_to(
     unguessable, so one command answers "where did agent6 put that": the
     config/repo/secrets files plus every directory, this repo's state dir
     included."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(iso / "st"))
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(iso / "dt"))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(iso / "ch"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(iso / "st"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(iso / "dt"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(iso / "ch"))
     assert _run(["config", "path"]) == 0
     out = capsys.readouterr().out
     for label in ("global config", "repo config", "secrets", "config dir", "cache"):
         assert f"{label}" in out
     assert str(iso / "st") in out  # state base
     assert str(resolved_state_dir(iso)) in out  # this repo's own dir
-    assert str(iso / "dt" / "skills") in out
+    assert str(iso / "dt" / "agent6" / "skills") in out
     assert str(iso / "ch") in out
 
 
@@ -629,9 +631,9 @@ def test_top_level_help_names_the_directories(
 ) -> None:
     """Discoverable without knowing `config path` exists: `agent6 --help` ends
     with the four XDG dirs, resolved, and points at the fuller listing."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(iso / "st"))
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(iso / "dt"))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(iso / "ch"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(iso / "st"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(iso / "dt"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(iso / "ch"))
     with pytest.raises(SystemExit) as exc:
         _run(["--help"])
     assert exc.value.code == 0
@@ -662,3 +664,22 @@ def test_a_preset_leaf_is_validated_and_has_an_inverse(
     capsys.readouterr()
     assert _run(["config", "get", "presets.demo.sandbox.network"]) == 0
     assert "unset" in capsys.readouterr().out
+
+
+def test_config_fix_reports_an_entry_it_cannot_auto_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `preset` naming no preset fails the model's own check, not a leaf the
+    fix can drop: it says so and exits non-zero, never reporting a still-broken
+    config as fixed."""
+    from agent6.paths import global_config_path
+    from agent6.ui.cli import main
+
+    gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
+    gpath.write_text('preset = "nope"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["config", "fix"]) == 2
+    err = capsys.readouterr().err
+    assert "not an auto-removable entry" in err and "nope" in err

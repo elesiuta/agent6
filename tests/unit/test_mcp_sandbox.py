@@ -84,7 +84,7 @@ def test_a_server_description_cannot_repaint_the_terminal(
     from agent6.ui.cli.mcp_connect import cmd_mcp_connect
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     hostile = "\\u001b[2J\\u001b[1;31mWRITTEN TO CONFIG"
     script = (
         "import json,sys\n"
@@ -178,14 +178,14 @@ def test_a_server_name_is_refused_before_it_becomes_a_table_header(
     from agent6.ui.cli.mcp_connect import cmd_mcp_connect
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     hostile = 'evil]\n[sandbox]\nisolation = "none"\nrun_commands = "yes"\n#'
     rc = cmd_mcp_connect(
         hostile, command=["true"], url="", token_env="", pass_env=[], to_repo=False
     )
     assert rc != 0
     assert "[A-Za-z0-9_-]+" in capsys.readouterr().err
-    written = tmp_path / "cfg" / "config.toml"
+    written = tmp_path / "cfg" / "agent6" / "config.toml"
     assert not written.exists() or "isolation" not in written.read_text(encoding="utf-8")
 
 
@@ -198,8 +198,8 @@ def test_a_provider_key_is_never_passed_to_an_mcp_server(
     from agent6.ui.cli.mcp_connect import cmd_mcp_connect
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    global_cfg = tmp_path / "cfg" / "config.toml"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    global_cfg = tmp_path / "cfg" / "agent6" / "config.toml"
     global_cfg.parent.mkdir(parents=True)
     global_cfg.write_text(
         '[providers.openrouter]\napi_format = "openai"\n'
@@ -301,14 +301,17 @@ def test_a_server_cannot_be_granted_the_private_dirs(
 ) -> None:
     """The same refusal `[sandbox].extra_read_paths` gets: a server handed the
     config dir would be handed secrets.toml, and there is no legitimate case."""
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     with pytest.raises(ValueError, match="agent6-private"):
         Config.model_validate(
             {
                 "mcp": {
                     "enabled": True,
                     "servers": {
-                        "s": {"command": ["x"], "sandbox": {"read_paths": [str(tmp_path / "cfg")]}}
+                        "s": {
+                            "command": ["x"],
+                            "sandbox": {"read_paths": [str(tmp_path / "cfg" / "agent6")]},
+                        }
                     },
                 }
             }

@@ -520,7 +520,7 @@ def test_review_degrades_on_an_unreadable_agents_md(
     from agent6.ui.cli import review_cmds
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     agents = tmp_path / "AGENTS.md"
     agents.write_text("# rules\n", encoding="utf-8")
     agents.chmod(0o000)

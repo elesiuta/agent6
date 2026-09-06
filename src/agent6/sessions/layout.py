@@ -46,9 +46,8 @@ UNTRACKED_AT_START_NAME = "untracked-at-start"
 class SessionLayout:
     """Filesystem layout for one `agent6 run`.
 
-    `state_dir` is the resolved run-state base
-    (`$XDG_STATE_HOME/agent6/<repo-id>` by default, or wherever
-    `[agent6].state_dir` points). See `agent6.paths.state_dir`.
+    `state_dir` is the repository's state dir (`$XDG_STATE_HOME/agent6/<repo-id>`,
+    `agent6.paths.state_dir`).
     """
 
     state_dir: Path

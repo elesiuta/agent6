@@ -138,11 +138,11 @@ def test_a_cache_home_open_to_others_refuses(tmp_path: Path) -> None:
 def test_a_cache_home_inside_a_private_dir_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`AGENT6_CACHE_HOME` under the state base would put a writable grant
+    """`XDG_CACHE_HOME` under the state base would put a writable grant
     inside the always-hidden tree, re-bound through the strict mask; the
     config validator refuses the same for `extra_write_paths`."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "state" / "cache"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "state" / "agent6" / "cache"))
     msg = config_refusal(Config(), "hardened", tmp_path / "ws")
     assert msg is not None
     assert "private dir" in msg and str(tmp_path / "state") in msg
@@ -153,29 +153,29 @@ def test_a_cache_home_inside_a_private_dir_refuses(
 def test_a_symlinked_ancestor_into_a_private_dir_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The containment check compares resolved paths: an `AGENT6_CACHE_HOME`
+    """The containment check compares resolved paths: an `XDG_CACHE_HOME`
     reached through a symlink into the state base is refused before anything
     is created there (the real dir would sit inside the hidden tree), while a
     symlinked ancestor elsewhere is an ordinary cache location."""
     state = tmp_path / "state"
-    state.mkdir()
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(state))
+    (state / "agent6").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
     (tmp_path / "link").symlink_to(state)
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "link" / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "link" / "agent6" / "cache"))
     msg = config_refusal(Config(), "hardened", tmp_path / "ws")
     assert msg is not None
     assert "private dir" in msg and str(state) in msg
     with pytest.raises(JailUnavailableError, match="private dir"):
         jail_policy(tmp_path / "ws", Config(), "hardened", ("true",))
-    assert not (state / "cache").exists()
+    assert not (state / "agent6" / "cache").exists()
     real = tmp_path / "real"
     real.mkdir()
     (tmp_path / "elsewhere").symlink_to(real)
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "elsewhere" / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "elsewhere" / "cache"))
     assert config_refusal(Config(), "hardened", tmp_path / "ws") is None
     policy = jail_policy(tmp_path / "ws", Config(), "hardened", ("true",))
-    assert tmp_path / "elsewhere" / "cache" / "home" in policy.extra_rw_paths
-    assert (real / "cache" / "home").is_dir()
+    assert tmp_path / "elsewhere" / "cache" / "agent6" / "home" in policy.extra_rw_paths
+    assert (real / "cache" / "agent6" / "home").is_dir()
 
 
 @pytest.mark.parametrize("isolation", ["hardened", "none"])

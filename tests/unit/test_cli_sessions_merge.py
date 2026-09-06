@@ -804,9 +804,9 @@ def test_merge_squash_combine_style_uses_gits_own_message(
     """[git.commit.squash].message = combine commits with git's squash message
     (the concatenated per-step log)."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
-    (tmp_path / "g").mkdir()
-    (tmp_path / "g" / "config.toml").write_text(
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit.squash]\nmessage = "combine"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-CMB111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
@@ -820,9 +820,9 @@ def test_merge_squash_conventional_style_derives_the_subject(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
-    (tmp_path / "g").mkdir()
-    (tmp_path / "g" / "config.toml").write_text(
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit.squash]\nmessage = "conventional"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-CNV111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
@@ -837,9 +837,9 @@ def test_merge_squash_model_style_degrades_with_a_warning(
     """No provider is reachable in this environment, so the model style must
     fall back to the agent6 message and say so, never fail the merge."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
-    (tmp_path / "g").mkdir()
-    (tmp_path / "g" / "config.toml").write_text(
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-MDL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
@@ -850,9 +850,9 @@ def test_merge_squash_model_style_degrades_with_a_warning(
 
 def test_merge_squash_trailer_lands_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
-    (tmp_path / "g").mkdir()
-    (tmp_path / "g" / "config.toml").write_text(
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit]\ntrailer = "Assisted-by: agent6:{model}"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-TRL111", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
@@ -867,9 +867,9 @@ def test_merge_squash_trailer_names_every_code_writer(
     joins the journal's worker models first-seen order, not the manifest's
     starting driver alone, and a message-writing role never appears."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
-    (tmp_path / "g").mkdir()
-    (tmp_path / "g" / "config.toml").write_text(
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[git.commit]\ntrailer = "Assisted-by: agent6:{model}"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-TRL222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
@@ -975,9 +975,9 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     # The lane clone, as the spawner leaves it: workdir cache / repo-id /
     # fanout / lane-1.
     workdir = tmp_path / "cache" / "parallel"
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    (tmp_path / "cfg").mkdir()
-    (tmp_path / "cfg" / "config.toml").write_text(
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    (tmp_path / "cfg" / "agent6").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
         f'[parallel]\nworkdir = "{workdir}"\n', encoding="utf-8"
     )
     clone = workdir / repo_id(tmp_path) / "fan" / "lane-1"

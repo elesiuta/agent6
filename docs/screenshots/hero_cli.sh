@@ -34,12 +34,12 @@ done
 TMP="$(mktemp -d)"
 DEMO_REPO="/tmp/acme-stats-hero-cli"
 trap 'kill "${PROXY_PID:-0}" 2>/dev/null || true; rm -rf "$TMP" "$DEMO_REPO"' EXIT
-export AGENT6_CONFIG_HOME="$TMP/config"
-export AGENT6_STATE_HOME="$TMP/state"
+export XDG_CONFIG_HOME="$TMP/config"
+export XDG_STATE_HOME="$TMP/state"
 export AGENT6_DEMO_REPO="$DEMO_REPO"
-mkdir -p "$AGENT6_CONFIG_HOME"
+mkdir -p "$XDG_CONFIG_HOME/agent6"
 
-cat > "$AGENT6_CONFIG_HOME/config.toml" <<EOF
+cat > "$XDG_CONFIG_HOME/agent6/config.toml" <<EOF
 [sandbox]
 network = "session"
 run_commands = "yes"
@@ -68,8 +68,8 @@ model = "moonshotai/kimi-k2.6"
 provider = "openrouter"
 model = "moonshotai/kimi-k2.6"
 EOF
-printf '[providers.openrouter]\napi_key = "unused-in-replay"\n' > "$AGENT6_CONFIG_HOME/secrets.toml"
-chmod 600 "$AGENT6_CONFIG_HOME/secrets.toml"
+printf '[providers.openrouter]\napi_key = "unused-in-replay"\n' > "$XDG_CONFIG_HOME/agent6/secrets.toml"
+chmod 600 "$XDG_CONFIG_HOME/agent6/secrets.toml"
 
 # Same starting repo as the cassette recording: the buggy median() + failing test.
 rm -rf "$DEMO_REPO"

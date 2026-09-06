@@ -6,7 +6,7 @@ override path.
 USD is a single runtime bound (`BudgetTracker.max_usd`), never a load-time
 token conversion. Pricing has no static table: it comes from the
 provider-fetched models cache (agent6.models.pricing reads
-$AGENT6_CACHE_HOME/models/*.json). Tests inject prices by writing a real cache
+$XDG_CACHE_HOME/models/*.json). Tests inject prices by writing a real cache
 file, exercising the same path production uses.
 """
 
@@ -25,8 +25,8 @@ CHEAP_MODEL = "test/cheap-model"
 @pytest.fixture
 def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     cache = tmp_path / "cache"
-    (cache / "models").mkdir(parents=True)
-    (cache / "models" / "testprovider.json").write_text(
+    (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
+    (cache / "agent6" / "models" / "testprovider.json").write_text(
         json.dumps(
             {
                 "models": [PRICED_MODEL, CHEAP_MODEL],
@@ -35,7 +35,7 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(cache))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
     return cache
 
 
@@ -73,7 +73,7 @@ def test_fallback_zero_refuses_an_unpriced_model(
     # refuse up front when a configured role model has no price data.
     from agent6.app.preflight import budget_preflight
 
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "empty-cache"))
     err = budget_preflight(_cfg("nobody/unpriced", budget={"max_tokens_fallback": 0}))
     assert err is not None and "max_tokens_fallback" in err and "nobody/unpriced" in err
 
@@ -99,7 +99,7 @@ def test_unpriced_model_gets_the_fallback_notice(
     fallback ledger, and startup says so once, naming the model."""
     from agent6.app.preflight import budget_preflight
 
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "empty-cache"))
     assert budget_preflight(_cfg("nobody/unpriced")) is None
     noted = capsys.readouterr().err
     assert "nobody/unpriced" in noted and "fallback" in noted

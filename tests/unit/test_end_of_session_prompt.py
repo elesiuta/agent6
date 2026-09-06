@@ -22,7 +22,7 @@ def _seed_session(
     """A real run dir under repo_root's state home, so resolution reaches the
     tty guard rather than short-circuiting on SessionIdError."""
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(repo_root / ".state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(repo_root / ".state"))
     layout = SessionLayout(
         state_dir=resolved_state_dir(repo_root), session_id=session_id, subdir="runs"
     )

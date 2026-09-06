@@ -48,7 +48,7 @@ def test_port_flag_is_held_to_the_same_bounds_as_the_config_leaf(
     port while printing the unreachable `:0` as the URL."""
     from agent6.ui.cli.web_cmds import _cmd_web  # pyright: ignore[reportPrivateUsage]
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
     for bad in (99999, 0, -1):
         assert _cmd_web("", config_path=None, host=None, port=bad, allow_non_loopback=False) == 2

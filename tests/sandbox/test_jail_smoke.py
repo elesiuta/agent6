@@ -929,8 +929,8 @@ def test_jail_hidden_paths_mask_secrets_under_a_broad_grant(
     data = state / "repo" / "machines" / "m1" / "data"
     data.mkdir(parents=True)
     (data / "journal.txt").write_text("j1\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(state))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local" / "state"))
 
     ws = tmp_path / "ws"
     ws.mkdir()
@@ -963,7 +963,7 @@ def test_jail_hidden_paths_cover_the_workspace_alias(
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "secrets.toml").write_text("key = 'sk-SECRET'\n", encoding="utf-8")
     (tmp_path / "readme.txt").write_text("hello\n", encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_dir))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
 
     res = run_in_jail(
         JailPolicy(

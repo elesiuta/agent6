@@ -35,7 +35,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, repo: Path) -> Non
     monkeypatch.chdir(repo)
     # isolate from the developer's real global config / state
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
 
 def test_prompt_show_run_mode_injects_agents_md(

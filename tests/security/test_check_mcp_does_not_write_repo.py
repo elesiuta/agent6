@@ -53,7 +53,7 @@ def _repo_with_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo.mkdir()
     (repo / "server.py").write_text(_WRITER_SERVER, encoding="utf-8")
     monkeypatch.chdir(repo)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     return repo
 
 

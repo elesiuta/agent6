@@ -10,7 +10,6 @@ to overridden settings, and Help opens — all over the shared config view-model
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
 import pytest
@@ -19,6 +18,7 @@ from textual.widgets import DataTable, Input, OptionList
 
 from agent6.config import OpenAIProviderEntry
 from agent6.config.layer import load_effective
+from agent6.paths import global_config_dir
 from agent6.ui.tui.config_page import ConfigScreen, EditModal
 from agent6.ui.tui.menubar import HelpScreen, MenuBar
 from agent6.viewmodel.config_view import build_config_view
@@ -49,11 +49,11 @@ class _Host(App[None]):
 @pytest.fixture
 def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text(_GLOBAL, encoding="utf-8")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text(_GLOBAL, encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     return repo_root
@@ -359,14 +359,14 @@ def test_list_setting_prefill_saves_back_unchanged(
     there was no format in which the shown value saved. The box now prefills
     the exact inverse of parse_cli_value."""
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text(
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text(
         _GLOBAL + '\n[workflow]\nverify_command = ["uv", "run", "pytest"]\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
 
@@ -411,7 +411,7 @@ def test_editing_a_model_survives_a_broken_secrets_file(
     import agent6.ui.tui.config_page as cp
     from agent6.models import choices
 
-    gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
+    gdir = global_config_dir()
     secrets = gdir / "secrets.toml"
     secrets.write_text('[anthropic]\napi_key = "sk-x"\n', encoding="utf-8")
     secrets.chmod(0o644)  # group/other-readable -> load_secrets raises
@@ -1043,7 +1043,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: Path) -> None:
     """A [presets.<name>] leaf renders modified with source "preset", and no
     config-file unset can revert it; Reset must say the preset owns it, not
     lie "already at its default"."""
-    gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
+    gdir = global_config_dir()
     (gdir / "config.toml").write_text(
         'preset = "fast"\n' + _GLOBAL + '\n[presets.fast.review]\ntrigger = "off"\n',
         encoding="utf-8",
@@ -1115,7 +1115,7 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: Path
             assert isinstance(screen, ConfigScreen)
             baseline = _row_total(screen)
             assert baseline > 10
-            gdir = Path(os.environ["AGENT6_CONFIG_HOME"])
+            gdir = global_config_dir()
             (gdir / "config.toml").write_text(
                 _GLOBAL + '\n[workflow]\nplan = "yess"\n', encoding="utf-8"
             )

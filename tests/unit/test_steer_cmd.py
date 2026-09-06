@@ -24,7 +24,7 @@ def _run_session(tmp_path: Path, session_id: str) -> Path:
 def test_steer_queues_for_a_live_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-AAAA11")
     write_worker_pid(d, os.getpid())
@@ -54,7 +54,7 @@ def test_steer_refuses_a_session_that_is_not_running(
 ) -> None:
     """A dead session's steer would silently park; the refusal names the
     queue-for-next-leg remedy that already exists (`resume --steer`)."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-BBBB22")
     write_worker_pid(d, 10**9)  # a pid that is never alive
@@ -69,7 +69,7 @@ def test_steer_refuses_a_session_that_is_not_running(
 def test_steer_reports_an_unknown_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     assert main(["steer", "nonesuch", "hello"]) == 2
     assert "ERROR" in capsys.readouterr().err
@@ -82,7 +82,7 @@ def test_steer_notes_an_unanswered_prompt_park(
     break the wait; the verb says so honestly instead of implying delivery."""
     import json
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-CCCC33")
     write_worker_pid(d, os.getpid())
@@ -113,7 +113,7 @@ def test_steer_names_the_answer_verb_for_a_question(
 
     from agent6.sessions.ipc import set_away_mode
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
     d = _run_session(tmp_path, "tiny-run-DDDD44")
     write_worker_pid(d, os.getpid())

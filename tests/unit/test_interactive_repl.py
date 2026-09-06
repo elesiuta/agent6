@@ -286,7 +286,7 @@ def test_watch_shows_audit_events_not_streaming_fragments(
     from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli._repl import repl_show_recent_events
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     layout = SessionLayout(
         state_dir=resolved_state_dir(tmp_path), session_id="watchy-run-AAAAAA", subdir="runs"
     )

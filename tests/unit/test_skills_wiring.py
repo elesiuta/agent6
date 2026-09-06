@@ -133,8 +133,8 @@ def _skills_env(tmp_path: Path, monkeypatch: object) -> Path:
 
     assert isinstance(monkeypatch, pytest.MonkeyPatch)
     data = tmp_path / "data"
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(data))
-    return data / "skills"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data))
+    return data / "agent6" / "skills"
 
 
 def _install(skills_dir: Path, name: str, text: str = "") -> Path:

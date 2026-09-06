@@ -183,7 +183,7 @@ def _install_bash_zsh(shell: str, code: str) -> int:
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text(code, encoding="utf-8")
     rc = _rc_path(shell)
-    # The path (from AGENT6_CONFIG_HOME/XDG) lands in shell text the operator's
+    # The path (from XDG_CONFIG_HOME) lands in shell text the operator's
     # shell later sources; shlex.quote keeps any metacharacter in it inert.
     q = shlex.quote(str(script))
     block = f"\n{_MARK_BEGIN}\n[ -f {q} ] && source {q}  # agent6 tab-completion\n{_MARK_END}\n"

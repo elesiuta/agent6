@@ -165,7 +165,7 @@ class _FakeSpawner:
 
 @pytest.fixture
 def origin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     o = tmp_path / "origin"
     _init_repo(o)
     return o
@@ -253,8 +253,10 @@ def test_dispatch_parallel_refuses_unknown_model_before_any_clone(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
-    _write_models_cache(tmp_path / "cache", "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"])
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    _write_models_cache(
+        tmp_path / "cache" / "agent6", "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"]
+    )
 
     # The miss now re-checks the live listing before refusing; stub it with the
     # same ids so the refusal rests on "fresh" evidence (no real network).
@@ -285,7 +287,7 @@ def test_dispatch_parallel_unknown_model_no_cache_warns_and_proceeds(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))  # empty: no snapshot
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # empty: no snapshot
 
     reached: list[str] = []
 
@@ -304,7 +306,7 @@ def test_dispatch_parallel_forwards_auto_approve_to_run_parallel(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The CLI's `--auto-approve` must reach `run_parallel`, same as --max-usd."""
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     captured: list[object] = []
 
     def _fake_run(task: str, lanes: object, **kw: object) -> int:
@@ -326,7 +328,7 @@ def test_dispatch_parallel_forwards_pins_to_run_parallel(
     """`run --parallel --pin X` must reach run_parallel: the CLI fan-out
     returns before run_task, so my C5 threaded --pin only through the in-loop
     /parallel path -- the flag's own help promised the CLI fan-out."""
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     captured: list[object] = []
 
     def _fake_run(task: str, lanes: object, **kw: object) -> int:
@@ -346,8 +348,8 @@ def test_coordinator_dispatch_refuses_unknown_model(
     """The ui-built group dispatcher validates before cloning: an unknown model
     raises, and the loop's group-failure feedback (its `except Exception`) carries
     the message to the coordinator -- so workflows needs no models dependency."""
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
-    _write_models_cache(tmp_path / "cache", "o", ["moonshotai/kimi-k2.6"])
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    _write_models_cache(tmp_path / "cache" / "agent6", "o", ["moonshotai/kimi-k2.6"])
 
     # The miss now re-checks the live listing before refusing; stub it with the
     # same ids so the refusal rests on "fresh" evidence (no real network).
@@ -448,7 +450,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
     """A lane clones the repo, so its state dir is new and its memory empty: the
     lanes ran blind to the facts and rulings every other run on that repo gets."""
     cfg = Config()
-    origin_state = state_dir(origin, cfg.agent6.state_dir)
+    origin_state = state_dir(origin)
     memory.add(origin_state, "house-style", "Docstrings end in a period.")
     record_decision(origin_state, question="Ship the rename?", answer="yes", session="s", when=0.0)
 
@@ -461,7 +463,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
     )  # fmt: skip
 
-    lane_state = state_dir(spec.workdir, cfg.agent6.state_dir)
+    lane_state = state_dir(spec.workdir)
     assert "house-style" in memory.index_text(lane_state)
     assert "Docstrings end in a period." in memory.show(lane_state, "house-style")
     assert "Ship the rename?" in decisions_text(lane_state)
@@ -713,7 +715,7 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     cfg = Config()
     memory.add(origin_state, "repo-fact", "The build needs BUILD_ID set.")
     lanes = _specs(tmp_path, cfg, "fan", "1")
-    lane_state = state_dir(lanes[0].workdir, cfg.agent6.state_dir)
+    lane_state = state_dir(lanes[0].workdir)
     memory.add(lane_state, "lane-fact", "The flaky test is test_clock.")
     memory.add(lane_state, "repo-fact", "The build needs BUILD_ID set, and BUILD_NO.")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -1255,9 +1257,7 @@ def test_run_lane_to_completion_imports_and_stamps(
     spec = LaneSpec(
         lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
     )
-    memory.add(
-        state_dir(spec.workdir, cfg.agent6.state_dir), "lane-fact", "The flaky test is test_clock."
-    )
+    memory.add(state_dir(spec.workdir), "lane-fact", "The flaky test is test_clock.")
 
     # The await polls summarize_session_dir; observe the origin link state then -- it
     # must be a live symlink while the lane is still running.

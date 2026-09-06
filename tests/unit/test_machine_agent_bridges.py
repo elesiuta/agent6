@@ -158,13 +158,13 @@ def test_machine_agent_wires_the_summariser_seat(
     from agent6.workflows.loop import SessionResult
 
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text(
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n'
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
 
     wf_kwargs: dict[str, Any] = {}
     sinks: dict[str, Any] = {}

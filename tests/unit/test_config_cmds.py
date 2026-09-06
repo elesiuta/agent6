@@ -50,9 +50,9 @@ def test_profile_value_completer_offers_profile_names(
     )
 
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
     args = argparse.Namespace(key="preset")
     out = _complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
@@ -73,9 +73,9 @@ def test_config_key_completer_offers_user_profile_paths(
     )
 
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
     out = _complete_config_keys("presets.")  # pyright: ignore[reportPrivateUsage]
     assert any(k.startswith("presets.myteam.review.") for k in out)
@@ -155,8 +155,8 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
     from agent6.ui.cli import cli_main
 
     gdir = tmp_path / "g"
-    gdir.mkdir()
-    cfg = gdir / "config.toml"
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    cfg = gdir / "agent6" / "config.toml"
     cfg.write_text(
         "[providers.openrouter]\n"
         'api_format = "openai"\n'
@@ -166,7 +166,7 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
     )
     before = cfg.read_text(encoding="utf-8")
     # The whole layer stack must read this same file, not just the write path.
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
 
     rc = cli_main(["config", "set", "providers.openrouter.extra_body.provider.sort", "price"])
@@ -279,6 +279,7 @@ def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
     from agent6.ui.cli import main
 
     gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
@@ -331,6 +332,7 @@ def test_config_set_rejects_a_newly_invalid_value(
     assert rc == 2  # the write itself is invalid -> reverted + fail loud
     assert "prompt.decompose" in capsys.readouterr().err
     gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
     assert not gpath.is_file() or "decompose" not in gpath.read_text(encoding="utf-8")
 
 
@@ -349,27 +351,13 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     monkeypatch.setattr(write_mod, "chown_to_real_user", handed.append)
     monkeypatch.setattr(write_mod, "mkdir_for_real_user", handed.append)  # the dir handover
     gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     assert main(["config", "set", "prompt.decompose", "bogus"]) == 2  # rolled back
     assert gpath in handed  # the rolled-back file is the operator's again
     assert gpath.parent in handed  # and so is the dir the write may have created
-
-
-def test_config_set_reverts_a_write_that_trips_a_non_pydantic_check(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A write that trips a STANDALONE ConfigError (not a pydantic per-leaf error) --
-    # e.g. a non-absolute agent6.state_dir -- must still revert. Such errors carry no
-    # "  - <leaf>:" line, so the before/after comparison must count full error content
-    # (else the invalid write is silently kept and bricks the config).
-    from agent6.ui.cli import main
-
-    monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "agent6.state_dir", "not-absolute"])
-    assert rc == 2
-    assert "absolute" in capsys.readouterr().err.lower()
 
 
 def test_config_set_keeps_a_write_on_an_already_invalid_config(
@@ -383,6 +371,7 @@ def test_config_set_keeps_a_write_on_an_already_invalid_config(
     from agent6.ui.cli import main
 
     gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
@@ -424,6 +413,7 @@ def test_config_set_unknown_section_gets_the_same_friendly_path(
     assert "unknown config key 'bogus.key'" in err
     assert "merged config layers" not in err and "extra_forbidden" not in err
     gpath = global_config_path()
+    gpath.parent.mkdir(parents=True, exist_ok=True)
     assert not gpath.is_file() or "bogus" not in gpath.read_text(encoding="utf-8")
 
 
@@ -635,26 +625,6 @@ def test_config_fix_machine_overlay_leaves_the_spec_untouched(
     assert 'machine = "m"' in text  # the machine spec itself is untouched
 
 
-def test_config_fix_reports_an_entry_it_cannot_auto_remove(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    # A non-absolute agent6.state_dir is rejected before the model loads (it locates
-    # the per-repo config dir), so fix cannot drop it as a plain leaf. It must SAY so
-    # and exit non-zero, never silently report a still-broken config as fixed.
-    from agent6.paths import global_config_path
-    from agent6.ui.cli import main
-
-    gpath = global_config_path()
-    gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text('[agent6]\nstate_dir = "not-absolute"\n', encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-
-    rc = main(["config", "fix"])
-    err = capsys.readouterr().err
-    assert rc == 2
-    assert "state_dir" in err
-
-
 def test_config_set_unknown_provider_key_speaks_human(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -794,8 +764,8 @@ def test_config_set_names_the_flag_file_that_shadows_the_write(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     flag = tmp_path / "f.toml"
     flag.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
     rc = main(["--config", str(flag), "config", "set", "sandbox.run_commands", "no"])
@@ -817,8 +787,8 @@ def test_config_show_legend_names_the_flag_file(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     flag = tmp_path / "f.toml"
     flag.write_text('[sandbox]\nrun_commands = "yes"\n', encoding="utf-8")
     rc = main(["--config", str(flag), "config", "show"])
@@ -888,10 +858,10 @@ def test_config_unset_repairs_a_config_that_no_longer_loads(
     config first and died on the very value being removed."""
     monkeypatch.chdir(tmp_path)
     cfg_home = tmp_path / "cfg"
-    cfg_home.mkdir()
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     # Valid at 0.0.29; a later invariant refuses it (summarise > keep_recent).
-    (cfg_home / "config.toml").write_text(
+    (cfg_home / "agent6" / "config.toml").write_text(
         "[agent6]\nconfig_version = 1\n\n[context]\ndrop_at_chars = 30000\n"
         "summarise_at_chars = 60000\n",
         encoding="utf-8",
@@ -902,4 +872,6 @@ def test_config_unset_repairs_a_config_that_no_longer_loads(
     )
 
     assert rc == 0
-    assert "summarise_at_chars" not in (cfg_home / "config.toml").read_text(encoding="utf-8")
+    assert "summarise_at_chars" not in (cfg_home / "agent6" / "config.toml").read_text(
+        encoding="utf-8"
+    )

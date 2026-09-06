@@ -123,12 +123,12 @@ def test_parallel_refuses_unknown_model_before_spawn(
 ) -> None:
     # A cache exists to validate against -> a typo'd model is the composer's normal
     # error path, nothing spawned.
-    cache = tmp_path / "cache" / "models"
+    cache = tmp_path / "cache" / "agent6" / "models"
     cache.mkdir(parents=True)
     (cache / "o.json").write_text(
         json.dumps({"models": ["moonshotai/kimi-k2.6"]}), encoding="utf-8"
     )
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
 
     # The miss re-checks the live listing before refusing; stub it with the
     # same ids so the refusal rests on "fresh" evidence (no real network).
@@ -158,7 +158,7 @@ def test_parallel_unknown_model_no_cache_proceeds(
 ) -> None:
     # No cache to validate against -> never block; the detached lane's own
     # preflight warns. The spawn happens.
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "empty-cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "empty-cache"))
 
     from agent6.models import validate as models_validate
 

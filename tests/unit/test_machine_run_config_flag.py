@@ -32,7 +32,7 @@ def test_machine_run_reads_the_explicit_config_layer(
     from agent6.app.machine.run import run_machine
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     explicit = tmp_path / "explicit.toml"
     explicit.write_text("[machine]\nsnapshot_keep = 41\n", encoding="utf-8")
     mfile = tmp_path / "tiny.asm.toml"

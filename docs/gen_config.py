@@ -49,7 +49,6 @@ _PRESETS_MARKER = "<!-- presets-table -->"
 # the page can say what it becomes. The one hand-declared thing here, for the
 # same reason gen_contracts.py declares its registry: a scan cannot know it.
 _RUNTIME_DEFAULTS = {
-    "agent6.state_dir": '`"$XDG_STATE_HOME/agent6"`',
     "context.drop_at_chars": "_adaptive_",
     "context.summarise_at_chars": "_adaptive_",
     "sandbox.memory_limit_mb": "`0` (off)",

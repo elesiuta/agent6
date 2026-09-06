@@ -41,14 +41,14 @@ sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 >/dev/null 2>&1 ||
 TMP="$(mktemp -d)"
 DEMO_REPO="/tmp/acme-shop"
 trap 'kill "${PROXY_PID:-0}" 2>/dev/null || true; rm -rf "$TMP" "$DEMO_REPO"' EXIT
-export AGENT6_CONFIG_HOME="$TMP/config"
-export AGENT6_STATE_HOME="$TMP/state"
+export XDG_CONFIG_HOME="$TMP/config"
+export XDG_STATE_HOME="$TMP/state"
 export AGENT6_DEMO_REPO="$DEMO_REPO"
-mkdir -p "$AGENT6_CONFIG_HOME"
+mkdir -p "$XDG_CONFIG_HOME/agent6"
 
 # Provider points at the proxy; the demo never reaches a real model in replay.
 # can reach the loopback proxy. the tool network stays private.
-cat > "$AGENT6_CONFIG_HOME/config.toml" <<EOF
+cat > "$XDG_CONFIG_HOME/agent6/config.toml" <<EOF
 [sandbox]
 network = "session"
 run_commands = "yes"
@@ -91,8 +91,8 @@ TASK="Complete the task described in TASK.md"
 if [ "$MODE" = record ]; then
   command -v agent6 >/dev/null || { echo "rename_demo.sh: missing agent6" >&2; exit 1; }
   [ -r "$HOME/.config/agent6/secrets.toml" ] || { echo "rename_demo.sh record: need ~/.config/agent6/secrets.toml" >&2; exit 1; }
-  cp "$HOME/.config/agent6/secrets.toml" "$AGENT6_CONFIG_HOME/secrets.toml"
-  chmod 600 "$AGENT6_CONFIG_HOME/secrets.toml"
+  cp "$HOME/.config/agent6/secrets.toml" "$XDG_CONFIG_HOME/agent6/secrets.toml"
+  chmod 600 "$XDG_CONFIG_HOME/agent6/secrets.toml"
   echo "rename demo: RECORD -> $CASSETTE"
   AGENT6_PROXY_MODE=record AGENT6_PROXY_UPSTREAM=https://openrouter.ai \
     AGENT6_PROXY_CASSETTE="$CASSETTE" AGENT6_PROXY_PORT="$PORT" \
@@ -110,8 +110,8 @@ for bin in vhs ttyd ffmpeg agent6 python3; do
   command -v "$bin" >/dev/null 2>&1 || { echo "rename_demo.sh: missing required tool: $bin" >&2; exit 1; }
 done
 [ -s "$CASSETTE" ] || { echo "rename_demo.sh: missing cassette $CASSETTE (run 'rename_demo.sh record' first)" >&2; exit 1; }
-printf '[providers.openrouter]\napi_key = "unused-in-replay"\n' > "$AGENT6_CONFIG_HOME/secrets.toml"
-chmod 600 "$AGENT6_CONFIG_HOME/secrets.toml"
+printf '[providers.openrouter]\napi_key = "unused-in-replay"\n' > "$XDG_CONFIG_HOME/agent6/secrets.toml"
+chmod 600 "$XDG_CONFIG_HOME/agent6/secrets.toml"
 
 echo "rename demo: REPLAY proxy on :$PORT <- $CASSETTE"
 AGENT6_PROXY_MODE=replay AGENT6_PROXY_CASSETTE="$CASSETTE" AGENT6_PROXY_PORT="$PORT" \

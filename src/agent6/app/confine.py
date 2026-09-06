@@ -210,7 +210,7 @@ def check_workspace_outside_private_dirs(root: Path) -> str | None:
 
     Workspace inside a private dir: the dir is denied to every in-process tool,
     so the run could not read or write its own files. Private dir inside the
-    workspace (a relocated `[agent6].state_dir`): its transcripts and keys become
+    workspace (a state base relocated into it): its transcripts and keys become
     readable by jailed commands whose cwd is the workspace, and the auto-commit
     stages them into the run's commits. Wrong everywhere, not an isolation-level
     question.

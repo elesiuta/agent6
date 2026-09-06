@@ -15,8 +15,8 @@ from agent6.budget import BudgetTracker, format_usd
 def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
     """Inject prices via a real models-cache file (there is no static table)."""
     cache = tmp_path_factory.mktemp("price-cache")
-    (cache / "models").mkdir()
-    (cache / "models" / "testprovider.json").write_text(
+    (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
+    (cache / "agent6" / "models" / "testprovider.json").write_text(
         json.dumps(
             {
                 "models": [],
@@ -28,7 +28,7 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(cache))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
 
 
 def test_estimate_usd_zero_when_no_calls() -> None:

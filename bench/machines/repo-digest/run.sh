@@ -25,7 +25,7 @@ gc "Cy"    "docs: document the rate-limit headers"
 gc "Ana"   "perf(db): add an index on events(created_at)"
 gc "Ben"   "test: cover the token-refresh edge cases"
 
-export AGENT6_STATE_HOME="$WORK/.agent6-state"
+export XDG_STATE_HOME="$WORK/.agent6-state"
 
 echo "== running repo-digest =="
 (cd "$WORK" && AGENT6_FORCE_STREAM=1 "$AGENT6" machine run repo-digest.asm.toml)

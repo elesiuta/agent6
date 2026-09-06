@@ -16,12 +16,12 @@ from agent6.budget import BudgetExceeded, BudgetTracker, PlanUsage, PlanWindow
 def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
     """Priced: claude-sonnet-4-5. Anything else is unpriced (no static table)."""
     cache = tmp_path_factory.mktemp("price-cache")
-    (cache / "models").mkdir()
-    (cache / "models" / "testprovider.json").write_text(
+    (cache / "agent6" / "models").mkdir(parents=True, exist_ok=True)
+    (cache / "agent6" / "models" / "testprovider.json").write_text(
         json.dumps({"models": [], "pricing": {"claude-sonnet-4-5": [3.0, 15.0]}}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(cache))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
 
 
 def _rec(bt: BudgetTracker, model: str, tokens_in: int, tokens_out: int, cost: float = 0.0) -> None:

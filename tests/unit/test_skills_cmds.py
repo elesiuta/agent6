@@ -33,9 +33,9 @@ Body of {name}.
 @pytest.fixture
 def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Hermetic data/config/state homes; returns the tmp root."""
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(tmp_path / "data"))
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "config"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path / "cwd" if (tmp_path / "cwd").exists() else tmp_path)
     return tmp_path
 
@@ -47,7 +47,7 @@ def _write_skill_file(path: Path, name: str) -> Path:
 
 
 def _installed(tmp_path: Path, name: str) -> Path:
-    return tmp_path / "data" / "skills" / name
+    return tmp_path / "data" / "agent6" / "skills" / name
 
 
 class TestInstall:
@@ -248,15 +248,15 @@ class TestStateCommands:
     def test_disable_writes_global_state(self, env: Path) -> None:
         self._install_tidy(env)
         assert _cmd_skills_disable("tidy", repo=False) == 0
-        cfg = (env / "config" / "config.toml").read_text()
+        cfg = (env / "config" / "agent6" / "config.toml").read_text()
         assert 'tidy = "disabled"' in cfg
 
     def test_enable_always_and_back(self, env: Path) -> None:
         self._install_tidy(env)
         assert _cmd_skills_enable("tidy", always=True, repo=False) == 0
-        assert 'tidy = "always"' in (env / "config" / "config.toml").read_text()
+        assert 'tidy = "always"' in (env / "config" / "agent6" / "config.toml").read_text()
         assert _cmd_skills_enable("tidy", always=False, repo=False) == 0
-        assert "tidy" not in (env / "config" / "config.toml").read_text()
+        assert "tidy" not in (env / "config" / "agent6" / "config.toml").read_text()
 
     def test_unknown_skill_refused(self, env: Path) -> None:
         with pytest.raises(OperatorError, match="unknown skill"):
@@ -269,7 +269,7 @@ class TestStateCommands:
         leaf; the surgery refuses with an operator error the boundary presents,
         not a 'please report this' traceback."""
         self._install_tidy(env)
-        cfg = env / "config" / "config.toml"
+        cfg = env / "config" / "agent6" / "config.toml"
         cfg.parent.mkdir(parents=True, exist_ok=True)
         before = '[skills]\nstate = { tidy = "always" }\n'
         cfg.write_text(before, encoding="utf-8")
@@ -291,7 +291,7 @@ class TestRemoveListComplete:
     def test_remove_refuses_a_traversal_name(self, env: Path) -> None:
         """The name becomes an rmtree target; a `../` name must be refused before
         any path op, not delete a sibling outside the managed skills dir."""
-        (env / "data" / "skills").mkdir(parents=True, exist_ok=True)
+        (env / "data" / "agent6" / "skills").mkdir(parents=True, exist_ok=True)
         victim = env / "data" / "victim"
         victim.mkdir()
         (victim / "keep.txt").write_text("important", encoding="utf-8")
@@ -394,7 +394,7 @@ def test_force_reinstall_survives_a_copy_fault(env: Path, monkeypatch: pytest.Mo
         "---\nname: keeper\ndescription: good\n---\nold body\n", encoding="utf-8"
     )
     assert _cmd_skills_install(str(src), force=False) == 0
-    installed = env / "data" / "skills" / "keeper" / "SKILL.md"
+    installed = env / "data" / "agent6" / "skills" / "keeper" / "SKILL.md"
     assert "old body" in installed.read_text(encoding="utf-8")
 
     def boom(*a: object, **k: object) -> None:
@@ -405,7 +405,7 @@ def test_force_reinstall_survives_a_copy_fault(env: Path, monkeypatch: pytest.Mo
         _cmd_skills_install(str(src), force=True)
     monkeypatch.setattr(skills_cmds.shutil, "copytree", _shutil.copytree)
     assert "old body" in installed.read_text(encoding="utf-8")  # the good install survived
-    assert not list((env / "data" / "skills").glob(".staging-*"))
+    assert not list((env / "data" / "agent6" / "skills").glob(".staging-*"))
 
 
 def test_origin_toml_round_trips_a_quoted_source(env: Path) -> None:
@@ -416,7 +416,7 @@ def test_origin_toml_round_trips_a_quoted_source(env: Path) -> None:
         _write_origin,  # pyright: ignore[reportPrivateUsage]
     )
 
-    skill = env / "data" / "skills" / "quoty"
+    skill = env / "data" / "agent6" / "skills" / "quoty"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: quoty\ndescription: d\n---\n", encoding="utf-8")
     url = 'file:///tmp/we"ird\\path/skill'
@@ -429,7 +429,7 @@ def test_repo_skill_state_honors_the_custom_state_base(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """--repo skill state must write the config the effective loader READS.
-    The raw path helper ignored the global [agent6].state_dir override, so a
+    The raw path helper ignored an XDG_STATE_HOME relocation, so a
     custom-state setup wrote the default tree, printed success, and the skill
     stayed enabled."""
     from agent6.ui.cli.skills_cmds import (
@@ -437,11 +437,9 @@ def test_repo_skill_state_honors_the_custom_state_base(
     )
 
     custom = env / "custom-state"
-    gdir = env / "config"  # AGENT6_CONFIG_HOME names the agent6 config dir itself
-    gdir.mkdir(parents=True, exist_ok=True)
-    (gdir / "config.toml").write_text(f'[agent6]\nstate_dir = "{custom}"\n', encoding="utf-8")
+    monkeypatch.setenv("XDG_STATE_HOME", str(custom))
     target = _state_target(repo=True)
-    assert target.is_relative_to(custom), f"wrote {target}, outside the custom base"
+    assert target.is_relative_to(custom / "agent6"), f"wrote {target}, outside the custom base"
 
 
 def test_update_follows_an_upstream_rename(env: Path, capsys: pytest.CaptureFixture[str]) -> None:

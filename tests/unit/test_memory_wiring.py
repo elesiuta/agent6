@@ -76,7 +76,7 @@ def _dispatcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ToolDi
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "code.py").write_text("x = 1\n")
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "statehome"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state = tmp_path / "statehome" / "repo-id"
     add(state, "seeded", "a seeded fact")
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
@@ -135,7 +135,7 @@ def test_the_memory_dir_exists_the_moment_the_grant_does(
     means NO prior CLI write: the store must not exist beforehand."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "statehome"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state = tmp_path / "statehome" / "repo-id"
     state.mkdir(parents=True)
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
@@ -161,7 +161,7 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
         Workflow,
     )
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "statehome"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state_dir = tmp_path / "statehome" / "repo-id"
     state_dir.mkdir(parents=True)
 

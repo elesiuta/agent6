@@ -18,8 +18,8 @@ from agent6.models import registry as models_registry
 
 @pytest.fixture
 def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
-    return tmp_path / "cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    return tmp_path / "cache" / "agent6"
 
 
 def _ok_response(ids: list[str]) -> object:
@@ -243,7 +243,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     from agent6.config import ChatGPTProviderEntry
     from agent6.secrets import OAuthTokens, save_oauth_tokens
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     save_oauth_tokens("chatgpt", OAuthTokens("AT", "RT", time.time() + 3600, "acct-1"))
     seen: dict[str, object] = {}
 
@@ -275,7 +275,7 @@ def test_chatgpt_listing_without_sign_in_fails_soft(
 ) -> None:
     from agent6.config import ChatGPTProviderEntry
 
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "empty"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
 
     def _never(url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
         pytest.fail("no sign-in: nothing to fetch with")

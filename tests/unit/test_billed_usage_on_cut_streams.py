@@ -51,10 +51,10 @@ def test_anthropic_records_what_a_cut_stream_already_cost(
 ) -> None:
     # The USD assertion needs a table price; the suite isolates the model-price
     # cache, so seed one (the suite never reads the developer's real cache).
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
-    (tmp_path / "models").mkdir()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
     pricing = {"claude-sonnet-4-5": [3.0, 15.0]}
-    (tmp_path / "models" / "anthropic.json").write_text(
+    (tmp_path / "agent6" / "models" / "anthropic.json").write_text(
         json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
     )
     lines = _sse(
@@ -164,10 +164,10 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
 
 
 def _pricing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
-    (tmp_path / "models").mkdir(exist_ok=True)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    (tmp_path / "agent6" / "models").mkdir(parents=True, exist_ok=True)
     pricing = {"claude-sonnet-4-5": [3.0, 15.0], "gpt-4o": [3.0, 15.0]}
-    (tmp_path / "models" / "x.json").write_text(
+    (tmp_path / "agent6" / "models" / "x.json").write_text(
         json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
     )
 

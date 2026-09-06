@@ -101,7 +101,7 @@ def _setup_run(
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # Run state is isolated by the autouse `_isolate_state` fixture (conftest.py)
-    # to a tmp dir OUTSIDE this one; nesting AGENT6_STATE_HOME under tmp_path here
+    # to a tmp dir OUTSIDE this one; nesting XDG_STATE_HOME under tmp_path here
     # would put untracked run state inside the repo's own working tree, where a
     # second run's `git add -A` sweeps it onto that run's branch and a later
     # checkout back to main deletes it as "not in this branch's tree".

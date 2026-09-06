@@ -105,8 +105,8 @@ def test_machine_transitions_and_spend_arrive_rendered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     f = tmp_path / "router.asm.toml"
     f.write_text(ROUTER, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
@@ -121,4 +121,4 @@ def test_machine_transitions_and_spend_arrive_rendered(
     assert snap["spend"]["text"] == "$0.0000"
     marks = {st["name"]: st["mark"] for st in snap["states"]}
     assert marks["done"] == "▸" and marks["route"] == "·"
-    assert os.environ["AGENT6_STATE_HOME"]  # the run wrote under the isolated state home
+    assert os.environ["XDG_STATE_HOME"]  # the run wrote under the isolated state home

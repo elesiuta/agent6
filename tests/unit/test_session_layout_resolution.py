@@ -17,7 +17,7 @@ from agent6.ui.cli._common import resolve_session_layout
 
 @pytest.fixture(autouse=True)
 def isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "st"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
 
 
 def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: Path) -> None:

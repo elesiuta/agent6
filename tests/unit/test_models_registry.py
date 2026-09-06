@@ -16,7 +16,7 @@ from agent6.models import registry as models_registry
 
 @pytest.fixture
 def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     return tmp_path / "cache"
 
 

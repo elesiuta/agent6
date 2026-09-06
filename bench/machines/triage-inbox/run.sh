@@ -33,7 +33,7 @@ git -C "$WORK" init -q
 git -C "$WORK" -c user.email=b@b -c user.name=b add -A
 git -C "$WORK" -c user.email=b@b -c user.name=b commit -q -m "seed inbox"
 
-export AGENT6_STATE_HOME="$WORK/.agent6-state"
+export XDG_STATE_HOME="$WORK/.agent6-state"
 
 echo "== running triage-inbox (drains $(ls "$WORK/inbox" | wc -l) items) =="
 time (cd "$WORK" && "$AGENT6" machine run triage-inbox.asm.toml)

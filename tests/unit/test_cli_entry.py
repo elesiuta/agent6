@@ -89,8 +89,8 @@ def test_an_unreadable_config_file_refuses_end_to_end(
     """Root-owned after a sudo run, or plain chmod 000: the named file and the
     OS reason reach the operator, with no crash-report language anywhere."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "s"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "s"))
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     bad = tmp_path / "c.toml"
     bad.write_text("x = 1\n", encoding="utf-8")
@@ -113,8 +113,8 @@ def test_a_bad_budget_flag_refuses_end_to_end(
     ValidationError traceback and an invitation to file a bug."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)  # past the git wall
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "s"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "s"))
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     rc = cli_main(["run", "task", "--max-usd", "inf"])
     assert rc == 2

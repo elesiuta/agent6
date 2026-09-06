@@ -35,7 +35,7 @@ from agent6.secrets import OAuthTokens, load_oauth_tokens, save_oauth_tokens
 
 @pytest.fixture
 def gcfg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     return tmp_path / "g"
 
 

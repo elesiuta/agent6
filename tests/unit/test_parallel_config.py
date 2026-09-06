@@ -20,7 +20,7 @@ def _write_repo_config(repo: Path, toml: str) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     r = tmp_path / "repo"
     r.mkdir()
     return r

@@ -32,14 +32,14 @@ def _init_repo(path: Path) -> None:
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     gdir = tmp_path / "cfg"
-    gdir.mkdir()
-    (gdir / "config.toml").write_text(
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    (gdir / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n'
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
         encoding="utf-8",
     )
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     _init_repo(repo)
     monkeypatch.chdir(repo)

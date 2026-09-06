@@ -114,10 +114,11 @@ def test_config_get_does_not_offer_keys_it_rejects(
         _complete_config_keys,  # pyright: ignore[reportPrivateUsage]
     )
 
-    (tmp_path / "config.toml").write_text(
+    (tmp_path / "agent6").mkdir()
+    (tmp_path / "agent6" / "config.toml").write_text(
         '[presets.mine.sandbox]\nrun_commands = "yes"\n', encoding="utf-8"
     )
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)
 
     for_set = _complete_config_keys("presets.")
@@ -157,7 +158,7 @@ def test_get_completion_offers_no_key_get_rejects(
     The enum keys exist so `config set` can reach a leaf no layer has set yet.
     `config get` reads EFFECTIVE leaves and rejects those, so offering them made
     TAB suggest three keys it answers "is not a config leaf" to."""
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     monkeypatch.chdir(tmp_path)
     from agent6.ui.cli import main
     from agent6.ui.cli.completers import (

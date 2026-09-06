@@ -22,7 +22,7 @@ def _write_repo_config(repo: Path, toml: str) -> None:
 
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     r = tmp_path / "repo"
     r.mkdir()
     return r
@@ -141,9 +141,9 @@ _PROFILE_T = "[presets.t.review]\nconcurrency = 5\n"
 def global_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the global config at an isolated dir and return its path."""
     gdir = tmp_path / "global"
-    gdir.mkdir()
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
-    return gdir / "config.toml"
+    (gdir / "agent6").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
+    return gdir / "agent6" / "config.toml"
 
 
 def test_global_selected_preset_loses_to_repo_config(repo: Path, global_config: Path) -> None:

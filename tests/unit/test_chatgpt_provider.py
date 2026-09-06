@@ -27,7 +27,7 @@ from agent6.secrets import OAuthTokens, save_oauth_tokens
 @pytest.fixture
 def signed_in(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ChatGPTCredential:
     """A gcfg-backed credential holding an unexpired sign-in."""
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "g"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     save_oauth_tokens("chatgpt", OAuthTokens("AT0", "RT1", time.time() + 3600, "acct-1"))
     return ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
 

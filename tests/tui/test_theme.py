@@ -18,7 +18,7 @@ from agent6.ui.tui.widgets import ChoiceField
 
 @pytest.fixture
 def cfg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     return tmp_path
 
 

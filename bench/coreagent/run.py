@@ -383,7 +383,7 @@ def one_run(
     env["XDG_STATE_HOME"] = str(state_home)
     # Isolate the data dir too: skills installed on the host must never leak
     # into a bench run's <skills> index; skill arms opt in via extra_dirs.
-    env["AGENT6_DATA_HOME"] = str(state_home / "data")
+    env["XDG_DATA_HOME"] = str(state_home / "data")
     env["AGENT6_FORCE_STREAM"] = "1"
     env["HOME"] = os.environ["HOME"]  # keep ~/.config/agent6 providers+secrets
 

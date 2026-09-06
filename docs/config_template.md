@@ -10,7 +10,7 @@ The layers, lowest precedence first:
 | Layer | Path | Set with |
 |---|---|---|
 | built-in defaults | (none) | (secure defaults, always present) |
-| global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` (`AGENT6_CONFIG_HOME` overrides) | `agent6 connect`, `agent6 model` |
+| global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` | `agent6 connect`, `agent6 model` |
 | per-repo *(override)* | `<state-dir>/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
 | explicit | `--config FILE` | `agent6 run --config FILE` |
 
@@ -358,10 +358,7 @@ None of them is reachable by the model.
 
 | Variable | Effect |
 |---|---|
-| `AGENT6_CONFIG_HOME` | Override the global config directory. |
-| `AGENT6_CACHE_HOME` | Override the cache directory. |
-| `AGENT6_DATA_HOME` | Override the data directory (installed skills). |
-| `AGENT6_STATE_HOME` | Override the state base directory; `[agent6].state_dir` in the global config wins over it. |
+| `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME` | The XDG base directories; agent6 lives in an `agent6/` dir under each (config and secrets; per-repo state; the cache; installed skills). |
 | `AGENT6_DETACHED_AWAY` | `wait`, `deny` or `approve`: what a run with no operator at a terminal does at an approval or question. The hub and machine spawns set `wait`. |
 | `AGENT6_AUTO_APPROVE` | `1` grants every command approval to a machine's agent states, as `--auto-approve` does (a configured `no` stays no). |
 | `AGENT6_NO_COMMANDS` | `1` withholds every command tool from a machine's agent states, as `--no-commands` does. |

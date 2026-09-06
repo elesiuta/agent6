@@ -209,7 +209,7 @@ default stands. A real-repo task set is the prerequisite.
   Runs without verified treatment delivery are structurally excluded.
 - mistral serving was flaky (two 700-850s provider stalls inflating cost
   variance); treat mistral cost means accordingly.
-- AGENT6_DATA_HOME is now isolated per run (host-installed skills can never
+- the data dir (`XDG_DATA_HOME`) is isolated per run (host-installed skills can never
   leak into an arm); {ROOT}-interpolated conditions + USER_SUFFIX support
   the prompt-file and user-channel arms.
 

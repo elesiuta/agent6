@@ -1821,9 +1821,8 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
     bin_dir = home / ".local" / "bin"
     bin_dir.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
-    # The authoritative overrides (conftest sets these too, so XDG_* is ignored).
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(home / ".config" / "agent6"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(home / ".local" / "state" / "agent6"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local" / "state"))
 
     private = {
         "cfg": home / ".config" / "agent6",
@@ -1859,11 +1858,11 @@ def test_a_tool_mount_never_contains_a_private_dir(
     bin_dir.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
     holder = tmp_path / "xdg"  # not home and not an ancestor of it
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(holder / "agent6-config"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(holder / "agent6-state"))
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(holder / "agent6-data"))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(holder / "agent6-cache"))
-    (holder / "agent6-config").mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(holder / "agent6-config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(holder / "agent6-state"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(holder / "agent6-data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(holder / "agent6-cache"))
+    (holder / "agent6-config" / "agent6").mkdir(parents=True, exist_ok=True)
 
     target = holder / "x.sh"
     target.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -1887,10 +1886,10 @@ def test_home_and_its_ancestors_are_never_tool_mounts(
     bin_dir.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
     elsewhere = tmp_path / "elsewhere"
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(elsewhere / "config"))
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(elsewhere / "state"))
-    monkeypatch.setenv("AGENT6_DATA_HOME", str(elsewhere / "data"))
-    monkeypatch.setenv("AGENT6_CACHE_HOME", str(elsewhere / "cache"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(elsewhere / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(elsewhere / "state"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(elsewhere / "data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(elsewhere / "cache"))
 
     for name, target_dir in {"home-tool": home, "ancestor-tool": tmp_path}.items():
         target = target_dir / f"{name}.sh"

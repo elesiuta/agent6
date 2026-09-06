@@ -7,8 +7,7 @@ Single source of truth for:
 - the global (user-level) config + secrets directory under XDG
   (`$XDG_CONFIG_HOME/agent6` or `~/.config/agent6`),
 - the per-repo config path (`<state_dir>/config.toml`, out of the repo),
-- the run-state directory (`$XDG_STATE_HOME/agent6/<repo-id>` by default,
-  overridable from the global config), and
+- the run-state directory (`$XDG_STATE_HOME/agent6/<repo-id>`), and
 - the *real* operator when agent6 is invoked through `sudo`, so we read
   the user's config/secrets (not root's) and never leave root-owned files
   scattered in their repository.
@@ -33,14 +32,11 @@ import contextlib
 import hashlib
 import os
 import pwd
-import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-# Environment overrides. All optional; documented in docs/config.md.
-_ALLOW_ROOT_ENV = "AGENT6_ALLOW_ROOT"
-_GLOBAL_DIR_ENV = "AGENT6_CONFIG_HOME"  # points at the agent6 global dir itself
+_ALLOW_ROOT_ENV = "AGENT6_ALLOW_ROOT"  # documented in docs/config.md
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,13 +96,9 @@ def effective_user() -> RealUser:
     return RealUser(uid=uid, gid=gid, name=name, home=home, via_sudo=False)
 
 
-def _user_dir(user: RealUser | None, override_env: str, xdg_env: str, *home_parts: str) -> Path:
-    """One precedence dance for every agent6 user dir: `<override_env>` >
-    `$<xdg_env>/agent6` (only when not running through sudo, where root's
-    XDG would be wrong) > `<real-user-home>/<home_parts>/agent6`."""
-    override = os.environ.get(override_env)
-    if override:
-        return Path(override).expanduser()
+def _user_dir(user: RealUser | None, xdg_env: str, *home_parts: str) -> Path:
+    """One rule for every agent6 user dir: `$<xdg_env>/agent6` (not through
+    sudo, where root's XDG would be wrong) > `<real-user-home>/<home_parts>/agent6`."""
     user = user or effective_user()
     if not user.via_sudo:
         xdg = os.environ.get(xdg_env)
@@ -116,9 +108,9 @@ def _user_dir(user: RealUser | None, override_env: str, xdg_env: str, *home_part
 
 
 def global_config_dir(user: RealUser | None = None) -> Path:
-    """The agent6 global config directory: `AGENT6_CONFIG_HOME` >
-    `$XDG_CONFIG_HOME/agent6` > `~/.config/agent6`."""
-    return _user_dir(user, _GLOBAL_DIR_ENV, "XDG_CONFIG_HOME", ".config")
+    """The agent6 global config directory: `$XDG_CONFIG_HOME/agent6` >
+    `~/.config/agent6`."""
+    return _user_dir(user, "XDG_CONFIG_HOME", ".config")
 
 
 def global_config_path(user: RealUser | None = None) -> Path:
@@ -139,15 +131,11 @@ def ui_settings_path(user: RealUser | None = None) -> Path:
     return global_config_dir(user) / "ui.toml"
 
 
-_CACHE_DIR_ENV = "AGENT6_CACHE_HOME"  # points at the agent6 cache dir itself
-
-
 def cache_dir(user: RealUser | None = None) -> Path:
-    """The agent6 user cache directory: `AGENT6_CACHE_HOME` >
-    `$XDG_CACHE_HOME/agent6` > `~/.cache/agent6`. Holds throwaway,
-    regenerable data such as the provider model-list snapshots used for
-    shell completion; safe to delete."""
-    return _user_dir(user, _CACHE_DIR_ENV, "XDG_CACHE_HOME", ".cache")
+    """The agent6 user cache directory: `$XDG_CACHE_HOME/agent6` >
+    `~/.cache/agent6`. Holds throwaway, regenerable data such as the provider
+    model-list snapshots used for shell completion; safe to delete."""
+    return _user_dir(user, "XDG_CACHE_HOME", ".cache")
 
 
 def jail_cache_home(user: RealUser | None = None) -> Path:
@@ -159,56 +147,22 @@ def jail_cache_home(user: RealUser | None = None) -> Path:
     return cache_dir(user) / "home"
 
 
-_DATA_DIR_ENV = "AGENT6_DATA_HOME"  # points at the agent6 data dir itself
-
-
 def data_dir(user: RealUser | None = None) -> Path:
-    """The agent6 user data directory: `AGENT6_DATA_HOME` >
-    `$XDG_DATA_HOME/agent6` > `~/.local/share/agent6`. Holds installed
-    skills (`<data>/skills/<name>/`); unlike the cache it is authoritative
-    and not regenerable."""
-    return _user_dir(user, _DATA_DIR_ENV, "XDG_DATA_HOME", ".local", "share")
+    """The agent6 user data directory: `$XDG_DATA_HOME/agent6` >
+    `~/.local/share/agent6`. Holds installed skills (`<data>/skills/<name>/`);
+    unlike the cache it is authoritative and not regenerable."""
+    return _user_dir(user, "XDG_DATA_HOME", ".local", "share")
 
 
 # Per-repo agent6 state lives OUT of the workspace, under an XDG state base,
 # namespaced by a per-repo id. Nothing the agent runs (a jailed command on its
 # own cwd) can reach it, and a checkout never carries an `.agent6/` dir.
-_STATE_DIR_ENV = "AGENT6_STATE_HOME"  # points at the agent6 state BASE dir itself
-
-
-def read_global_state_dir(*, strict: bool = False) -> str | None:
-    """The raw `[agent6].state_dir` string from the GLOBAL config file, or
-    None. THE one parser of that key: `state_base` reads it best-effort so
-    every private-path consumer (jail mask, workspace policy, boundary
-    preflight, grant validators) masks the SAME base the writer uses, and
-    `config.layer._global_state_dir` reads it *strict* (a present-but-
-    unreadable file raises ValueError for the config load to refuse on;
-    absent stays None either way)."""
-    path = global_config_path()
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return None
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        if strict:
-            raise ValueError(f"Config file cannot be read ({path}): {exc}") from exc
-        return None
-    section = data.get("agent6")
-    sd = section.get("state_dir") if isinstance(section, dict) else None
-    return sd if isinstance(sd, str) else None
-
-
 def state_base(user: RealUser | None = None) -> Path:
     """The agent6 state BASE directory (per-repo config + run state):
-    `[agent6].state_dir` (global config) > `AGENT6_STATE_HOME` >
     `$XDG_STATE_HOME/agent6` > `~/.local/state/agent6`. Each repo gets
-    `<base>/<repo-id>/`.
-
-    The override wins so the base masked from every jail is the one runs
-    actually write to; `state_dir` applies the same precedence for the writer."""
-    if (override := read_global_state_dir()) is not None:
-        return Path(override).expanduser()
-    return _user_dir(user, _STATE_DIR_ENV, "XDG_STATE_HOME", ".local", "state")
+    `<base>/<repo-id>/`; the jail masks this base, and it is the one every
+    run writes to."""
+    return _user_dir(user, "XDG_STATE_HOME", ".local", "state")
 
 
 def private_dirs() -> tuple[Path, ...]:
@@ -345,25 +299,20 @@ def project_root(start: Path) -> Path:
     return start
 
 
-def state_dir(repo_root: Path, base_override: str | None = None) -> Path:
+def state_dir(repo_root: Path) -> Path:
     """The per-repo agent6 state directory (`<base>/<repo-id>`).
 
     Keyed on the PROJECT (`project_root`), not on where the operator is
     standing: keyed on the cwd, every cross-session feature (`sessions`,
     `resume`, `read_session`, memory) would silently find an empty project
     from any subdirectory.
-
-    `base_override` is the global `[agent6].state_dir` (an absolute base
-    path); when set it replaces the XDG base. `repo_id` is always appended,
-    so one global base namespaces every repo without collision.
     """
-    base = Path(base_override).expanduser() if base_override else state_base()
-    return base / repo_id(project_root(repo_root))
+    return state_base() / repo_id(project_root(repo_root))
 
 
-def repo_config_path(repo_root: Path, base_override: str | None = None) -> Path:
+def repo_config_path(repo_root: Path) -> Path:
     """The per-repo config file (`<state_dir>/config.toml`), out of the repo."""
-    return state_dir(repo_root, base_override) / "config.toml"
+    return state_dir(repo_root) / "config.toml"
 
 
 def is_root() -> bool:

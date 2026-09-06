@@ -416,7 +416,7 @@ def test_machine_run_refuses_escaping_bundle(
     outside.write_text("secret", encoding="utf-8")
     (tmp_path / "scripts" / "fetch.sh").symlink_to(outside)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     assert main(["machine", "run", str(f)]) == 1
 
 
@@ -439,7 +439,7 @@ def test_machine_run_validates_config_overlay_for_pure_machine(
     )
     f = _write(tmp_path, pure)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
     assert main(["machine", "run", str(f)]) == 2
 
 

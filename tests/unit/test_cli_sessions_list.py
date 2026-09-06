@@ -36,7 +36,7 @@ def _run(runs: Path, session_id: str, *, winner: bool | None = None) -> None:
 def test_runs_list_marks_the_fan_out_winner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -56,7 +56,7 @@ def test_runs_list_json_carries_the_row_facts(
 ) -> None:
     """`sessions list --json` is the table's rows as data: one object per
     session with the listing facts, the winner as a boolean, no styling."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -96,7 +96,7 @@ def test_sessions_dir_names_a_sessions_own_directory(
     """`sessions dir <id>` prints that session's directory (an unambiguous
     prefix resolves like everywhere else); an unknown id is an error, not the
     repo root."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -113,7 +113,7 @@ def test_runs_list_marks_a_partial_cost(
 ) -> None:
     """A cost the scanner knows is a lower bound (unpriced model in some leg)
     renders with the '~' marker in the listing, matching `sessions show`."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -150,7 +150,7 @@ def test_runs_list_columns_stay_aligned_with_a_machine_draft(
     """A `machine create` draft lists with mode `machine`, wider than the
     fixed four-column mode cell; every row's cost column must still start
     where the header's does."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -199,7 +199,7 @@ def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
     branch tip) or a zero-commit branch (tip == base) drops the mark."""
     import subprocess
 
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
@@ -278,7 +278,7 @@ def test_the_json_row_carries_the_whole_task(
 ) -> None:
     """The table clips for width; `--json` is the surface a script reads, and a
     one-line snippet there is indistinguishable from a one-line task."""
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)

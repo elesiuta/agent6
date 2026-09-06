@@ -128,7 +128,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 - Masked last, after every bind (`strict`): the config dir, the state base, `[sandbox].hide_paths`
     - a grant at or inside a private dir is refused at config load
     - `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
-    - `AGENT6_CONFIG_HOME` and `AGENT6_STATE_HOME` relocate those two dirs, `AGENT6_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
+    - `XDG_CONFIG_HOME` and `XDG_STATE_HOME` relocate those two dirs, `XDG_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
 - `/dev` (`strict`): `null`, `zero`, `urandom`, `random`, `full`, a private `shm`; no `/dev/tty`
     - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute); each must be a char/block device on the host or the launch refuses, and on `hardened` the same grant is a Landlock read+write rule on the node
     - creating one is denied at both levels: Landlock handles `MakeChar` / `MakeBlock` and grants them on no path, and seccomp `EPERM`s the `mknod` pair by device type (below)
@@ -352,7 +352,7 @@ Under `none` isolation nothing is enforced or refused.
 - An in-process `GraphCurator` owns the task graph
     - every mutation validates against a pydantic schema before writing, under a per-mutation flock on the session dir
     - a write-path fault after the in-memory update reloads from disk before surfacing: a later read never observes a node that was never persisted
-- Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/` (override with `[agent6].state_dir`), outside the working directory jailed commands run in.
+- Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/`, outside the working directory jailed commands run in.
 - The config write lock serializes read-modify-write cycles and enforces nothing
     - publishes are atomic: a torn config is impossible with or without it
     - it fails open (a planted symlink refuses `O_NOFOLLOW`; a stale root-owned lock is ignored); a write proceeding without it is kept, reported "kept as written" (docs/config.md)
@@ -450,7 +450,7 @@ It catches prompt regressions; the structural defenses above confine a model tha
     - agent6 ships one scoped to the launcher (`agent6 system apparmor install`): with it `strict`, without it `hardened`
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
 - Devcontainers get `hardened`: the container bounds filesystem damage; jailed commands share the container's network ([Network](#5-network))
-    - the XDG state base is ephemeral (lost on rebuild): mount a volume at the state dir or set `[agent6].state_dir`
+    - the XDG state base is ephemeral (lost on rebuild): mount a volume at the state dir or point `XDG_STATE_HOME` at one
 - agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace
     - a jailed command can rewrite it; the next tool call runs the rewrite as you, outside the jail
     - install agent6 outside the tree (pipx, `uv tool`); agent6 warns at run entry on this shape

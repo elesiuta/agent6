@@ -105,7 +105,7 @@ def asks_dir(session_dir: Path) -> Path:
     """The asks bucket beside *session_dir*'s own, for `/btw`'s roster.
 
     Derived from the running session's dir rather than re-resolving the state
-    base: the two must agree even when `[agent6].state_dir` is overridden.
+    base: the two must agree even when `XDG_STATE_HOME` relocates it.
     """
     return bucket_dir(layout_of(session_dir).state_dir, "asks")
 

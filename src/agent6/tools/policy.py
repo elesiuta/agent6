@@ -59,7 +59,7 @@ def jail_home_refusal(home: Path) -> str | None:
     every build, never restored), or a path inside an agent6-private dir,
     which the strict mask would re-bind writable. The config validator
     refuses the same for `extra_write_paths`; this grant comes from
-    `AGENT6_CACHE_HOME`, so it is checked here, on resolved paths so a
+    `XDG_CACHE_HOME`, so it is checked here, on resolved paths so a
     symlinked ancestor cannot dodge it.
     """
     real = home.resolve()
@@ -68,7 +68,7 @@ def jail_home_refusal(home: Path) -> str | None:
             where = "" if real == home else f" (really {str(real)!r})"
             return (
                 f"the jail's HOME {str(home)!r}{where} is inside agent6's private dir"
-                f" {str(private)!r} (secrets/state). Point AGENT6_CACHE_HOME elsewhere."
+                f" {str(private)!r} (secrets/state). Point XDG_CACHE_HOME elsewhere."
             )
     try:
         st = os.lstat(home)
@@ -78,7 +78,7 @@ def jail_home_refusal(home: Path) -> str | None:
         return f"the jail's HOME {str(home)!r} cannot be read: {exc}"
     uid = effective_user().uid
     mode = stat.S_IMODE(st.st_mode)
-    fix = "Remove it, or point AGENT6_CACHE_HOME at a directory of your own."
+    fix = "Remove it, or point XDG_CACHE_HOME at a directory of your own."
     if stat.S_ISLNK(st.st_mode):
         problem = (
             f"is a symlink (to {str(home.readlink())!r}): jailed commands would write through it"

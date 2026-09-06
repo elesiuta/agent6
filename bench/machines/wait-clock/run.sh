@@ -14,7 +14,7 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 cp "$HERE"/*.asm.toml "$WORK/"
 git -C "$WORK" init -q
 git -C "$WORK" -c user.email=b@b -c user.name=b commit -q --allow-empty -m init
-export AGENT6_STATE_HOME="$WORK/.agent6-state"
+export XDG_STATE_HOME="$WORK/.agent6-state"
 cd "$WORK"
 
 echo "== deadline: until a past instant fires immediately =="
