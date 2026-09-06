@@ -16,6 +16,7 @@ Validate that when a ``text_delta_callback`` is supplied, the provider:
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,9 @@ class FakeStreamResponse:
 
     def read(self) -> bytes:
         return self._error_body.encode("utf-8")
+
+    def iter_bytes(self) -> Iterator[bytes]:
+        yield self._error_body.encode("utf-8")
 
 
 def _sse(events: list[tuple[str, dict[str, Any]]]) -> list[str]:

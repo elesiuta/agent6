@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -60,6 +61,9 @@ class _FakeStreamResponse:
 
     def read(self) -> bytes:
         return self._error_body.encode("utf-8")
+
+    def iter_bytes(self) -> Iterator[bytes]:
+        yield self._error_body.encode("utf-8")
 
 
 def _evt(data: dict[str, Any]) -> list[str]:
@@ -249,6 +253,21 @@ def test_tool_call_and_reasoning_items_parse(signed_in: ChatGPTCredential) -> No
     assert thinking["chatgpt_reasoning"]["type"] == "reasoning"
 
 
+def test_lenient_empty_tool_arguments_are_not_replaced_by_a_raw_sentinel() -> None:
+    from agent6.providers.chatgpt import parse_output_items
+
+    item = {
+        "type": "function_call",
+        "call_id": "call_1",
+        "name": "list_tasks",
+        "arguments": "{} </invoke>",
+    }
+
+    response = parse_output_items([item], usage={}, stop_reason="end_turn")
+
+    assert response.tool_uses[0]["input"] == {}
+
+
 def test_incomplete_max_output_tokens_maps_to_max_tokens(
     signed_in: ChatGPTCredential,
 ) -> None:
@@ -302,6 +321,31 @@ def test_failed_event_raises_with_usage_limit_status(signed_in: ChatGPTCredentia
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert exc.value.status_code == 429 and "plus plan" in str(exc.value)
+
+
+def test_failed_event_usage_is_recorded(signed_in: ChatGPTCredential) -> None:
+    lines = _evt(
+        {
+            "type": "response.failed",
+            "response": {
+                "error": {"code": "server_error", "message": "failed after generation"},
+                "usage": _USAGE,
+            },
+        }
+    )
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = _provider(signed_in, budget=budget)
+    no_preflight, _ = _usage_get({}, status=503)
+
+    with (
+        mock.patch("httpx2.get", side_effect=no_preflight),
+        mock.patch("httpx2.stream", side_effect=_serve(lines)),
+        pytest.raises(ProviderError, match="failed after generation"),
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+
+    snapshot = budget.snapshot()
+    assert (snapshot.input_total, snapshot.cache_read_total, snapshot.output_total) == (35, 7, 9)
 
 
 def test_cut_stream_is_retryable_not_a_completed_turn(signed_in: ChatGPTCredential) -> None:
@@ -361,6 +405,23 @@ def test_budgeted_call_requires_usage(signed_in: ChatGPTCredential) -> None:
             side_effect=_serve(lines),
         ),
         pytest.raises(ProviderError, match="usage"),
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+
+
+def test_malformed_usage_count_is_a_provider_error(signed_in: ChatGPTCredential) -> None:
+    usage = {**_USAGE, "output_tokens": "nine"}
+    lines = _evt(
+        {
+            "type": "response.completed",
+            "response": {"id": "r", "status": "completed", "usage": usage},
+        }
+    )
+    provider = _provider(signed_in)
+
+    with (
+        mock.patch("httpx2.stream", side_effect=_serve(lines)),
+        pytest.raises(ProviderError, match=r"usage\.output_tokens"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
@@ -434,6 +495,33 @@ def test_plan_usage_headers_feed_the_percent_budget(signed_in: ChatGPTCredential
     assert "plan usage (gpt-5-codex): 37% of the 7-day window" in provider.budget.format_summary()
 
 
+def test_http_error_plan_headers_reach_the_budget(signed_in: ChatGPTCredential) -> None:
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = _provider(signed_in, budget=budget)
+    no_preflight, _ = _usage_get({}, status=503)
+
+    def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        del method, url, kwargs
+        response = _FakeStreamResponse(status_code=429, lines=[], error_body="usage limit")
+        response.headers = {
+            "x-codex-primary-used-percent": "100",
+            "x-codex-primary-window-minutes": "10080",
+            "x-codex-primary-reset-at": "2000000000",
+        }
+        return response
+
+    with (
+        mock.patch("httpx2.get", side_effect=no_preflight),
+        mock.patch("httpx2.stream", side_effect=stream),
+        pytest.raises(ProviderError) as error,
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+
+    assert error.value.status_code == 429
+    plan = budget.snapshot().plan_latest
+    assert plan is not None and plan.used_percent == 100.0
+
+
 def test_completed_stream_without_message_item_keeps_delta_text(
     signed_in: ChatGPTCredential,
 ) -> None:
@@ -460,6 +548,36 @@ def test_completed_stream_without_message_item_keeps_delta_text(
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "half answer"
     assert [b["type"] for b in resp.raw["content"]] == ["text", "tool_use"]
+
+
+def test_terminal_output_supplies_items_missing_from_done_events(
+    signed_in: ChatGPTCredential,
+) -> None:
+    message = {
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": "I'll inspect it."}],
+    }
+    call = {
+        "type": "function_call",
+        "call_id": "c1",
+        "name": "read_file",
+        "arguments": '{"path": "x.py"}',
+    }
+    lines = _evt({"type": "response.output_item.done", "item": message})
+    lines += _evt(
+        {
+            "type": "response.completed",
+            "response": {"status": "completed", "usage": _USAGE, "output": [message, call]},
+        }
+    )
+
+    provider = _provider(signed_in)
+    with mock.patch("httpx2.stream", side_effect=_serve(lines)):
+        response = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+
+    assert response.text == "I'll inspect it."
+    assert response.tool_uses == ({"id": "c1", "name": "read_file", "input": {"path": "x.py"}},)
 
 
 def test_tool_calling_completed_turn_reports_tool_use(signed_in: ChatGPTCredential) -> None:
@@ -612,6 +730,21 @@ def test_orphaned_reasoning_is_dropped_with_its_call() -> None:
     assert items == []
 
 
+def test_reasoning_without_a_following_output_item_is_not_replayed() -> None:
+    item = {"type": "reasoning", "id": "rs_orphan", "encrypted_content": "OPAQUE"}
+
+    items = responses_input(
+        [
+            {
+                "role": "assistant",
+                "content": [{"type": "thinking", "thinking": "", "chatgpt_reasoning": item}],
+            }
+        ]
+    )
+
+    assert items == []
+
+
 _USAGE_BODY: dict[str, Any] = {
     "plan_type": "pro",
     "rate_limit": {
@@ -692,6 +825,43 @@ def test_every_used_percent_header_family_is_a_window() -> None:
     # packs at $40): the balance header carries a credit count, not dollars.
     assert plan.credits_usd == 20.0 and not plan.window_exhausted
     assert _plan_usage_of({"x-codex-gpt-5-6-spark-used-percent": "97.5"}) is None
+
+
+def test_nonfinite_plan_metadata_is_ignored() -> None:
+    from agent6.providers.chatgpt import (
+        _plan_usage_of,  # pyright: ignore[reportPrivateUsage]
+        plan_usage_from_usage_body,
+    )
+
+    from_headers = _plan_usage_of(
+        {
+            "x-codex-primary-used-percent": "10",
+            "x-codex-primary-window-minutes": "inf",
+            "x-codex-primary-reset-at": "nan",
+        }
+    )
+    assert from_headers is not None
+    assert from_headers.window_minutes == 0
+    assert from_headers.resets_at > 0
+
+    body = {
+        "rate_limit": {
+            "primary_window": {
+                "used_percent": 10,
+                "limit_window_seconds": "inf",
+                "reset_at": "nan",
+            }
+        }
+    }
+    from_body = plan_usage_from_usage_body(body)
+    assert from_body is not None
+    assert from_body.window_minutes == 0
+    assert from_body.resets_at > 0
+    assert _plan_usage_of({"x-codex-primary-used-percent": "nan"}) is None
+    assert (
+        plan_usage_from_usage_body({"rate_limit": {"primary_window": {"used_percent": "inf"}}})
+        is None
+    )
 
 
 def _usage_get(body: dict[str, Any], status: int = 200):

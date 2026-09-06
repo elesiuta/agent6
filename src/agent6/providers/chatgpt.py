@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import re
 import time
 import uuid
@@ -140,7 +141,6 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
                 }
             )
     flush()
-    items.extend(pending_reasoning)
     return items
 
 
@@ -177,12 +177,20 @@ def _tool_use_of(item: dict[str, Any], *, n: int) -> dict[str, Any] | None:
         if not isinstance(parsed, dict):
             parsed = {"_value": parsed}
     except (json.JSONDecodeError, TypeError):
-        parsed = lenient_json_object(str(args_raw)) or {"_raw_arguments": str(args_raw)[:500]}
+        repaired = lenient_json_object(str(args_raw))
+        parsed = repaired if repaired is not None else {"_raw_arguments": str(args_raw)[:500]}
     return {
         "id": str(item.get("call_id") or item.get("id") or f"call_{n}"),
         "name": name,
         "input": parsed,
     }
+
+
+def _usage_count(value: Any, field_name: str) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ProviderError(f"ChatGPT response usage.{field_name} was not numeric") from exc
 
 
 def parse_output_items(
@@ -233,15 +241,19 @@ def parse_output_items(
         # wire (stop says tool_use + nothing came = a retryable contradiction).
         stop_reason = "tool_use"
     details = usage.get("input_tokens_details")
-    cached = int(details.get("cached_tokens", 0) or 0) if isinstance(details, Mapping) else 0
-    prompt_total = int(usage.get("input_tokens") or 0)
+    cached = (
+        _usage_count(details.get("cached_tokens"), "input_tokens_details.cached_tokens")
+        if isinstance(details, Mapping)
+        else 0
+    )
+    prompt_total = _usage_count(usage.get("input_tokens"), "input_tokens")
     cached = min(cached, prompt_total)
     return ProviderResponse(
         text=text,
         tool_uses=tuple(tool_uses),
         stop_reason=stop_reason,
         input_tokens=prompt_total - cached,
-        output_tokens=int(usage.get("output_tokens") or 0),
+        output_tokens=_usage_count(usage.get("output_tokens"), "output_tokens"),
         cache_read_tokens=cached,
         cache_creation_tokens=0,
         cost_usd=0.0,
@@ -263,9 +275,10 @@ _WINDOW_HEADER = re.compile(r"^x-codex-(?P<name>.+)-used-percent$")
 
 def _num(value: Any) -> float:
     try:
-        return float(value or 0)
+        number = float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+    return number if math.isfinite(number) else 0.0
 
 
 def _window_order(name: str) -> tuple[int, str]:
@@ -291,6 +304,8 @@ def _plan_usage_of(headers: Mapping[str, str]) -> PlanUsage | None:
         try:
             used = float(lowered[key])
         except (TypeError, ValueError):
+            continue
+        if not math.isfinite(used):
             continue
         resets_at = _num(lowered.get(f"x-codex-{name}-reset-at"))
         if not resets_at:
@@ -333,6 +348,8 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> PlanUsage | None:
         try:
             used = float(raw.get("used_percent", ""))
         except (TypeError, ValueError):
+            continue
+        if not math.isfinite(used):
             continue
         resets_at = _num(raw.get("reset_at"))
         if not resets_at:
@@ -561,6 +578,10 @@ class ChatGPTProvider:
         stop_reason = ""
         done = False
 
+        def observe_headers(response_headers: Mapping[str, str]) -> None:
+            nonlocal plan_usage
+            plan_usage = _plan_usage_of(response_headers)
+
         call = SseCall(
             api_label="ChatGPT",
             api_format="chatgpt",
@@ -571,11 +592,13 @@ class ChatGPTProvider:
             transcript_sink=self.transcript_sink,
             should_abort=should_abort,
             should_interrupt=should_interrupt,
+            response_headers=observe_headers,
         )
 
-        def consume(resp: httpx2.Response, clock: StreamClock) -> None:  # noqa: PLR0912
-            nonlocal usage, stop_reason, done, plan_usage
-            plan_usage = _plan_usage_of(resp.headers)
+        def consume(  # noqa: PLR0912, PLR0915
+            resp: httpx2.Response, clock: StreamClock
+        ) -> None:
+            nonlocal usage, stop_reason, done
             for raw_line in bounded_lines(resp):
                 line = raw_line.strip()
                 if not line or line.startswith(":") or not line.startswith("data:"):
@@ -611,6 +634,10 @@ class ChatGPTProvider:
                     clock.mark_output()
                     items.append(evt.get("item"))
                 elif kind in ("response.failed", "error"):
+                    failed = evt.get("response")
+                    failed_usage = failed.get("usage") if isinstance(failed, dict) else None
+                    if isinstance(failed_usage, dict):
+                        usage = failed_usage
                     call.record(status=0, response=data_str[:8192])
                     raise _stream_error(evt)
                 elif kind in _TERMINAL_EVENTS:
@@ -618,8 +645,11 @@ class ChatGPTProvider:
                     evt_usage = response.get("usage")
                     if isinstance(evt_usage, dict):
                         usage = evt_usage
-                    if not items and isinstance(response.get("output"), list):
-                        items.extend(response["output"])
+                    final_items = response.get("output")
+                    if isinstance(final_items, list) and final_items:
+                        # The terminal response is the complete, ordered output;
+                        # item.done events may be absent for only some items.
+                        items[:] = final_items
                     if kind == "response.incomplete":
                         reason = str((response.get("incomplete_details") or {}).get("reason") or "")
                         stop_reason = (

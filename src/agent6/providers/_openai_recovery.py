@@ -120,15 +120,17 @@ def _tool_code_call_to_dict(node: ast.Call, tool_names: frozenset[str]) -> dict[
 def _extract_tool_code_calls(
     text: str,
     tool_names: frozenset[str],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[tuple[int, int]]]:
     """Mine Gemini/Gemma ```tool_code Python-call blocks from leaked content.
 
     Parses each fenced block with `ast` (never executes it) and returns
-    `[{"name", "input"}, ...]` for every offered-tool call, in SOURCE ORDER. It
-    walks only the TOP-LEVEL expressions (a bare call, or the elements of a list /
-    tuple), unwrapping one `print(...)`-style wrapper -- not `ast.walk` (whose
-    breadth-first order would reorder a tool call nested at a different depth)."""
+    `([{"name", "input"}, ...], spans)` for every offered-tool call, in SOURCE
+    ORDER; spans cover only fences that yielded calls. It walks only the TOP-LEVEL
+    expressions (a bare call, or the elements of a list / tuple), unwrapping one
+    `print(...)`-style wrapper -- not `ast.walk` (whose breadth-first order would
+    reorder a tool call nested at a different depth)."""
     out: list[dict[str, Any]] = []
+    spans: list[tuple[int, int]] = []
     for block in _TOOL_CODE_FENCE_RE.finditer(text):
         code = block.group(1).strip()
         if not code:
@@ -137,6 +139,7 @@ def _extract_tool_code_calls(
             tree = ast.parse(code, mode="exec")
         except SyntaxError:
             continue
+        calls_before = len(out)
         for stmt in tree.body:
             if not isinstance(stmt, ast.Expr):
                 continue
@@ -147,10 +150,12 @@ def _extract_tool_code_calls(
                     call = _tool_code_call_to_dict(el, tool_names)
                     if call is not None:
                         out.append(call)
-    return out
+        if len(out) > calls_before:
+            spans.append(block.span())
+    return out, spans
 
 
-def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: PLR0911
+def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: PLR0911, PLR0912
     """Coerce a Qwen-XML `<parameter>` string to its schema-declared type.
 
     The Qwen-Coder template emits each parameter value as raw text framed by
@@ -186,7 +191,12 @@ def _coerce_param_value(value: str, declared_type: str | None) -> Any:  # noqa: 
         except ValueError:
             return v
     if declared_type == "boolean":
-        return v.strip().lower() in ("true", "1", "yes")
+        normalized = v.strip().lower()
+        if normalized in ("true", "1", "yes"):
+            return True
+        if normalized in ("false", "0", "no"):
+            return False
+        return v
     # Unknown / absent schema: only auto-parse clearly-structured JSON so a
     # plain string value is never silently turned into a number or dict.
     stripped = v.strip()
@@ -301,22 +311,20 @@ def coerce_text_tool_calls(  # noqa: PLR0911
     # 0) Qwen-Coder `<function=NAME><parameter=KEY>VALUE</parameter></function>`
     # XML. Checked first: it is self-delimiting and unambiguous, and the
     # inner body is NOT JSON so the JSON-shaped branches below cannot parse it.
-    if "<function=" in text:
-        xml_calls, xml_spans = _extract_function_xml_calls(text, tool_names, tool_schemas)
-        if xml_calls:
-            # Remove ONLY the calls that were recovered (same rule as the
-            # <tool_call> branch below): a block whose name matched no offered
-            # tool stays visible, so the model can see its failed call instead
-            # of assuming it happened.
-            return xml_calls, _remove_spans(text, xml_spans)
+    xml_calls, xml_spans = _extract_function_xml_calls(text, tool_names, tool_schemas)
+    if xml_calls:
+        # Remove ONLY the calls that were recovered (same rule as the
+        # <tool_call> branch below): a block whose name matched no offered
+        # tool stays visible, so the model can see its failed call instead
+        # of assuming it happened.
+        return xml_calls, _remove_spans(text, xml_spans)
     # 0.5) Gemini / Gemma ```tool_code Python-call block. Self-delimiting like the
     # XML form, and parsed with ast (not JSON), so check it before the JSON
     # branches below.
     if "```tool_code" in text:
-        code_calls = _extract_tool_code_calls(text, tool_names)
+        code_calls, code_spans = _extract_tool_code_calls(text, tool_names)
         if code_calls:
-            remaining = _TOOL_CODE_FENCE_RE.sub("", text).strip()
-            return code_calls, remaining
+            return code_calls, _remove_spans(text, code_spans)
     # 1) Hermes / Qwen `<tool_call>...</tool_call>` wrappers (≥1).
     tag_matches = list(_TOOL_CALL_TAG_RE.finditer(text))
     if tag_matches:
@@ -333,8 +341,7 @@ def coerce_text_tool_calls(  # noqa: PLR0911
             # (silently scrubbing it made the model assume the call happened).
             return recovered, _remove_spans(text, drop_spans)
     # 2) A single fenced JSON object that is itself a tool call.
-    fence = _JSON_FENCE_RE.search(text)
-    if fence is not None:
+    for fence in _JSON_FENCE_RE.finditer(text):
         obj = _extract_tool_call_obj(fence.group(1), tool_names)
         if obj is not None:
             # Remove only the matched fence; other ```json fences may be

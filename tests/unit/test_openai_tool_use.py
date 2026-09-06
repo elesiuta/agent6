@@ -674,6 +674,18 @@ def test_qwen_function_xml_tool_call_is_recovered(
     assert resp.text == "I'll start by reading the file."
 
 
+def test_qwen_function_xml_allows_space_around_equals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = "<function = read_file>\n<parameter = path>\ninterp.py\n</parameter>\n</function>"
+
+    resp = _call_with_text_content(monkeypatch, content)
+
+    assert resp.tool_uses[0]["name"] == "read_file"
+    assert resp.tool_uses[0]["input"] == {"path": "interp.py"}
+    assert resp.text == ""
+
+
 def test_qwen_function_xml_structured_param_is_typed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -688,6 +700,15 @@ def test_qwen_function_xml_structured_param_is_typed(
     assert resp.tool_uses[0]["input"]["edits"] == [
         {"kind": "replace", "old_string": "a", "new_string": "b"}
     ]
+
+
+def test_qwen_function_xml_does_not_turn_an_invalid_boolean_false() -> None:
+    text = "<function=toggle><parameter=enabled>maybe</parameter></function>"
+    schemas = {"toggle": {"properties": {"enabled": {"type": "boolean"}}}}
+
+    calls, _ = _coerce_text_tool_calls(text, frozenset({"toggle"}), schemas)
+
+    assert calls[0]["input"]["enabled"] == "maybe"
 
 
 def test_qwen_function_xml_unclosed_params_keep_all(
@@ -778,6 +799,16 @@ def test_gemma_tool_code_preserves_source_order_mixed_depth(
     resp = _call_with_text_content(monkeypatch, content, tools=[_READ_FILE_TOOL, _APPLY_EDIT_TOOL])
     assert [c["name"] for c in resp.tool_uses] == ["read_file", "apply_edit"]
     assert resp.tool_uses[0]["input"]["path"] == "FIRST"
+
+
+def test_gemma_tool_code_keeps_an_unrecovered_sibling_fence_visible() -> None:
+    text = "```tool_code\n[read_file(path='a.py')]\n```\n```tool_code\nnot valid Python (\n```"
+
+    calls, remaining = _coerce_text_tool_calls(text, frozenset({"read_file"}))
+
+    assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
+    assert "not valid Python" in remaining
+    assert "read_file" not in remaining
 
 
 # --- blank-name native tool_call (poisons strict backends with a 400) -------
@@ -963,6 +994,19 @@ def test_fence_recovery_preserves_other_json_fences() -> None:
     calls, remaining = _coerce_text_tool_calls(text, frozenset({"read_file"}))
     assert [c["name"] for c in calls] == ["read_file"]
     assert '"key": "value"' in remaining  # the second fence is content, not a call
+
+
+def test_fence_recovery_finds_a_call_after_a_content_fence() -> None:
+    text = (
+        'Reference config:\n```json\n{"key": "value"}\n```\n'
+        'Call:\n```json\n{"name": "read_file", "arguments": {"path": "a.py"}}\n```'
+    )
+
+    calls, remaining = _coerce_text_tool_calls(text, frozenset({"read_file"}))
+
+    assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
+    assert '"key": "value"' in remaining
+    assert '"name": "read_file"' not in remaining
 
 
 def test_tool_call_tag_recovery_keeps_malformed_tag_visible() -> None:

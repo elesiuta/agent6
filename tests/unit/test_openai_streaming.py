@@ -23,6 +23,7 @@ the provider:
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -64,6 +65,9 @@ class _FakeStreamResponse:
 
     def read(self) -> bytes:
         return self._error_body.encode("utf-8")
+
+    def iter_bytes(self) -> Iterator[bytes]:
+        yield self._error_body.encode("utf-8")
 
 
 def _chunk(data: dict[str, Any]) -> list[str]:

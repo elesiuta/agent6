@@ -20,6 +20,7 @@ from unittest import mock
 import httpx2
 import pytest
 
+from agent6.budget import BudgetTracker
 from agent6.providers import _stream as stream_mod
 from agent6.providers._stream import SseCall, StreamClock
 from agent6.providers.types import (
@@ -90,6 +91,15 @@ class _ParkedResponse:
         raise httpx2.ReadError("connection closed")
 
 
+class _CleanlyClosedResponse(_ParkedResponse):
+    """A stream whose iterator treats a concurrent close as clean EOF."""
+
+    def iter_lines(self) -> Iterator[str]:
+        yield from self._lead
+        if not self._closed.wait(timeout=10.0):
+            raise AssertionError("watchdog never closed the response")
+
+
 class _ErrorResponse:
     def __init__(self, *, status_code: int, body: str, headers: dict[str, str]) -> None:
         self.status_code = status_code
@@ -104,6 +114,23 @@ class _ErrorResponse:
 
     def read(self) -> bytes:
         return self._body.encode("utf-8")
+
+    def iter_bytes(self) -> Iterator[bytes]:
+        yield self._body.encode("utf-8")
+
+
+class _ChunkedErrorResponse(_ErrorResponse):
+    def __init__(self) -> None:
+        super().__init__(status_code=500, body="", headers={})
+        self.chunks_read = 0
+
+    def read(self) -> bytes:
+        raise AssertionError("the streaming error path buffered the whole body")
+
+    def iter_bytes(self) -> Iterator[bytes]:
+        for chunk in (b"a" * 4096, b"b" * 4096, b"c" * 4096):
+            self.chunks_read += 1
+            yield chunk
 
 
 def test_idle_kill_before_output_reports_prefill_and_records(
@@ -199,6 +226,40 @@ def test_interrupt_classifies_as_provider_interrupted(monkeypatch: pytest.Monkey
         _call(should_interrupt=lambda: True).run(_drain)
 
 
+@pytest.mark.parametrize(
+    ("poll_name", "error_type"),
+    [("should_abort", ProviderAborted), ("should_interrupt", ProviderInterrupted)],
+)
+def test_operator_stop_classifies_when_close_ends_iteration_cleanly(
+    monkeypatch: pytest.MonkeyPatch, poll_name: str, error_type: type[Exception]
+) -> None:
+    """httpx may surface a cross-thread response close as EOF rather than an
+    HTTPError; the operator's request still owns the teardown classification."""
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
+    call = (
+        _call(should_abort=lambda: True)
+        if poll_name == "should_abort"
+        else _call(should_interrupt=lambda: True)
+    )
+    with (
+        mock.patch("httpx2.stream", side_effect=_serve(_CleanlyClosedResponse())),
+        pytest.raises(error_type),
+    ):
+        call.run(_drain)
+
+
+def test_idle_kill_classifies_when_close_ends_iteration_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.01)
+    with (
+        mock.patch("httpx2.stream", side_effect=_serve(_CleanlyClosedResponse())),
+        pytest.raises(ProviderError, match="prefill"),
+    ):
+        _call().run(_drain)
+
+
 def test_4xx_threads_status_retry_after_and_label(tmp_path: Path) -> None:
     sink = TranscriptSink(tmp_path / "transcripts")
     resp = _ErrorResponse(status_code=429, body='{"error":"rate"}', headers={"retry-after": "7"})
@@ -214,6 +275,22 @@ def test_4xx_threads_status_retry_after_and_label(tmp_path: Path) -> None:
     assert ei.value.retry_after_s == 7.0
     files = list((tmp_path / "transcripts").glob("*.json"))
     assert len(files) == 1
+
+
+def test_http_error_body_read_stops_at_the_surfaced_prefix(tmp_path: Path) -> None:
+    sink = TranscriptSink(tmp_path / "transcripts")
+    resp = _ChunkedErrorResponse()
+
+    with (
+        mock.patch("httpx2.stream", side_effect=_serve(resp)),
+        pytest.raises(ProviderError, match="500"),
+    ):
+        _call(sink).run(_drain)
+
+    assert resp.chunks_read == 2
+    [transcript] = (tmp_path / "transcripts").glob("*.json")
+    doc = json.loads(transcript.read_text(encoding="utf-8"))
+    assert len(doc["response"]["body"]) == 8192
 
 
 def test_consume_provider_error_propagates_unchanged() -> None:
@@ -352,3 +429,19 @@ def test_a_raising_abort_poll_leaves_the_watchdog_alive(monkeypatch: pytest.Monk
         pytest.raises(ProviderError, match="prefill"),
     ):
         _call(should_abort=boom, should_interrupt=boom).run(_drain)
+
+
+def test_reported_cost_without_token_counts_is_recorded() -> None:
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+
+    stream_mod.record_billed_usage(
+        budget,
+        "openrouter/model",
+        input_tokens=0,
+        output_tokens=0,
+        cost_usd=0.25,
+    )
+
+    usage = budget.snapshot().per_model["openrouter/model"]
+    assert usage.calls == 1
+    assert usage.reported_cost_usd == 0.25

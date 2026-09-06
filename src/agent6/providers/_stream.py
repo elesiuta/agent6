@@ -46,7 +46,7 @@ import contextlib
 import json
 import threading
 import time
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,6 +75,7 @@ STREAM_THINKING_IDLE_TIMEOUT_S = 300.0
 # short: this bounds how long a Stop/steer/detach waits to end a long in-flight
 # turn. A quarter second reads as immediate without the impatient second Ctrl-C.
 STREAM_WATCHDOG_TICK_S = 0.25
+_ERROR_BODY_PREFIX_BYTES = 8192
 
 
 @contextlib.contextmanager
@@ -104,6 +105,16 @@ def bounded_lines(resp: httpx2.Response, *, max_line_bytes: int = 8 * 1024 * 102
                 f"stream frame exceeded {max_line_bytes} bytes; refusing to buffer it"
             )
         yield line
+
+
+def _error_body_prefix(resp: httpx2.Response) -> str:
+    body = bytearray()
+    for chunk in resp.iter_bytes():
+        remaining = _ERROR_BODY_PREFIX_BYTES - len(body)
+        body.extend(chunk[:remaining])
+        if len(body) == _ERROR_BODY_PREFIX_BYTES:
+            break
+    return body.decode("utf-8", errors="replace")
 
 
 class StreamClock:
@@ -185,8 +196,10 @@ def record_billed_usage(
     """
     if budget is None:
         return
-    if plan_usage is None and not (
-        input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens
+    if (
+        plan_usage is None
+        and cost_usd <= 0
+        and not (input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens)
     ):
         return
     budget.record(
@@ -214,6 +227,7 @@ class SseCall:
     transcript_sink: TranscriptRecorder | None
     should_abort: Callable[[], bool] | None
     should_interrupt: Callable[[], bool] | None
+    response_headers: Callable[[Mapping[str, str]], None] | None = None
 
     def record(self, *, status: int, response: dict[str, Any] | str) -> None:
         """Write one transcript entry for this request (no-op without a sink)."""
@@ -281,6 +295,25 @@ class SseCall:
         )
         watchdog.start()
 
+        def _raise_watchdog(cause: Exception | None = None) -> None:
+            if interrupted.is_set():
+                raise ProviderInterrupted("steer requested mid-stream") from cause
+            if aborted.is_set():
+                raise ProviderAborted("run stopped by operator") from cause
+            if idle_killed.is_set():
+                phase_s, where = clock.idle_budget()
+                self.record(
+                    status=0,
+                    response=(
+                        f"SSE idle watchdog: no data event for {phase_s:.0f}s {where} "
+                        f"(only heartbeats). Upstream model appears wedged."
+                    ),
+                )
+                raise ProviderError(
+                    f"{self.api_label} SSE stream idle for >{phase_s:.0f}s {where} "
+                    "(only heartbeats received); upstream model appears wedged."
+                ) from cause
+
         try:
             with http_stream(
                 "POST",
@@ -290,8 +323,10 @@ class SseCall:
                 timeout=self.timeout_s,
             ) as resp:
                 resp_holder["resp"] = resp
+                if self.response_headers is not None:
+                    self.response_headers(resp.headers)
                 if resp.status_code >= 400:
-                    error_body = resp.read().decode("utf-8", errors="replace")[:8192]
+                    error_body = _error_body_prefix(resp)
                     self.record(status=resp.status_code, response=error_body)
                     raise ProviderError(
                         f"{self.api_label} API error {resp.status_code}: "
@@ -306,30 +341,12 @@ class SseCall:
                         f"{self.api_label} stream frame did not match the wire shape:"
                         f" {exc!r} (malformed 2xx event; retryable)"
                     ) from exc
+                # A cross-thread close may end iteration as clean EOF rather
+                # than an HTTPError. The watchdog signal, not httpx's chosen
+                # teardown shape, determines what happened.
+                _raise_watchdog()
         except httpx2.HTTPError as exc:
-            if interrupted.is_set():
-                # The operator asked to steer; the watchdog closed the stream so
-                # the loop reaches its steer boundary without waiting out the turn.
-                raise ProviderInterrupted("steer requested mid-stream") from exc
-            if aborted.is_set():
-                # The operator stopped the run; the watchdog closed the stream.
-                raise ProviderAborted("run stopped by operator") from exc
-            if idle_killed.is_set():
-                # Convert the watchdog-induced HTTPError into a purpose-specific
-                # ProviderError so the loop's retry/quit path can log a meaningful
-                # reason rather than a generic "ReadError" / "connection closed".
-                phase_s, where = clock.idle_budget()
-                self.record(
-                    status=0,
-                    response=(
-                        f"SSE idle watchdog: no data event for {phase_s:.0f}s {where} "
-                        f"(only heartbeats). Upstream model appears wedged."
-                    ),
-                )
-                raise ProviderError(
-                    f"{self.api_label} SSE stream idle for >{phase_s:.0f}s {where} "
-                    "(only heartbeats received); upstream model appears wedged."
-                ) from exc
+            _raise_watchdog(exc)
             self.record(status=0, response=f"HTTPError: {exc}")
             raise ProviderError(
                 f"HTTP error streaming from {self.url} ({self.api_format} format): {exc}"
