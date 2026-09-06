@@ -208,6 +208,7 @@ path = "agent6.ui.acp"
 # The types SessionFrontend's own signatures name: implementing the seam means
 # naming what it passes. The same set ui.cli has, minus everything that draws.
 depends_on = [
+  "agent6.errors",  # a fault after the journal opened is a bug unless it is an operator error
   "agent6.paths",
   "agent6.ui.steer",
   "agent6",

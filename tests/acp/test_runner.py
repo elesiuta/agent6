@@ -227,6 +227,42 @@ def test_the_runs_journal_streams_out_as_session_update(
         wire.close()
 
 
+def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The bare-refusal guard assumed a journal means the fold reported the
+    ending, but a fault between the journal's first line and its session.end
+    ended the turn as `{"stopReason": "refusal"}` with no words at all."""
+    from agent6.paths import state_dir
+    from agent6.sessions.layout import SessionLayout
+
+    monkeypatch.chdir(tmp_path)
+
+    def _dies_mid_run(*_a: object, session_id: str = "", **_kw: object) -> int:
+        layout = SessionLayout(state_dir(tmp_path), session_id)
+        layout.ensure()
+        layout.logs_path.write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+            encoding="utf-8",
+        )
+        raise RuntimeError("the provider client exploded")
+
+    monkeypatch.setattr(runner, "run_task", _dies_mid_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "do the thing")
+        said = wire.until("session/update")
+        text = said["params"]["update"]["content"]["text"]
+        assert "the run failed" in text and "exploded" in text, text
+        assert wire.until("")["result"]["stopReason"] == "refusal"
+    finally:
+        wire.close()
+    # A bug's traceback reaches stderr, the way the CLI's crash path saves one.
+    assert "RuntimeError: the provider client exploded" in capsys.readouterr().err
+
+
 def test_a_run_that_cannot_start_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A broken config is the ordinary case, and it raises before the run has a
     journal to carry the reason. The editor would otherwise see a turn end with
@@ -650,6 +686,51 @@ def test_a_second_prompt_resumes_the_same_run(
     (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
     assert bridge.run(session, "and now this") == "end_turn"
     assert calls[1] == ("resume", "run-AAAA11", "and now this")
+
+
+def test_a_fault_on_a_resumed_turn_still_reaches_the_editor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bare-refusal guard read the journal's `finished`, which the
+    previous turn's session.end leaves True on every resumed turn, so a fault
+    in a resume's preflight ended the turn as a bare refusal again. The guard
+    reads whether the tail told the editor THIS turn's ending."""
+    monkeypatch.chdir(tmp_path)
+
+    def _state_dir(_cwd: Path) -> Path:
+        return tmp_path / "state"
+
+    def _minted(*_a: object, **_k: object) -> str:
+        return "run-AAAA11"
+
+    def _ended_run(_config: object, text: str, **kw: Any) -> int:
+        layout = SessionLayout(tmp_path / "state", str(kw["session_id"]))
+        layout.ensure()
+        layout.logs_path.write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": text})
+            + "\n"
+            + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+            + "\n",
+            encoding="utf-8",
+        )
+        (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
+        return 0
+
+    def _dies_in_preflight(_config_path: object, session_id: str, **kw: Any) -> int:
+        raise RuntimeError("the resume preflight exploded")
+
+    monkeypatch.setattr(runner, "state_dir", _state_dir)
+    monkeypatch.setattr(runner, "unused_session_id", _minted)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    monkeypatch.setattr(runner, "run_task", _ended_run)
+    monkeypatch.setattr(runner, "resume_task", _dies_in_preflight)
+    out = io.BytesIO()
+    bridge = RunBridge(server=ACPServer(stdin=io.BytesIO(), stdout=out))
+    session = session_mod.Session(acp_id="s", cwd=tmp_path)
+    assert bridge.run(session, "first task") == "end_turn"
+    assert bridge.run(session, "and now this") == "refusal"
+    said = out.getvalue().decode()
+    assert "the run failed: the resume preflight exploded" in said, said
 
 
 def _journal_types(layout: SessionLayout) -> list[str]:

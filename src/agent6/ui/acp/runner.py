@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +35,7 @@ from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.reporter import Reporter
 from agent6.app.resume import resume_task
 from agent6.app.run import run_task
+from agent6.errors import OperatorError
 from agent6.paths import state_dir
 from agent6.sessions.id import unused_session_id
 from agent6.types import session_bucket
@@ -374,7 +376,7 @@ class RunBridge:
                 )
         except Exception as exc:
             # A config that cannot be read raises here, before any journal.
-            self._could_not_start(session, exc)
+            self._could_not_finish(session, exc)
             return "refusal"
         if not self._runs.acquire(blocking=False):
             # Queued behind another session's turn: say so, and keep listening
@@ -397,26 +399,37 @@ class RunBridge:
                 # Cancelled while queued. The marker is for a run in flight;
                 # one that has not started is stopped by not starting it.
                 return "cancelled"
+            # Set by this turn's tail when it tells the editor how the turn
+            # ended: the one fact the bare-refusal guard reads. The turn's own,
+            # since a journal's last session.end may be the previous turn's on
+            # a resumed run, and a previous turn's tail may outlive its drain.
+            told = threading.Event()
             try:
-                return self._run(session, text, resuming=resuming)
+                return self._run(session, text, resuming=resuming, told=told)
             except Exception as exc:
-                # Once a journal exists the fold has already reported the
-                # ending, and saying this too contradicts it.
-                if not self.had_journal(session):
-                    self._could_not_start(session, exc)
+                # A fault before the tail spoke has no other voice.
+                if not told.is_set():
+                    self._could_not_finish(session, exc)
                 return "refusal"
         finally:
             self._running = None
             self._runs.release()
 
-    def _could_not_start(self, session: Session, exc: Exception) -> None:
-        """A run that dies before it has a journal has no other way to say so,
-        and the turn still ends with a stop reason. A broken config is the
-        ordinary case: the CLI prints it, and here the editor would have seen
-        a turn end with no words at all."""
-        self.server.notify_raw(message_update(session.acp_id, f"the run could not start: {exc}"))
+    def _could_not_finish(self, session: Session, exc: Exception) -> None:
+        """A run that dies before its tail told the editor how the turn ended
+        has no other way to say so, and the turn still ends with a stop reason.
+        A broken config is the ordinary case (the CLI prints it; here the
+        editor would have seen a turn end with no words at all). A fault that
+        is not an operator error is a bug: its traceback goes to stderr, the
+        way the CLI's crash path saves one to a file and names it."""
+        what = "could not start" if not self.had_journal(session) else "failed"
+        self.server.notify_raw(message_update(session.acp_id, f"the run {what}: {exc}"))
+        if not isinstance(exc, OperatorError):
+            _stderr(f"[agent6] run {session.session_id}: {traceback.format_exc()}")
 
-    def _run(self, session: Session, text: str, *, resuming: bool) -> StopReason:
+    def _run(
+        self, session: Session, text: str, *, resuming: bool, told: threading.Event
+    ) -> StopReason:
         layout = session.layout(state_dir(session.cwd))
         os.chdir(session.cwd)
         session.turn += 1
@@ -444,7 +457,7 @@ class RunBridge:
         order = ProseOrder(self.server, session.acp_id, layout.logs_path)
         tail = threading.Thread(
             target=self._stream,
-            args=(session, layout.logs_path, _stop, resuming, announced, order),
+            args=(session, layout.logs_path, _stop, resuming, announced, order, told),
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
@@ -491,6 +504,7 @@ class RunBridge:
         resuming: bool,
         announced: Announced,
         order: ProseOrder | None = None,
+        told: threading.Event | None = None,
     ) -> None:
         """Project the run's journal into `session/update` as it is written,
         the lifecycle's own lines taking their place between events.
@@ -530,6 +544,8 @@ class RunBridge:
                     if item.kind == "tool":
                         announced.add(wire_id)
                     elif item.kind == "done":
+                        if told is not None:
+                            told.set()
                         _stderr(ending(item))
                 if order is not None:
                     order.flush(consumed[0])
