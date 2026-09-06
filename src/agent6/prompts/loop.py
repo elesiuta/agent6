@@ -264,8 +264,8 @@ V2_VERIFY_WHEN = {
 }
 
 V2_NO_VERIFY_BLOCK = """<no-verify-command>
-No verify command is configured for this run, so `run_verify_command` is not
-available and there is no automated pass/fail gate.
+This run has no verify command: `run_verify_command` is not available and
+there is no automated pass/fail gate.
 </no-verify-command>
 """
 
