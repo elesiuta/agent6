@@ -129,7 +129,8 @@ def test_a_container_with_open_children_cannot_pass(tmp_path: Path) -> None:
     from agent6.graph.models import UpdateStatusIntent
 
     c = GraphCurator(_layout(tmp_path))
-    parent = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("phase")))
+    root = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("run root")))
+    parent = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("phase")))
     child = c.add_subtask(AddSubtaskIntent(parent_id=parent.id, draft=_draft("step")))
 
     with pytest.raises(CuratorError, match="open children"):
@@ -137,6 +138,11 @@ def test_a_container_with_open_children_cannot_pass(tmp_path: Path) -> None:
 
     c.update_status(UpdateStatusIntent(id=child.id, new_status="passed"))
     assert c.update_status(UpdateStatusIntent(id=parent.id, new_status="passed")).status == "passed"
+    # The root is the whole job, not a unit of work: nothing depends on it, so
+    # a run ending with a subtask left open still passes it.
+    open_child = c.add_subtask(AddSubtaskIntent(parent_id=root.id, draft=_draft("later")))
+    assert c.update_status(UpdateStatusIntent(id=root.id, new_status="passed")).status == "passed"
+    assert c.get(open_child.id).status == "pending"
 
 
 def test_obsolete_and_record_commit(tmp_path: Path) -> None:

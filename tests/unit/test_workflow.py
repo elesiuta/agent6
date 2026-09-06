@@ -7293,3 +7293,48 @@ def test_a_steer_answering_a_prose_question_records_after_the_nudge(tmp_path: Pa
 
     assert len(state.decisions_recorded) == 1
     assert question in decisions_path(tmp_path / "state").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("label", "standing", "created_by"),
+    [("standing run", True, "steering"), ("patience finish", False, "planner")],
+)
+def test_the_root_passes_with_an_open_child(
+    tmp_path: Path, label: str, standing: bool, created_by: str
+) -> None:
+    """A completed run marks its root passed; the curator's container rule
+    (no `passed` over an open child) refused it for a `--standing` goal, which
+    never passes by design, and for a finish honoured with a subtask left
+    open, so both read 0 tasks done. The root is the whole job, not a unit of
+    work, and the rule exempts it."""
+    from agent6.graph.curator import GraphCurator
+    from agent6.graph.models import AddSubtaskIntent, NodeActor, TaskNodeDraft
+    from agent6.sessions.layout import SessionLayout
+
+    actor: NodeActor = "steering" if created_by == "steering" else "planner"
+    curator = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
+    root = curator.add_subtask(
+        AddSubtaskIntent(
+            parent_id=None,
+            draft=TaskNodeDraft(title="run root", depends_on=(), created_by="planner"),
+        )
+    )
+    curator.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root.id,
+            draft=TaskNodeDraft(title=label, depends_on=(), created_by=actor, standing=standing),
+        )
+    )
+    wf = Workflow(
+        root=tmp_path,
+        config=Config(),
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+        logger=_silent,
+        mode="run",
+        curator=curator,
+    )
+
+    wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]
+
+    assert curator.nodes()[root.id].status == "passed"

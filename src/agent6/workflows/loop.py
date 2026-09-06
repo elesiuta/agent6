@@ -38,7 +38,7 @@ from agent6.git_ops import (
     worktree_tree,
 )
 from agent6.git_ops import status as git_status
-from agent6.graph.curator import GraphCurator
+from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import (
     AddSubtaskIntent,
     NodeStatus,
@@ -3414,6 +3414,8 @@ class Workflow:
                 try:
                     self.curator.update_status(UpdateStatusIntent(id=nid, new_status="passed"))
                     changed = True
+                except CuratorError as exc:  # this root refused; the next may not
+                    self._log(f"LOOP: auto-pass root {nid} refused: {exc}")
                 except Exception as exc:  # a curator write error must not break finish
                     self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
                     break  # a curator write failure fails for every remaining node too
