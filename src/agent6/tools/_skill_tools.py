@@ -27,7 +27,7 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
     skill = by_name.get(args.name)
     if skill is None:
         raise ToolError(
-            f"use_skill: unknown or disabled skill {args.name!r};"
+            f"unknown or disabled skill {args.name!r};"
             f" available: {', '.join(sorted(by_name)) or '(none)'}"
         )
     if args.file is None:
@@ -40,20 +40,20 @@ def use_skill(resolve_skills: Callable[[], ResolvedSkills], raw: dict[str, Any])
     try:
         fd = open_contained(contain(skill.dir, args.file), os.O_RDONLY)
     except FileNotFoundError:
-        raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}") from None
+        raise ToolError(f"no such file in skill {skill.name!r}: {args.file!r}") from None
     except NotRegularFile:
         # A directory (or a FIFO a hostile skill dir planted): refused by the
         # open itself, so it never reaches the read below.
-        raise ToolError(f"use_skill: no such file in skill {skill.name!r}: {args.file!r}") from None
+        raise ToolError(f"no such file in skill {skill.name!r}: {args.file!r}") from None
     except ToolError as exc:  # absolute, `..`, or a symlink component
-        raise ToolError(f"use_skill: {args.file!r} escapes the skill directory") from exc
+        raise ToolError(f"{args.file!r} escapes the skill directory") from exc
     try:
         with os.fdopen(fd, "rb") as handle:
             data = handle.read(262_145)
     except OSError as exc:
-        raise ToolError(f"use_skill: cannot read {args.file!r}: {exc}") from exc
+        raise ToolError(f"cannot read {args.file!r}: {exc}") from exc
     if len(data) > 262_144:
-        raise ToolError(f"use_skill: {args.file!r} exceeds the 256 KiB cap")
+        raise ToolError(f"{args.file!r} exceeds the 256 KiB cap")
     return SkillResult(
         skill=skill.name, file=args.file, content=data.decode("utf-8", errors="replace")
     )

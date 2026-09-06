@@ -357,7 +357,7 @@ def _stage_patch_section(
     except PatchError as exc:
         raise ToolError(f"apply_patch failed for {target}: {exc}") from exc
     if new_content is None and existing is None:
-        raise ToolError(f"apply_patch: cannot delete {target}: not a file")
+        raise ToolError(f"cannot delete {target}: not a file")
     return sp, target, existing, new_content, healed
 
 

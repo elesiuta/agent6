@@ -33,7 +33,7 @@ def add_task(
     curator: GraphCurator | None, run_root_node_id: str | None, raw: dict[str, Any]
 ) -> AddTaskResult:
     if curator is None:
-        raise ToolError("add_task: DAG curator not available in this run")
+        raise ToolError("DAG curator not available in this run")
     args = DagAddTaskInput.model_validate(raw)
     parent_id = args.parent_id or run_root_node_id
     draft = TaskNodeDraft(
@@ -57,7 +57,7 @@ def add_task(
 
 def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTaskResult:
     if curator is None:
-        raise ToolError("update_task: DAG curator not available in this run")
+        raise ToolError("DAG curator not available in this run")
     args = DagUpdateTaskInput.model_validate(raw)
     node = None
     if args.status is not None:
@@ -83,7 +83,7 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     for dep in args.depends_on:
         node = curator.add_dependency(AddDependencyIntent(id=args.id, depends_on=dep))
     if node is None:
-        raise ToolError("update_task: pass status and/or depends_on")
+        raise ToolError("pass status and/or depends_on")
     return UpdateTaskResult(
         id=node.id, status=node.status, title=node.title, depends_on=tuple(node.depends_on)
     )
@@ -91,7 +91,7 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
 
 def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksResult:
     if curator is None:
-        raise ToolError("list_tasks: DAG curator not available in this run")
+        raise ToolError("DAG curator not available in this run")
     args = DagListTasksInput.model_validate(raw)
     # Wire surface: to_wire() JSONs each task to the model; the projected shape
     # (and its list-valued relevant_paths/depends_on) is what tool callers hold.

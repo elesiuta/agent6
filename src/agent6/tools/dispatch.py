@@ -564,7 +564,7 @@ class ToolDispatcher:
             raise ToolError(message) from exc
         except Exception as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
-            raise ToolError(f"{name} failed: {exc}") from exc
+            raise ToolError(f"failed: {exc}") from exc
         self._emit(
             "tool.result",
             name=name,
@@ -587,9 +587,9 @@ class ToolDispatcher:
                 # the same dispatcher backstop the built-in mutating tools get,
                 # covering the withheld edit/DAG tools of plan/ask and
                 # the machine-authoring "do not edit or run anything" contract.
-                raise ToolError(f"{name} is not available in {self._mode} mode (run mode only)")
+                raise ToolError(f"not available in {self._mode} mode (run mode only)")
             if self._mcp_manager is None:
-                raise ToolError(f"{name}: MCP is not configured")
+                raise ToolError("MCP is not configured")
             self._approve_mcp_call(name, raw_input)
             try:
                 return RawResult(self._mcp_manager.call(name, raw_input))
@@ -598,11 +598,11 @@ class ToolDispatcher:
         if name not in self._handlers:
             raise ToolError(f"Unknown tool: {name}")
         if name in _COMMAND_TOOLS and self.command_policy() == "no":
-            raise ToolError(f"{name} is not available (run_commands = 'no')")
+            raise ToolError("not available (run_commands = 'no')")
         if name == FetchInput.TOOL_NAME and self._config.sandbox.network == "host":
-            raise ToolError(f"{name} is not available (a jailed command has the network)")
+            raise ToolError("not available (a jailed command has the network)")
         if name in symbol_tools_hidden():
-            raise ToolError(f"{name} is disabled (AGENT6_SYMBOL_TOOLS)")
+            raise ToolError("not available (AGENT6_SYMBOL_TOOLS)")
         if os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1" and name == ApplyEditInput.TOOL_NAME:
             raise ToolError(
                 f"{name} is disabled (AGENT6_DISABLE_APPLY_EDIT=1); use apply_patch instead"
@@ -615,7 +615,7 @@ class ToolDispatcher:
             # read-only mode, or pause a non-run loop (ask_user). Enforcing
             # membership in the same surface `tool_definitions` exposes means
             # the two cannot drift.
-            raise ToolError(f"{name} is not available in {self._mode} mode")
+            raise ToolError(f"not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 
     def _run_handler(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
@@ -634,7 +634,7 @@ class ToolDispatcher:
                 # "Resend" feedback makes such a model regenerate the same
                 # runaway; name the actual problem instead.
                 raise ToolError(
-                    f"{name}: the arguments were cut off mid-generation"
+                    "the arguments were cut off mid-generation"
                     f" ({raw_len // 1000} KB, truncated before the JSON closed)."
                     " Do NOT resend the same call. Emit a much smaller call:"
                     " short literal values only (keep any pattern or argument"
@@ -642,7 +642,7 @@ class ToolDispatcher:
                     " into several small calls."
                 )
             raise ToolError(
-                f"{name}: the arguments were not valid JSON. Resend the call with a"
+                "the arguments were not valid JSON. Resend the call with a"
                 " single valid JSON object of arguments."
             )
         try:
@@ -788,7 +788,7 @@ class ToolDispatcher:
             # call anyway.
             raise ToolError(f"unknown MCP server in {name!r}")
         if self.mcp_denied(server):
-            raise ToolError(f"{name} is not available ({server!r} was denied for this session)")
+            raise ToolError(f"not available ({server!r} was denied for this session)")
         if entry.approve == "yes":
             return
         args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)
@@ -937,7 +937,7 @@ class ToolDispatcher:
                 interrupted=self._operator_wants_out,
             )
         except JailUnavailableError as exc:
-            raise ToolError(f"run_command: jail unavailable: {exc}") from exc
+            raise ToolError(f"jail unavailable: {exc}") from exc
         if isinstance(outcome, CommandResult):
             return ExecResult(
                 returncode=outcome.returncode,
@@ -1109,7 +1109,7 @@ class ToolDispatcher:
         """
         metric_cfg = self._config.workflow.metric
         if metric_cfg is None:
-            raise ToolError("run_metric_command: no [workflow.metric] configured")
+            raise ToolError("no [workflow.metric] configured")
         argv = tuple(metric_cfg.command)
         self._emit("metric.start", cmd=list(argv))
         res = self._run_argv_in_jail(

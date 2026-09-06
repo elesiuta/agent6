@@ -342,3 +342,23 @@ def test_wire_tool_error_shape(tmp_path: Path) -> None:
         wf, state, "no_such_tool", {}, exc.value
     )
     assert content == '{"error": "Unknown tool: no_such_tool"}'
+
+
+def test_the_tool_error_log_line_names_the_tool_once() -> None:
+    """The logger prefixes the tool's name; a tool raises the bare message
+    (`unknown or disabled skill`, never `use_skill: unknown ...`)."""
+    from unittest.mock import MagicMock
+
+    from agent6.skills import ResolvedSkills
+    from agent6.tools._skill_tools import use_skill  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import LoopState, Workflow
+
+    with pytest.raises(ToolError) as exc:
+        use_skill(lambda: ResolvedSkills(enabled=(), always=(), warnings=()), {"name": "x"})
+    assert str(exc.value).startswith("unknown or disabled skill 'x'")
+    wf = MagicMock()
+    state = LoopState(original_task="t", tool_calls=0)
+    Workflow._note_tool_error(  # pyright: ignore[reportPrivateUsage]
+        wf, state, "use_skill", {}, exc.value
+    )
+    wf._log.assert_called_with(f"  tool_error: use_skill: {exc.value}")
