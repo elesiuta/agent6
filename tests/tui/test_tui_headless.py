@@ -725,6 +725,7 @@ def test_finished_run_bar_resumes_with_the_instruction(tmp_path: Path, monkeypat
             await pilot.pause()
             await pilot.pause()
             # The instruction rides --steer on the detached resume.
+            await app.workers.wait_for_complete()
             assert spawned == [(tmp_path.name, "also add tests")]
 
     asyncio.run(scenario())
@@ -1268,9 +1269,11 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
             assert "working…" not in body
             # The composer routes to resume (not a steer nobody will read).
             app.submit_instruction("carry on")
+            await app.workers.wait_for_complete()
             assert spawned == [(tmp_path.name, "carry on")]
             # And action_resume resumes instead of refusing "still going".
             app.action_resume()
+            await app.workers.wait_for_complete()
             assert len(spawned) == 2
 
     asyncio.run(scenario())

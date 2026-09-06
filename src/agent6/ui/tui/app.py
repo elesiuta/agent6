@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import ClassVar
 
 try:
+    from textual import work
     from textual.app import App, ScreenStackError, SystemCommand
     from textual.binding import Binding
     from textual.css.query import NoMatches
@@ -541,17 +542,26 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         would be wiped by that clear). The new session's steer poll injects
         the text at its first boundary."""
         target = self.continue_as or self.session_dir.name
-        err = spawn_detached_resume(
-            Path.cwd(),
+        under = f" under preset {self.resume_preset}" if self.resume_preset else ""
+        self._spawn_resume(
             target,
             steer=text,
             preset=self.resume_preset,
-            config_path=self.config_path,
+            started=f"resuming {target}{under} with your instruction…",
         )
-        under = f" under preset {self.resume_preset}" if self.resume_preset else ""
-        self.notify(
-            err or f"resuming {target}{under} with your instruction…",
-            severity="error" if err else "information",
+
+    @work(thread=True)
+    def _spawn_resume(
+        self, target: str, *, started: str, steer: str = "", preset: str = ""
+    ) -> None:
+        """The detached resume, off the UI thread: the spawn waits until the
+        child owns the run or refuses (its preflight takes a second or more),
+        and the notice lands from here."""
+        err = spawn_detached_resume(
+            Path.cwd(), target, steer=steer, preset=preset, config_path=self.config_path
+        )
+        self.call_from_thread(
+            self.notify, err or started, severity="error" if err else "information"
         )
 
     def _focus_composer(self) -> None:
@@ -677,10 +687,8 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             )
             self._focus_composer()
             return
-        err = spawn_detached_resume(Path.cwd(), self.session_dir.name, config_path=self.config_path)
-        self.notify(
-            err or f"resuming {self.session_dir.name} in the background…",
-            severity="error" if err else "information",
+        self._spawn_resume(
+            self.session_dir.name, started=f"resuming {self.session_dir.name} in the background…"
         )
 
     def action_run_plan(self) -> None:

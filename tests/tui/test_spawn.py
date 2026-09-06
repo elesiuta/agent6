@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from agent6.config.layer import resolved_state_dir
+from agent6.sessions.layout import bucket_dir
 from agent6.ui import spawn
 
 
@@ -131,40 +133,75 @@ def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: Path) -> None:
     assert err == ""
 
 
-def test_spawn_detached_resume_argv_and_stream_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, object] = {}
+# --- spawn_detached_resume: the resume launch over the same early-exit capture --
 
-    class _Proc:
-        pid = 424242
 
-    def _popen(argv: list[str], **kw: object) -> _Proc:
-        seen["argv"] = argv
-        seen["kw"] = kw
-        return _Proc()
+def _run_dir(cwd: Path, session_id: str) -> Path:
+    d = bucket_dir(resolved_state_dir(cwd), "runs") / session_id
+    d.mkdir(parents=True)
+    return d
 
-    monkeypatch.setattr(spawn.subprocess, "Popen", _popen)
-    monkeypatch.setattr(spawn, "agent6_exe", lambda: "/opt/agent6")
-    err = spawn.spawn_detached_resume(Path("/repo"), "tidy-owl-9Z3")
+
+def _fake_agent6(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> None:
+    exe = tmp_path / "agent6"
+    exe.write_text("#!/bin/sh\n" + script, encoding="utf-8")
+    exe.chmod(0o755)
+    monkeypatch.setattr(spawn, "agent6_exe", lambda: str(exe))
+
+
+def test_spawn_detached_resume_reports_the_childs_early_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume child that refuses at once (a preflight refusal, a crash) was
+    spawned with its stderr on /dev/null and reported as "" (resuming): the web
+    composer and the TUI said "resuming" over a run nothing was resuming."""
+    _run_dir(tmp_path, "tidy-owl-9Z3AAA")
+    _fake_agent6(tmp_path, monkeypatch, "echo 'REFUSING: the checkout is busy' >&2\nexit 2\n")
+    err = spawn.spawn_detached_resume(tmp_path, "tidy-owl-9Z3AAA")
+    assert err == "REFUSING: the checkout is busy"
+
+
+def test_spawn_detached_resume_argv_env_and_owning_signal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "" once the child owns the run: its pid is the run's worker.pid. The
+    child runs detached with the bridge environment (deltas streamed to the log
+    for a later attach, asks and approvals waiting for a front-end)."""
+    run = _run_dir(tmp_path, "tidy-owl-9Z3AAA")
+    seen = tmp_path / "seen"
+    _fake_agent6(
+        tmp_path,
+        monkeypatch,
+        f"printf '%s\\n' \"$@\" > {seen}\n"
+        f"env | grep '^AGENT6_' >> {seen}\n"
+        f"echo $$ > {run / 'worker.pid'}\n"
+        "sleep 5\n",
+    )
+    err = spawn.spawn_detached_resume(tmp_path, "tidy-owl-9Z3AAA", steer="go on", preset="quick")
     assert err == ""
-    assert seen["argv"] == ["/opt/agent6", "resume", "tidy-owl-9Z3"]
-    kw = seen["kw"]
-    assert isinstance(kw, dict)
-    assert kw["start_new_session"] is True
-    env = kw["env"]
-    assert isinstance(env, dict)
-    assert env["AGENT6_STREAM_TO_LOG"] == "1"  # headless child still emits deltas for watch
-    # No terminal, so the child must WAIT for a front-end at an ask/approval
-    # instead of fabricating an empty answer (parity with the fresh-run spawns).
-    assert env["AGENT6_DETACHED_AWAY"] == "wait"
+    lines = seen.read_text(encoding="utf-8").splitlines()
+    assert lines[:4] == ["resume", "tidy-owl-9Z3AAA", "--preset=quick", "--steer=go on"]
+    assert "AGENT6_STREAM_TO_LOG=1" in lines and "AGENT6_DETACHED_AWAY=wait" in lines
 
 
-def test_spawn_detached_resume_reports_oserror(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_spawn_detached_resume_names_an_unknown_session(tmp_path: Path) -> None:
+    """Resolved before the spawn, in the CLI's own words: the child would refuse
+    the same way on a stdio nobody reads."""
+    err = spawn.spawn_detached_resume(tmp_path, "no-such-run-AAAAAA")
+    assert "no session matches 'no-such-run-AAAAAA'" in err
+
+
+def test_spawn_detached_resume_reports_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _run_dir(tmp_path, "tidy-owl-9Z3AAA")
+
     def _boom(*_a: object, **_k: object) -> object:
         raise OSError("no exec")
 
     monkeypatch.setattr(spawn.subprocess, "Popen", _boom)
-    err = spawn.spawn_detached_resume(Path("/repo"), "tidy-owl-9Z3")
-    assert "could not spawn" in err
+    err = spawn.spawn_detached_resume(tmp_path, "tidy-owl-9Z3AAA")
+    assert err == "failed to start agent6 resume: no exec"
 
 
 # --- diagnostics wording: subcommand labels + captured-output cleanup ----------

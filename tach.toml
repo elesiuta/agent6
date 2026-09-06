@@ -180,6 +180,10 @@ depends_on = [
   "agent6.directive",
   "agent6.models.validate",
   "agent6.sandbox",
+  # a detached resume resolves the session it starts and reads its worker.pid
+  # (the child owns the run once that pid is its own)
+  "agent6.sessions.id",
+  "agent6.sessions.ipc",
   "agent6.sessions.layout",
   "agent6.sessions.lock",
   "agent6.types",

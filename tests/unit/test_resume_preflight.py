@@ -313,6 +313,63 @@ def test_resume_preset_flag_is_recorded_for_later_legs(
     assert read_manifest(session_dir).workflow.replay_preset == "quick"
 
 
+def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hub's detached resume reads the run's worker.pid as the child owning
+    the run (spawn_and_confirm) and `sessions show` reads it as a live worker:
+    written before the preflight, every refusal past that point (the checkout
+    lock, a missing snapshot, the git guards, config, isolation) still read
+    "resuming" from the hub and "alive" from the listing."""
+    from agent6.app._leg import LegEnd
+    from agent6.app.preflight import SessionRefused
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    _plan_session_dir(repo, "plan-PIDORDER")
+    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")  # run_commands="ask" with no tty refuses
+    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "plan-PIDORDER"
+    order: list[str] = []
+    real_write = resume_mod.write_worker_pid
+
+    def _write(session_dir: Path, pid: int) -> None:
+        order.append("pid")
+        real_write(session_dir, pid)
+
+    monkeypatch.setattr(resume_mod, "write_worker_pid", _write)
+
+    def _refuse(*_a: object, **_k: object) -> str:
+        order.append("isolation")
+        raise SessionRefused(2)
+
+    monkeypatch.setattr(resume_mod, "select_isolation", _refuse)
+    assert _cmd_resume(None, "plan-PIDORDER", force=False) == 2
+    assert order == ["isolation"]
+    assert not (session_dir / "worker.pid").exists()
+
+    def _select(*_a: object, **_k: object) -> str:
+        order.append("isolation")
+        return "none"
+
+    def _none(*_a: object, **_k: object) -> None:
+        return None
+
+    def _leg(*_a: object, **_k: object) -> LegEnd:
+        order.append("leg")
+        assert (session_dir / "worker.pid").is_file()  # owned before the leg runs
+        return LegEnd(rc=0)
+
+    order.clear()
+    monkeypatch.setattr(resume_mod, "select_isolation", _select)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _none)  # no key in a unit test
+    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    assert _cmd_resume(None, "plan-PIDORDER", force=False) == 0
+    assert order == ["isolation", "pid", "leg"]
+
+
 def test_plan_resume_builds_the_planner_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import IO
 
@@ -22,6 +22,8 @@ from agent6.config.layer import resolved_state_dir
 from agent6.directive import DirectiveError, parse_directive, steer_problem
 from agent6.models.validate import directive_model_refusal
 from agent6.sandbox.jail import keep_out_of_the_sweep
+from agent6.sessions.id import SessionIdError, resolve_session
+from agent6.sessions.ipc import read_worker_pid
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.lock import repo_writer_held, repo_writer_holder
 from agent6.types import OPERATOR_MODES
@@ -52,11 +54,13 @@ def agent6_argv(config_path: Path | None) -> list[str]:
     return argv
 
 
-# The environment of a run a front-end drives over the bridge: the headless
-# child streams its reasoning deltas to logs.jsonl (a live view renders them),
-# and approvals / questions WAIT for a front-end instead of the headless
-# default's fabricated empty answer.
-DETACHED_RUN_ENV: dict[str, str] = {"AGENT6_STREAM_TO_LOG": "1", "AGENT6_DETACHED_AWAY": "wait"}
+# The environment of work a front-end drives over the bridge: approvals and
+# questions WAIT for a front-end instead of the headless default's fabricated
+# empty answer (`spawn_and_confirm` sets it for every child it starts), and a
+# run's headless child streams its reasoning deltas to logs.jsonl so a live
+# view renders them.
+DETACHED_AWAY_ENV: dict[str, str] = {"AGENT6_DETACHED_AWAY": "wait"}
+DETACHED_RUN_ENV: dict[str, str] = {"AGENT6_STREAM_TO_LOG": "1", **DETACHED_AWAY_ENV}
 
 
 def spawn_new_work(  # noqa: PLR0911
@@ -144,48 +148,45 @@ def spawn_detached_resume(
     config_path: Path | None = None,
     flags: Sequence[str] = (),
 ) -> str:
-    """Fire-and-forget a detached `agent6 resume <session_id>` (new session, no
-    stdio) so a run keeps going in the background after the operator detaches.
+    """Start a detached `agent6 resume <session_id>` (new session, no stdio)
+    so a run keeps going in the background after the operator detaches, and
+    return "" once the child owns the run, else why it did not.
+
+    Owning the run = the child's pid is the run's worker.pid, which `resume`
+    writes once its preflight passed (locks, snapshot, git guards, config,
+    isolation and provider checks); a child that exits before that hands back
+    its own refusal through `spawn_and_confirm`, the early-exit capture every
+    hub spawn shares. The caller must have released the run's worker lock first,
+    so the child acquires it cleanly. *cwd* is the checkout whose state dir
+    holds the session (a fork's origin, never its worktree), as `agent6
+    resume` itself reads it.
 
     A non-empty *steer* rides along as `--steer=TEXT` (the `=` form, so a
     follow-up starting with `-` cannot read as an option): the resume injects
     it as the first steering instruction. Operator-typed text, never LLM output.
-    A non-empty *preset* is the `--preset` the leg continues under; *flags* are
-    further `resume` options the leg runs under (the detaching invocation's
-    own overrides).
-
-    The caller must have released the run's worker lock first, so the child
-    acquires it cleanly. `AGENT6_STREAM_TO_LOG=1` keeps the headless child
-    emitting delta events, so a later `agent6 attach` shows its full reasoning,
-    not just tool calls. `AGENT6_DETACHED_AWAY=wait` makes the terminal-less
-    child WAIT for a front-end at an ask/approval instead of fabricating an empty
-    answer (every caller here is a front-end or a detach the operator re-attaches
-    to). argv is the agent6 exe + the run id (never LLM output). Returns "" on
-    success, else an error message: a malformed directive as *steer* is
-    refused here (the child would refuse it on a stdio nobody reads while
-    the composer reports "resuming")."""
+    A malformed directive as *steer* is refused here, with the message the
+    child would print. A non-empty *preset* is the `--preset` the leg
+    continues under; *flags* are further `resume` options the leg runs under
+    (the detaching invocation's own overrides). argv is the agent6 exe + the
+    run id (never LLM output)."""
     if steer and (problem := steer_problem(steer)) is not None:
         return problem
+    try:
+        session_dir = resolve_session(resolved_state_dir(cwd), session_id).session_dir
+    except SessionIdError as exc:
+        return str(exc)
     argv = [*agent6_argv(config_path), "resume", session_id]
     if preset:
         argv.append(f"--preset={preset}")
     if steer:
         argv.append(f"--steer={steer}")
     argv.extend(flags)
-    try:
-        proc = subprocess.Popen(
-            argv,
-            cwd=str(cwd),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            env={**os.environ, **DETACHED_RUN_ENV},
-        )
-    except OSError as exc:
-        return f"could not spawn background resume: {exc}"
-    keep_out_of_the_sweep(proc.pid)
-    return ""
+    return spawn_and_confirm(
+        argv,
+        cwd,
+        started=lambda pid: read_worker_pid(session_dir) == pid,
+        extra_env=DETACHED_RUN_ENV,
+    )
 
 
 # Subcommand groups whose verb is the SECOND argv word ("machine run",
@@ -253,6 +254,7 @@ def spawn_and_confirm(
     cwd: Path,
     *,
     started: Callable[[int], bool],
+    extra_env: Mapping[str, str] | None = None,
     timeout_s: float = 25.0,
 ) -> str:
     """Spawn *argv* detached (non-TTY stdio, new session, so the child never
@@ -261,9 +263,14 @@ def spawn_and_confirm(
     stderr tail when the child exits nonzero first / nothing happens by the
     timeout. A child that exits 0 without the signal is a clean fast completion.
 
-    The machine-run analogue of `spawn_and_locate`: `machine run` refusals (lock
-    held, network refusal, bad bundle) print to stderr and exit nonzero without
-    ever starting, which a fire-and-forget spawn (stderr to /dev/null) silently
+    The child runs under this process's environment plus the away marker
+    (`DETACHED_AWAY_ENV`: every child started here is driven from a hub, so
+    its asks and approvals wait for that front-end) plus *extra_env*.
+
+    The pid-signalled analogue of `spawn_and_locate`, behind `machine run` and
+    a detached `resume`: their refusals (lock held, network refusal, bad
+    bundle, a finished run) print to stderr and exit nonzero without ever
+    starting, which a fire-and-forget spawn (stderr to /dev/null) silently
     swallowed."""
     label = subcommand_label(argv)
     err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
@@ -278,11 +285,7 @@ def spawn_and_confirm(
                 stdout=subprocess.DEVNULL,
                 stderr=err,
                 start_new_session=True,
-                # Driven from a hub (web/TUI) over the bridge: approvals and
-                # questions WAIT for a front-end instead of being invented by
-                # the headless default -- the same away-mode every detached
-                # run spawn carries.
-                env={**os.environ, "AGENT6_DETACHED_AWAY": "wait"},
+                env={**os.environ, **DETACHED_AWAY_ENV, **(extra_env or {})},
             )
         except OSError as exc:
             return f"failed to start agent6 {label}: {exc}"

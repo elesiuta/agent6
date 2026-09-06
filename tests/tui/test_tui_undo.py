@@ -61,6 +61,7 @@ def test_a_live_undo_hands_the_follow_up_to_the_fork(tmp_path: Path, monkeypatch
             assert bar.text == "name it better"
             assert "continue as fork-child-AAAAAA" in str(bar.border_title)
             app.submit_instruction("name it much better")
+            await app.workers.wait_for_complete()
             assert spawned == [("fork-child-AAAAAA", "name it much better")]
             # The dashboard's bar agrees.
             await pilot.press("ctrl+d")
@@ -112,6 +113,7 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
             assert bar.text == "the message taken back"
             assert app.continue_as == "fork-child-BBBBBB"
             app.submit_instruction("the message, edited")
+            await app.workers.wait_for_complete()
             assert spawned == [("fork-child-BBBBBB", "the message, edited")]
 
     asyncio.run(scenario())
@@ -164,6 +166,7 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
             bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert "continue as fork-child-CCCCCC" in str(bar.border_title)
             app.submit_instruction("try the other design")
+            await app.workers.wait_for_complete()
             assert spawned == [("fork-child-CCCCCC", "try the other design")]
 
     asyncio.run(scenario())
@@ -259,6 +262,7 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
                 encoding="utf-8",
             )
             app.action_resume()
+            await app.workers.wait_for_complete()
             assert spawned == [(run.name, "")]
 
     asyncio.run(scenario())

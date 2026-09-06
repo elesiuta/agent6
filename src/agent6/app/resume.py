@@ -302,9 +302,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # instruction. Seeded AFTER the stale-state clear (which drops steer
         # files), so the loop's steer poll injects it at its first boundary.
         submit_steer(layout.session_dir, steer.strip())
-    # Record this worker's pid so `agent6 sessions show` can probe liveness even while
-    # the worker is blocked in a long provider call (which emits no events).
-    write_worker_pid(layout.session_dir, os.getpid())
 
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)
@@ -348,7 +345,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             why = f" ({manifest.parked_reason})" if manifest.parked_reason else ""
             reporter.note(f"run {session_id!r} was parked at submission{why}; starting it now.")
             saved_task = manifest.parked_task
-            clear_worker_pid(layout.session_dir)
             release_single_writer(worker_lock_fd)
             worker_lock_fd = None
             return run_task(
@@ -583,6 +579,11 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
             return undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
 
+        # The worker's pid, written once the preflight passed: a resume that
+        # refused never had a live worker, and a hub's spawn reads this pid as
+        # the child owning the run (`spawn_and_confirm`). `sessions show`
+        # probes liveness by it while the worker sits in a long provider call.
+        write_worker_pid(layout.session_dir, os.getpid())
         end = run_leg(
             cfg,
             layout,

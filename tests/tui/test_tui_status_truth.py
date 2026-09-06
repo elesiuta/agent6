@@ -206,6 +206,7 @@ def test_parked_run_tells_the_truth_on_every_pane(tmp_path: Path, monkeypatch: A
                 "continue this session"
             )
             app.submit_instruction("go ahead")
+            await app.workers.wait_for_complete()
             assert spawned == [("parked1", "go ahead")]
 
     asyncio.run(scenario())
@@ -248,6 +249,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
             await pilot.pause()
             assert app.resume_preset == "quick"
             app.submit_instruction("go ahead")
+            await app.workers.wait_for_complete()
             assert spawned == [("parked2", "go ahead", "quick")]
             # The dashboard's picker shows the same choice.
             await _open_dash(app, pilot)
