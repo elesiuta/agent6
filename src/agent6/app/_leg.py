@@ -347,50 +347,45 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
         )
         try:
             with frontend.tui_session(layout.session_dir, inputs.tui_enabled):
-                if inputs.task is None:
-                    result = wf.resume()
-                elif mode == "ask" and inputs.interactive:
-                    result = frontend.run_ask_repl(wf, budget, layout, inputs.task)
-                else:
-                    result = wf.run(inputs.task)
-                # A background command that ended after the last turn is written
-                # down now, not at teardown: a viewer left open reads `/shells`
-                # meanwhile.
-                dispatcher.settle_background()
+                try:
+                    if inputs.task is None:
+                        result = wf.resume()
+                    elif mode == "ask" and inputs.interactive:
+                        result = frontend.run_ask_repl(wf, budget, layout, inputs.task)
+                    else:
+                        result = wf.run(inputs.task)
+                    # A background command that ended after the last turn is
+                    # written down now, not at teardown: a viewer left open
+                    # reads `/shells` meanwhile.
+                    dispatcher.settle_background()
+                except (KeyboardInterrupt, Exception) as exc:
+                    # Every escape (a resume refused before the loop starts, an
+                    # interrupt mid-step, a broken stdout pipe from `| head`)
+                    # leaves the loop without a session.end, and the caller's
+                    # finally then clears worker.pid, the only immediate
+                    # liveness evidence, so every surface would read the dead
+                    # run as running until the silence window expires. The end
+                    # is journaled here, inside the TUI scope: its exit waits
+                    # on a dashboard that leaves only on an end it can see.
+                    # suppress: the exit code must not be masked by a dead
+                    # journal.
+                    reason: SessionEndReason = (
+                        "interrupted" if isinstance(exc, KeyboardInterrupt) else "crashed"
+                    )
+                    with contextlib.suppress(EventWriteError):
+                        events.emit(
+                            "session.end",
+                            reason=reason,
+                            iterations=wf.iterations_reached,
+                            all_passed=False,
+                        )
+                    raise
         except ResumeError as exc:
             reporter.error(str(exc))
             return LegEnd(1)
         except KeyboardInterrupt:
             interrupted = True
             reporter.err(f"\n[agent6] {label} interrupted")
-            # The loop was cut mid-step, so it never emitted session.end; do it
-            # here so an attached watcher/TUI stops instead of hanging. Carry
-            # the iteration the loop reached so session.end keeps one shape.
-            # suppress: the interrupt exit (130 + resume hint) must not be
-            # masked by a dead journal.
-            reason: SessionEndReason = "interrupted"
-            with contextlib.suppress(EventWriteError):
-                events.emit(
-                    "session.end",
-                    reason=reason,
-                    iterations=wf.iterations_reached,
-                    all_passed=False,
-                )
-        except Exception:
-            # Any other escape (a broken stdout pipe from `| head`, an
-            # unexpected fault) also leaves the loop without a session.end, and
-            # the caller's finally then clears worker.pid -- the only immediate
-            # liveness evidence -- so every surface would read the dead run as
-            # "running" until the silence window expires. Record the end, then
-            # re-raise.
-            with contextlib.suppress(EventWriteError):
-                events.emit(
-                    "session.end",
-                    reason="crashed",
-                    iterations=wf.iterations_reached,
-                    all_passed=False,
-                )
-            raise
     finally:
         steer_state.restore()
         session.close()
