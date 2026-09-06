@@ -122,6 +122,60 @@ def test_boundaries_report_names_the_home_under_none(
     assert f"rw  {jail_cache_home()}  (HOME, persists across runs: none has no private /tmp)" in out
 
 
+def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Run inside a fork's worktree, the report lists the repository git dir a
+    jailed command reaches there: the fork manifest's recorded
+    `worktree_git_dir` (found under the repository's state dir), granted
+    through the leg's own policy builder. The report read no manifest, so a
+    fork worktree's grants omitted the one path beyond the workspace. In the
+    repository itself no such line appears."""
+    import json
+    import subprocess
+
+    from agent6.config.layer import resolved_state_dir
+    from agent6.git_ops import add_worktree
+    from agent6.sessions.layout import SessionLayout
+
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"],
+        check=True,
+    )
+    worktree = tmp_path / "wt"
+    add_worktree(repo, worktree, "HEAD")
+    git_dir = (repo / ".git").resolve()
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="fork-AAAA11")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "fork-AAAA11",
+                "mode": "run",
+                "worktree": str(worktree),
+                "worktree_git_dir": str(git_dir),
+            }
+        ),
+        encoding="utf-8",
+    )
+    _force(monkeypatch, "strict")
+    grant = f"ro  {git_dir}  (the repository's .git, which this linked worktree points into)"
+
+    monkeypatch.chdir(worktree)
+    checks = check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    assert [c.status for c in checks] == ["PASS"]
+    assert grant in capsys.readouterr().out
+
+    monkeypatch.chdir(repo)
+    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    assert str(git_dir) not in capsys.readouterr().out
+
+
 def test_boundaries_report_says_withheld_rather_than_unapproved(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

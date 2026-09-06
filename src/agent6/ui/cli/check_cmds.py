@@ -20,13 +20,16 @@ from agent6.app._setup import (
     wants_session_network,
 )
 from agent6.app.confine import check_network_support, config_refusal
+from agent6.app.fork import worktree_owners
 from agent6.config import (
     Config,
     ConfigError,
 )
 from agent6.config.layer import (
     load_effective,
+    resolved_state_dir,
 )
+from agent6.git_ops import GitError, git_common_dir
 from agent6.paths import private_dirs, secrets_path
 from agent6.sandbox import (
     JailUnavailableError,
@@ -43,6 +46,7 @@ from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
 from agent6.tools.policy import (
     JAIL_TMP_HOME,
     Workspace,
+    jail_policy,
     persistent_jail_home,
     resolve_network,
     workspace_for,
@@ -412,7 +416,35 @@ def _home_line(cfg: Config, selected: IsolationLevel) -> str:
     return f"    rw  {persistent}  (HOME, persists across runs: {why})"
 
 
-def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -> None:
+def _fork_git_grant(cfg: Config, ws: Workspace, selected: IsolationLevel) -> Path | None:
+    """The repository git dir a jailed command reaches when the workspace is
+    a fork's worktree, as the fork's leg grants it, else None: the
+    `worktree_git_dir` of the fork manifest naming the workspace, under the
+    repository's state dir (the repository is the worktree's git common
+    dir's parent), through the leg's own policy builder, which grants it
+    once the worktree's `.git` pointer still names it and raises
+    JailUnavailableError otherwise. A fork created from inside another
+    worktree records its manifest under that worktree's state dir, so run
+    from such a nested worktree this finds nothing."""
+    if selected == "none":
+        return None
+    try:
+        repo = git_common_dir(ws.root).parent
+    except GitError:
+        return None
+    for worktree, sessions in worktree_owners(resolved_state_dir(repo)).items():
+        if worktree.resolve() != ws.root:
+            continue
+        git_dir = next((m.worktree_git_dir for _d, m in sessions if m.worktree_git_dir), None)
+        if git_dir is not None:
+            jail_policy(ws.root, cfg, selected, ("true",), worktree_git_dir=git_dir)
+        return git_dir
+    return None
+
+
+def _boundaries_commands(
+    cfg: Config, ws: Workspace, selected: IsolationLevel, git_grant: Path | None
+) -> None:
     # The resolved fact, not the knob's value: "no" WITHHOLDS the command tools
     # from the model rather than prompting for them, and the paths below are
     # then what an operator-driven jailed command (a machine tool state, an
@@ -434,6 +466,10 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
         "; .git re-bound read-only" if selected == "strict" and cfg.sandbox.protect_git else ""
     )
     print(f"    rw  {ws.root}  (the workspace{git_note})")
+    if git_grant is not None:
+        print(
+            f"    ro  {git_grant}  (the repository's .git, which this linked worktree points into)"
+        )
     if selected == "strict":
         print("    rw  /tmp  (a tmpfs the run's commands share, gone at teardown)")
         print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)} (+ a minimal /etc)")
@@ -521,7 +557,12 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
         print(f"    --  {p}  (hidden: tools refuse it)")
 
     print()
-    _boundaries_commands(cfg, ws, selected)
+    try:
+        git_grant = _fork_git_grant(cfg, ws, selected)
+    except JailUnavailableError as exc:
+        print(f"  [FAIL] a run would refuse: {exc}")
+        return [_DoctorCheck(name="boundaries", status="FAIL", detail=str(exc))]
+    _boundaries_commands(cfg, ws, selected, git_grant)
     print()
     _boundaries_mcp(cfg)
     print()
