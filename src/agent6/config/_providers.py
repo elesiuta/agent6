@@ -130,8 +130,8 @@ class _ProviderBase(BaseModel):
         default="",
         description=(
             "The endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for "
-            "`vertex` and `azure`. Its host is the only network destination the agent dials for "
-            "this provider."
+            "`vertex` and `azure`. The provider API destination; a ChatGPT sign-in also dials "
+            "its fixed OAuth authority."
         ),
     )
     # Auth header style; defaults from (api_format, deployment) in _fill_defaults.
