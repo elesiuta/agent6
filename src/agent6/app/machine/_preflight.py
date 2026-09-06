@@ -6,19 +6,18 @@ Before the engine composition drives a machine, these checks refuse a run that
 can't be honored -- a tool-network need the isolation cannot enforce
 (`machine_network_refusal`) -- and they resolve the machine's own read-only
 protect paths (`machine_protect_paths`) and the operator notify hook
-(`build_machine_notify_hook`). Pure computations plus the one host subprocess
-(the notify hook, whose argv comes from `[machine.notify]`, never LLM output).
+(`build_machine_notify_hook`). Pure computations; the hook itself runs through
+`app/finalize.run_notify_hook`, the one runner both notify hooks share.
 """
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app.confine import check_network_support
-from agent6.app.finalize import hook_env
+from agent6.app.finalize import hook_env, run_notify_hook
 from agent6.app.machine._bundle import is_inside
 from agent6.config import Config
 from agent6.machine import ToolState
@@ -91,14 +90,19 @@ def machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
     return tuple(out)
 
 
+def _stderr_note(message: str) -> None:
+    """A machine's own notices go to stderr: its stdout is the operator's
+    run output."""
+    print(f"[agent6] {message}", file=sys.stderr)
+
+
 def build_machine_notify_hook(
     cfg: Config, machine_id: str, root: Path
 ) -> Callable[[str, str, str, str], None] | None:
     """The operator notify hook fired on `machine.notify`/`machine.end`, or None.
 
-    The argv comes from `[machine.notify].on_event`, operator-controlled and
-    never LLM output, so it runs on the host OUTSIDE the jail (mirror of
-    `[notify].on_complete`). Failures are logged and never change the exit code.
+    The argv comes from `[machine.notify].on_event`, the mirror of
+    `[notify].on_complete`; see `run_notify_hook` for how it runs.
     """
     notify = cfg.machine.notify
     if not notify.on_event:
@@ -113,16 +117,12 @@ def build_machine_notify_hook(
             AGENT6_MACHINE_MESSAGE=message,
             AGENT6_MACHINE_LEVEL=level,
         )
-        try:
-            res = subprocess.run(
-                list(notify.on_event), env=env, timeout=notify.timeout_s, check=False
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            print(f"[agent6] machine.notify hook failed: {exc}", file=sys.stderr)
-            return
-        if res.returncode != 0:
-            # check=False keeps the hook non-fatal; a failing hook must still
-            # be visible or notifications silently stop arriving.
-            print(f"[agent6] machine.notify hook exited {res.returncode}", file=sys.stderr)
+        run_notify_hook(
+            notify.on_event,
+            env,
+            timeout_s=notify.timeout_s,
+            label="machine.notify hook",
+            note=_stderr_note,
+        )
 
     return fire

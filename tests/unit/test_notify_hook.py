@@ -14,7 +14,7 @@ from agent6.app.machine import (
     build_machine_notify_hook,
 )
 from agent6.app.reporter import STDIO_REPORTER
-from agent6.config import NotifyConfig, load_config
+from agent6.config import Config, NotifyConfig, load_config
 
 
 def test_notify_noop_when_unconfigured(tmp_path: Path) -> None:
@@ -46,6 +46,32 @@ def test_notify_failure_does_not_raise(tmp_path: Path, capsys: pytest.CaptureFix
     )
     captured = capsys.readouterr()
     assert "notify.on_complete failed" in captured.err
+
+
+def test_both_hooks_run_the_same_way(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Two runners for one job drifted in both directions: the run hook
+    swallowed a non-zero exit (a hook that fails silently stops notifying with
+    nobody the wiser), and the machine hook let the hook's stdout into the
+    parent's -- under `agent6 acp` that is the JSON-RPC stream."""
+    argv = ("sh", "-c", "echo HOOK_STDOUT; exit 3")
+    fire_notify_hook(
+        NotifyConfig(on_complete=argv, timeout_s=5.0),
+        session_id="run-xyz",
+        session_dir=tmp_path,
+        ok=True,
+        reason="finish_session",
+        verified="passed",
+        reporter=STDIO_REPORTER,
+    )
+    cfg = Config.model_validate({"machine": {"notify": {"on_event": list(argv)}}})
+    fire = build_machine_notify_hook(cfg, "machine-1", tmp_path)
+    assert fire is not None
+    fire("machine.end", "done", "", "info")
+
+    captured = capsys.readouterr()
+    assert "notify.on_complete exited 3" in captured.err
+    assert "machine.notify hook exited 3" in captured.err
+    assert "HOOK_STDOUT" not in captured.out
 
 
 def test_notify_ok_zero_when_failed(tmp_path: Path) -> None:

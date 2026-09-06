@@ -9,7 +9,7 @@ import contextlib
 import json
 import shlex
 import subprocess
-from collections.abc import Collection
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 
 from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
@@ -609,6 +609,37 @@ def hook_env(**agent6_vars: str) -> dict[str, str]:
     return curated_env(extra=agent6_vars)
 
 
+def run_notify_hook(
+    argv: Sequence[str],
+    env: dict[str, str],
+    *,
+    timeout_s: float,
+    label: str,
+    note: Callable[[str], None],
+) -> None:
+    """Run one operator notify hook. The one runner behind both, because the
+    two drifted in both directions: one leaked the hook's stdout into the
+    parent's (under `agent6 acp` that is the JSON-RPC stream, and one printed
+    line desynchronises it), the other swallowed a non-zero exit, and a hook
+    that fails silently stops notifying without anyone noticing.
+
+    The argv is operator-controlled, never LLM output, so it runs on the host
+    outside the jail. A failure is reported and never changes the exit code."""
+    try:
+        res = subprocess.run(
+            list(argv),
+            stdout=subprocess.DEVNULL,
+            env=env,
+            timeout=timeout_s,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        note(f"{label} failed: {exc}")
+        return
+    if res.returncode != 0:
+        note(f"{label} exited {res.returncode}")
+
+
 def fire_notify_hook(
     notify: NotifyConfig,
     *,
@@ -621,9 +652,8 @@ def fire_notify_hook(
 ) -> None:
     """Run the operator-configured post-completion hook.
 
-    The argv comes from `[notify].on_complete` in your config, operator-
-    controlled, not LLM-controlled, so it does not go through the jail.
-    Failures are logged to stderr and do not change the agent6 exit code.
+    The argv comes from `[notify].on_complete` in your config; see
+    `run_notify_hook` for how it runs.
     """
     if not notify.on_complete:
         return
@@ -637,17 +667,10 @@ def fire_notify_hook(
         AGENT6_SESSION_REASON=reason,
         AGENT6_SESSION_DIR=str(session_dir),
     )
-    try:
-        subprocess.run(
-            list(notify.on_complete),
-            # Never the parent's stdout: under `agent6 acp` that is the
-            # JSON-RPC stream, and one printed line desynchronises it.
-            stdout=subprocess.DEVNULL,
-            env=env,
-            timeout=notify.timeout_s,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        reporter.note(
-            f"notify.on_complete failed: {exc}",
-        )
+    run_notify_hook(
+        notify.on_complete,
+        env,
+        timeout_s=notify.timeout_s,
+        label="notify.on_complete",
+        note=reporter.note,
+    )

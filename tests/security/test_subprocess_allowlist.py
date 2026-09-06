@@ -40,7 +40,6 @@ _PATTERN = re.compile(
 # completer, which runs in the operator's shell, not in agent6).
 ALLOWED = {
     "app/finalize.py",
-    "app/machine/_preflight.py",
     "app/machine_agent.py",
     "git_ops.py",
     "providers/claude_code.py",

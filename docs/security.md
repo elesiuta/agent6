@@ -401,12 +401,12 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Spawns the agent6 CLI detached for run and machine launches, and captures `sessions merge` / `prune` / `config set`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present machine notification.
 - `ui/cli/` helpers: `$EDITOR` for plan and steer editing; `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail; `rg` for history search; the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`; `cp` / `rm` / `apparmor_parser` via sudo with fixed argv for `agent6 system apparmor`.
-- `app/finalize.py`: the `[notify].on_complete` hook at run end.
-  Argv from config, env from `hook_env` (a minimal base plus `AGENT6_SESSION_*`, never the provider keys in the operator environment).
+- `app/finalize.py`: both operator notify hooks (`run_notify_hook`): `[notify].on_complete` at run end and `[machine.notify].on_event` from a machine.
+  Argv from config, env from `hook_env` (a minimal base plus `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`, never the provider keys in the operator environment).
 - `app/machine/_scriptcheck.py`: ruff and ty with fixed argv, reading generated scripts statically.
   Those scripts execute only via `run_in_jail`.
 - `app/machine_agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.
-  Its `[machine.notify].on_event` hook (fired from `app/machine/_preflight.py`) runs on the host with the same minimal `hook_env` base plus `AGENT6_MACHINE_*`.
+  Its `[machine.notify].on_event` hook runs on the host through `app/finalize.run_notify_hook`.
 - `ui/cli/skills_cmds.py`: `git clone --depth 1 -- <url>` with fixed argv for `agent6 skills install`.
   The URL is operator-supplied and nothing fetched is executed.
 - `ui/tui/clipboard.py`: `tmux set-buffer -w` with the copied transcript text as one data argument.
