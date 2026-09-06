@@ -1445,3 +1445,14 @@ def test_session_snapshot_as_of_a_step(server: tuple[WebServer, int], tmp_path: 
     assert status == 200 and snap["as_of"] is None and len(snap["steps"]) == 2
     status, _raw, _ = _get(port, f"/api/session/asof-run?step={'c' * 40}")
     assert status == 422
+
+
+def test_a_malformed_body_is_the_clients_error(server: tuple[WebServer, int]) -> None:
+    """A body that is not JSON, or not an object, is a 400 with the reason,
+    never a 500."""
+    _srv, port = server
+    headers = {"Content-Type": "application/json"}
+    status, body = _post_raw(port, "/api/new", b"not json", headers)
+    assert status == 400 and "bad request" in str(body.get("error"))
+    status, body = _post_raw(port, "/api/new", b"[1, 2]", headers)
+    assert status == 400 and "JSON object" in str(body.get("error"))

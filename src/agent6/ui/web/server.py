@@ -276,6 +276,10 @@ class _Handler(BaseHTTPRequestHandler):
             # The body was read (validation runs on the parsed body), so the
             # connection framing is intact and may stay open.
             self._send_json({"error": f"bad request: {exc.errors()}"}, status=400)
+        except ValueError as exc:
+            # A body that is not JSON, or not an object: `_read_body` consumed
+            # it, so the connection may stay open too.
+            self._send_json({"error": f"bad request: {exc}"}, status=400)
         except Exception as exc:  # never take the whole server down for one bad request
             # The body may not have been read; a keep-alive reuse would parse the
             # leftover bytes as the next request line. Close instead.
