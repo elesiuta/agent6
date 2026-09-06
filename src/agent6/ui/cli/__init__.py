@@ -20,7 +20,7 @@ import argcomplete
 
 from agent6.errors import OperatorError
 from agent6.events import EventWriteError
-from agent6.ui.cli._common import _enforce_root_policy
+from agent6.ui.cli._common import _enforce_root_policy, error, refuse
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
 
 if TYPE_CHECKING:
@@ -64,12 +64,12 @@ def cli_main(argv: list[str] | None = None) -> int:
         print("\nagent6: interrupted.", file=sys.stderr)
         return 130
     except OperatorError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     except Exception as exc:  # top-level last resort; re-raised under AGENT6_DEBUG
         if os.environ.get("AGENT6_DEBUG") == "1":
             raise
-        print(f"ERROR: unexpected {type(exc).__name__}: {exc}", file=sys.stderr)
+        error(f"unexpected {type(exc).__name__}: {exc}")
         try:
             fd, path = tempfile.mkstemp(prefix="agent6-crash-", suffix=".log")
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -98,23 +98,13 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         # -i is explicit and needs the terminal its help names; run on a pipe,
         # the REPL's first prompt reads EOF and stops the run mid-task after
         # the first commit.
-        print(
-            "ERROR: -i needs a TTY on stdin (the REPL reads it); drop -i for a headless run.",
-            file=sys.stderr,
-        )
+        error("-i needs a TTY on stdin (the REPL reads it); drop -i for a headless run.")
         return 2
     if getattr(args, "parallel", "") and (args.interactive or args.tui):
-        print(
-            "ERROR: --parallel cannot combine with -i or --tui"
-            " (each lane runs headless and detached).",
-            file=sys.stderr,
-        )
+        error("--parallel cannot combine with -i or --tui (each lane runs headless and detached).")
         return 2
     if getattr(args, "parallel", "") and args.session_id:
-        print(
-            "ERROR: --parallel cannot combine with --session-id (each lane mints its own id).",
-            file=sys.stderr,
-        )
+        error("--parallel cannot combine with --session-id (each lane mints its own id).")
         return 2
     seed_from = getattr(args, "seed_from", "")
     if not args.task and seed_from:
@@ -126,15 +116,11 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         try:
             layout = resolve_session(resolved_state_dir(Path.cwd()), seed_from)
         except SessionIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
         plan_path = layout.session_dir / "plan.md"
         if not plan_path.is_file():
-            print(
-                "ERROR: 'run' needs a task; --from <id> seeds one, and a plan id alone runs"
-                " that plan.",
-                file=sys.stderr,
-            )
+            error("'run' needs a task; --from <id> seeds one, and a plan id alone runs that plan.")
             return 2
         task = _from_plan_task(read_operator_file(plan_path), layout.session_id)
         seed_from = ""
@@ -145,18 +131,14 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         # `run` in a script should not silently start mutating).
         last_plan = _most_recent_plan_session_id(_plans_dir(Path.cwd()))
         if last_plan is None:
-            print(
-                "ERROR: 'run' needs a task (or --from <plan-id>); no prior plan found to execute.",
-                file=sys.stderr,
-            )
+            error("'run' needs a task (or --from <plan-id>); no prior plan found to execute.")
             return 2
         plan_md = read_operator_file(_plans_dir(Path.cwd()) / last_plan / "plan.md")
         title = _first_markdown_line(plan_md)
         if not sys.stdin.isatty():
-            print(
-                f"ERROR: 'run' needs a task. Most recent plan is {last_plan}"
-                f" ({title}); execute it with: agent6 run --from {last_plan}",
-                file=sys.stderr,
+            error(
+                f"'run' needs a task. Most recent plan is {last_plan}"
+                f" ({title}); execute it with: agent6 run --from {last_plan}"
             )
             return 2
         print(f"[agent6] No task given. Most recent plan: {last_plan}  ({title})")
@@ -275,10 +257,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
     if args.plan_command == "edit":
         return _cmd_plan_edit(args.session_id)
     if not args.task:
-        print(
-            "ERROR: 'plan' needs a task argument (or `plan show/edit <id>`).",
-            file=sys.stderr,
-        )
+        error("'plan' needs a task argument (or `plan show/edit <id>`).")
         return 2
     session_id = _minted_session_id(args.session_id, "plan")
     rc = _cmd_run(
@@ -302,10 +281,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
     # REPL when -i is given, or no question + an interactive stdin.
     repl = args.interactive or (not args.task and sys.stdin.isatty())
     if not args.task and not repl:
-        print(
-            "ERROR: 'ask' needs a question (in quotes), or -i for the REPL.",
-            file=sys.stderr,
-        )
+        error("'ask' needs a question (in quotes), or -i for the REPL.")
         return 2
     question = args.task
     prefix: list[str] = []
@@ -373,7 +349,7 @@ def _resolve_target(target: str) -> SessionLayout | None:
     try:
         layout = resolve_or_newest_layout(Path.cwd(), target)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return None
     if layout is None:
         print_no_session_match(target, resolved_state_dir(Path.cwd()))
@@ -395,16 +371,13 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
         split = rest.index("--")
         before, argv = rest[:split], tuple(rest[split + 1 :])
         if len(before) > 1:
-            print(
-                f"ERROR: at most one session id before `--`, got {' '.join(before)!r}.",
-                file=sys.stderr,
-            )
+            error(f"at most one session id before `--`, got {' '.join(before)!r}.")
             return 2
         target = before[0] if before else ""
     else:
         argv = tuple(rest)
     if not argv:
-        print("ERROR: give a command (after `--` when naming a session).", file=sys.stderr)
+        error("give a command (after `--` when naming a session).")
         return 2
     layout = _resolve_target(target)
     if layout is None:
@@ -412,7 +385,7 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
     try:
         cfg = load_effective(Path.cwd(), args.config).config
     except ConfigError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     return exec_in_session(layout, cfg, Path.cwd(), argv)
 
@@ -437,7 +410,7 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
                 if read_session_netns_pid(layout.session_dir) is not None
                 else no_session_network_reason(layout)
             )
-            print(f"REFUSING: {reason}", file=sys.stderr)
+            refuse(f"{reason}")
             return 1
         print(f"{layout.session_id} is listening on: {', '.join(str(p) for p in ports)}")
         return 0
@@ -550,10 +523,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
 
     if getattr(args, "interactive", False) and not sys.stdin.isatty():
         # Same terminal need as `run -i` (the REPL reads stdin).
-        print(
-            "ERROR: -i needs a TTY on stdin (the REPL reads it); drop -i for a headless resume.",
-            file=sys.stderr,
-        )
+        error("-i needs a TTY on stdin (the REPL reads it); drop -i for a headless resume.")
         return 2
     rc = _cmd_resume(
         args.config,
@@ -736,7 +706,7 @@ def _dispatch_history(args: argparse.Namespace) -> int:
 
     if args.history_command == "search":
         if not args.query:
-            print("ERROR: 'history' needs a query, the pattern to search for.", file=sys.stderr)
+            error("'history' needs a query, the pattern to search for.")
             return 2
         return _cmd_history_search(args.query, fixed=not args.regex, session_id=args.session)
     raise AssertionError("unreachable")  # pragma: no cover -- history subparser is required
@@ -914,5 +884,5 @@ def main(argv: list[str] | None = None) -> int:
         # A lifecycle stopped because the durable run journal could not be
         # appended; its finally already released locks and egress. One report
         # here beats a per-command arm in every lifecycle.
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 1

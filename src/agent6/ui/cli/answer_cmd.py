@@ -17,7 +17,7 @@ from pathlib import Path
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import worker_is_alive, write_question_answers
 from agent6.sessions.layout import SessionLayout
-from agent6.ui.cli._common import resolve_session_layout
+from agent6.ui.cli._common import error, refuse, resolve_session_layout
 from agent6.viewmodel import QuestionPrompt, open_question
 
 
@@ -31,7 +31,7 @@ def _print_question(session_id: str, prompt: QuestionPrompt) -> None:
 
 
 def _refuse(reason: str) -> int:
-    print(f"REFUSING: {reason}", file=sys.stderr)
+    refuse(f"{reason}")
     return 2
 
 
@@ -40,7 +40,7 @@ def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
     try:
         layout = resolve_session_layout(Path.cwd(), target)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     return _answer_resolved(layout, answers)
 

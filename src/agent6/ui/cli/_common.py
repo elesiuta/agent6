@@ -8,6 +8,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from agent6.app.reporter import STDIO_REPORTER
 from agent6.config.layer import (
     resolved_state_dir,
 )
@@ -147,6 +148,12 @@ def _plans_dir(repo_root: Path) -> Path:
 # first contact whichever command the operator happened to type, and it names
 # the way out rather than the directory that is missing.
 NOTHING_YET = 'no sessions yet. Start one with `agent6 run "<task>"`.'
+
+# The stderr conventions belong to app.reporter (REFUSING:, ERROR:, [agent6]
+# WARNING:); every CLI message goes through these, so the wording has one owner.
+error = STDIO_REPORTER.error
+refuse = STDIO_REPORTER.refuse
+warn = STDIO_REPORTER.warn
 
 # The one sentence every command's id argument prints; a command whose default
 # differs appends its own clause.

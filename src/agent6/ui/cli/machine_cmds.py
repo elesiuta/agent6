@@ -55,7 +55,7 @@ from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import machines_root
 from agent6.types import IsolationLevel
-from agent6.ui.cli._common import plural, styled_status
+from agent6.ui.cli._common import error, plural, refuse, styled_status
 from agent6.ui.cli.machine_check import _cmd_machine_test
 from agent6.ui.cli.plan_watch import format_plain_event
 from agent6.ui.notify import desktop_notify
@@ -171,7 +171,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     command and exits non-zero, it never relaxes a sandbox setting unattended.
     Returns the new `(cfg, isolation)` when the fix applied and re-validates
     clear, else an exit code."""
-    print(f"REFUSING: {refusal}", file=sys.stderr)
+    refuse(f"{refusal}")
     fix = _suggested_network_fix(cfg, isolation, tool_states)
     if fix is None:
         print(
@@ -270,10 +270,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
-        print(
-            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
-            file=sys.stderr,
-        )
+        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
     source_path = root / "machine.asm.toml"
     try:
@@ -287,7 +284,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
     try:
         result = drive(spec, journal, None, live=False)
     except (JournalError, EngineError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 1
     print(
         f"{result.status.upper()}: {spec.machine} replayed to {result.state!r}"
@@ -310,10 +307,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
-        print(
-            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
-            file=sys.stderr,
-        )
+        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
     source_path = root / "machine.asm.toml"
     try:
@@ -329,7 +323,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         events = journal.read()
         snapshot = journal.latest_snapshot()
     except (JournalError, EngineError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 1
     # A corrupt wait.json must not hide the whole readout: the shared dir word
     # (machine_word_for_dir -> machine_is_parked) tolerates it as "parked, keep
@@ -402,15 +396,12 @@ def _cmd_machine_poke(
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
-        print(
-            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
-            file=sys.stderr,
-        )
+        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
     # An ended machine consumes no signals: a poke would sit unread, so the
     # "it will wake on its next signal check" reply would be a lie. Refuse.
     if refusal := machine_verb_refusal(root, machine_id, "poke"):
-        print(f"ERROR: {refusal}", file=sys.stderr)
+        error(f"{refusal}")
         return 1
     journal = MachineJournal(root)
     if message is not None:
@@ -419,14 +410,14 @@ def _cmd_machine_poke(
         try:
             payload = json.loads(data)
         except json.JSONDecodeError as exc:
-            print(f"ERROR: --data is not valid JSON: {exc}", file=sys.stderr)
+            error(f"--data is not valid JSON: {exc}")
             return 2
     else:
         payload = None
     try:
         journal.poke(payload)
     except JournalError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 1
     carried = "" if payload is None else " (with payload)"
     print(f"poked {machine_id}: it will wake on its next signal check{carried}")
@@ -443,13 +434,10 @@ def _cmd_machine_stop(machine_id: str) -> int:
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
-        print(
-            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
-            file=sys.stderr,
-        )
+        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
     if refusal := machine_verb_refusal(root, machine_id, "stop"):
-        print(f"ERROR: {refusal}", file=sys.stderr)
+        error(f"{refusal}")
         return 1
     write_stop_request(root)
     print(f"stop requested: {machine_id} parks at its next transition boundary")
@@ -497,10 +485,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR09
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
-        print(
-            f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
-            file=sys.stderr,
-        )
+        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
     source = root / "machine.asm.toml"
     try:
@@ -514,7 +499,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR09
     try:
         ms = fold_machine(spec, journal.read())
     except JournalError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 1
     print(_render_overview(ms), flush=True)
     if ms.ended is not None:
@@ -540,7 +525,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR09
             except JournalError as exc:
                 # The same clean degradation `machine status` gives a corrupt
                 # journal; attach must not turn it into a traceback.
-                print(f"ERROR: {exc}", file=sys.stderr)
+                error(f"{exc}")
                 return 1
             for t in cursor.new_transitions(ms):
                 print(f"  {t.line}", flush=True)

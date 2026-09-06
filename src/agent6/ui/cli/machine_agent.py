@@ -17,6 +17,7 @@ from pathlib import Path
 
 from agent6.app.machine_agent import MachineAgentRequest, run_one
 from agent6.events import EventSink, EventWriteError
+from agent6.ui.cli._common import error
 from agent6.ui.cli._console_view import ConsoleView
 
 
@@ -36,7 +37,7 @@ def main() -> int:
         # This subprocess never reaches the CLI dispatch backstop, so without
         # this an unwritable per-state journal dumped a raw traceback at the
         # operator and the engine reduced the state to a bare "error".
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 1
     Path(sys.argv[2]).write_text(out.model_dump_json(), encoding="utf-8")
     return 0

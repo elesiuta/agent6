@@ -21,6 +21,7 @@ from agent6.git_ops import (
 )
 from agent6.init import _ask, init_workspace
 from agent6.paths import chown_to_real_user
+from agent6.ui.cli._common import error
 
 _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
 
@@ -145,10 +146,7 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
     if not assume_yes and not sys.stdin.isatty():
         # Refuse rather than silently take every default and write files:
         # consent comes from a TTY or --yes.
-        print(
-            "ERROR: no input. stdin is not a TTY; re-run with --yes to accept every default.",
-            file=sys.stderr,
-        )
+        error("no input. stdin is not a TTY; re-run with --yes to accept every default.")
         return 2
     interactive = not assume_yes
     # A scaffold path init leaves untouched is the operator's file, whether or

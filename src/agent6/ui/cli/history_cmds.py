@@ -18,6 +18,7 @@ from agent6.sessions.id import SessionIdError
 from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout
 from agent6.ui.cli._common import (
     all_session_dirs,
+    error,
     newest_layout_holding,
     resolve_session_layout,
     sgr,
@@ -34,10 +35,9 @@ from agent6.viewmodel.transcript_render import (
 def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
     rg = shutil.which("rg")
     if rg is None:
-        print(
-            "ERROR: `rg` (ripgrep) is required for `agent6 history search`. "
-            "Install ripgrep (https://github.com/BurntSushi/ripgrep) and retry.",
-            file=sys.stderr,
+        error(
+            "`rg` (ripgrep) is required for `agent6 history search`. "
+            "Install ripgrep (https://github.com/BurntSushi/ripgrep) and retry."
         )
         return 2
     cwd = Path.cwd()
@@ -46,7 +46,7 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
         try:
             targets = [resolve_session_layout(cwd, session_id).session_dir]
         except SessionIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
     else:
         # No id: search every session across every bucket, so a
@@ -362,14 +362,12 @@ def _cmd_history_graph(session_id: str) -> int:
         try:
             layout = resolve_session_layout(cwd, session_id)
         except SessionIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
     else:
         found = newest_layout_holding(cwd, "graph")
         if found is None:
-            print(
-                f"ERROR: no sessions with a graph under {resolved_state_dir(cwd)}", file=sys.stderr
-            )
+            error(f"no sessions with a graph under {resolved_state_dir(cwd)}")
             return 2
         layout = found
         print(
@@ -380,7 +378,7 @@ def _cmd_history_graph(session_id: str) -> int:
     target_id = layout.session_id
     nodes = load_graph(layout)
     if not nodes:
-        print(f"ERROR: run {target_id} has no persisted graph nodes", file=sys.stderr)
+        error(f"run {target_id} has no persisted graph nodes")
         return 2
 
     print(f"Session id: {target_id}")
@@ -412,13 +410,11 @@ def _transcript_layout(cwd: Path, session_id: str) -> SessionLayout | int:
         try:
             return resolve_session_layout(cwd, session_id)
         except SessionIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
     found = newest_layout_holding(cwd, "transcripts")
     if found is None:
-        print(
-            f"ERROR: no sessions with transcripts under {resolved_state_dir(cwd)}", file=sys.stderr
-        )
+        error(f"no sessions with transcripts under {resolved_state_dir(cwd)}")
         return 2
     print(f"[agent6] transcript for most recent session: {found.session_id}", file=sys.stderr)
     return found
@@ -441,12 +437,12 @@ def _cmd_history_transcript(
     try:
         window = _parse_seq_window(seq)
     except ValueError:
-        print(f"ERROR: --seq expects N or N-M with N <= M, got {seq!r}", file=sys.stderr)
+        error(f"--seq expects N or N-M with N <= M, got {seq!r}")
         return 2
 
     transcripts = load_transcripts(layout.transcripts_dir)
     if not transcripts:
-        print(f"ERROR: run {layout.session_id} has no transcripts", file=sys.stderr)
+        error(f"run {layout.session_id} has no transcripts")
         return 2
 
     if as_json:

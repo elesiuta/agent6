@@ -6,7 +6,6 @@ candidates, its own module so `sessions list` does not load the judge."""
 from __future__ import annotations
 
 import contextlib
-import sys
 from pathlib import Path
 
 from agent6.app.compare import RankOutcome, manifest_task, print_ranked_candidates
@@ -26,6 +25,7 @@ from agent6.sessions.manifest import (
 )
 from agent6.ui.cli._common import (
     _runs_dir,
+    error,
     plural,
 )
 from agent6.ui.cli._compare import rank
@@ -173,10 +173,9 @@ def _cmd_compare(
         by_fanout = bool(lanes)
         session_ids = lanes or session_ids
     if len(session_ids) < 2:
-        print(
-            "ERROR: sessions compare needs 2 or more run ids, or one --parallel fan-out id"
-            f" (its lanes); got {len(session_ids)}.",
-            file=sys.stderr,
+        error(
+            "sessions compare needs 2 or more run ids, or one --parallel fan-out id"
+            f" (its lanes); got {len(session_ids)}."
         )
         return 2
     resolved: list[tuple[SessionLayout, SessionManifest]] = []
@@ -187,7 +186,7 @@ def _cmd_compare(
             return res
         layout, manifest = res
         if layout.session_id in seen:
-            print(f"ERROR: run {layout.session_id!r} was given more than once.", file=sys.stderr)
+            error(f"run {layout.session_id!r} was given more than once.")
             return 2
         seen.add(layout.session_id)
         resolved.append((layout, manifest))
@@ -197,10 +196,7 @@ def _cmd_compare(
     for note in notes:
         print(note)
     if not candidates:
-        print(
-            "ERROR: no comparable runs; every run given is still live or never finished.",
-            file=sys.stderr,
-        )
+        error("no comparable runs; every run given is still live or never finished.")
         return 2
 
     merged = {

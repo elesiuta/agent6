@@ -9,12 +9,11 @@ running refuses, naming `resume --steer`.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import submit_steer, worker_is_alive
-from agent6.ui.cli._common import resolve_session_layout
+from agent6.ui.cli._common import error, refuse, resolve_session_layout
 from agent6.viewmodel.listing import summarize_session_dir
 
 
@@ -22,14 +21,13 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     try:
         layout = resolve_session_layout(Path.cwd(), target)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     if not worker_is_alive(layout.session_dir):
-        print(
-            f"REFUSING: session {layout.session_id} is not running; a steer needs a"
+        refuse(
+            f"session {layout.session_id} is not running; a steer needs a"
             f" live run. Queue one for its next leg instead:"
-            f" agent6 resume {layout.session_id} --steer TEXT",
-            file=sys.stderr,
+            f" agent6 resume {layout.session_id} --steer TEXT"
         )
         return 2
     submit_steer(layout.session_dir, text, now=now)

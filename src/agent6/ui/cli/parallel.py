@@ -13,7 +13,6 @@ wire the coordinator spawner from here.
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -30,6 +29,7 @@ from agent6.directive import DirectiveError
 from agent6.git_ops import GitError, modified_paths
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.sessions.id import friendly_token
+from agent6.ui.cli._common import error, refuse, warn
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
 from agent6.ui.spawn import agent6_exe, spawn_and_locate
 
@@ -97,24 +97,23 @@ def dispatch_parallel(
     origin_state = resolved_state_dir(origin)
     for err in (budget_preflight(cfg), _parallel_approval_refusal(cfg)):
         if err is not None:
-            print(f"REFUSING: {err}", file=sys.stderr)
+            refuse(f"{err}")
             return 2
     try:
         modified = modified_paths(origin)
     except GitError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     if modified and cfg.git.dirty_tree == "ask":
         listed = "\n".join(f"    {p}" for p in modified[:10])
         more = f"\n    ... {len(modified) - 10} more" if len(modified) > 10 else ""
         n = len(modified)
-        print(
-            f"REFUSING: {n} tracked {'file has' if n == 1 else 'files have'} uncommitted"
+        refuse(
+            f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted"
             f" changes:\n{listed}{more}\n"
             "Lanes clone committed HEAD, so those changes would not reach them. Commit or"
             ' stash them first, or set [git].dirty_tree to "stash" or "include" to fan out'
-            " without them.",
-            file=sys.stderr,
+            " without them."
         )
         return 2
 
@@ -122,17 +121,17 @@ def dispatch_parallel(
     try:
         lanes = build_lane_specs(spec, cfg=cfg, origin=origin, fanout_id=fanout_id)
     except (DirectiveError, ParallelError) as exc:
-        print(f"REFUSING: {exc}", file=sys.stderr)
+        refuse(f"{exc}")
         return 2
     # Validate the named models before any clone/spawn (lanes are plain specs so
     # far, no workdir touched): refuse a typo when a cache exists to check
     # against, else warn and proceed (a fresh/offline machine is never blocked).
     verdict = validate_spec_models([ln.model for ln in lanes], cfg)
     if verdict.refused:
-        print(f"REFUSING: {refusal_message(verdict, directive=False)}", file=sys.stderr)
+        refuse(f"{refusal_message(verdict, directive=False)}")
         return 2
     if verdict.warned:
-        print(f"[agent6] WARNING: {warning_message(verdict)}", file=sys.stderr)
+        warn(f"{warning_message(verdict)}")
     return run_parallel(
         task,
         lanes,

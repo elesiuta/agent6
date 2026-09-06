@@ -28,6 +28,8 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
+from agent6.ui.cli._common import error, warn
+
 _APPARMOR_PROFILE_PATH = "/etc/apparmor.d/agent6-jail"
 
 # The bundled AppArmor profile. Shipped as a constant so a pip/uv/pipx install
@@ -74,10 +76,10 @@ def _run_priv(argv: list[str], *, what: str) -> bool:
     try:
         rc = subprocess.run(full, check=False).returncode
     except OSError as exc:
-        print(f"ERROR: could not {what}: {exc}", file=sys.stderr)
+        error(f"could not {what}: {exc}")
         return False
     if rc != 0:
-        print(f"ERROR: {what} failed (exit {rc}).", file=sys.stderr)
+        error(f"{what} failed (exit {rc}).")
     return rc == 0
 
 
@@ -87,10 +89,9 @@ def _discard_unloaded_profile() -> None:
     loaded. Best effort; say so if the file survives."""
     _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="remove the unloaded profile")
     if Path(_APPARMOR_PROFILE_PATH).is_file():
-        print(
-            f"WARNING: {_APPARMOR_PROFILE_PATH} was left on disk UNLOADED;"
-            " remove it with `agent6 system apparmor remove`.",
-            file=sys.stderr,
+        warn(
+            f"{_APPARMOR_PROFILE_PATH} was left on disk UNLOADED;"
+            " remove it with `agent6 system apparmor remove`."
         )
     else:
         print(
@@ -133,10 +134,7 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         _run_priv(["apparmor_parser", "-R", _APPARMOR_PROFILE_PATH], what="unload the profile")
         _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="delete the profile")
         if Path(_APPARMOR_PROFILE_PATH).is_file():
-            print(
-                f"ERROR: {_APPARMOR_PROFILE_PATH} is still present after removal.",
-                file=sys.stderr,
-            )
+            error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
             return 1
         print("Removed the agent6-jail AppArmor profile. The sandbox falls back to hardened.")
         return 0

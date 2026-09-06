@@ -40,7 +40,7 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
-from agent6.ui.cli._common import home_contracted, sgr
+from agent6.ui.cli._common import home_contracted, sgr, warn
 from agent6.ui.cli._steer_menu import MENU_COMMANDS
 
 _ORIGIN_FILE = ".origin.toml"
@@ -509,7 +509,7 @@ def _cmd_skills_list(config_path: Path | None = None) -> int:
                 prefix += f"{('' if st == 'enabled' else f'[{st}]'):<{tag_w}}  "
             print(f"{prefix}{_one_line(s.description, max(20, _term_width() - len(prefix)))}")
     for w in warnings:
-        print(f"WARNING: {w}", file=sys.stderr)
+        warn(f"{w}")
     return 0
 
 

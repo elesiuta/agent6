@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +23,7 @@ from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
-from agent6.ui.cli._common import print_no_session_match, resolve_or_newest_layout
+from agent6.ui.cli._common import error, print_no_session_match, resolve_or_newest_layout
 from agent6.viewmodel import (
     LogScan,
     existing_run_branch,
@@ -148,7 +147,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         # An ambiguous prefix names its candidates (as attach and runs stop do);
         # swallowing it printed "no session matches <id>", which is false when
         # several do.
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     target = layout.session_dir if layout is not None else None
     if target is None or not target.is_dir():

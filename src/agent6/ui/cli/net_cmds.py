@@ -33,6 +33,7 @@ from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.policy import jail_policy
 from agent6.types import NetworkMode
+from agent6.ui.cli._common import error, refuse
 from agent6.viewmodel import session_is_live, summarize_session_dir
 
 _JOIN_ORDER = (("user", os.CLONE_NEWUSER), ("net", os.CLONE_NEWNET))
@@ -214,7 +215,7 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     # run's jail is gone with it (a fresh one built from its recorded policy
     # is a different place, at today's HEAD, with none of its processes).
     if not session_is_live(layout.session_dir):
-        print(f"REFUSING: {no_session_network_reason(layout)}", file=sys.stderr)
+        refuse(f"{no_session_network_reason(layout)}")
         return 2
     pid = read_session_netns_pid(layout.session_dir)
     # The RUN'S recorded isolation and network, not today's config: an
@@ -229,7 +230,7 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
         network = "session" if pid else network_word
     else:
         print(
-            "[agent6] warning: this run recorded no launch policy; using the"
+            "[agent6] WARNING: this run recorded no launch policy; using the"
             " current config, which may differ from what the run's commands got.",
             file=sys.stderr,
         )
@@ -238,12 +239,12 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     try:
         policy = jail_policy(cwd, cfg, isolation, argv, network=network, timeout_s=0.0)
     except JailUnavailableError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     if policy.network == "session" and pid is None:
         # The run recorded the session network but holds none (an isolation
         # short of strict): refuse rather than open /proc/None.
-        print(f"REFUSING: {no_session_network_reason(layout)}", file=sys.stderr)
+        refuse(f"{no_session_network_reason(layout)}")
         return 2
     if policy.network == "session":
         # The run's network belongs to the run; borrow it through the holder
@@ -258,7 +259,7 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     try:
         result = run_in_jail(policy, session_net=borrowed)
     except JailUnavailableError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     finally:
         if borrowed is not None:

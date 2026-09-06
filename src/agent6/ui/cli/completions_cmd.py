@@ -39,6 +39,7 @@ from argcomplete.shell_integration import shellcode
 
 from agent6.errors import read_operator_file
 from agent6.paths import global_config_dir
+from agent6.ui.cli._common import error
 
 SHELLS = ("bash", "zsh", "fish", "xonsh")
 _MARK_BEGIN = "# >>> agent6 completions >>>"
@@ -231,10 +232,9 @@ def cmd_completions(shell_arg: str | None, *, print_only: bool) -> int:
     shell = shell_arg or detect_shell()
     if shell not in SHELLS:
         detected = f" (detected {shell!r})" if shell else ""
-        print(
-            f"ERROR: unsupported or unknown shell{detected}."
-            f" Pass one of: agent6 completions {'|'.join(SHELLS)}",
-            file=sys.stderr,
+        error(
+            f"unsupported or unknown shell{detected}."
+            f" Pass one of: agent6 completions {'|'.join(SHELLS)}"
         )
         return 2
     # Xonsh is not an argcomplete backend; it gets a generated completer.

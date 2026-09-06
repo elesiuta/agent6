@@ -17,7 +17,7 @@ from agent6.app.resume import resume_task
 from agent6.config import Config
 from agent6.sessions.id import SessionIdError
 from agent6.types import session_kind
-from agent6.ui.cli._common import resolve_or_newest_layout
+from agent6.ui.cli._common import error, resolve_or_newest_layout
 from agent6.ui.cli.run import session_frontend
 from agent6.viewmodel.listing import finished_needs_new_work
 
@@ -41,10 +41,9 @@ def _cmd_fork(
     first safe boundary. `--no-run` just creates the fork dir.
     """
     if no_run and steer.strip():
-        print(
-            "ERROR: --steer seeds the immediate continuation, which --no-run skips."
-            " Drop --no-run, or start the fork later with `agent6 resume <id> --steer ...`.",
-            file=sys.stderr,
+        error(
+            "--steer seeds the immediate continuation, which --no-run skips."
+            " Drop --no-run, or start the fork later with `agent6 resume <id> --steer ...`."
         )
         return 2
     if not no_run and not steer.strip() and at_turn is None:
@@ -58,12 +57,11 @@ def _cmd_fork(
         except SessionIdError:
             source = None
         if source is not None and finished_needs_new_work(source.session_dir):
-            print(
-                f"ERROR: run {source.session_id!r} already finished (the agent called"
+            error(
+                f"run {source.session_id!r} already finished (the agent called"
                 " finish_session), so a fork of its last turn has nothing to do."
                 ' Give the fork new work with --steer "<what to do next>",'
-                " or fork an earlier turn with --at-turn N.",
-                file=sys.stderr,
+                " or fork an earlier turn with --at-turn N."
             )
             return 2
     frontend = session_frontend(config_path)

@@ -47,7 +47,9 @@ from agent6.types import SESSION_KINDS
 from agent6.ui.cli._common import (
     NOTHING_YET,
     _runs_dir,
+    error,
     print_nothing_yet,
+    refuse,
     resolve_or_newest_layout,
     resolve_session_layout,
     styled_status,
@@ -166,7 +168,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
             return 0
     base_sha = manifest.base_sha
     if not base_sha:
-        print("ERROR: manifest has no base_sha; nothing to diff against", file=sys.stderr)
+        error("manifest has no base_sha; nothing to diff against")
         return 2
 
     head_ref = ref.head_ref
@@ -317,20 +319,20 @@ def _resolve_session_manifest(
         try:
             layout = resolve_session_layout(cwd, session_id)
         except SessionIdError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
     target_id = layout.session_id
     if not layout.manifest_path.is_file():
-        print(f"ERROR: session {target_id} has no manifest.json{missing_hint}", file=sys.stderr)
+        error(f"session {target_id} has no manifest.json{missing_hint}")
         return 2
     try:
         manifest = read_manifest(layout.session_dir)
     except ManifestError as exc:
-        print(f"ERROR: could not read manifest: {exc}", file=sys.stderr)
+        error(f"could not read manifest: {exc}")
         return 2
     refusal = model_git_refusal(manifest, "sessions")
     if refusal is not None:
-        print(f"REFUSING: {refusal}", file=sys.stderr)
+        refuse(f"{refusal}")
         return 2
     return layout, manifest
 
@@ -346,7 +348,7 @@ def _cmd_stop(*, session_id: str) -> int:
     try:
         layout = resolve_or_newest_layout(cwd, session_id)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     if layout is None:
         print_nothing_yet()
@@ -409,14 +411,11 @@ def _cmd_commits(*, session_id: str) -> int:
     _layout, manifest = res
     ref = _commits_ref(cwd, manifest)
     if not ref.head_ref:
-        print(
-            f"ERROR: this session has no branch to list commits from ({ref.reason}).",
-            file=sys.stderr,
-        )
+        error(f"this session has no branch to list commits from ({ref.reason}).")
         return 2
     base_sha = manifest.base_sha
     if not base_sha:
-        print("ERROR: manifest has no base_sha; nothing to list commits from", file=sys.stderr)
+        error("manifest has no base_sha; nothing to list commits from")
         return 2
     run_branch = ref.head_ref
     # Only a RECORDED branch can be pruned; the HEAD fallback is not a ref
@@ -448,7 +447,7 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
     try:
         layout = resolve_session_layout(cwd, session_id)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     print(layout.session_dir)
     return 0
@@ -458,7 +457,7 @@ def _rm_asks(cwd: Path, session_id: str) -> int:
     """Clear this directory's asks bucket; a deletion failure is an error,
     never a success line over a surviving directory."""
     if session_id:
-        print("ERROR: --asks clears this directory's asks; drop the run id.", file=sys.stderr)
+        error("--asks clears this directory's asks; drop the run id.")
         return 2
     bucket = bucket_dir(resolved_state_dir(cwd), "asks")
     gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
@@ -467,7 +466,7 @@ def _rm_asks(cwd: Path, session_id: str) -> int:
     except FileNotFoundError:
         pass
     except OSError as exc:
-        print(f"ERROR: could not remove {bucket}: {exc}", file=sys.stderr)
+        error(f"could not remove {bucket}: {exc}")
         return 1
     print(f"removed {gone} ask{'' if gone == 1 else 's'} from {cwd}")
     return 0
@@ -512,7 +511,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         # rm is the surface that deletes a husk, so it resolves one.
         layout = resolve_or_newest_layout(cwd, session_id, allow_husk=True)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     if layout is None:
         print_nothing_yet()
@@ -532,14 +531,14 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     landed = chain_tip(cwd, chain_ref_for(layout.session_id)) or ""
     tips = (landed,) if landed else ()
     if reason := _rm_refusal(layout, worktree if not sharing else None, tips):
-        print(f"REFUSING: {reason}", file=sys.stderr)
+        refuse(f"{reason}")
         return 2
     try:
         shutil.rmtree(layout.session_dir)
     except OSError as exc:
         # A partial delete leaves a real session remnant; success here would be
         # a lie and the chain-ref cleanup below would strand its commits.
-        print(f"ERROR: could not remove {layout.session_dir}: {exc}", file=sys.stderr)
+        error(f"could not remove {layout.session_dir}: {exc}")
         return 1
     went: list[str] = []  # what went with the record
     stays = ""

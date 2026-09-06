@@ -27,6 +27,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import (
     _plans_dir,
+    error,
     print_nothing_yet,
     resolve_or_newest_layout,
 )
@@ -56,20 +57,17 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
     if not session_id:
         latest = _most_recent_plan_session_id(plans_dir)
         if latest is None:
-            print("ERROR: no plans yet (start one with `agent6 plan`).", file=sys.stderr)
+            error("no plans yet (start one with `agent6 plan`).")
             return None
         session_id = latest
     try:
         resolved = resolve_session_id(plans_dir, session_id)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return None
     plan = plans_dir / resolved / "plan.md"
     if not plan.is_file():
-        print(
-            f"ERROR: {resolved} has no plan.md (was it created with `agent6 plan`?)",
-            file=sys.stderr,
-        )
+        error(f"{resolved} has no plan.md (was it created with `agent6 plan`?)")
         return None
     return resolved
 
@@ -99,7 +97,7 @@ def _cmd_plan_edit(session_id: str) -> int:
     try:
         result = subprocess.run([*argv, str(plan)], check=False)
     except OSError as exc:
-        print(f"ERROR: failed to spawn editor {editor!r}: {exc}", file=sys.stderr)
+        error(f"failed to spawn editor {editor!r}: {exc}")
         return 1
     return result.returncode
 
@@ -140,7 +138,7 @@ def _cmd_watch(
     try:
         layout = resolve_or_newest_layout(cwd, session_id)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     if layout is None:
         print_nothing_yet()
@@ -149,14 +147,14 @@ def _cmd_watch(
     if not session_id:
         print(f"[agent6] attached to most recent run: {target.name}", file=sys.stderr)
     if not target.is_dir():
-        print(f"ERROR: no such run dir: {target}", file=sys.stderr)
+        error(f"no such run dir: {target}")
         return 2
     if not tui:
         return _cmd_watch_plain(target, since=since) if raw else _watch_transcript(target)
     try:
         from agent6.ui.tui.app import run_tui  # noqa: PLC0415 - lazy: textual is optional
     except ImportError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        error(f"{e}")
         print(
             "HINT: drop --tui for a no-deps text tail of logs.jsonl.",
             file=sys.stderr,
@@ -190,7 +188,7 @@ def _cmd_tui(config_path: Path | None = None) -> int:
         )
         from agent6.ui.tui.home import run_home  # noqa: PLC0415
     except ImportError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        error(f"{e}")
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
         return 3
     cwd = Path.cwd()
@@ -497,7 +495,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
     """
     events_path = target / LOGS_NAME
     if not events_path.is_file():
-        print(f"ERROR: no logs.jsonl in {target}", file=sys.stderr)
+        error(f"no logs.jsonl in {target}")
         return 2
 
     # Read the first event for the elapsed-time anchor. Binary readline: a
@@ -526,7 +524,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
     try:
         fh = events_path.open("rb")
     except OSError as exc:
-        print(f"ERROR: cannot open {events_path}: {exc}", file=sys.stderr)
+        error(f"cannot open {events_path}: {exc}")
         return 2
 
     try:
@@ -535,7 +533,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
             try:
                 lines = fh.readlines()
             except OSError as exc:
-                print(f"ERROR: read failed: {exc}", file=sys.stderr)
+                error(f"read failed: {exc}")
                 return 2
             for raw in lines[-since:]:
                 line = raw.decode("utf-8", errors="replace")

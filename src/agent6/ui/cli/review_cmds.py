@@ -22,6 +22,7 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.ui.cli._common import error
 from agent6.workflows.loop import build_readonly_review_tools
 from agent6.workflows.review import (
     CodeReviewError,
@@ -196,18 +197,18 @@ def _cmd_review(  # noqa: PLR0911
 
     err = check_provider_keys(cfg)
     if err is not None:
-        print(f"ERROR: {err}", file=sys.stderr)
+        error(f"{err}")
         return 2
 
     root = Path.cwd()
     git = shutil.which("git")
     if git is None:
-        print("ERROR: git not found on PATH.", file=sys.stderr)
+        error("git not found on PATH.")
         return 2
 
     diff_proc = _collect_review_diff(git, root, base=base, head=head, paths=paths)
     if diff_proc.returncode != 0:
-        print(f"ERROR: git diff failed: {diff_proc.stderr.strip()}", file=sys.stderr)
+        error(f"git diff failed: {diff_proc.stderr.strip()}")
         return 2
     diff = diff_proc.stdout
     if not diff.strip():
@@ -267,7 +268,7 @@ def _cmd_review(  # noqa: PLR0911
             model_override=model_override,
         )
     except ProviderError as exc:
-        print(f"ERROR: provider init failed: {exc}", file=sys.stderr)
+        error(f"provider init failed: {exc}")
         return 2
 
     label = (

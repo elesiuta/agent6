@@ -23,6 +23,7 @@ from agent6.sessions.id import SessionIdError
 from agent6.sessions.layout import machines_root
 from agent6.ui.cli._common import (
     _runs_dir,
+    error,
     print_no_session_match,
     resolve_session_layout,
 )
@@ -52,7 +53,7 @@ def _machine_json_snapshot(machine_dir: Path) -> int:
     try:
         snap = machine_snapshot(machine_dir)
     except JournalError as exc:  # a MachineError too: the corrupt-journal wording first
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 1
     except MachineError as exc:
         source = machine_dir / "machine.asm.toml"
@@ -73,7 +74,7 @@ def _machine_watch_tui(machine_dir: Path) -> int:
     try:
         from agent6.ui.tui.machines import run_machine_watch_tui  # noqa: PLC0415
     except ImportError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        error(f"{e}")
         print("HINT: drop --tui for the plain text follow.", file=sys.stderr)
         return 3
     return run_machine_watch_tui(machine_dir, spec)
@@ -101,7 +102,7 @@ def _cmd_watch_target(  # noqa: PLR0911
     # rather than falling through to machine lookup and printing "no match".
     is_run, ambiguous = (True, None) if not target else _run_intent(cwd, target)
     if ambiguous is not None:
-        print(f"ERROR: {ambiguous}", file=sys.stderr)
+        error(f"{ambiguous}")
         return 2
 
     # Empty target, or one that resolves to a run id: watch the run.
@@ -123,8 +124,5 @@ def _cmd_watch_target(  # noqa: PLR0911
             return _machine_json_snapshot(machine_dir)
         return _machine_watch_tui(machine_dir) if tui else _cmd_machine_watch(target)
 
-    print(
-        f"ERROR: no run or machine matches {target!r} (looked under {runs_dir} and {machines_dir})",
-        file=sys.stderr,
-    )
+    error(f"no run or machine matches {target!r} (looked under {runs_dir} and {machines_dir})")
     return 2

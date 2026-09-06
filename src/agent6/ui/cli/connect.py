@@ -55,6 +55,7 @@ from agent6.secrets import (
     save_oauth_tokens,
     save_secret,
 )
+from agent6.ui.cli._common import error, warn
 
 
 def _prompt_api_key(name: str) -> str:
@@ -123,13 +124,12 @@ def _resolve_provider_name(provider: str) -> str | None:
         try:
             name = input("Provider name [anthropic]: ").strip() or "anthropic"
         except EOFError:
-            print("ERROR: no input.", file=sys.stderr)
+            error("no input.")
             return None
     if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
-        print(
-            f"ERROR: provider name {name!r} is not a valid TOML bare key"
-            " (use only letters, digits, '-', '_').",
-            file=sys.stderr,
+        error(
+            f"provider name {name!r} is not a valid TOML bare key"
+            " (use only letters, digits, '-', '_')."
         )
         return None
     return name
@@ -326,12 +326,12 @@ def _chatgpt_sign_in(name: str) -> int:
         try:
             pasted = input("Paste the callback URL the browser landed on: ").strip()
         except EOFError:
-            print("ERROR: no callback input.", file=sys.stderr)
+            error("no callback input.")
             return 2
         try:
             code = parse_callback(pasted, state=state)
         except ValueError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
 
     if grant is None:
@@ -339,21 +339,20 @@ def _chatgpt_sign_in(name: str) -> int:
         try:
             grant = exchange_code(issuer, client_id, code=code, verifier=verifier)
         except ProviderError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
     tokens = tokens_from_grant(grant)
     try:
         saved = save_oauth_tokens(name, tokens)
     except SecretsError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     plan = plan_type_of(grant)
     print(f"Signed in{f' ({plan} plan)' if plan else ''}; tokens saved to {saved} (0600).")
     if not tokens.account_id:
-        print(
-            "WARNING: the sign-in carried no ChatGPT account id; runs will refuse until a"
-            " sign-in with a ChatGPT plan succeeds.",
-            file=sys.stderr,
+        warn(
+            "the sign-in carried no ChatGPT account id; runs will refuse until a"
+            " sign-in with a ChatGPT plan succeeds."
         )
     print(
         "\nNote: whether these conversations train OpenAI's models follows the ChatGPT\n"
@@ -373,10 +372,7 @@ def _claude_code_check(name: str) -> None:
     if err is None:
         print("Claude Code (`claude` on PATH): signed in.")
         return
-    print(
-        f"WARNING: {err}\n  [providers.{name}] is written but not usable yet.",
-        file=sys.stderr,
-    )
+    warn(f"{err}\n  [providers.{name}] is written but not usable yet.")
 
 
 def _prompt_api_format(name: str, preset_format: str) -> str | None:
@@ -392,10 +388,9 @@ def _prompt_api_format(name: str, preset_format: str) -> str | None:
         except EOFError:
             return None
     if api_format not in ("anthropic", "openai", "chatgpt", "claude_code"):
-        print(
-            f"ERROR: unknown api_format {api_format!r}"
-            " (expected anthropic, openai, chatgpt, or claude_code).",
-            file=sys.stderr,
+        error(
+            f"unknown api_format {api_format!r}"
+            " (expected anthropic, openai, chatgpt, or claude_code)."
         )
         return None
     return api_format
@@ -422,11 +417,11 @@ def _cmd_logout(name: str, api_format: str) -> int:
         if err is None:
             print(f"Revoked the ChatGPT sign-in for {name!r} at {CHATGPT_ISSUER}.")
         else:
-            print(f"WARNING: revocation failed ({err}); removing local tokens anyway.")
+            warn(f"revocation failed ({err}); removing local tokens anyway.")
     try:
         removed = delete_provider_secrets(name)
     except SecretsError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     print(
         f"Removed stored credentials for {name!r} from secrets.toml."
@@ -462,7 +457,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
         try:
             base_url = _prompt_base_url(base_url or "https://api.openai.com/v1")
         except ValueError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
 
     if api_format == "claude_code":
@@ -482,7 +477,7 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
         try:
             saved = save_secret(name, api_key)
         except SecretsError as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
+            error(f"{exc}")
             return 2
         print(f"Saved key to {saved} (0600).")
         if verify:
@@ -491,8 +486,8 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
         # The Anthropic api_format always sends a key; a keyless block is
         # unusable and `agent6 run` would later fail with "no API key". Say so
         # now rather than contradicting ourselves one command later.
-        print(
-            f"WARNING: no key entered, but the Anthropic API format requires one.\n"
+        warn(
+            f"no key entered, but the Anthropic API format requires one.\n"
             f"  [providers.{name}] is written but not usable yet; rerun"
             " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."
         )

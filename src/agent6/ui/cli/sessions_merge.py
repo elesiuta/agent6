@@ -43,7 +43,7 @@ from agent6.sessions.manifest import (
     manifest_for_branch,
     read_manifest,
 )
-from agent6.ui.cli._common import sgr
+from agent6.ui.cli._common import error, refuse, sgr
 from agent6.ui.cli.sessions_cmds import (
     _commits_ref,
     _committed_nothing,
@@ -89,36 +89,29 @@ def _plan_merge(  # noqa: PLR0911
     # own end-of-run finalize_auto_merge is unaffected (it calls execute_merge
     # directly, not this planner).
     if worker_is_alive(layout.session_dir):
-        print(
-            f"REFUSING: run {session_id!r} is still live; a merge now lands only the"
+        refuse(
+            f"run {session_id!r} is still live; a merge now lands only the"
             " commits so far (its later ones need another merge) and moves your"
             " index while the worker still edits. Stop it first:\n"
-            f"    agent6 sessions stop {session_id}",
-            file=sys.stderr,
+            f"    agent6 sessions stop {session_id}"
         )
         return 2
     ref = _commits_ref(cwd, manifest)
     if ref.reason:
-        print(f"ERROR: this session has no branch to merge ({ref.reason}).", file=sys.stderr)
+        error(f"this session has no branch to merge ({ref.reason}).")
         return 2
     run_branch = ref.head_ref
     target = into or manifest.base_branch
     if not target:
-        print(
-            "ERROR: no target branch (manifest has no base_branch); pass --into <branch>.",
-            file=sys.stderr,
-        )
+        error("no target branch (manifest has no base_branch); pass --into <branch>.")
         return 2
     if target == run_branch:
-        print(
-            f"ERROR: target {target!r} is the run branch itself; pass --into <other-branch>.",
-            file=sys.stderr,
-        )
+        error(f"target {target!r} is the run branch itself; pass --into <other-branch>.")
         return 2
     try:
         cfg = load_effective(cwd, config_path).config
     except ConfigError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     # An orphaned fan-out lane (coordinator died before importing it) is
     # adopted here: fetch its branch from the lane clone and replace the
@@ -126,7 +119,7 @@ def _plan_merge(  # noqa: PLR0911
     try:
         adopted = adopt_orphan_lane(cwd, cfg, layout, manifest)
     except SubrunError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     if adopted is not None:
         print(f"[agent6] {adopted}")
@@ -139,17 +132,13 @@ def _plan_merge(  # noqa: PLR0911
             # none (a zero-commit branch reads the same way below).
             print("[agent6] nothing to merge: this run committed nothing.")
             return 0
-        print(
-            f"ERROR: run ref {run_branch!r} no longer exists; its commits survive at"
-            f" {chain_ref_for(manifest.session_id)}.",
-            file=sys.stderr,
+        error(
+            f"run ref {run_branch!r} no longer exists; its commits survive at"
+            f" {chain_ref_for(manifest.session_id)}."
         )
         return 2
     if not branch_exists(cwd, target):
-        print(
-            f"ERROR: target branch {target!r} does not exist; pass --into <existing-branch>.",
-            file=sys.stderr,
-        )
+        error(f"target branch {target!r} does not exist; pass --into <existing-branch>.")
         return 2
     identity = CommitIdentity(
         name=cfg.git.commit.name,
@@ -163,7 +152,7 @@ def _plan_merge(  # noqa: PLR0911
     try:
         verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
     except GitError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     return _MergePlan(
         layout=layout,
@@ -228,7 +217,7 @@ def _cmd_merge(
         warn=lambda m: print(f"[agent6] {m}", file=sys.stderr),
     )
     if outcome.status == "error":
-        print(f"ERROR: {outcome.error}", file=sys.stderr)
+        error(f"{outcome.error}")
         return 1
     if outcome.status == "conflict":
         print(
@@ -342,13 +331,13 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     force-deleted."""
     cwd = Path.cwd()
     if not is_git_repo(cwd):
-        print("ERROR: not a git repository", file=sys.stderr)
+        error("not a git repository")
         return 2
     branches = list_run_branches(cwd)
     try:
         current = git_status(cwd).branch
     except GitError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     state_dir = resolved_state_dir(cwd)
     deleted = squashed_deleted = merged_kept = unmerged_kept = 0

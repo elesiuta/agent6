@@ -35,6 +35,7 @@ from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec, MCPToolDescriptor, tool_count
 from agent6.types import IsolationLevel
+from agent6.ui.cli._common import error, warn
 
 # Long enough for a cold `npx` to fetch and boot a server, which is the slow
 # case an operator actually hits; the per-run default stays 10s.
@@ -43,7 +44,7 @@ _CONNECT_TIMEOUT_S = 60.0
 
 def _probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
     """Start the server as a run does, take its tool list, stop it. Returns
-    (tools, error)."""
+    (tools, failure)."""
     manager = MCPManager.start([spec])
     try:
         return manager.descriptors(), manager.failures[0].error if manager.failures else ""
@@ -95,10 +96,9 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
     """
     if not (token_env and is_cleartext_url(url) and not is_loopback_url(url)):
         return True
-    print(
-        f"WARNING: {url} is plaintext http to a non-loopback host: the token"
-        f" from ${token_env} will be readable on the network path.",
-        file=sys.stderr,
+    warn(
+        f"{url} is plaintext http to a non-loopback host: the token"
+        f" from ${token_env} will be readable on the network path."
     )
     if not sys.stdin.isatty():
         return True
@@ -111,10 +111,12 @@ def _describe(spec: MCPServerSpec) -> str:
     return f"spawning {shlex.join(spec.command)}"
 
 
-def _report_no_answer(name: str, command: list[str], isolation: IsolationLevel, error: str) -> None:
+def _report_no_answer(
+    name: str, command: list[str], isolation: IsolationLevel, failure: str
+) -> None:
     """The failure and the one hint that applies: a binary missing on the
     host needs no sandbox grant; one present here but not in the jail does."""
-    print(f"ERROR: {name} did not answer: {error}", file=sys.stderr)
+    error(f"{name} did not answer: {failure}")
     if command and shutil.which(command[0]) is None:
         head = command[0]
         what = (
@@ -152,7 +154,7 @@ def cmd_mcp_connect(
         name=name, command=command, url=url, token_env=token_env, pass_env=pass_env, cfg=cfg
     )
     if refusal:
-        print(f"ERROR: {refusal}", file=sys.stderr)
+        error(f"{refusal}")
         return 2
     if not _cleartext_token_go_ahead(url, token_env):
         print("nothing was written to config.", file=sys.stderr)
@@ -177,7 +179,7 @@ def cmd_mcp_connect(
             f"{'.'.join(str(part) for part in issue['loc']) or 'entry'}: {issue['msg']}"
             for issue in exc.errors()
         )
-        print(f"ERROR: {name}: {detail}", file=sys.stderr)
+        error(f"{name}: {detail}")
         return 2
     env = detect_env()
     isolation = resolve_isolation(cfg.sandbox.isolation, env)
@@ -185,11 +187,7 @@ def cmd_mcp_connect(
         # No jail means no read-only workspace to probe under, and a probe
         # never runs a server unconfined in the repository: the entry is
         # written unproved, said out loud.
-        print(
-            f"WARNING: {name} not probed: no jail ({no_jail_cause(cfg, env)}); a run starts"
-            " it unconfined.",
-            file=sys.stderr,
-        )
+        warn(f"{name} not probed: no jail ({no_jail_cause(cfg, env)}); a run starts it unconfined.")
     else:
         rc = _prove(cfg, name, entry, isolation)
         if rc is not None:
@@ -209,7 +207,7 @@ def cmd_mcp_connect(
         fields["pass_env"] = pass_env
     written = set_config_leaves(Path.cwd(), f"mcp.servers.{name}", fields, to_repo=to_repo)
     if written is not None:
-        print(f"ERROR: {written}", file=sys.stderr)
+        error(f"{written}")
         return 2
     print(f"\n{_written_line(effective, name, to_repo)}")
     # The master switch is separate and off by default, so say so rather than
@@ -225,15 +223,15 @@ def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLe
     try:
         spec = mcp_server_spec(cfg, Path.cwd(), isolation, name, entry, readonly=True)
     except JailUnavailableError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return 2
     print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)
-    tools, error = _probe(spec)
-    if error:
-        _report_no_answer(name, list(entry.command), isolation, error)
+    tools, failure = _probe(spec)
+    if failure:
+        _report_no_answer(name, list(entry.command), isolation, failure)
         return 1
     if not tools:
-        print(f"ERROR: {name} started but exposed no tools; nothing was written.", file=sys.stderr)
+        error(f"{name} started but exposed no tools; nothing was written.")
         return 1
     print(f"\n{name}: {tool_count(len(tools))}")
     for tool in tools:
@@ -295,22 +293,21 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
             if other in holders
             else "agent6 mcp list shows the configured servers"
         )
-        print(f"ERROR: no {name!r} in the {target} config ({elsewhere}).", file=sys.stderr)
+        error(f"no {name!r} in the {target} config ({elsewhere}).")
         return 2
     res = unset_config_table(Path.cwd(), f"mcp.servers.{name}", to_repo=to_repo)
     if res.error is not None:
-        print(f"ERROR: removing {name} left an invalid config:\n{res.error}", file=sys.stderr)
+        error(f"removing {name} left an invalid config:\n{res.error}")
         return 2
     if not res.removed:
         # The layer declares it, but not as a `[mcp.servers.<name>]` header the
         # line surgery can delete (a dotted key, an inline table), so the entry
         # is still live and the operator is told so.
         path = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
-        print(
-            f"ERROR: {name} is not written as a [mcp.servers.{name}] table in {path};"
+        error(
+            f"{name} is not written as a [mcp.servers.{name}] table in {path};"
             " it lives in a dotted key or an inline table, which this verb does not"
-            " rewrite. Edit that file by hand.",
-            file=sys.stderr,
+            " rewrite. Edit that file by hand."
         )
         return 2
     print(f"removed {name} from the {target} config")

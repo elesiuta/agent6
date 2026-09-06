@@ -19,6 +19,7 @@ from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
+from agent6.ui.cli._common import error, warn
 from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.viewmodel import newest_session_dir
 from agent6.workflows.loop import (
@@ -142,22 +143,22 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
         # `--from-latest` fail on a project that had just written a machine.
         newest = newest_session_dir([bucket_dir(state_dir, "runs"), bucket_dir(state_dir, "asks")])
         if newest is None:
-            print(f"ERROR: --from-latest: no run or ask under {state_dir}", file=sys.stderr)
+            error(f"--from-latest: no run or ask under {state_dir}")
             return None
         session_id = newest.name
     try:
         layout = resolve_session(state_dir, session_id)
     except SessionIdError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        error(f"{exc}")
         return None
     target = layout.session_id
     if not layout.manifest_path.is_file():
-        print(f"ERROR: run {target} has no manifest.json", file=sys.stderr)
+        error(f"run {target} has no manifest.json")
         return None
     try:
         manifest = read_manifest(layout.session_dir)
     except ManifestError as exc:
-        print(f"ERROR: could not read manifest for {target}: {exc}", file=sys.stderr)
+        error(f"could not read manifest for {target}: {exc}")
         return None
     base_sha = manifest.base_sha
     run_branch = manifest.run_branch
@@ -204,7 +205,7 @@ def seed_files(cwd: Path, files: list[str]) -> str:
         try:
             content = (cwd / f).read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            print(f"WARNING: --file {f}: {exc}", file=sys.stderr)
+            warn(f"--file {f}: {exc}")
             continue
         cap = 64 * 1024
         if len(content) > cap:

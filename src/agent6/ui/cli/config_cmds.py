@@ -62,6 +62,7 @@ from agent6.paths import (
     state_base,
 )
 from agent6.portable import atomic_write, locked_file
+from agent6.ui.cli._common import error, warn
 from agent6.viewmodel.config_view import format_value, render_key_detail, render_show
 
 
@@ -101,10 +102,7 @@ def _cmd_config_show(
                 eff, keys, resolved=resolved, color=sys.stdout.isatty(), as_json=as_json
             )
         except KeyError as exc:
-            print(
-                f"ERROR: no config key matches {exc.args[0]!r} (see `agent6 config show`).",
-                file=sys.stderr,
-            )
+            error(f"no config key matches {exc.args[0]!r} (see `agent6 config show`).")
             return 2
         print(detail, end="")
         return 0
@@ -194,10 +192,7 @@ def _cmd_config_fill(*, force: bool) -> int:
     with writing_config(target):
         eff = load_global_only()
         if target.is_file() and not force:
-            print(
-                f"ERROR: {target} already exists. Re-run with --force to overwrite.",
-                file=sys.stderr,
-            )
+            error(f"{target} already exists. Re-run with --force to overwrite.")
             return 2
         atomic_write(
             target,
@@ -307,10 +302,9 @@ def _warn_if_still_broken() -> None:
     """After a kept layered write: the config loads, or another layer still
     breaks it and the operator should hear which one, not a false success."""
     if (after := merged_config_error(Path.cwd())) is not None:
-        print(
-            "WARNING: the config is still invalid because of a value this edit did not"
-            f" write; fix that one on its own:\n{after}",
-            file=sys.stderr,
+        warn(
+            "the config is still invalid because of a value this edit did not"
+            f" write; fix that one on its own:\n{after}"
         )
 
 
@@ -319,7 +313,7 @@ def _cmd_config_get(config_path: Path | None, key: str, *, machine: Path | None)
     eff = _effective_with_overlay(config_path, machine)
     found = effective_leaf(eff, key)
     if found is None:
-        print(f"ERROR: {key!r} is not a config leaf (see `agent6 config show`).", file=sys.stderr)
+        error(f"{key!r} is not a config leaf (see `agent6 config show`).")
         return 2
     value, source = found
     print(f"{key} = {format_value(value)}  [{source}]")
@@ -346,7 +340,7 @@ def _cmd_config_set(
 ) -> int:
     """Set a scalar leaf in the target file (global / repo / machine overlay)."""
     if err := _reject_machine_protected(key, machine):
-        print(f"ERROR: {err}", file=sys.stderr)
+        error(f"{err}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     parsed = parse_cli_value(value)
@@ -360,7 +354,7 @@ def _cmd_config_set(
             upsert_toml_leaf(target, prefix + key, parsed)
             err = _revalidate_machine(target, prior, held=held)
     if err:
-        print(f"ERROR: {err}", file=sys.stderr)
+        error(f"{err}")
         return 2
     if machine is None:
         _warn_if_still_broken()
@@ -390,7 +384,7 @@ def _cmd_config_unset(
 ) -> int:
     """Remove a leaf so it reverts to the next-lower layer / built-in default."""
     if err := _reject_machine_protected(key, machine):
-        print(f"ERROR: {err}", file=sys.stderr)
+        error(f"{err}")
         return 2
     # An unset is how an operator repairs a config that no longer loads, so a
     # merged config that fails validation must not block it: the shape check
@@ -401,11 +395,11 @@ def _cmd_config_unset(
     except ConfigError:
         known_leaf = True
     if not known_leaf:
-        print(f"ERROR: {_not_a_leaf(key, config_path)}", file=sys.stderr)
+        error(f"{_not_a_leaf(key, config_path)}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     if not target.is_file():
-        print(f"ERROR: {target} does not exist; nothing to unset.", file=sys.stderr)
+        error(f"{target} does not exist; nothing to unset.")
         return 2
     if machine is None:
         res = unset_config_value(Path.cwd(), key, to_repo=repo)
@@ -417,7 +411,7 @@ def _cmd_config_unset(
             removed = remove_toml_leaf(target, prefix + key)
             err = _revalidate_machine(target, prior, held=held) if removed else None
     if err:
-        print(f"ERROR: unsetting {key} left an invalid config:\n{err}", file=sys.stderr)
+        error(f"unsetting {key} left an invalid config:\n{err}")
         return 2
     if not removed:
         print(f"{key} is not set in {target}; nothing to unset.")
@@ -453,7 +447,7 @@ def _schema_says_not_a_list(key: str) -> bool:
 def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None, add: bool) -> int:
     """Shared body for `config add` / `config remove` on a list field."""
     if err := _reject_machine_protected(key, machine):
-        print(f"ERROR: {err}", file=sys.stderr)
+        error(f"{err}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     _open_target(target)
@@ -464,11 +458,11 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
         current = read_toml_leaf(read_toml_file(target), prefix + key)
         if current is None:
             if _schema_says_not_a_list(key):
-                print(f"ERROR: {key} is not a list field.", file=sys.stderr)
+                error(f"{key} is not a list field.")
                 return 2
             current = []
         if not isinstance(current, list):
-            print(f"ERROR: {key} is not a list field in {target}.", file=sys.stderr)
+            error(f"{key} is not a list field in {target}.")
             return 2
         parsed = parse_cli_value(value)
         items = list(current)
@@ -491,7 +485,7 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
         else:
             err = _revalidate_machine(target, prior, held=held)
         if err:
-            print(f"ERROR: {value!r} is not valid for {key}:\n{err}", file=sys.stderr)
+            error(f"{value!r} is not valid for {key}:\n{err}")
             return 2
     if machine is None:
         _warn_if_still_broken()
@@ -591,20 +585,17 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
         )
         print(f"Removed {what}  [{entry.layer}: {entry.path}]")
     if diag.blocked:
-        print(
-            "ERROR: config still invalid (not an auto-removable entry); fix it by hand:\n"
-            f"{diag.blocked}",
-            file=sys.stderr,
+        error(
+            f"config still invalid (not an auto-removable entry); fix it by hand:\n{diag.blocked}"
         )
         return 2
     if stuck:
         names = "\n".join(
             f"  {e.leaf} = {format_value(e.value)}  [{e.layer}: {e.path}]" for e in stuck
         )
-        print(
-            "ERROR: config still invalid (flagged entries could not be auto-removed);"
-            f" fix by hand:\n{names}",
-            file=sys.stderr,
+        error(
+            "config still invalid (flagged entries could not be auto-removed);"
+            f" fix by hand:\n{names}"
         )
         return 2
     # Measure before claiming: a no-progress break lands here with entries in
@@ -612,10 +603,9 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
     # unmeasured over a config every next command still refuses.
     final = find_invalid_entries(repo_root, machine=machine)
     if final.removable or final.blocked:
-        print(
-            "ERROR: config still invalid (flagged entries changed under the lock"
-            " this pass); re-run `agent6 config fix` or fix by hand.",
-            file=sys.stderr,
+        error(
+            "config still invalid (flagged entries changed under the lock"
+            " this pass); re-run `agent6 config fix` or fix by hand."
         )
         return 2
     if not removed:

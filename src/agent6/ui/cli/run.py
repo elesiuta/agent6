@@ -40,6 +40,7 @@ from agent6.ui.cli._ask import (
     run_ask_repl,
     save_ask_transcript,
 )
+from agent6.ui.cli._common import error, refuse, warn
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._interact import (
     build_approver,
@@ -221,13 +222,13 @@ def _configured_model_ok(cfg: Config, role: RoleName) -> bool:
         # back to the worker model must say models.worker.model, not point at
         # a models.planner section absent from their config.
         source = cfg.models.source_role(role)
-        print(f"REFUSING: {configured_model_refusal(verdict, source)}", file=sys.stderr)
+        refuse(f"{configured_model_refusal(verdict, source)}")
         return False
     if verdict.warned:
         # The cached listing lacks the model and the live re-check failed
         # (offline, provider down): proceed -- the first provider call is the
         # final arbiter -- but say why a bad id would die there.
-        print(f"[agent6] WARNING: {warning_message(verdict)}", file=sys.stderr)
+        warn(f"{warning_message(verdict)}")
     return True
 
 
@@ -294,7 +295,7 @@ def _cmd_run(  # noqa: PLR0911
         cfg = cfg.with_decompose("on")
     task, compose_err = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
     if compose_err:
-        print(f"ERROR: {compose_err}", file=sys.stderr)
+        error(f"{compose_err}")
         return 2
     role = session_kind(mode).role
 
@@ -323,10 +324,8 @@ def _cmd_run(  # noqa: PLR0911
     if parallel_spec and mode == "run":
         # Depth 1: a subordinate lane (AGENT6_SUBRUN) must never itself fan out.
         if os.environ.get("AGENT6_SUBRUN"):
-            print(
-                "REFUSING: --parallel is unavailable inside a subordinate run"
-                " (parallel dispatch is depth 1).",
-                file=sys.stderr,
+            refuse(
+                "--parallel is unavailable inside a subordinate run (parallel dispatch is depth 1)."
             )
             return 2
         return dispatch_parallel(

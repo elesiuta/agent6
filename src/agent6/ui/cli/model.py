@@ -21,6 +21,7 @@ from agent6.models.choices import provider_model_choices
 from agent6.paths import global_config_path
 from agent6.providers.claude_code import login_status
 from agent6.secrets import load_oauth_tokens, resolve_api_key
+from agent6.ui.cli._common import error
 
 
 def _safe_input(prompt: str) -> str | None:
@@ -110,10 +111,7 @@ def _print_catalog(config_path: Path | None, role: str, provider: str) -> int:
     --parallel spec): one id per line on stdout, the set-hint on stderr."""
     options = _models_for(config_path, provider)
     if not options:
-        print(
-            f"ERROR: no known models for {provider} (couldn't reach its API or none configured).",
-            file=sys.stderr,
-        )
+        error(f"no known models for {provider} (couldn't reach its API or none configured).")
         return 2
     for m in options:
         print(m)
@@ -184,7 +182,7 @@ def _cmd_model(
     if not provider and interactive:
         provider = _prompt_for_provider(config_path)
     if not provider:
-        print("ERROR: no provider given.", file=sys.stderr)
+        error("no provider given.")
         return 2
     if not model and not interactive:
         if effort:
@@ -195,7 +193,7 @@ def _cmd_model(
     if not model:
         model = _prompt_for_model(config_path, provider)
     if not model:
-        print("ERROR: no model given.", file=sys.stderr)
+        error("no model given.")
         return 2
     target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
     fields: dict[str, ConfigLeafValue] = {"provider": provider, "model": model}
