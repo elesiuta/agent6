@@ -424,6 +424,18 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     if result is None:
         return LegEnd(1)
 
+    # The operator's own ends come first: `/undo` and `/detach` at the pause
+    # menu end an ask leg as they end a run.
+    if result.reason == "undone" and undo_outcome:
+        new_id, undone_text = undo_outcome[-1]
+        reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
+        reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
+        return LegEnd(0)
+    if result.reason == "detached":
+        # Keep going in the background: the caller releases this run's worker
+        # lock, then hands the run to `detach_to_background`.
+        return LegEnd(0, detach_requested=True)
+
     if mode == "ask":
         # The answer IS result.summary (kept whole in ask mode). stdout gets
         # just the answer (clean for piping); cost + saved-path go to stderr.
@@ -435,16 +447,6 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
         reporter.err(budget.format_summary())
         return LegEnd(0 if result.completed else 1)
-
-    if result.reason == "undone" and undo_outcome:
-        new_id, undone_text = undo_outcome[-1]
-        reporter.out(f"\n[agent6] undone: continue as {new_id} with your message back to edit:")
-        reporter.out(f"    agent6 resume {new_id} --steer {undone_text!r}")
-        return LegEnd(0)
-    if result.reason == "detached":
-        # Keep going in the background: the caller releases this run's worker
-        # lock, then hands the run to `detach_to_background`.
-        return LegEnd(0, detach_requested=True)
 
     print_session_end(
         result,

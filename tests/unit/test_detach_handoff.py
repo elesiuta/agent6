@@ -7,20 +7,25 @@ the invocation's flags, then say so)."""
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from agent6.app._leg import detach_to_background
+import agent6.app._leg as leg_mod
+from agent6.app._leg import LegInputs, detach_to_background, run_leg
 from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.reporter import Reporter
 from agent6.config import Config
+from agent6.events import EventSink
 from agent6.sessions.ipc import read_worker_pid, write_worker_pid
 from agent6.sessions.layout import SessionLayout
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.ui.acp.frontend import acp_frontend
+from agent6.workflows.loop import SessionResult
 
 
 def _frontend(calls: list[tuple[str, Any]], *, spawn_err: str = "") -> SessionFrontend:
@@ -167,3 +172,184 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: Pa
         reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
     )
     assert read_worker_pid(layout.session_dir) is None  # nothing took over: really dead
+
+
+def _returning(value: object) -> Callable[..., object]:
+    def stub(*_a: object, **_k: object) -> object:
+        return value
+
+    return stub
+
+
+def _stub_leg_internals(monkeypatch: pytest.MonkeyPatch, result: SessionResult) -> None:
+    class _Workflow:
+        iterations_reached = 3
+
+        def __init__(self, **kw: Any) -> None:
+            self._undo_forker: Callable[[], tuple[str, str] | None] = kw["undo_forker"]
+
+        def run(self, _task: str) -> SessionResult:
+            if result.reason == "undone":
+                self._undo_forker()  # what the loop does before an `undone` end
+            return result
+
+    session = SimpleNamespace(
+        budget=SimpleNamespace(
+            format_summary=lambda: "[agent6] cost $0.01", estimate_usd=lambda: (0.01, False)
+        ),
+        rm_role=SimpleNamespace(model="fake/model"),
+        provider=None,
+        summariser_provider=None,
+        review_seats=[],
+        close=lambda: None,
+    )
+    tools = SimpleNamespace(
+        curator=None,
+        dispatcher=SimpleNamespace(settle_background=lambda: None, close=lambda: None),
+        compact_drop_at_chars=1,
+        compact_summarise_at_chars=1,
+        keep_recent_chars=1,
+        cfg=Config(),
+    )
+    monkeypatch.setattr(leg_mod, "build_session_providers", _returning(session))
+    monkeypatch.setattr(leg_mod, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(leg_mod, "wants_session_network", _returning(False))
+    monkeypatch.setattr(leg_mod, "start_mcp_manager_if_enabled", _returning(None))
+    monkeypatch.setattr(leg_mod, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(leg_mod, "Workflow", _Workflow)
+    monkeypatch.setattr(leg_mod, "session_facts_provider", _returning(lambda: None))
+
+
+def test_a_detached_ask_leg_hands_the_run_over_instead_of_answering_with_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/detach` at the pause menu is offered in every mode. The ask branch ran
+    before the detach check, so a detached ask printed the loop's bookkeeping
+    line ("operator detached at iter N") as the model's answer, saved it as the
+    transcript, exited 1, and never asked the caller to spawn the continuation."""
+    _stub_leg_internals(
+        monkeypatch,
+        SessionResult(
+            completed=False,
+            reason="detached",
+            summary="operator detached at iter 3; resuming in the background",
+            iterations=3,
+            tool_calls=7,
+        ),
+    )
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="asky-one-AAAAAA")
+    layout.ensure()
+    saved: list[tuple[str, str]] = []
+    said: list[str] = []
+
+    def _save(_layout: SessionLayout, question: str, answer: str) -> None:
+        saved.append((question, answer))
+
+    front = acp_frontend(
+        ask=lambda _p, _o, _s, _c, _u=None: None,
+        capabilities=FrontendCapabilities(),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _sid, _flags: "",
+    )
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+
+    end = run_leg(
+        Config(),
+        layout,
+        LegInputs(
+            session_id=layout.session_id,
+            mode="ask",
+            role="worker",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="what does this repo do?",
+            gate=lambda cfg, _b: cfg,
+            chain_branch=None,
+            base_sha="",
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: None,
+            prompts=OperatorPrompts(session_dir=layout.session_dir),
+            ask_transcript_task="what does this repo do?",
+        ),
+        frontend=replace(front, save_ask_transcript=_save),
+        reporter=Reporter(out=said.append, err=said.append),
+        events=EventSink(layout.logs_path),
+        transcript_sink=None,  # type: ignore[arg-type]
+        cwd=cwd,
+        state_dir=tmp_path / "state",
+    )
+
+    assert (end.rc, end.detach_requested) == (0, True)
+    assert saved == []
+    assert not any("operator detached at iter" in s for s in said)
+
+
+def test_an_undone_ask_leg_names_the_fork_instead_of_answering_with_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/undo` at the pause menu is offered in every mode. The ask branch ran
+    before the undo check, so an undone ask printed the loop's bookkeeping
+    line as the model's answer, saved it as the transcript, and never named
+    the fork to continue from."""
+    _stub_leg_internals(
+        monkeypatch,
+        SessionResult(
+            completed=False,
+            reason="undone",
+            summary="operator undid the last message at iter 3",
+            iterations=3,
+            tool_calls=7,
+        ),
+    )
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="asky-two-AAAAAA")
+    layout.ensure()
+    saved: list[tuple[str, str]] = []
+    said: list[str] = []
+
+    def _save(_layout: SessionLayout, question: str, answer: str) -> None:
+        saved.append((question, answer))
+
+    front = acp_frontend(
+        ask=lambda _p, _o, _s, _c, _u=None: None,
+        capabilities=FrontendCapabilities(),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _sid, _flags: "",
+    )
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+
+    end = run_leg(
+        Config(),
+        layout,
+        LegInputs(
+            session_id=layout.session_id,
+            mode="ask",
+            role="worker",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="what does this repo do?",
+            gate=lambda cfg, _b: cfg,
+            chain_branch=None,
+            base_sha="",
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: ("fork-two-BBBBBB", "what does this repo do?"),
+            prompts=OperatorPrompts(session_dir=layout.session_dir),
+            ask_transcript_task="what does this repo do?",
+        ),
+        frontend=replace(front, save_ask_transcript=_save),
+        reporter=Reporter(out=said.append, err=said.append),
+        events=EventSink(layout.logs_path),
+        transcript_sink=None,  # type: ignore[arg-type]
+        cwd=cwd,
+        state_dir=tmp_path / "state",
+    )
+
+    assert end.rc == 0
+    assert saved == []
+    assert any("continue as fork-two-BBBBBB" in s for s in said)
+    assert not any("operator undid" in s for s in said)
