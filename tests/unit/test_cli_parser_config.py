@@ -59,6 +59,29 @@ def test_history_bare_query_defaults_to_search() -> None:
     assert args.history_command == "search" and args.query == "divide"
 
 
+def test_a_bare_sessions_is_list_with_its_flags() -> None:
+    """`sessions` sat outside `_DEFAULT_VERBS` as a second implementation of the
+    shorthand (`required=False` plus a None branch), so `agent6 sessions --json`
+    was refused while `agent6 sessions list --json` worked."""
+    args = build_parser().parse_args(_inject_default_verb(["sessions"]))
+    assert args.sessions_command == "list"
+    args = build_parser().parse_args(_inject_default_verb(["sessions", "--json"]))
+    assert args.sessions_command == "list" and args.list_json is True
+
+
+def test_a_bare_history_names_the_query_it_needs(capsys: pytest.CaptureFixture[str]) -> None:
+    """The bare form reported against `agent6 history search`, a command form
+    the operator did not type; it now answers like a bare `plan` or `ask`."""
+    from agent6.ui.cli import main
+
+    try:
+        rc = main(["history"])
+    except SystemExit as exc:  # argparse's own refusal, before the fix
+        rc = int(exc.code or 0)
+    assert rc == 2
+    assert "'history' needs a query" in capsys.readouterr().err
+
+
 def test_history_explicit_search_still_works() -> None:
     args = build_parser().parse_args(_inject_default_verb(["history", "search", "divide"]))
     assert args.history_command == "search" and args.query == "divide"

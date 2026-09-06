@@ -22,9 +22,9 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " omit for the most recent). To follow one live, use `agent6 attach`."
         ),
     )
-    # No subcommand = list: "show me my sessions" is the obvious bare meaning.
+    # A bare `sessions` is `sessions list` (parser._DEFAULT_VERBS).
     sessions_sub = sessions_p.add_subparsers(
-        dest="sessions_command", required=False, metavar="<subcommand>"
+        dest="sessions_command", required=True, metavar="<subcommand>"
     )
 
     sessions_list = _sub(

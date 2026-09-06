@@ -49,6 +49,25 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
         ),
     ),
     "prompt": ("show", frozenset({"show"})),
+    "sessions": (
+        "list",
+        frozenset(
+            {
+                "commits",
+                "compare",
+                "diff",
+                "dir",
+                "graph",
+                "list",
+                "merge",
+                "prune",
+                "rm",
+                "show",
+                "stop",
+                "transcript",
+            }
+        ),
+    ),
     "machine": (
         "list",
         frozenset(
@@ -59,7 +78,9 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
 
 # The groups whose default verb takes no positional: a bare word after them is
 # a mistyped verb, left for argparse to name the choices.
-_BARE_DEFAULT_GROUPS: frozenset[str] = frozenset({"skills", "memory", "mcp", "prompt", "machine"})
+_BARE_DEFAULT_GROUPS: frozenset[str] = frozenset(
+    {"skills", "memory", "mcp", "prompt", "machine", "sessions"}
+)
 
 
 # Top-level options that may precede the subcommand. `--config` takes a value;
@@ -323,7 +344,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     hist_sub = hist_p.add_subparsers(dest="history_command", required=True, metavar="<subcommand>")
     hist_search = _sub(hist_sub, "search", help="ripgrep-backed search over all runs.")
-    hist_search.add_argument("query", help="Pattern (passed to rg --fixed-strings by default).")
+    hist_search.add_argument(
+        "query",
+        nargs="?",
+        default="",
+        help="Pattern (passed to rg --fixed-strings by default).",
+    )
     hist_search.add_argument(
         "--regex", action="store_true", help="Interpret query as a regex instead of fixed string."
     )
