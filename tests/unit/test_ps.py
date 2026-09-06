@@ -11,25 +11,60 @@ from pathlib import Path
 
 import pytest
 
+from agent6.config.layer import resolved_state_dir
 from agent6.sessions.ipc import write_worker_pid
+from agent6.ui.cli import main
 from agent6.ui.cli.ps_cmd import cmd_ps
 
+WAITER = """
+machine = "waiter_demo"
+version = 1
+initial = "poll"
 
-def test_ps_lists_a_live_machine_instance(
+[budget]
+max_usd = 1.0
+max_transitions = 100
+
+[vars.operator]
+secs = { type = "int", value = 3600 }
+
+[states.poll]
+kind = "wait"
+every_secs = "{{ secs }}"
+on = { tick = "done", signal = "woken" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "ticked"
+
+[states.woken]
+kind = "terminal"
+status = "ok"
+reason = "signalled"
+"""
+
+
+def test_ps_reads_a_live_machine_through_the_shared_status_word(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    base = tmp_path / "state"
-    monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
-    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    repo = base / "repo-abcdef"
-    (repo / "sessions" / "runs").mkdir(parents=True)
-    instance = repo / "machines" / "demo"
-    instance.mkdir(parents=True)
+    """A live worker in a wait state is "waiting" on every other surface
+    (`machine_word_for_dir`); ps printed a hardcoded "running". The repo has
+    run only a machine, so its state dir holds no sessions/ at all: ps must
+    still list it."""
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "waiter.asm.toml"
+    f.write_text(WAITER, encoding="utf-8")
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    assert not (resolved_state_dir(tmp_path) / "sessions").exists()
+    instance = resolved_state_dir(tmp_path) / "machines" / "waiter_demo"
     write_worker_pid(instance, os.getpid())  # this process: alive by the pid rule
     assert cmd_ps() == 0
     out = capsys.readouterr().out
-    row = next(line for line in out.splitlines() if "demo" in line)
-    assert "machine" in row and "running" in row and str(os.getpid()) in row
+    row = next(line for line in out.splitlines() if "waiter_demo" in line)
+    assert "machine" in row and "waiting" in row and str(os.getpid()) in row, row
+    assert "running" not in row
     assert "agent6 machine status <id>" in out
 
 

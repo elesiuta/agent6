@@ -16,6 +16,7 @@ from agent6.sessions.layout import SESSION_BUCKETS
 from agent6.ui.cli._common import home_contracted
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import summarize_session_dir
+from agent6.viewmodel.machine_state import summarize_machine_dir
 
 
 def cmd_ps() -> int:
@@ -29,15 +30,12 @@ def cmd_ps() -> int:
     rows: list[tuple[str, str, str, str, str, str]] = []
     if base.is_dir():
         for repo_dir in sorted(base.iterdir()):
-            sessions = repo_dir / "sessions"
-            if not sessions.is_dir():
-                continue
             root = repo_root_of_id(repo_dir.name)
             # An elided-hash id is not reversible to a path: the cell says so
             # instead of offering a state-dir name the cd line cannot use.
             where = home_contracted(str(root)) if root is not None else f"? ({repo_dir.name})"
             for bucket in SESSION_BUCKETS:
-                bucket_path = sessions / bucket
+                bucket_path = repo_dir / "sessions" / bucket
                 if not bucket_path.is_dir():
                     continue
                 for sdir in sorted(bucket_path.iterdir()):
@@ -58,20 +56,24 @@ def cmd_ps() -> int:
                         str(pid) if pid is not None else "?",
                         "attached" if frontend_is_live(sdir) else "",
                     )
-            # A machine instance is a live session too: its worker.pid sits at
-            # the instance root, one dir per machine name.
+            # A machine instance is a live session too (a repo may hold only
+            # machines, and no sessions/ at all): its worker.pid sits at the
+            # instance root, one dir per machine name. Its status is the
+            # word every machine surface shows (a live worker in a wait or
+            # blocked on an approval is "waiting").
             machines = repo_dir / "machines"
             if machines.is_dir():
                 for mdir in sorted(machines.iterdir()):
                     if not mdir.is_dir() or not worker_is_alive(mdir):
                         continue
+                    machine = summarize_machine_dir(mdir)
                     pid = read_worker_pid(mdir)
                     rows.append(
                         (
                             where,
                             mdir.name,
                             "machine",
-                            "running",
+                            status_label(machine.status, machine.reason),
                             str(pid) if pid is not None else "?",
                             "",
                         )
