@@ -777,6 +777,38 @@ def test_compare_stamp_records_judge_rationale_truncated(
     assert m1["compare"]["judge_cost_usd"] == m2["compare"]["judge_cost_usd"] == 0.0123
 
 
+def test_run_parallel_removes_its_emptied_workdir_levels(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """`run --parallel` clones sit at `<base>/<repo>/<fan-out>/lane-N`: the
+    fan-out dir and the per-repo dir go once empty, the base stays."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    cfg = Config()
+    per_repo = parallel.workdir_base(cfg, origin)
+    lanes = build_lane_specs(
+        "2", cfg=cfg, origin=origin, fanout_id="fan", workdir_root=per_repo / "fan"
+    )
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+
+    rc = run_parallel(
+        "t",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="fan",
+    )
+
+    assert rc == 0
+    assert not (per_repo / "fan").exists()
+    assert not per_repo.exists()
+    assert per_repo.parent.is_dir()
+
+
 def test_run_parallel_symlink_appears_before_import(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
@@ -1304,7 +1336,9 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
 ) -> None:
     """The coordinator path must honor the module contract 'clones + lane state
     are torn down after import': every /parallel group otherwise leaked one full
-    repo clone + state dir + lane config per lane, forever. Only the imported
+    repo clone + state dir + lane config per lane, forever. Its clones sit at
+    `<base>/<repo>/<coordinator>/<group>/lane-N`: every emptied level up to and
+    including the per-repo dir goes, the base above it stays. Only the imported
     (ok=True) lane is cleaned; a failed import keeps its clone (it may hold the
     only copy of the branch)."""
     from agent6.config.layer import resolved_state_dir
@@ -1312,8 +1346,9 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     origin_state = resolved_state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    per_repo = parallel.workdir_base(cfg, origin)
     spec = LaneSpec(
-        lane=1, session_id="co-p9-l1", workdir=tmp_path / "work" / "grp" / "lane-1", model=None
+        lane=1, session_id="co-p9-l1", workdir=per_repo / "co" / "grp" / "lane-1", model=None
     )
     res = parallel.run_lane_to_completion(
         spec,
@@ -1328,7 +1363,10 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     )
     assert res.ok
     assert not spec.workdir.exists()  # the clone is gone
-    assert not spec.workdir.parent.exists()  # the emptied group dir is rmdir'd
+    assert not (per_repo / "co" / "grp").exists()  # the emptied group dir is rmdir'd
+    assert not (per_repo / "co").exists()  # the coordinator's dir above it
+    assert not per_repo.exists()  # and the per-repo dir
+    assert per_repo.parent.is_dir()  # never the base
 
     # Import refused (branch already exists): the lane keeps its clone.
     create_branch(origin, "agent6/co-p8-l1")

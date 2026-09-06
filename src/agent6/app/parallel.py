@@ -505,7 +505,7 @@ def run_lane_to_completion(
     # unimported lane's clone may hold the only copy of its branch. Thread-pool
     # safe: each lane removes only its own dirs, and the group-dir rmdir inside
     # _cleanup succeeds only for whichever lane empties it last.
-    _cleanup([spec], workdir_root=spec.workdir.parent, cfg=cfg)
+    _cleanup([spec], workdir_root=spec.workdir.parent, base=workdir_base(cfg, origin), cfg=cfg)
     summary = summarize_session_dir(dest)
     if not produced_result(summary.status):
         # The branch is imported (nothing lost), but only a deliberate end may
@@ -940,18 +940,24 @@ def _import_lanes(
     return candidates, failed, imported
 
 
-def _cleanup(imported: list[LaneSpec], *, workdir_root: Path, cfg: Config) -> None:
+def _cleanup(imported: list[LaneSpec], *, workdir_root: Path, base: Path, cfg: Config) -> None:
     """Tear down clone + state dir + lane config for IMPORTED lanes only; a lane
     that did not import keeps everything it has (its clone may hold the only
-    copy of its branch, and a live lane must never lose its workspace). The
-    fan-out workdir root is removed only once it is empty. Best-effort: a
-    leftover clone is disk waste, never corruption."""
+    copy of its branch, and a live lane must never lose its workspace). Every
+    level from the group dir up to and including the per-repo *base*
+    (`workdir_base`) is removed once empty, never the dir above it. Best-effort:
+    a leftover clone is disk waste, never corruption."""
     for spec in imported:
         shutil.rmtree(state_dir(spec.workdir, cfg.agent6.state_dir), ignore_errors=True)
         shutil.rmtree(spec.workdir, ignore_errors=True)
         (spec.workdir.parent / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
-    with contextlib.suppress(OSError):
-        workdir_root.rmdir()  # only succeeds when nothing was kept
+    level = workdir_root
+    while level.is_relative_to(base):
+        with contextlib.suppress(OSError):
+            level.rmdir()  # only succeeds when nothing was kept
+        if level == base:
+            break
+        level = level.parent
 
 
 def fanout_exit_code(candidates: list[CandidateBrief]) -> int:
@@ -1082,7 +1088,9 @@ def run_parallel(
         runtime=runtime,
         reporter=reporter,
     )
-    _cleanup(imported, workdir_root=lanes[0].workdir.parent, cfg=cfg)
+    _cleanup(
+        imported, workdir_root=lanes[0].workdir.parent, base=workdir_base(cfg, origin), cfg=cfg
+    )
 
     outcome = rank(
         cfg,
