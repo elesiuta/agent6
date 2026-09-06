@@ -105,6 +105,55 @@ def test_merge_follows_the_chain_when_the_branch_stopped_tracking_it(
     assert (tmp_path / "a.txt").name in _git(tmp_path, "show", "--name-only", "--format=", merged)
 
 
+def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Run A adds a file and is squash-merged; a fork continues A's chain with
+    one more line in that file. git relates the squash to nothing, so its base
+    was the commit before A and the fork's merge conflicted on the file both
+    sides "added". The base is A's landed tip, and the fork's own line lands."""
+    monkeypatch.chdir(tmp_path)
+    guarded = "def f(x):\n    if not x:\n        return 0\n    return 1\n"
+    base = _setup_run(tmp_path, "parent-run1", commits=[("f.py", guarded, "guard")])
+    parent_tip = _git(tmp_path, "rev-parse", "agent6/parent-run1")
+    _git(tmp_path, "update-ref", chain_ref_for("parent-run1"), parent_tip)
+    assert main(["sessions", "merge", "parent-run1"]) == 0
+    # The fork continues the parent's chain past its merged tip.
+    _git(tmp_path, "checkout", "-q", "-b", "agent6/fork-run1", "agent6/parent-run1")
+    documented = guarded.replace("def f(x):\n", 'def f(x):\n    """Zero for empty."""\n')
+    (tmp_path / "f.py").write_text(documented, encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "docstring")
+    _git(tmp_path, "checkout", "-q", "main")
+    fork_tip = _git(tmp_path, "rev-parse", "agent6/fork-run1")
+    _git(tmp_path, "update-ref", chain_ref_for("fork-run1"), fork_tip)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="fork-run1")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": "fork-run1",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": "agent6/fork-run1",
+                "user_task": "add the docstring",
+                "parent_session_id": "parent-run1",
+                "forked_from_turn": 3,
+                "forked_from_sha": parent_tip,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["sessions", "merge", "fork-run1"]) == 0, capsys.readouterr().out
+
+    landed = _git(tmp_path, "show", "main:f.py")
+    assert '"""Zero for empty."""' in landed and "return 0" in landed
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "2"
+
+
 def test_runs_merge_squash_is_one_commit_and_records_manifest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

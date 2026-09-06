@@ -125,6 +125,7 @@ def dispatch_merge(
     budget: BudgetTracker | None = None,
     events: EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
+    merge_base: str | None = None,
 ) -> MergeResult:
     """Run the chosen strategy on *target* via plumb_merge. squash builds its
     message per `[git.commit.squash].message` (the trailer is identity's);
@@ -144,8 +145,47 @@ def dispatch_merge(
     if message is None and strategy == "merge":
         message = f"Merge {run_branch}"
     return plumb_merge(
-        cwd, target, run_branch, strategy=strategy, message=message, identity=identity
+        cwd,
+        target,
+        run_branch,
+        strategy=strategy,
+        message=message,
+        identity=identity,
+        merge_base=merge_base,
     )
+
+
+def landed_base(
+    cwd: Path, layout: SessionLayout, manifest: SessionManifest, target: str, tip: str
+) -> str | None:
+    """The merge base for a fork whose ancestor run *target* already holds as a
+    squash, or None where git's own base serves.
+
+    A squash commit is content git cannot relate to the chain it came from, so
+    a fork's merge read every commit of the ancestor as the fork's own change
+    and conflicted with the squash that holds the same lines. The base is the
+    ancestor's merged tip when the fork continues past it, else the point the
+    fork left its chain (the merged tip holds that point's content)."""
+    node = manifest
+    for _ in range(64):  # a lineage deeper than this is not a fork chain
+        fork_point = node.forked_from_sha
+        if not node.parent_session_id:
+            break
+        try:
+            node = read_manifest(layout.session_dir.parent / node.parent_session_id)
+        except (ManifestError, OSError):
+            break
+        stamp = node.merged
+        if stamp is None or stamp.into != target or not stamp.tip:
+            continue
+        if is_ancestor(cwd, stamp.tip, target):
+            break  # a real merge: git relates the two histories itself
+        if is_ancestor(cwd, stamp.tip, tip):
+            return stamp.tip
+        if fork_point and is_ancestor(cwd, fork_point, stamp.tip):
+            return fork_point
+        break
+    return None
 
 
 def _squash_message(
@@ -313,6 +353,7 @@ def execute_merge(
     # unmoved target means there was nothing to merge.
     target_tip_before = branch_tip_sha(cwd, target) or ""
     try:
+        merge_base = landed_base(cwd, layout, manifest, target, chain_tip(cwd, run_branch) or "")
         result = dispatch_merge(
             cwd,
             strategy,
@@ -327,6 +368,7 @@ def execute_merge(
             budget=budget,
             events=events,
             warn=warn,
+            merge_base=merge_base,
         )
     except GitError as exc:
         return MergeOutcome("error", error=f"merge failed: {exc}")

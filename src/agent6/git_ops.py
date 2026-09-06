@@ -1234,6 +1234,7 @@ def plumb_merge(
     strategy: str,
     message: str | None = None,
     identity: CommitIdentity | None = None,
+    merge_base: str | None = None,
 ) -> MergeResult:
     """Land *merge_rev* on branch *target* with plumbing only: `merge-tree` +
     `commit-tree` + a compare-and-swap ref update. No checkout and no
@@ -1247,7 +1248,9 @@ def plumb_merge(
     commit), "ff" (the ref moves to *merge_rev*; raises when not
     fast-forwardable). A *merge_rev* the target already contains is a clean
     no-op returning the unchanged tip. On conflict nothing moves and the
-    conflicted paths are reported."""
+    conflicted paths are reported. *merge_base* replaces the base git would
+    find: a run squash-merged earlier is content the target holds under a
+    commit git cannot relate to the run's chain."""
     ref = f"refs/heads/{target}"
     ours = _run(path, "rev-parse", "--verify", f"{ref}^{{commit}}").stdout.strip()
     theirs = _run(path, "rev-parse", "--verify", f"{merge_rev}^{{commit}}").stdout.strip()
@@ -1262,7 +1265,10 @@ def plumb_merge(
         if ff_able:
             tree = _run(path, "rev-parse", f"{theirs}^{{tree}}").stdout.strip()
         else:
-            res = _run(path, "merge-tree", "--write-tree", "--name-only", ours, theirs, check=False)
+            base = [f"--merge-base={merge_base}"] if merge_base else []
+            res = _run(
+                path, "merge-tree", "--write-tree", "--name-only", *base, ours, theirs, check=False
+            )
             lines = res.stdout.splitlines()
             if res.returncode == 1:
                 # The tree oid, the conflicted paths, a blank line, then git's
