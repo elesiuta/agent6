@@ -22,7 +22,6 @@ from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.layout import machines_root
 from agent6.ui.cli._common import (
-    _runs_dir,
     error,
     resolve_session_layout,
     resolve_target,
@@ -95,7 +94,6 @@ def _cmd_watch_target(  # noqa: PLR0911
         print("agent6 attach: --since applies to --raw only.", file=sys.stderr)
         return 2
     cwd = Path.cwd()
-    runs_dir = _runs_dir(cwd)
     machines_dir = machines_root(state_dir(cwd))
 
     # An ambiguous run prefix is a run-intent error: surface the disambiguation
@@ -124,5 +122,5 @@ def _cmd_watch_target(  # noqa: PLR0911
             return _machine_json_snapshot(machine_dir)
         return _machine_watch_tui(machine_dir) if tui else _cmd_machine_watch(target)
 
-    error(f"no run or machine matches {target!r} (looked under {runs_dir} and {machines_dir})")
+    error(f"no run or machine matches {target!r} (looked under {state_dir(cwd)})")
     return 2

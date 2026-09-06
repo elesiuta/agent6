@@ -89,7 +89,11 @@ def test_watch_unknown_target_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     assert main(["attach", "nope"]) == 2
-    assert "no run or machine matches" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "no run or machine matches" in err
+    # The search covers every session bucket and the machines: the refusal
+    # names the state dir it walked, not one directory of five.
+    assert str(state_dir(tmp_path)) in err and "sessions/runs" not in err
 
 
 def test_watch_ambiguous_prefix_surfaces_disambiguation(
