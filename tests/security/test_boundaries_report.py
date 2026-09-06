@@ -17,7 +17,7 @@ import pytest
 
 from agent6.config import Config, SandboxConfig
 from agent6.paths import jail_cache_home, state_dir
-from agent6.sandbox._tool_paths import ToolMountNotes
+from agent6.sandbox.tool_paths import ToolMountNotes
 from agent6.ui.cli import check_cmds
 
 _MAIN_RS = Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "src" / "main.rs"

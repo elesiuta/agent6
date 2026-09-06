@@ -1676,7 +1676,7 @@ def test_non_json_string_still_fails_validation(tmp_path: Path) -> None:
 
 
 def test_under_system_root_classifies_bin_dirs() -> None:
-    from agent6.sandbox._tool_paths import _under_system_root  # pyright: ignore[reportPrivateUsage]
+    from agent6.sandbox.tool_paths import _under_system_root  # pyright: ignore[reportPrivateUsage]
 
     assert _under_system_root(Path("/usr/local/bin"))  # under a mounted system root
     assert _under_system_root(Path("/usr/bin"))
@@ -1685,7 +1685,7 @@ def test_under_system_root_classifies_bin_dirs() -> None:
 
 
 def test_operator_tool_paths_extends_path_and_mounts_are_nonsystem() -> None:
-    from agent6.sandbox._tool_paths import (
+    from agent6.sandbox.tool_paths import (
         _under_system_root,  # pyright: ignore[reportPrivateUsage]
         operator_tool_paths,
     )
@@ -1706,7 +1706,7 @@ def test_operator_tool_paths_mounts_uv_managed_pythons(
     # A repo venv made by uv can symlink python to a uv-managed CPython under
     # XDG data; without the RO mount an in-jail `uv run` sees a "non-existent
     # interpreter" and deletes + recreates the operator's .venv.
-    from agent6.sandbox._tool_paths import operator_tool_paths
+    from agent6.sandbox.tool_paths import operator_tool_paths
 
     pythons = tmp_path / "uv" / "python"
     pythons.mkdir(parents=True)
@@ -1815,7 +1815,7 @@ def test_operator_tool_paths_never_mounts_agent6s_own_dirs(
     Not model-reachable (a jailed `ln -s` into a bin dir is refused), but the
     invariant should hold by construction, not by luck of directory layout.
     """
-    from agent6.sandbox._tool_paths import operator_tool_paths
+    from agent6.sandbox.tool_paths import operator_tool_paths
 
     home = tmp_path / "home"
     bin_dir = home / ".local" / "bin"
@@ -1851,7 +1851,7 @@ def test_a_tool_mount_never_contains_a_private_dir(
     """The test above pins mounts INSIDE a private dir; containment fails the
     other way round too. A symlink out to `<dir>/x.sh` mounts `<dir>` whole --
     and a `<dir>` holding the config dir grants secrets.toml from above."""
-    from agent6.sandbox._tool_paths import operator_tool_paths
+    from agent6.sandbox.tool_paths import operator_tool_paths
 
     home = tmp_path / "home"
     bin_dir = home / ".local" / "bin"
@@ -1879,7 +1879,7 @@ def test_home_and_its_ancestors_are_never_tool_mounts(
     """Even with every agent6 dir elsewhere, $HOME holds ~/.ssh and every
     credential the operator owns. A plain `~/.local/bin/x -> ~/x.sh` makes
     `real.parent` the whole home dir; an ancestor contains home in turn."""
-    from agent6.sandbox._tool_paths import operator_tool_paths
+    from agent6.sandbox.tool_paths import operator_tool_paths
 
     home = tmp_path / "home"
     bin_dir = home / ".local" / "bin"

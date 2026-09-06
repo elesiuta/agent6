@@ -17,9 +17,9 @@ from agent6.app.confine import (
 )
 from agent6.config import Config, SandboxConfig
 from agent6.paths import jail_cache_home
-from agent6.sandbox import _tool_paths as tool_paths
-from agent6.sandbox._tool_paths import ToolMountNotes
+from agent6.sandbox import tool_paths
 from agent6.sandbox.detect import Environment, KernelInfo
+from agent6.sandbox.tool_paths import ToolMountNotes
 
 
 def _env(landlock_abi: int) -> Environment:

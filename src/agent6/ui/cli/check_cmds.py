@@ -36,7 +36,6 @@ from agent6.sandbox import (
     landlock_abi,
     run_in_jail,
 )
-from agent6.sandbox._tool_paths import tool_mount_notes
 from agent6.sandbox.detect import (
     Environment,
     IsolationUnavailableError,
@@ -45,6 +44,7 @@ from agent6.sandbox.detect import (
     sandbox_disabled_by_env,
 )
 from agent6.sandbox.jail import SessionNetwork
+from agent6.sandbox.tool_paths import tool_mount_notes
 from agent6.tools.mcp_client import MCPManager, tool_count
 from agent6.tools.policy import (
     JAIL_TMP_HOME,

@@ -29,7 +29,7 @@ from agent6.machine import (
     render_dot,
     render_mermaid,
 )
-from agent6.sandbox._tool_paths import jail_search_path
+from agent6.sandbox.tool_paths import jail_search_path
 from agent6.ui.cli._common import plural
 
 
