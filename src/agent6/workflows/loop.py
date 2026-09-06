@@ -1410,8 +1410,7 @@ class Workflow:
                     state.verify.scoped = False
                 self._note_verify_result(state, turn, result)
         elif name == "run_metric_command" and isinstance(result, MetricResult):
-            if turn.verify_just_passed:
-                turn.metric_after_verify_pass = True
+            turn.metric_sampled = True
             turn.metric_feedback = self._record_metric_result(
                 state.metric_history,
                 result,
@@ -1775,7 +1774,7 @@ class Workflow:
         steps (`commit_per_step = false`) the tree stays dirty for the rest of
         the run, and sampling on dirt alone re-ran the operator's benchmark on
         every turn, read-only ones included."""
-        if turn.metric_after_verify_pass:
+        if turn.metric_sampled:
             return None
         tree = self._worktree_tree_sha()
         if tree and tree == state.metric_tree:

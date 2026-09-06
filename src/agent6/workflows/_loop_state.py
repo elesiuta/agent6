@@ -234,7 +234,7 @@ class TurnState:
     edited: bool = False
     committed: bool = False
     dag_mutated: bool = False
-    metric_after_verify_pass: bool = False
+    metric_sampled: bool = False  # the worker ran the metric itself this turn
     metric_feedback: str | None = None
     metric_plateau_finish: str | None = None
     review_text: str | None = None

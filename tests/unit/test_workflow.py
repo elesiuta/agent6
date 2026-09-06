@@ -16,12 +16,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agent6.config import Config
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
 from agent6.workflows._verify_verdict import VerifyVerdict
-from agent6.workflows.loop import Workflow
+from agent6.workflows.loop import LoopState, TurnState, Workflow
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`_commit_identity`), which the real Config carries as empty
@@ -7055,3 +7056,119 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: Path) -> None:
     )
     assert wf._maybe_handle_steer(conv, 2, st) is None  # pyright: ignore[reportPrivateUsage]
     assert "/nosuch thing" in conv.notice.call_args.args[0]
+
+
+def _metric_repo(repo: Path) -> str:
+    """A one-commit git repo; returns HEAD's sha (a run's chain_fallback_parent)."""
+    repo.mkdir(parents=True)
+    for argv in (
+        ["git", "init", "-q", "-b", "main"],
+        ["git", "config", "user.email", "t@example.com"],
+        ["git", "config", "user.name", "t"],
+    ):
+        subprocess.run(argv, cwd=repo, check=True)
+    (repo / "x.txt").write_text("hi\n", encoding="utf-8")
+    subprocess.run(["git", "add", "x.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _metric_wf(repo: Path, base: str, dispatcher: MagicMock) -> Workflow:
+    """A gateless run with an operator metric, committing per step on a chain."""
+    return Workflow(
+        root=repo,
+        config=Config.model_validate(
+            {
+                "workflow": {
+                    "verify_command": [],
+                    "metric": {
+                        "command": ["score.sh"],
+                        "pattern": r"SCORE: ([0-9.]+)",
+                        "goal": "maximize",
+                    },
+                }
+            }
+        ),
+        provider=MagicMock(),
+        dispatcher=dispatcher,
+        logger=_silent,
+        mode="run",
+        chain_ref="refs/agent6/metric-run/head",
+        chain_fallback_parent=base,
+    )
+
+
+def _metric_result(score: float) -> MetricResult:
+    return MetricResult(
+        returncode=0,
+        stdout=f"SCORE: {score}\n",
+        stderr="",
+        duration_s=0.1,
+        exec_failed=False,
+        score=score,
+    )
+
+
+def _edited_turn(iteration: int) -> TurnState:
+    turn = TurnState(
+        iteration=iteration, resp=_resp(""), assistant=AssistantTurn(raw_content=(), tool_uses=())
+    )
+    turn.edited = True
+    return turn
+
+
+def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: Path) -> None:
+    """The auto path skipped its sample only when the manual call landed on a
+    verify-pass turn, so on a gateless run the operator's benchmark ran twice
+    per turn over one tree, and the duplicate read as "not a new best"."""
+    repo = tmp_path / "repo"
+    base = _metric_repo(repo)
+    dispatched: list[str] = []
+    dispatcher = MagicMock(operator_wait_s=0.0)
+
+    def dispatch(name: str, _args: dict[str, Any]) -> MetricResult:
+        dispatched.append(name)
+        return _metric_result(42.0)
+
+    dispatcher.dispatch.side_effect = dispatch
+    wf = _metric_wf(repo, base, dispatcher)
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = _edited_turn(1)
+    (repo / "x.txt").write_text("an improvement\n", encoding="utf-8")
+
+    wf._note_tool_effects(state, turn, "run_metric_command", _metric_result(42.0), {})  # pyright: ignore[reportPrivateUsage]
+    wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
+
+    assert dispatched == [], "the harness re-ran the operator's metric over an unchanged tree"
+    assert [s.score for s in state.metric_history] == [42.0]
+    assert "not a new best" not in (turn.metric_feedback or "")
+
+
+def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: Path) -> None:
+    """The duplicated samples tied each score with itself, and three strictly
+    better readings stopped the run as a plateau."""
+    repo = tmp_path / "repo"
+    base = _metric_repo(repo)
+    score = {"v": 41.0}
+    dispatcher = MagicMock(operator_wait_s=0.0)
+
+    def dispatch(_name: str, _args: dict[str, Any]) -> MetricResult:
+        return _metric_result(score["v"])
+
+    dispatcher.dispatch.side_effect = dispatch
+    wf = _metric_wf(repo, base, dispatcher)
+    state = LoopState(original_task="t", tool_calls=0)
+    plateaus: list[str] = []
+    for i in (1, 2, 3):
+        score["v"] = 41.0 + i
+        (repo / "x.txt").write_text(f"improvement {i}\n", encoding="utf-8")
+        turn = _edited_turn(i)
+        wf._note_tool_effects(state, turn, "run_metric_command", _metric_result(score["v"]), {})  # pyright: ignore[reportPrivateUsage]
+        wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
+        if turn.metric_plateau_finish is not None:
+            plateaus.append(turn.metric_plateau_finish)
+
+    assert [s.score for s in state.metric_history] == [42.0, 43.0, 44.0]
+    assert plateaus == []
