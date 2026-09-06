@@ -2309,3 +2309,31 @@ def test_a_patch_refused_by_path_safety_part_way_names_what_changed(tmp_path: Pa
     with pytest.raises(ToolError, match=r"blocker\.txt/new\.txt.*already changed: a\.txt"):
         d.dispatch("apply_patch", {"patch": patch})
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "PATCHED A\n"
+
+
+def test_a_patch_over_a_crlf_file_reports_the_bytes_on_disk(tmp_path: Path) -> None:
+    """bytes_written measured the LF text while the write put CRLF on disk,
+    so the model's one size signal was short by a byte per line."""
+    cfg = _config(tmp_path)
+    (tmp_path / "w.txt").write_bytes(b"one\r\ntwo\r\n")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    patch = (
+        "diff --git a/w.txt b/w.txt\n--- a/w.txt\n+++ b/w.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n"
+    )
+    out = d.dispatch("apply_patch", {"patch": patch}).to_wire()
+    assert (tmp_path / "w.txt").read_bytes() == b"one\r\nTWO\r\n"
+    assert out["bytes_written"] == len(b"one\r\nTWO\r\n")
+
+
+def test_a_preview_over_a_crlf_file_counts_the_bytes_the_apply_writes(tmp_path: Path) -> None:
+    """preview's byte counts measured the LF text while the write put CRLF on
+    disk (as a patch's bytes_written says), so the preview promised one size
+    and the apply produced another."""
+    cfg = _config(tmp_path)
+    (tmp_path / "w.txt").write_bytes(b"one\r\ntwo\r\n")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    edit = {"kind": "replace", "old_string": "two", "new_string": "TWO"}
+    seen = d.dispatch("apply_edit", {"path": "w.txt", "edits": [edit], "preview": True}).to_wire()
+    d.dispatch("apply_edit", {"path": "w.txt", "edits": [edit]})
+    assert seen["bytes_before"] == len(b"one\r\ntwo\r\n")
+    assert seen["bytes_after"] == len((tmp_path / "w.txt").read_bytes()) == len(b"one\r\nTWO\r\n")

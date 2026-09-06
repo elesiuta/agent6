@@ -145,3 +145,30 @@ def test_unlink_walks_to_the_parent_like_a_write(tmp_path: Path) -> None:
     with pytest.raises(ToolError, match="symlink"):
         unlink_contained(sp)
     assert (outside / "victim.txt").read_text(encoding="utf-8") == "operator file\n"
+
+
+def test_write_contained_keeps_the_files_line_ending(tmp_path: Path) -> None:
+    """A text read translates CRLF to LF and the write emitted LF, so one
+    edited word rewrote every line ending of a CRLF file (the run's diff and
+    `sessions diff` then carried the churn). The file's first line ending
+    decides; a new file gets LF, and CRLF in the text is normalized first."""
+    from agent6.tools._path_safety import Workspace, read_contained, write_contained
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "crlf.txt").write_bytes(b"alpha\r\nbeta\r\ngamma\r\n")
+    (root / "lf.txt").write_bytes(b"alpha\nbeta\n")
+    ws = Workspace(root=root)
+    text = read_contained(ws.resolve_read("crlf.txt"))
+    assert text == "alpha\nbeta\ngamma\n"
+    write_contained(ws.resolve_write("crlf.txt"), text.replace("beta", "BETA"))
+    assert (root / "crlf.txt").read_bytes() == b"alpha\r\nBETA\r\ngamma\r\n"
+    write_contained(ws.resolve_write("crlf.txt"), "one\r\ntwo\n")
+    assert (root / "crlf.txt").read_bytes() == b"one\r\ntwo\r\n"
+    write_contained(ws.resolve_write("lf.txt"), "alpha\nBETA\n")
+    assert (root / "lf.txt").read_bytes() == b"alpha\nBETA\n"
+    assert write_contained(ws.resolve_write("new.txt"), "x\ny\n") == 4
+    assert (root / "new.txt").read_bytes() == b"x\ny\n"
+    # A new file keeps the content's own endings: a CRLF fixture can be made.
+    write_contained(ws.resolve_write("new-crlf.txt"), "x\r\ny\r\n")
+    assert (root / "new-crlf.txt").read_bytes() == b"x\r\ny\r\n"

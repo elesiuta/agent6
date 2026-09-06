@@ -16,11 +16,14 @@ def preview_result(
     old_text: str | None,
     new_text: str,
     *,
+    bytes_before: int,
+    bytes_after: int,
     applied: list[str] | None = None,
 ) -> PreviewResult:
     """Build the dry-run response for `apply_edit`/`apply_patch` with
     `preview=true`. Returns the unified diff (old vs new) and a hunk
-    count, but does NOT write anything to disk.
+    count, but does NOT write anything to disk. The byte counts are the
+    caller's, measured on disk (`disk_bytes`), so they match an apply's.
 
     Lets the agent sanity-check a complex multi-edit call
     before committing to it. Diff is bounded so a preview of a 100k-line
@@ -42,8 +45,8 @@ def preview_result(
         path=path,
         diff=diff or "(no changes)",
         hunks=hunks,
-        bytes_before=len((old_text or "").encode("utf-8")),
-        bytes_after=len(new_text.encode("utf-8")),
+        bytes_before=bytes_before,
+        bytes_after=bytes_after,
         truncated=truncated,
         would_apply=None if applied is None else tuple(applied),
     )

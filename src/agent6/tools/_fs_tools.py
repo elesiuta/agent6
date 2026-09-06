@@ -26,9 +26,11 @@ from agent6.tools._edit_diag import (
 from agent6.tools._path_safety import (
     SafePath,
     Workspace,
+    disk_bytes,
     fold_name,
     list_contained,
     path_within,
+    read_bytes_contained,
     read_contained,
     unlink_contained,
     write_contained,
@@ -276,6 +278,27 @@ def _existing_text(sp: SafePath, rel_path: str) -> str | None:
     return text
 
 
+def _preview(
+    sp: SafePath,
+    path: str,
+    existing: str | None,
+    new_content: str,
+    *,
+    applied: list[str] | None = None,
+) -> PreviewResult:
+    """The dry-run result, its byte counts measured as the write would put
+    them on disk (a CRLF file's edit is written as CRLF)."""
+    like = None if existing is None else read_bytes_contained(sp)
+    return preview_result(
+        path,
+        existing,
+        new_content,
+        bytes_before=0 if like is None else len(like),
+        bytes_after=len(disk_bytes(new_content, like=like)),
+        applied=applied,
+    )
+
+
 def apply_edit(
     ws: Workspace,
     config: Config,
@@ -330,7 +353,7 @@ def apply_edit(
     if new_content is None:
         raise ToolError("No content to write")
     if args.preview:
-        return preview_result(args.path, existing, new_content, applied=applied)
+        return _preview(sp, args.path, existing, new_content, applied=applied)
     write_contained(sp, new_content)
     if index is not None:
         index.mark_changed(sp.abs_path)
@@ -419,7 +442,7 @@ def apply_patch(
         seen_paths.append(sp.abs_path)
         if args.preview:
             # A deletion previews as the full-removal diff (bytes_after 0).
-            previews.append(preview_result(target, existing, new_content or ""))
+            previews.append(_preview(sp, target, existing, new_content or ""))
             continue
         staged.append((sp, target, new_content))
     if (dupe := _first_repeated(seen_paths)) is not None:
@@ -449,6 +472,7 @@ def apply_patch(
     # part way names what already changed rather than reporting a failure
     # over a tree it altered.
     landed: list[str] = []
+    written: dict[str, int] = {}
     for sp, _target, new_content in staged:
         try:
             if new_content is None:
@@ -456,7 +480,7 @@ def apply_patch(
                 if index is not None:
                     index.mark_deleted(sp.abs_path)
             else:
-                write_contained(sp, new_content)
+                written[str(sp.rel_path)] = write_contained(sp, new_content)
                 if index is not None:
                     index.mark_changed(sp.abs_path)
         except (OSError, ToolError) as exc:
@@ -464,9 +488,7 @@ def apply_patch(
             changed = f"; already changed: {', '.join(landed)}" if landed else ""
             raise ToolError(f"apply_patch: {sp.rel_path}: {detail}{changed}") from exc
         landed.append(str(sp.rel_path))
-    rows = tuple(
-        (str(sp.rel_path), len(new.encode("utf-8"))) for sp, _t, new in staged if new is not None
-    )
+    rows = tuple(written.items())
     deleted = tuple(str(sp.rel_path) for sp, _t, new in staged if new is None)
     return PatchResult(
         path=(rows[0][0] if rows else deleted[0]),

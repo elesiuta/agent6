@@ -332,10 +332,29 @@ def unlink_contained(sp: SafePath) -> None:
         os.close(fd)
 
 
-def write_contained(sp: SafePath, content: str) -> None:
-    """Replace the file's text through a descriptor walked from its base, adding
-    any missing parent directories along the same walk."""
+def disk_bytes(content: str, *, like: bytes | None) -> bytes:
+    """*content* as a write puts it on disk over *like*, the file's bytes before
+    the write (None for a new file). The file keeps its line ending: a text
+    read translates CRLF to LF, so when *like*'s first line ending is CRLF
+    every line ending in *content* is written as CRLF (one already there is
+    not doubled); any other file, or a new one, gets *content* as it is."""
+    if like is not None:
+        i = like.find(b"\n")
+        if i > 0 and like[i - 1 : i] == b"\r":
+            content = content.replace("\r\n", "\n").replace("\n", "\r\n")
+    return content.encode("utf-8")
+
+
+def write_contained(sp: SafePath, content: str) -> int:
+    """Replace the file's text (`disk_bytes`) through a descriptor walked from
+    its base, adding any missing parent directories along the same walk;
+    returns the bytes written."""
+    like = None
+    with contextlib.suppress(OSError, ToolError):
+        like = read_bytes_contained(sp)
+    data = disk_bytes(content, like=like)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     fd = open_contained(sp, flags, create_parents=True)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(content)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+    return len(data)

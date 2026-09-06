@@ -81,7 +81,8 @@ class ApplyEditInput(_ToolInput):
         " new_string, the only edit in the array. An omitted kind follows the"
         ' pair: an empty old_string means "create", any other means "replace".'
         " A miss that matches exactly one region up to a uniform indent shift"
-        " is healed and reported as `replace~indent`."
+        " is healed and reported as `replace~indent`. A file whose lines end"
+        " in CRLF is written back with CRLF, whatever the edit's content carries."
         " preview=true returns the would-be diff without touching disk."
     )
 
@@ -120,8 +121,8 @@ class ApplyPatchInput(_ToolInput):
         " separators between files); a write that fails part way names the"
         " files already changed. Context lines match exactly or heal through a strict"
         " ladder (trailing whitespace / uniform indent / unique moved block;"
-        " the result names each heal). `path`"
-        " optional (taken from headers; single-file only)."
+        " the result names each heal). A file whose lines end in CRLF is written"
+        " back with CRLF. `path` optional (taken from headers; single-file only)."
         " preview=true echoes the diffs without writing."
     )
 
