@@ -349,6 +349,22 @@ class InstrumentedProvider:
             plan_consumed=snap.plan_consumed,
             plan_cap=snap.max_percent,
             plan_resets_at=plan.resets_at if plan else 0.0,
+            # Every window the backend reported plus the purchased-credit
+            # family, raw: the derived fields above cannot show a second
+            # (e.g. 5-hour) window existing, and hiding tracked state from
+            # the journal blinds the operator to it.
+            plan_windows=[
+                {
+                    "name": w.name,
+                    "used_percent": w.used_percent,
+                    "window_minutes": w.window_minutes,
+                    "resets_at": w.resets_at,
+                }
+                for w in (plan.windows if plan else ())
+            ],
+            credits_has=plan.has_credits if plan else False,
+            credits_unlimited=plan.credits_unlimited if plan else False,
+            credits_balance=plan.credits_balance if plan else "",
         )
 
 

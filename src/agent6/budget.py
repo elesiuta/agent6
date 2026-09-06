@@ -56,6 +56,11 @@ class PlanWindow:
     resets_at: float
 
 
+# The backend sells purchased credits in 1,000-credit packs at $40: a bare
+# credit count divides by this to become dollars.
+_CREDITS_PER_USD = 25.0
+
+
 @dataclass(frozen=True, slots=True)
 class PlanUsage:
     """One provider-reported plan-usage reading (subscription providers).
@@ -118,10 +123,17 @@ class PlanUsage:
 
     @property
     def credits_usd(self) -> float | None:
-        """The purchased-credit balance as dollars, None when the backend
-        sent none or something that is not a number."""
+        """The purchased-credit balance in dollars: a "$"-prefixed balance is
+        already dollars; a bare number is CREDITS, converted at the backend's
+        rate (credits sell in 1,000-credit packs at $40, so 25 credits per
+        dollar). None when the backend sent none or a non-number."""
+        raw = self.credits_balance.strip()
+        if not raw:
+            return None
         try:
-            return float(self.credits_balance.lstrip("$").replace(",", ""))
+            if raw.startswith("$"):
+                return float(raw.lstrip("$").replace(",", ""))
+            return float(raw.replace(",", "")) / _CREDITS_PER_USD
         except ValueError:
             return None
 
@@ -427,6 +439,9 @@ class BudgetTracker:
             and plan_usage.window_exhausted
         ):
             balance = plan_usage.credits_balance or "unknown"
+            usd = plan_usage.credits_usd
+            if usd is not None and not plan_usage.credits_balance.strip().startswith("$"):
+                balance = f"{balance} credits (~${usd:.2f})"
             self._exceeded_reason = (
                 "the plan window is exhausted and the account holds purchased"
                 f" credits (balance {balance}): continuing would spend them."

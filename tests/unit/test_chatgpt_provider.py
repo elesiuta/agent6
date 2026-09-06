@@ -681,13 +681,15 @@ def test_every_used_percent_header_family_is_a_window() -> None:
             "x-codex-gpt-5-6-spark-used-percent": "97.5",
             "x-codex-gpt-5-6-spark-window-minutes": "300",
             "x-codex-gpt-5-6-spark-reset-after-seconds": "600",
-            "x-codex-credits-balance": "20.00",
+            "x-codex-credits-balance": "500",
         }
     )
     assert plan is not None
     assert [w.name for w in plan.windows] == ["primary", "gpt-5-6-spark"]
     assert plan.binding.name == "gpt-5-6-spark" and plan.used_percent == 97.5
     assert plan.window_minutes == 300 and 0 < plan.resets_at - time.time() <= 600
+    # 500 credits at the backend's 25-per-dollar rate (1,000-credit
+    # packs at $40): the balance header carries a credit count, not dollars.
     assert plan.credits_usd == 20.0 and not plan.window_exhausted
     assert _plan_usage_of({"x-codex-gpt-5-6-spark-used-percent": "97.5"}) is None
 

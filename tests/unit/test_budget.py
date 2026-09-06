@@ -423,3 +423,21 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
     _record_plan(opaque, reading("lots"))
     _record_plan(opaque, reading("fewer"))
     assert opaque.estimate_usd()[0] == 0.0
+
+
+def test_credits_balance_units_convert_to_usd() -> None:
+    """The backend sells credits in 1,000-credit packs at $40 (25 per
+    dollar): a bare balance number is credits and converts; a "$"-prefixed
+    balance is already dollars and stays as sent. Treating a raw credit
+    count as dollars over-reported the balance 25x."""
+
+    def usd(balance: str) -> float | None:
+        return PlanUsage.single(
+            0.0, 10080, 0.0, has_credits=True, credits_balance=balance
+        ).credits_usd
+
+    assert usd("500") == 20.0
+    assert usd("1,000") == 40.0
+    assert usd("$12.50") == 12.50
+    assert usd("") is None
+    assert usd("n/a") is None
