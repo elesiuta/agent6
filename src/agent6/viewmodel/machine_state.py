@@ -467,6 +467,19 @@ def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str
     )
 
 
+def wait_line(machine_id: str, state: str, wake_at: str) -> str:
+    """Where a parked machine is, when it wakes, and how to wake it now.
+
+    `machine status` and the foreground `machine run` say the same sentence:
+    the run blocks in the wait with nothing on the terminal otherwise, which
+    reads as a hang for the whole interval.
+    """
+    poke = f"agent6 machine poke {machine_id} [--message TEXT]"
+    if wake_at:
+        return f"waiting in {state!r}: wakes at {wake_at}; a poke wakes it now: {poke}"
+    return f"waiting in {state!r} for a poke: {poke}"
+
+
 def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str:
     """Why *verb* cannot reach machine *name* now, or "" when it can
     (:func:`machine_verb_refusals` for the whole set)."""

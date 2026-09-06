@@ -74,6 +74,27 @@ def test_run_exit_on_wait_yields_waiting(
     assert pending.state == "poll"
 
 
+def test_a_foreground_wait_says_where_it_parked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The wait blocks in-process with nothing on the terminal otherwise, so a
+    `machine run` that parked for an hour read as a hang; `machine status` in
+    another terminal had the sentence all along."""
+    monkeypatch.chdir(tmp_path)
+    f = tmp_path / "waiter.asm.toml"
+    ticks_at_once = WAITER_DELAYED.replace(
+        'secs = { type = "int", value = 3600 }', 'secs = { type = "int", value = 1 }'
+    )
+    f.write_text(ticks_at_once, encoding="utf-8")
+
+    assert main(["machine", "run", str(f)]) == 0
+
+    captured = capsys.readouterr()
+    assert "waiting in 'poll': wakes at " in captured.err
+    assert "agent6 machine poke waiter_delayed" in captured.err
+    assert "OK: waiter_delayed ended in 'done'" in captured.out
+
+
 def test_run_prints_a_notify_on_the_foreground_terminal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -80,7 +80,7 @@ from agent6.sessions.layout import machines_root
 from agent6.tools.policy import jail_policy, passthrough_env
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, NetworkMode
 from agent6.viewmodel.format import format_cost
-from agent6.viewmodel.machine_state import machine_spend
+from agent6.viewmodel.machine_state import machine_spend, wait_line
 from agent6.workflows.subrun import SubrunError
 
 
@@ -466,6 +466,13 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 if operator_hook is not None:
                     operator_hook(kind, state, message, level)
 
+            def say_where_it_parked() -> None:
+                # The wait blocks in-process with nothing on the terminal
+                # otherwise, which reads as a hang for the whole interval.
+                pending = journal.read_pending_wait()
+                if pending is not None:
+                    reporter.note(wait_line(spec.machine, pending.state, pending.wake_at))
+
             world = LiveWorld(
                 cwd=cwd,
                 journal=journal,
@@ -484,6 +491,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 state_log_root=root / "states",
                 state_log_keep=cfg.machine.state_log_keep,
                 notify_hook=surface_notify,
+                on_wait=say_where_it_parked,
             )
             try:
                 result = drive(spec, journal, world, live=True, exit_on_wait=exit_on_wait)

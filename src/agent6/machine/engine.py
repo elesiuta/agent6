@@ -333,6 +333,10 @@ class LiveWorld:
     # clone at the chain tip); None is the plain jail. Injected so this
     # module needs no git import, like agent_runner.
     jail_runner: Callable[[JailPolicy], CommandResult] | None = None
+    # Fired once as a wait starts to block, so the foreground `machine run`
+    # says where it parked instead of reading as a hang for the whole interval.
+    # Presentation only: it cannot affect the sleep (engine contract).
+    on_wait: Callable[[], None] | None = None
 
     def run_tool(
         self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
@@ -379,6 +383,9 @@ class LiveWorld:
     def sleep_until(self, wake_epoch: float | None) -> WaitWake:
         """Block until the wake instant or an operator signal poke, whichever
         first. `wake_epoch=None` is a wait with no timer: park until a poke."""
+        if self.on_wait is not None:
+            with contextlib.suppress(OSError):  # a dead terminal never stops a machine
+                self.on_wait()
         while True:
             signaled, payload = self.journal.take_signal()
             if signaled:

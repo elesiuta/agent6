@@ -74,6 +74,7 @@ from agent6.viewmodel.format import (
     format_when,
     machine_state_mark,
 )
+from agent6.viewmodel.machine_state import wait_line
 
 
 def _cmd_machine_list() -> int:
@@ -306,7 +307,7 @@ def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | 
         return None, str(exc)
 
 
-def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912, PLR0915
+def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
@@ -376,15 +377,9 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912, PLR0915
     in_wait = alive and state_spec is not None and state_spec.kind == "wait"
     waiting_in = pending.state if pending is not None else (result.state if in_wait else "")
     if waiting_in:
-        poke = f"agent6 machine poke {machine_id} [--message TEXT]"
-        if pending is not None and pending.wake_epoch is not None:
-            # A timed wait wakes on its own; the poke is the way to wake it now.
-            print(
-                f"  waiting in {waiting_in!r}: wakes at {pending.wake_at};"
-                f" a poke wakes it now: {poke}"
-            )
-        else:
-            print(f"  waiting in {waiting_in!r} for a poke: {poke}")
+        # A timed wait wakes on its own; the poke is the way to wake it now.
+        wake_at = pending.wake_at if pending is not None else ""
+        print("  " + wait_line(machine_id, waiting_in, wake_at))
     if pending_note:
         print(f"  pending wait: unreadable ({pending_note})")
     poked, poke_payload = journal.read_pending_poke()
