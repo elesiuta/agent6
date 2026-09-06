@@ -411,6 +411,29 @@ def test_watch_exits_on_a_parked_machine(
     assert "WAITING" in out and "machine poke tiny" in out
 
 
+def test_watch_follows_a_live_machine_in_a_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live worker blocked in a foreground wait still writes: attach follows
+    it and exits only once the worker is gone. It exited at once on the word
+    "waiting", live or not."""
+    import threading
+
+    monkeypatch.chdir(tmp_path)
+    _stalled_instance(tmp_path, parked=True)
+    inst = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    write_worker_pid(inst, os.getpid())
+    result: list[int] = []
+    t = threading.Thread(target=lambda: result.append(main(["attach", "tiny"])), daemon=True)
+    t.start()
+    t.join(timeout=2.0)
+    assert t.is_alive(), f"attach left a live machine: exit {result}"
+    clear_worker_pid(inst)  # the worker goes: the parked instance has nothing to follow
+    t.join(timeout=5.0)
+    assert result == [0]
+    assert "WAITING" in capsys.readouterr().out
+
+
 def test_watch_exits_on_a_crashed_machine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

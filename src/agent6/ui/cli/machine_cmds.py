@@ -463,12 +463,13 @@ def _render_overview(ms: MachineState) -> str:
 def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int | None:
     """Watch's exit code when nothing will ever append to the journal: parked
     (an armed --exit-on-wait wait, no worker) or crashed (stale worker.pid, no
-    end, no wait). None while a live worker may still write. Routed through
-    machine_word_for_dir, the one owner of the running/waiting/stopped
-    distinction, so watch agrees with status/TUI/web."""
+    end, no wait). None while a live worker may still write, a worker blocked
+    in a foreground wait included. Routed through machine_word_for_dir, the
+    one owner of the running/waiting/stopped distinction, so watch agrees
+    with status/TUI/web."""
     word = machine_word_for_dir(ms, root)
     current = next((st.name for st in ms.states if st.is_current), "?")
-    if word == "waiting":
+    if word == "waiting" and not worker_is_alive(root):
         print(
             f"\nWAITING in {current!r} (poke to resume):"
             f" agent6 machine poke {machine_id} [--message TEXT]"
@@ -485,7 +486,8 @@ def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int |
 def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR0915
     """Follow a running machine: the state overview, each transition as it lands,
     and the current agent state's live reasoning (its per-state logs.jsonl). Exits
-    when the machine ends/waits, or on Ctrl-C. Read-only."""
+    when the worker is dead (parked or crashed), when the instance ended, or on
+    Ctrl-C. Read-only."""
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
