@@ -663,6 +663,17 @@ class MachinesScreen(ScreenChrome, Screen[None]):
             return self._machines[table.cursor_row].file
         return None
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Dim the row actions on a page with no selectable row: View and Run
+        need an authored file, Watch needs a row of any kind, and all three were
+        silent no-ops the footer still offered."""
+        del parameters
+        if action in ("view", "run"):
+            return self._selected() is not None
+        if action == "watch":
+            return bool(self._machines)
+        return True
+
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter on a row opens the parsed view (the DataTable consumes Enter, so the
         # screen's binding never fires -- handle the row event itself, like the hub).

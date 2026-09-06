@@ -136,6 +136,26 @@ def test_machines_menu_items_all_resolve(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_row_actions_are_dimmed_on_an_empty_machines_page(tmp_path: Path) -> None:
+    """View, Run and Watch all need a row; with none they were silent no-ops
+    the footer still offered."""
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, MachinesScreen)
+            assert [screen.check_action(a, ()) for a in ("view", "run", "watch")] == [
+                False,
+                False,
+                False,
+            ]
+            assert screen.check_action("create", ()) is True
+
+    asyncio.run(scenario())
+
+
 def test_watch_screen_carries_the_menu_bar_and_its_items_resolve(
     tmp_path: Path, monkeypatch: object
 ) -> None:
