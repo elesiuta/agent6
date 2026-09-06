@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import agent6
-from agent6.app._setup import detect_env
+from agent6.app._setup import budget_tracker, detect_env
 from agent6.app.confine import (
     check_network_support,
     config_refusal,
@@ -29,10 +29,10 @@ from agent6.app.providers import (
     InstrumentedProvider,
     build_review_seats,
     build_role_provider,
-    build_summariser_provider,
     close_provider,
     resolve_compaction_thresholds,
     resolve_decompose,
+    reviewer_seat_provider,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
@@ -179,12 +179,7 @@ def build_session_providers(
     stream_text: bool,
     reporter: Reporter = STDIO_REPORTER,
 ) -> SessionProviders:
-    budget = BudgetTracker(
-        max_usd=cfg.budget.max_usd,
-        max_percent=cfg.budget.max_percent,
-        allow_paid_credits=cfg.budget.allow_paid_credits,
-        max_tokens_fallback=cfg.budget.max_tokens_fallback,
-    )
+    budget = budget_tracker(cfg)
     inner = build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
     rm_role = cfg.models.resolve(role)
     assert rm_role is not None  # require_runnable validated this
@@ -198,8 +193,8 @@ def build_session_providers(
         budget=budget,
         stream_text=stream_text,
     )
-    summariser_provider = build_summariser_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events
+    summariser_provider = reviewer_seat_provider(
+        cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events
     )
     # The panel is THE in-loop review: trigger on with no seats builds the
     # simple one-seat roster on the reviewer model.

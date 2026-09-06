@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from agent6.app._setup import budget_tracker
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
@@ -87,12 +88,7 @@ def rank(
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
         sink = TranscriptSink(transcript_dir)
-        budget = BudgetTracker(
-            max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
-            max_percent=cfg.budget.max_percent,
-            allow_paid_credits=cfg.budget.allow_paid_credits,
-            max_tokens_fallback=cfg.budget.max_tokens_fallback,
-        )
+        budget = budget_tracker(cfg, max_usd=max_usd)
         try:
             provider: Provider = build_provider(cfg, sink, budget)
             with judging_status():

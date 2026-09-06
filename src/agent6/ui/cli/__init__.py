@@ -226,9 +226,10 @@ def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: st
         return rc
     # A parked start never ran: its next step is the resume line already
     # printed (once the checkout is free or the changes settled), not a
-    # follow-up to a leg that does not exist yet.
+    # follow-up to a leg that does not exist yet. An ask stays a one-shot.
     with contextlib.suppress(ManifestError):
-        if read_manifest(layout.session_dir).parked_task:
+        manifest = read_manifest(layout.session_dir)
+        if manifest.parked_task or manifest.mode == "ask":
             return rc
     if not follow_up_on_offer(layout.session_dir):
         return rc
@@ -494,9 +495,6 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
-    from agent6.sessions.id import SessionIdError  # noqa: PLC0415
-    from agent6.sessions.manifest import ManifestError, read_manifest  # noqa: PLC0415
-    from agent6.ui.cli._common import resolve_or_newest_layout  # noqa: PLC0415
     from agent6.ui.cli.resume import _cmd_resume  # noqa: PLC0415
 
     if getattr(args, "interactive", False) and not sys.stdin.isatty():
@@ -515,19 +513,8 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         interactive=getattr(args, "interactive", False),
     )
     # A resumed leg ends the way a fresh one does: asking for the next input
-    # (the TUI owns its screen; an ask stays a one-shot).
-    if args.tui:
-        return rc
-    try:
-        layout = resolve_or_newest_layout(Path.cwd(), args.session_id)
-    except SessionIdError:
-        return rc
-    if layout is None:
-        return rc
-    with contextlib.suppress(ManifestError):
-        if read_manifest(layout.session_dir).mode == "ask":
-            return rc
-    return _prompt_for_the_next_input(args, rc, layout.session_id)
+    # (the TUI owns its screen).
+    return rc if args.tui else _prompt_for_the_next_input(args, rc, args.session_id)
 
 
 def _dispatch_fork(args: argparse.Namespace) -> int:

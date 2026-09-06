@@ -11,7 +11,6 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -32,8 +31,7 @@ from agent6.app.finalize import (
 )
 from agent6.app.frontend import (
     SessionFrontend,
-    apply_spawned_away_default,
-    approval_scopes,
+    settle_away_mode,
 )
 from agent6.app.manifest import (
     pin_gate,
@@ -75,9 +73,7 @@ from agent6.sessions.id import (
 )
 from agent6.sessions.ipc import (
     away_mode,
-    clear_away_mode,
     clear_pending_answers,
-    clear_session_grants,
     clear_worker_pid,
     submit_steer,
     write_worker_pid,
@@ -285,11 +281,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         clear_pending_answers(layout.session_dir)
         if initial_steer.strip():
             submit_steer(layout.session_dir, initial_steer.strip())
-        if sys.stdin.isatty():  # a foreground start: the away-mode and the grants expire
-            clear_away_mode(layout.session_dir)
-            clear_session_grants(layout.session_dir)
-        else:
-            apply_spawned_away_default(layout.session_dir, approval_scopes(cfg))
+        settle_away_mode(layout.session_dir, cfg)
         # A visible branch named after the run id is 1:1 with the run (find it
         # from any run id, `agent6 sessions diff <id>`, or delete the branch to
         # drop the pointer). The name is the unique run id. Only real `run`

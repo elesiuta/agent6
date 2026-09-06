@@ -45,7 +45,7 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
     from agent6.app.providers import (
         build_prompt_reviser_provider,
         build_review_seats,
-        build_summariser_provider,
+        reviewer_seat_provider,
     )
     from agent6.config import PromptConfig, ReviewConfig
 
@@ -64,7 +64,9 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
     assert sink.for_seat.call_args == call("prompt_reviser")
 
     sink = MagicMock()
-    build_summariser_provider(cfg, transcript_sink=sink, budget=MagicMock(), events=MagicMock())
+    reviewer_seat_provider(
+        cfg, "summariser", transcript_sink=sink, budget=MagicMock(), events=MagicMock()
+    )
     assert sink.for_seat.call_args == call("summariser")
 
     sink = MagicMock()

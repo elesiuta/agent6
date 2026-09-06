@@ -9,7 +9,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -27,8 +26,7 @@ from agent6.app._setup import (
 )
 from agent6.app.frontend import (
     SessionFrontend,
-    apply_spawned_away_default,
-    approval_scopes,
+    settle_away_mode,
 )
 from agent6.app.manifest import pin_gate, stamp_fork_task, stamp_leg, stamp_preset
 from agent6.app.preflight import (
@@ -65,9 +63,7 @@ from agent6.providers import (
 )
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.ipc import (
-    clear_away_mode,
     clear_pending_answers,
-    clear_session_grants,
     clear_worker_pid,
     effective_away,
     submit_steer,
@@ -522,15 +518,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Needs the config: "approve everything while away" is a grant per
         # scope, and the scopes in play include one per configured MCP server.
-        if sys.stdin.isatty():  # a foreground start: the away-mode and the grants expire
-            clear_away_mode(layout.session_dir)
-            clear_session_grants(layout.session_dir)
-        else:
-            # A front-end (web/TUI) or a detach spawns resume with no terminal; honor
-            # AGENT6_DETACHED_AWAY so ask_user/approvals WAIT for a viewer instead of
-            # fabricating an empty answer. Mirrors run_task; a pure headless resume
-            # (CI) sets no env, so this is a no-op and keeps the non-hanging default.
-            apply_spawned_away_default(layout.session_dir, approval_scopes(cfg))
+        settle_away_mode(layout.session_dir, cfg)
 
         try:
             isolation = select_isolation(

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from agent6.app._setup import apply_git_ops_policy
+from agent6.app._setup import apply_git_ops_policy, budget_tracker
 from agent6.app.manifest import write_manifest
 from agent6.app.providers import InstrumentedProvider, build_role_provider
 from agent6.budget import BudgetTracker
@@ -254,16 +254,7 @@ def _model_squash_message(
     if transcript_dir is None:
         return None
     try:
-        tracker = (
-            budget
-            if budget is not None
-            else BudgetTracker(
-                max_usd=cfg.budget.max_usd,
-                max_percent=cfg.budget.max_percent,
-                allow_paid_credits=cfg.budget.allow_paid_credits,
-                max_tokens_fallback=cfg.budget.max_tokens_fallback,
-            )
-        )
+        tracker = budget if budget is not None else budget_tracker(cfg)
         provider = build_role_provider(
             cfg,
             "worker",

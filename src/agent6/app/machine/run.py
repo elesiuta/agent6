@@ -313,7 +313,6 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             isolation = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
         except SessionRefused as refusal:
             return refusal.rc
-        snapshot_keep = cfg.machine.snapshot_keep
         refusal = machine_network_refusal(cfg, isolation, tool_states) or check_hide_paths_support(
             cfg, isolation, cwd
         )

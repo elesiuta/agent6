@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agent6.app._setup import check_provider_keys
+from agent6.app._setup import budget_tracker, check_provider_keys
 from agent6.app.providers import build_review_seats, build_role_provider
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import (
@@ -236,12 +236,7 @@ def _cmd_review(  # noqa: PLR0911
 
     # Reviewer-only: route the "reviewer" role per [models.reviewer]. Budget
     # is per-invocation since this command is a one-shot.
-    budget = BudgetTracker(
-        max_usd=cfg.budget.max_usd,
-        max_tokens_fallback=cfg.budget.max_tokens_fallback,
-        max_percent=cfg.budget.max_percent,
-        allow_paid_credits=cfg.budget.allow_paid_credits,
-    )
+    budget = budget_tracker(cfg)
     layout_root = resolved_state_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)
     transcript_sink = TranscriptSink(layout_root)

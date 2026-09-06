@@ -40,14 +40,14 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent6.app._session import tool_result_cap_chars
-from agent6.app._setup import apply_git_ops_policy
+from agent6.app._setup import apply_git_ops_policy, budget_tracker
 from agent6.app.confine import check_hide_paths_support, check_network_support
 from agent6.app.providers import (
     InstrumentedProvider,
     build_role_provider,
-    build_summariser_provider,
     resolve_compaction_thresholds,
     resolve_decompose,
+    reviewer_seat_provider,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
@@ -342,8 +342,8 @@ def _build_agent_providers(
         budget=budget,
         stream_text=True,
     )
-    summariser_provider = build_summariser_provider(
-        cfg, transcript_sink=transcript_sink, budget=budget, events=events_sink
+    summariser_provider = reviewer_seat_provider(
+        cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events_sink
     )
     return provider, summariser_provider, events_sink
 
@@ -393,12 +393,7 @@ def run_one(
     if hide_err is not None:
         reporter.refuse(hide_err)
         return _result("error", None, None)
-    budget = BudgetTracker(
-        max_usd=cfg.budget.max_usd,
-        max_tokens_fallback=cfg.budget.max_tokens_fallback,
-        max_percent=cfg.budget.max_percent,
-        allow_paid_credits=cfg.budget.allow_paid_credits,
-    )
+    budget = budget_tracker(cfg)
     provider, summariser_provider, events_sink = _build_agent_providers(
         cfg, req, budget=budget, attach_console=attach_console
     )

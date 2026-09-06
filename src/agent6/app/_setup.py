@@ -14,6 +14,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from agent6.app.reporter import STDIO_REPORTER, Reporter
+from agent6.budget import BudgetTracker
 from agent6.child_env import curated_env, set_provider_key_env
 from agent6.config import (
     AnthropicProviderEntry,
@@ -67,6 +68,16 @@ def detect_env() -> Environment:
     if works != env.userns_supported:
         return replace(env, userns_supported=works)
     return env
+
+
+def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> BudgetTracker:
+    """A run's meter from `[budget]`, *max_usd* (a flag) overriding the cap."""
+    return BudgetTracker(
+        max_usd=cfg.budget.max_usd if max_usd is None else max_usd,
+        max_percent=cfg.budget.max_percent,
+        allow_paid_credits=cfg.budget.allow_paid_credits,
+        max_tokens_fallback=cfg.budget.max_tokens_fallback,
+    )
 
 
 @dataclass(frozen=True, slots=True)

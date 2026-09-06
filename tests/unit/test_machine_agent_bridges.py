@@ -189,7 +189,7 @@ def test_machine_agent_wires_the_summariser_seat(
 
     monkeypatch.setattr(machine_agent, "Workflow", _FakeWf)
     monkeypatch.setattr(machine_agent, "build_role_provider", _fake_role)
-    monkeypatch.setattr(machine_agent, "build_summariser_provider", _fake_summariser)
+    monkeypatch.setattr(machine_agent, "reviewer_seat_provider", _fake_summariser)
 
     def _fake_dispatcher(**_k: Any) -> object:
         return object()

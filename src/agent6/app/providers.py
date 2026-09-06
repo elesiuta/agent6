@@ -411,7 +411,7 @@ class InstrumentedProvider:
         )
 
 
-def _reviewer_seat_provider(
+def reviewer_seat_provider(
     cfg: Config,
     seat: str,
     *,
@@ -419,7 +419,10 @@ def _reviewer_seat_provider(
     budget: BudgetTracker,
     events: EventSink | None,
 ) -> Provider:
-    """The reviewer role routed under *seat*'s label, instrumented."""
+    """The reviewer role routed under *seat*'s label, instrumented: a panel
+    seat, the prompt reviser, or the tier-2 context summariser (always
+    available, since compaction can fire on any run, and cheaper than the
+    worker model)."""
     inner = build_role_provider(
         cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat=seat
     )
@@ -564,21 +567,6 @@ def build_prompt_reviser_provider(
     """Route the reviewer role as a one-shot prompt reviser."""
     if cfg.prompt.revise_prompt == "off":
         return None
-    return _reviewer_seat_provider(
+    return reviewer_seat_provider(
         cfg, "prompt_reviser", transcript_sink=transcript_sink, budget=budget, events=events
-    )
-
-
-def build_summariser_provider(
-    cfg: Config,
-    *,
-    transcript_sink: TranscriptSink,
-    budget: BudgetTracker,
-    events: EventSink | None,
-) -> Provider:
-    """Route the reviewer role as the tier-2 context summariser. Always
-    available (context compaction can fire on any run) and cheaper than the
-    worker model."""
-    return _reviewer_seat_provider(
-        cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events
     )
