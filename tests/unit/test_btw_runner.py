@@ -59,7 +59,7 @@ def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: Path) -
         events=events,
     )
     started = time.monotonic()
-    line = runner("why h265", tmp_path)
+    _opened, line = runner("why h265", tmp_path)
     assert time.monotonic() - started < 2.0  # returned, did not wait for an answer
     assert "quiet-fox-AAAAAA" in line
 
@@ -134,9 +134,9 @@ def test_a_btw_with_a_question_reaches_the_runner_and_never_the_loop(tmp_path: P
 
     asked: list[str] = []
 
-    def runner(question: str, session_dir: Path) -> str:
+    def runner(question: str, session_dir: Path) -> tuple[bool, str]:
         asked.append(question)
-        return "[agent6] btw opened"
+        return True, "[agent6] btw opened"
 
     lines = iter(["/btw why is the broker slow?", "/continue"])
     action = pause_menu(tmp_path, input_fn=lambda _p: next(lines), btw_runner=runner)
@@ -175,7 +175,7 @@ def test_btw_is_not_offered_where_nothing_can_spawn_it(
     _run_info_command("/help", tmp_path, None)
     assert "/btw" not in capsys.readouterr().out
 
-    _run_info_command("/help", tmp_path, lambda _q, _d: "")
+    _run_info_command("/help", tmp_path, lambda _q, _d: (True, ""))
     assert "/btw" in capsys.readouterr().out
 
 

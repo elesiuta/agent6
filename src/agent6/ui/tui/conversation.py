@@ -201,7 +201,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         height: auto; max-height: 12; padding: 0 1;
         border-top: solid $border; background: $surface;
     }
-    /* The steer bar: shown only while the run is live (see _sync_input). */
+    /* The composer: steer a live run, resume a finished one (see _sync_input). */
     #conv-input {
         display: none; height: auto; max-height: 8;
         border: round $primary; background: $surface;
@@ -231,15 +231,10 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             MenuItem("Command palette", "command_palette"),
         ),
     )
-    # The class-level MENUS is the pushed-viewer shape (Esc dismisses back to
-    # wherever it was opened). The PRIMARY view (the run app's main screen)
-    # replaces it per-instance in __init__: File matches the dashboard's
-    # (Back = to the hub, Quit), Run appears (the same RUN_MENU the dashboard
-    # shows), and View gains the dashboard toggle. menu_bindings unions the
-    # openers for both shapes, so Alt+r works only where Run exists.
     MENUS: ClassVar = (
-        Menu("File", (MenuItem("Back", "close"),)),
-        Menu("View", _VIEW_ITEMS),
+        Menu("File", (MenuItem("Back", "close"), MenuItem("Quit", "quit_hub", "ctrl+q"))),
+        RUN_MENU,
+        Menu("View", (*_VIEW_ITEMS, MenuItem("Dashboard…", "toggle_dashboard"))),
         _HELP_MENU,
     )
 
@@ -249,8 +244,6 @@ class ConversationScreen(ScreenChrome, Screen[None]):
     # menu bar (which shows the shortcuts from these bindings) and the palette.
     # `?` opens help too, when focus is not in the bar.
     BINDINGS: ClassVar = [
-        # Primary view only (check_action hides it on pushed viewers): flip
-        # between the conversation and the dashboard.
         Binding("ctrl+d", "toggle_dashboard", "Dashboard", priority=True),
         Binding("ctrl+c", "copy", "Copy", priority=True),
         # The thinking/tool-detail cycle: none -> collapsed -> expanded.
@@ -262,7 +255,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         Binding("ctrl+home", "scroll_top", "Top", priority=True, show=False),
         Binding("ctrl+end", "scroll_bottom", "End", priority=True, show=False),
         Binding("question_mark", "help", "Help", show=False),
-        *menu_bindings((*MENUS, Menu("Run", ()))),  # + the Alt+r opener (primary shape)
+        *menu_bindings(MENUS),
     ]
     COMMANDS: ClassVar = {MenuCommands}
     HELP_TITLE: ClassVar = "agent6 — conversation"
@@ -276,38 +269,19 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         logs_path: Path,
         *,
         title: Callable[[str], str],
-        primary: bool = False,
         presets: list[str] | None = None,
         prompts: PromptDispatcher | None = None,
     ) -> None:
-        """*primary* marks the run app's main screen (Esc leaves the app, Ctrl+D
-        toggles the dashboard); pushed read-only viewers (the hub, the dashboard)
-        leave it False, where Esc just dismisses. *presets* are the config
-        presets a resume may continue under (the primary view's picker).
-        *prompts* is the host's dispatcher, the one record of which prompts a
-        surface already took (a modal on another screen, this screen's row)."""
+        """The run app's main screen: Esc leaves the app, Ctrl+D toggles the
+        dashboard. *presets* are the config presets a resume may continue
+        under (the picker). *prompts* is the host's dispatcher, the one record
+        of which prompts a surface already took (a modal on another screen,
+        this screen's row)."""
         super().__init__()
         self._logs_path = logs_path
         self._prompts = prompts
         self._title = title
-        self._primary = primary
         self._presets = presets if presets is not None else []
-        # The instance's menus (MENUS stays the class-level viewer shape, which
-        # menu_bindings derives the Alt+letter openers from -- same titles).
-        self._menus: tuple[Menu, ...] = self.MENUS
-        if primary:
-            self._menus = (
-                Menu(
-                    "File",
-                    (
-                        MenuItem("Back", "close"),
-                        MenuItem("Quit", "quit_hub", "ctrl+q"),
-                    ),
-                ),
-                RUN_MENU,
-                Menu("View", (*self._VIEW_ITEMS, MenuItem("Dashboard…", "toggle_dashboard"))),
-                self._HELP_MENU,
-            )
         self._detail: DetailLevel = "collapsed"  # one shortcut cycles none/collapsed/expanded
         self._tail = LogTail(logs_path)
         self._fold = TranscriptFold()
@@ -334,7 +308,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._timer: Timer | None = None  # the 0.3s poll; paused while covered
 
     def compose(self) -> ComposeResult:
-        yield MenuBar(self._menus)  # top row: menus + "agent6 — <run>", like every screen
+        yield MenuBar(self.MENUS)  # top row: menus + "agent6 — <run>", like every screen
         with Vertical(id="conv-main"):
             with VerticalScroll(id="conv-scroll"):
                 # The transcript body: sealed chunks are mounted above this
@@ -345,7 +319,7 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         yield Static(id="conv-approval", classes="conv-chunk")  # the open approval, inline
         yield SteerSuggest(id="conv-suggest")  # command hints while typing `/…`
         yield ResumePreset(self._presets, id="conv-preset")  # shown while the composer resumes
-        yield SteerInput(id="conv-input")  # steer bar (hidden unless the run is live)
+        yield SteerInput(id="conv-input")  # the composer: steer a live run, resume a finished one
         yield _JumpButton(_JUMP_LABEL, id="conv-jump")  # floats; shown when scrolled up
         yield Footer()  # Footer is ALLOW_SELECT=False in textual already
 
@@ -386,9 +360,6 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         if self._timer is not None:
             self._poll()
             self._timer.resume()
-
-    def menus(self) -> tuple[Menu, ...]:
-        return self._menus
 
     def _scroll(self) -> VerticalScroll:
         return self.query_one("#conv-scroll", VerticalScroll)
@@ -713,51 +684,43 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             scroll.scroll_end(animate=False)
         self._sync_jump()
 
-    def _bar_shown(self) -> bool:
-        # The primary view keeps the bar even after the run ends (Enter then
-        # RESUMES the run with the typed follow-up); a pushed viewer shows it
-        # only while there is a live run to steer.
-        return self._live or self._primary
-
     def _host_waiting(self) -> bool:
         """Whether the run is blocked on the operator, per the Agent6TUI host's
-        dir status ("waiting"); False on a pushed viewer with no host."""
+        dir status ("waiting"); False on a host that does not keep one."""
         status = getattr(self.app, "dir_status", None)
         return isinstance(status, tuple) and status[0] == "waiting"
 
     def _host_live(self) -> bool:
         """Whether the run is still live, per the Agent6TUI host's dir status
         (which knows a dead worker and a parked run) and falling back to this
-        screen's event-derived tracking on a pushed viewer with no host."""
+        screen's event-derived tracking on a host without one."""
         live_fn = getattr(self.app, "session_controllable", None)
         return bool(live_fn()) if callable(live_fn) else self._live
 
     def _sync_input(self) -> None:
-        """Show the composer bar (steer when live, continue when finished on the
-        primary view) and keep its labels matching the run's state. The
-        liveness and context readout come from the Agent6TUI host when there is
-        one -- its dir status knows a dead worker and a parked run, which the
-        event stream alone cannot (this screen's own _live stays True over a
-        corpse, so a typed steer would go to a run that never reads it); pushed
-        viewers on another host keep the event-derived tracking."""
+        """Show the composer bar (steer when live, continue when finished) and
+        keep its labels matching the run's state. The liveness and context
+        readout come from the Agent6TUI host when there is one -- its dir
+        status knows a dead worker and a parked run, which the event stream
+        alone cannot (this screen's own _live stays True over a corpse, so a
+        typed steer would go to a run that never reads it); a host without it
+        keeps the event-derived tracking."""
         with contextlib.suppress(NoMatches):
             bar = self.query_one("#conv-input", SteerInput)
-            shown = self._bar_shown()
-            if bar.display != shown:  # a same-value write still costs a relayout
-                bar.display = shown
+            if not bar.display:  # a same-value write still costs a relayout
+                bar.display = True
             mode: ComposerMode = "steer" if self._host_live() else "resume"
-            self.query_one("#conv-preset", ResumePreset).show(shown and mode == "resume")
-            if bar.display:
-                if not bar.policy:  # folded once: the manifest does not change mid-run
-                    bar.policy = session_policy(self._logs_path.parent).short()
-                pct_fn = getattr(self.app, "context_pct", None)
-                pct = pct_fn() if callable(pct_fn) else None
-                fork = getattr(self.app, "continue_as", "")
-                bar.set_mode(
-                    mode=mode,
-                    ctx_pct=pct if isinstance(pct, int) else None,
-                    continue_as=fork if isinstance(fork, str) else "",
-                )
+            self.query_one("#conv-preset", ResumePreset).show(mode == "resume")
+            if not bar.policy:  # folded once: the manifest does not change mid-run
+                bar.policy = session_policy(self._logs_path.parent).short()
+            pct_fn = getattr(self.app, "context_pct", None)
+            pct = pct_fn() if callable(pct_fn) else None
+            fork = getattr(self.app, "continue_as", "")
+            bar.set_mode(
+                mode=mode,
+                ctx_pct=pct if isinstance(pct, int) else None,
+                continue_as=fork if isinstance(fork, str) else "",
+            )
 
     def refresh_liveness(self) -> None:
         """Relabel the composer for a liveness change that came with no event
@@ -769,21 +732,18 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self._render_live()
 
     def focus_bar(self) -> None:
-        """Focus the composer bar if it is shown (an external steer request
-        routes here instead of popping a dialog)."""
+        """Focus the composer bar (an external steer request routes here
+        instead of popping a dialog)."""
         with contextlib.suppress(NoMatches):
-            bar = self.query_one("#conv-input", SteerInput)
-            if bar.display:
-                bar.focus()
+            self.query_one("#conv-input", SteerInput).focus()
 
     def _focus_default(self) -> None:
-        """Open with the composer bar focused when it is shown (type to steer a
-        live run, or a follow-up to resume a finished one, immediately); a
-        historical viewer focuses the scrollback for keyboard nav."""
-        if self._bar_shown():
-            with contextlib.suppress(NoMatches):
-                self.query_one("#conv-input", SteerInput).focus()
-                return
+        """Open with the composer bar focused (type to steer a live run, or a
+        follow-up to resume a finished one, immediately); without a bar the
+        scrollback takes focus for keyboard nav."""
+        with contextlib.suppress(NoMatches):
+            self.query_one("#conv-input", SteerInput).focus()
+            return
         self._scroll().focus()
 
     def on_steer_input_submitted(self, message: SteerInput.Submitted) -> None:
@@ -791,8 +751,8 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         owns the routing (submit_instruction): live steer vs resume by its dir
         status, plus the `/compact [focus]` parse: routed by this screen's own
         live path, '/compact …' would reach the model as a literal steer while
-        the bar's title advertises it. A pushed viewer on another host keeps
-        the direct live-steer bridge."""
+        the bar's title advertises it. A host without it keeps the direct
+        live-steer bridge."""
         submit = getattr(self.app, "submit_instruction", None)  # the Agent6TUI host
         if callable(submit):
             submit(message.text)
@@ -964,14 +924,14 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         if bar.opened:  # Esc with a menu open closes the menu, not the view
             bar.close_menu()
             return
-        if self._primary:
-            # The run app's main screen: Back means leave the run view entirely
-            # (the Agent6TUI host's to_hub exits with the back-to-hub code).
-            handler = getattr(self.app, "action_to_hub", None)
-            if callable(handler):
-                handler()
-            return
-        self.dismiss()
+        # Back means leave the run view entirely: the Agent6TUI host's to_hub
+        # exits with the back-to-hub code. A host without one gets the screen
+        # dismissed.
+        handler = getattr(self.app, "action_to_hub", None)
+        if callable(handler):
+            handler()
+        else:
+            self.dismiss()
 
     def action_quit_hub(self) -> None:
         handler = getattr(self.app, "action_quit_hub", None)  # the Agent6TUI host
@@ -979,14 +939,6 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             handler()
 
     def action_toggle_dashboard(self) -> None:
-        if not self._primary:
-            return
         handler = getattr(self.app, "action_toggle_dashboard", None)  # the Agent6TUI host
         if callable(handler):
             handler()
-
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        del parameters
-        if action == "toggle_dashboard":
-            return self._primary  # pushed viewers have no dashboard to toggle
-        return True

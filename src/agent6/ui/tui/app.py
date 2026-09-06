@@ -224,7 +224,6 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self._conv = ConversationScreen(
             self.logs_path,
             title=self.screen_title,
-            primary=True,
             presets=presets,
             prompts=self._prompts,
         )

@@ -207,7 +207,7 @@ def _print_help(offered: dict[str, str]) -> None:
 # Starts a btw and delivers the finished answer to the console view. The menu
 # owns the grammar; the CLI owns the spawn and the delivery. None (headless,
 # tests) makes `/btw` say so rather than fail obscurely.
-BtwRunner = Callable[[str, Path], str]
+BtwRunner = Callable[[str, Path], tuple[bool, str]]
 
 
 def _print_shells(session_dir: Path) -> None:
@@ -227,7 +227,7 @@ def _start_btw(cmd: str, session_dir: Path, runner: BtwRunner | None) -> str:
         return "[agent6] ask something: `/btw <question>`"
     if runner is None:
         return "[agent6] /btw needs a live run with a terminal"
-    return runner(question, session_dir)
+    return runner(question, session_dir)[1]
 
 
 # Commands that end the menu, mapped to the canonical steer action.

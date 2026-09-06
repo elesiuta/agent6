@@ -179,13 +179,10 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
             return False, "could not write the compaction request"
         return True, "compaction requested"
     urgent = parse_now(text)  # `/now <text>`: the CLI's `steer --now`
-    if urgent != "":
-        submit_steer(session_dir, urgent or text, now=urgent is not None)
-    return urgent != "", (
-        "/now needs the instruction: /now <text>"
-        if urgent == ""
-        else ("steer requested now" if urgent else "steer requested")
-    )
+    if urgent == "":
+        return False, "/now needs the instruction: /now <text>"
+    submit_steer(session_dir, urgent or text, now=urgent is not None)
+    return True, "steer requested now" if urgent else "steer requested"
 
 
 def fork_run(

@@ -119,15 +119,17 @@ def test_conversation_screen_follows_live(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_steer_bar_hidden_for_a_finished_run(tmp_path: Path) -> None:
+def test_steer_bar_stays_for_a_finished_run_as_the_resume_composer(tmp_path: Path) -> None:
+    """The conversation view is the run app's main screen: after the run
+    ends the bar stays, and Enter resumes the run with the typed follow-up."""
     logs = tmp_path / "logs.jsonl"
-    _write(logs, _EVENTS)  # _EVENTS ends with session.end -> nothing to steer
+    _write(logs, _EVENTS)  # _EVENTS ends with session.end -> a finished run
 
     async def scenario() -> None:
         app = _Host(logs)
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert not app.screen.query_one("#conv-input", SteerInput).display
+            assert app.screen.query_one("#conv-input", SteerInput).display
 
     asyncio.run(scenario())
 

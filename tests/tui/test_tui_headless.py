@@ -1194,34 +1194,6 @@ def test_conversation_is_the_primary_view(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_pushed_conversation_viewer_still_dismisses(tmp_path: Path) -> None:
-    """A ConversationScreen pushed as a read-only viewer (the hub's t) keeps its
-    old behavior: Esc dismisses back to the host; Ctrl+D is inert (no dashboard)."""
-    from agent6.ui.tui.conversation import ConversationScreen
-
-    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-
-    class _Host(App[None]):
-        def on_mount(self) -> None:
-            self.push_screen(
-                ConversationScreen(tmp_path / "logs.jsonl", title=lambda ctx: f"{ctx} · x")
-            )
-
-    async def scenario() -> None:
-        app = _Host()
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            assert isinstance(app.screen, ConversationScreen)
-            await pilot.press("ctrl+d")  # inert on a viewer
-            await pilot.pause()
-            assert isinstance(app.screen, ConversationScreen)
-            await pilot.press("escape")  # Esc dismisses the viewer
-            await pilot.pause()
-            assert not isinstance(app.screen, ConversationScreen)
-
-    asyncio.run(scenario())
-
-
 def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

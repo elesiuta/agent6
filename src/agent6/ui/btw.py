@@ -60,23 +60,24 @@ def make_btw_runner(
     launch: BtwLaunch,
     list_asks: Callable[[], list[Path]],
     events: EventSink,
-) -> Callable[[str, Path], str]:
-    """The `/btw <question>` handler the pause menu calls.
+) -> Callable[[str, Path], tuple[bool, str]]:
+    """The `/btw <question>` handler the pause menu and the composers call.
 
-    Returns immediately with a line to print; the answer lands later as a
-    `btw.answered` event on the run's journal. A btw never blocks the run --
-    that is the whole point of asking beside it rather than steering it.
+    Returns immediately with (opened, the line to show); the answer lands
+    later as a `btw.answered` event on the run's journal. A btw never blocks
+    the run: that is the whole point of asking beside it rather than steering
+    it.
     """
 
-    def run_btw(question: str, _session_dir: Path) -> str:
+    def run_btw(question: str, _session_dir: Path) -> tuple[bool, str]:
         session, err = start_btw(
             question, parent_id, cwd=Path.cwd(), launch=launch, list_asks=list_asks
         )
         if session is None:
-            return f"[agent6] {err}"
+            return False, f"[agent6] {err}"
         events.emit("btw.opened", btw_id=session.id, question=session.question)
         Thread(target=_watch, args=(session, events), daemon=True).start()
-        return f"[agent6] btw {session.id} opened; its answer prints here when it lands"
+        return True, f"[agent6] btw {session.id} opened; its answer prints here when it lands"
 
     return run_btw
 
@@ -128,5 +129,4 @@ def open_btw(session_dir: Path, question: str) -> tuple[bool, str]:
         ),
         events=EventSink(session_dir / LOGS_NAME),
     )
-    line = runner(question, session_dir)
-    return " opened;" in line, line
+    return runner(question, session_dir)
