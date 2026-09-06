@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 from agent6.paths import mkdir_for_real_user
-from agent6.portable import lock_exclusive, unlock
+from agent6.portable import lock_exclusive, lock_shared_nonblocking, unlock
 
 
 def acquire_single_writer(session_dir: Path) -> int | None:
@@ -106,9 +106,11 @@ def repo_writer_held(state_dir: Path) -> bool:
     """True when a live worker holds the checkout's `repo.lock`.
 
     An advisory probe for front-end preflight (the web hub refuses a New Work
-    submission up front instead of spawning a doomed run); momentarily
-    acquires and releases without stamping. The lock itself remains the hard
-    boundary -- a race past this probe still parks at `acquire_repo_writer`.
+    submission up front instead of spawning a doomed run): it takes a SHARED
+    lock, which an exclusive holder blocks and a second probe does not, so
+    asking the question never excludes the writer it asks about. The lock
+    itself remains the hard boundary -- a race past this probe still parks at
+    `acquire_repo_writer`.
     """
     lock_path = state_dir / "repo.lock"
     if not lock_path.exists():
@@ -118,7 +120,7 @@ def repo_writer_held(state_dir: Path) -> bool:
     except OSError:
         return False
     try:
-        lock_exclusive(fd, blocking=False)
+        lock_shared_nonblocking(fd)
     except OSError:
         os.close(fd)
         return True

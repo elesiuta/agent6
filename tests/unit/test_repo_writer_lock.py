@@ -48,6 +48,39 @@ def test_repo_writer_second_acquire_refused_and_holder_named(tmp_path: Path) -> 
     release_single_writer(fd2)
 
 
+def test_one_probe_does_not_read_another_probe_as_a_live_run(tmp_path: Path) -> None:
+    """The probe took the EXCLUSIVE lock to ask whether anyone held it, so two
+    at once (a web hub and a TUI, or two hub tabs) each reported the other as
+    a run driving the checkout and refused a submission nothing was blocking."""
+    import os
+    import threading
+
+    from agent6.portable import lock_shared_nonblocking
+
+    lock_path = tmp_path / "repo.lock"
+    created = acquire_repo_writer(tmp_path, "run-A")  # creates the file
+    assert created is not None
+    release_single_writer(created)  # the checkout is free: only a probe holds anything
+    probing = threading.Event()
+    done = threading.Event()
+
+    def _hold_probe() -> None:
+        fd = os.open(lock_path, os.O_RDWR)
+        lock_shared_nonblocking(fd)
+        probing.set()
+        done.wait(5.0)
+        release_single_writer(fd)
+
+    thread = threading.Thread(target=_hold_probe)
+    thread.start()
+    try:
+        assert probing.wait(5.0)
+        assert repo_writer_held(tmp_path) is False, "a probe read as a live writer"
+    finally:
+        done.set()
+        thread.join(5.0)
+
+
 def test_repo_writer_probe_does_not_hold(tmp_path: Path) -> None:
     # The advisory probe must not itself keep the lock (it acquires + releases).
     assert repo_writer_held(tmp_path) is False  # no lock file yet

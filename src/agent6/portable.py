@@ -26,6 +26,20 @@ else:
     import fcntl
 
 
+def lock_shared_nonblocking(fd: int) -> None:
+    """Take a SHARED lock on an open file descriptor, or raise OSError when an
+    exclusive holder has it. A probe that only asks "is someone writing?" takes
+    this one: an exclusive probe excludes the very writer it is asking about,
+    so a run acquiring in that window parked as if the checkout were busy.
+
+    Windows has no shared range lock, so the probe there takes the exclusive
+    one it always took."""
+    if sys.platform == "win32":
+        lock_exclusive(fd, blocking=False)
+        return
+    fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+
+
 def lock_exclusive(fd: int, *, blocking: bool) -> None:
     """Take an exclusive lock on an open file descriptor.
 
