@@ -376,3 +376,41 @@ def test_unrunnable_signature_names_only_the_adopted_runner() -> None:
     assert unrunnable_signature(argv, 1, "", "No module named numpy") == ""
     assert unrunnable_signature(argv, 1, "3 failed, 2 passed", "") == ""
     assert unrunnable_signature(("pytest",), 1, "", "No module named pytest") == ""
+
+
+def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: Path) -> None:
+    """The empty assistant turn was popped only on the nudge path, so an
+    interactive run that parked instead sent `{"role": "assistant", "content":
+    []}` on every later call, which Anthropic rejects."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+
+    provider = MagicMock()
+
+    def _respond(**_kw: Any) -> ProviderResponse:
+        return _empty_resp() if provider.call.call_count == 1 else _resp_text("done")
+
+    provider.call.side_effect = _respond
+    events = EventSink(tmp_path / "logs.jsonl")
+    # Steer only once the run has parked: at any earlier boundary the steer
+    # handler would take it and the park would wait forever.
+    steers = ["carry on", "abort"]
+    parked: list[str] = []
+    events.subscribe(lambda e: parked.append("x") if e["type"] == "loop.parked" else None)
+
+    wf = _build_wf(
+        repo,
+        provider,
+        events=events,
+        went_quiet_max_nudges=0,  # no nudge left: the park is the continuation
+        interactive=True,
+        steer_requested=lambda: bool(parked) and bool(steers),
+        steer_prompt=lambda: steers.pop(0) if steers else None,
+        steer_clear=parked.clear,
+    )
+    wf.run("do something")
+
+    assert provider.call.call_count >= 2, "the steer did not resume the parked run"
+    after_park: list[dict[str, Any]] = provider.call.call_args_list[1].kwargs["messages"]
+    empty = [m for m in after_park if m.get("role") == "assistant" and not m.get("content")]
+    assert empty == [], f"the dead assistant turn was re-sent: {after_park}"

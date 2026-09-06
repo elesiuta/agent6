@@ -3146,12 +3146,15 @@ class Workflow:
         )
         env_max = os.environ.get("AGENT6_WENT_QUIET_MAX_NUDGES", "").strip()
         effective_max_nudges = int(env_max) if env_max.isdigit() else self.went_quiet_max_nudges
+        # Drop the dead turn before any exit: a provider rejects an assistant
+        # message with empty content, and every path below either calls again
+        # (nudge, standing goal, park) or snapshots the conversation for resume.
+        conversation.pop_quiet_assistant()
         if state.went_quiet_nudges_used < effective_max_nudges:
             state.went_quiet_nudges_used += 1
-            conversation.pop_quiet_assistant()
-            # starvation-specific nudge. When the previous turn ended with
-            # The generic empty-turn message gives a starved reasoner nothing
-            # actionable, so it repeats the same loop next turn.
+            # A starved reasoner gets its own nudge: the generic empty-turn
+            # message gives it nothing actionable, so it repeats the same
+            # loop next turn.
             if starved:
                 nudge_text = (
                     "[harness] Your previous turn spent its entire"
