@@ -65,21 +65,52 @@ def record_decision(
     return entry
 
 
-def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> int:
-    """Append every ruling recorded under *src_state_dir* to *dst_state_dir*'s
-    decisions file (a fan-out lane's answers outlive its state dir). Returns
-    the number of entries appended; 0 when the source recorded none."""
+def _entries(text: str) -> list[str]:
+    """A decisions file as its `- ` entries, each with its continuation lines."""
+    entries: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("- ") or not entries:
+            entries.append(line)
+        else:
+            entries[-1] += "\n" + line
+    return entries
+
+
+def _ruling(entry: str) -> str:
+    """The question and answer of an entry, without its stamp and session tag:
+    two lanes answering alike record the same ruling under different tags."""
+    return entry.split("] ", 1)[-1]
+
+
+def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]:
+    """Append the rulings recorded under *src_state_dir* to *dst_state_dir*'s
+    decisions file (a fan-out lane's answers outlive its state dir). A
+    ruling is its question and answer: one the destination already holds,
+    however long ago and under whatever session tag, is skipped, and so is a
+    repeat within the source. Returns (appended, skipped)."""
     try:
         text = decisions_path(src_state_dir).read_text(encoding="utf-8")
     except OSError:
-        return 0
-    if not text.strip():
-        return 0
+        return 0, 0
     path = decisions_path(dst_state_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(text if text.endswith("\n") else text + "\n")
-    return sum(1 for line in text.splitlines() if line.startswith("- "))
+    try:
+        existing = path.read_text(encoding="utf-8")
+    except OSError:
+        existing = ""
+    known = {_ruling(e) for e in _entries(existing.strip())}
+    entries = _entries(text.strip())
+    fresh: list[str] = []
+    for entry in entries:
+        if (ruling := _ruling(entry)) not in known:
+            known.add(ruling)
+            fresh.append(entry)
+    if fresh:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            if existing and not existing.endswith("\n"):
+                fh.write("\n")
+            fh.write("\n".join(fresh) + "\n")
+    return len(fresh), len(entries) - len(fresh)
 
 
 def decisions_text(state_dir: Path) -> str:

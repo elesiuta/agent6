@@ -130,11 +130,54 @@ def test_merge_decisions_appends_a_lanes_rulings(tmp_path: Path) -> None:
     """A fan-out lane's rulings land in the coordinator's DECISIONS.md after its
     own; a lane that recorded none writes nothing."""
     lane, origin = tmp_path / "lane", tmp_path / "origin"
-    assert merge_decisions(lane, origin) == 0
+    assert merge_decisions(lane, origin) == (0, 0)
     assert not decisions_path(origin).exists()
     record_decision(origin, question="q0?", answer="a0", session="run")
-    record_decision(lane, question="q1?", answer="a1", session="l1")
-    assert merge_decisions(lane, origin) == 1
+    record_decision(lane, question="q1?", answer="a1\n\nsecond paragraph", session="l1")
+    assert merge_decisions(lane, origin) == (1, 0)
     text = decisions_path(origin).read_text(encoding="utf-8")
     assert text.index("Q: q0?") < text.index("Q: q1?")
     assert "[l1]" in text
+    assert text.endswith("  A: a1\n  \n  second paragraph\n"), text
+
+
+def test_merge_decisions_skips_a_ruling_the_origin_already_holds(tmp_path: Path) -> None:
+    """N lanes asked the same question and got the same answer: one ruling,
+    recorded once, however many session tags it arrived under."""
+    l1, l2, origin = tmp_path / "l1", tmp_path / "l2", tmp_path / "origin"
+    record_decision(l1, question="Tabs?", answer="spaces", session="fan-l1", when=0)
+    record_decision(l2, question="Tabs?", answer="spaces", session="fan-l2", when=60)
+    record_decision(l2, question="Tabs?", answer="tabs", session="fan-l2", when=120)
+    assert merge_decisions(l1, origin) == (1, 0)
+    assert merge_decisions(l2, origin) == (1, 1)
+    assert merge_decisions(l2, origin) == (0, 2)
+    text = decisions_path(origin).read_text(encoding="utf-8")
+    assert text.count("Q: Tabs?") == 2
+    assert text.count("A: spaces") == 1 and "[fan-l1]" in text and "A: tabs" in text
+
+
+def test_merge_decisions_skips_a_repeat_within_the_source(tmp_path: Path) -> None:
+    """A lane that recorded one ruling twice carries it over once; a ruling
+    the origin recorded long ago, under another session, is a skip too."""
+    lane, origin = tmp_path / "lane", tmp_path / "origin"
+    record_decision(origin, question="Tabs?", answer="spaces", session="old", when=0)
+    record_decision(lane, question="Tabs?", answer="spaces", session="lane", when=3600)
+    record_decision(lane, question="Lint?", answer="ruff", session="lane", when=3660)
+    record_decision(lane, question="Lint?", answer="ruff", session="lane", when=3720)
+    assert merge_decisions(lane, origin) == (1, 2)
+    text = decisions_path(origin).read_text(encoding="utf-8")
+    assert text.count("Q: Tabs?") == 1 and text.count("Q: Lint?") == 1
+
+
+def test_merge_decisions_starts_on_its_own_line(tmp_path: Path) -> None:
+    """A destination cut short of its trailing newline (a partial write, a
+    hand edit) gets one before the first appended entry."""
+    lane, origin = tmp_path / "lane", tmp_path / "origin"
+    path = decisions_path(origin)
+    path.parent.mkdir(parents=True)
+    path.write_text("- 2026-01-01 00:00Z [x] Q: a?\n  A: b", encoding="utf-8")
+    record_decision(lane, question="c?", answer="d", session="lane", when=0)
+    assert merge_decisions(lane, origin) == (1, 0)
+    assert path.read_text(encoding="utf-8") == (
+        "- 2026-01-01 00:00Z [x] Q: a?\n  A: b\n- 1970-01-01 00:00Z [lane] Q: c?\n  A: d\n"
+    )

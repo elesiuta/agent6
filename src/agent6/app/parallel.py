@@ -913,9 +913,12 @@ def _import_lanes(
             continue
         imported.append(res.spec)
         # A lane's operator rulings outlive its state dir (torn down after import).
-        carried = merge_decisions(state_dir(res.spec.workdir, state_base), origin_state)
-        if carried:
-            reporter.note(f"lane {res.spec.lane}: {carried} recorded decision(s) carried over")
+        carried, known = merge_decisions(state_dir(res.spec.workdir, state_base), origin_state)
+        if carried or known:
+            already = f", {known} already recorded" if known else ""
+            reporter.note(
+                f"lane {res.spec.lane}: {carried} recorded decision(s) carried over{already}"
+            )
         summary = summarize_session_dir(dest)
         if not produced_result(summary.status):
             # Imported (its branch is safe in the origin) but not a candidate:
