@@ -76,6 +76,24 @@ def test_cmd_init_reports_invalid_config_cleanly(
     assert "report this" not in err
 
 
+def test_cmd_init_does_not_blame_repo_config_for_an_invalid_explicit_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from agent6.ui.cli import cli_main
+
+    repo = _repo(tmp_path)
+    explicit = tmp_path / "broken.toml"
+    explicit.write_text("not = [valid", encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    assert cli_main(["--config", str(explicit), "init", "--yes"]) == 2
+
+    err = capsys.readouterr().err
+    repair = err.splitlines()[-1]
+    assert str(explicit) in err
+    assert str(repo_config_path(repo)) not in repair
+
+
 def test_init_infers_verify_for_python_repo(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")

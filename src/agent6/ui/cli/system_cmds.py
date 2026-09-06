@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -64,39 +63,39 @@ def _host_lsm() -> str:
 
 def _apparmor_present() -> bool:
     """True when this host actually uses AppArmor (so the profile is meaningful)."""
-    return shutil.which("apparmor_parser") is not None and "apparmor" in _host_lsm()
+    return "apparmor" in _host_lsm()
 
 
-def _run_priv(argv: list[str], *, what: str) -> bool:
+def _run_priv(argv: list[str], *, what: str, required: bool = True) -> bool:
     """Run a fixed-argv privileged command: directly if already root, else via
-    sudo. Returns True on success. The argv is operator/agent6-fixed, never LLM
-    input (so a direct subprocess is within the security model)."""
+    sudo. Returns True on success; an optional command may fail without an
+    error report. The argv is operator/agent6-fixed, never LLM input (so a
+    direct subprocess is within the security model)."""
     full = argv if os.geteuid() == 0 else ["sudo", *argv]
     print(f"[agent6] {' '.join(full)}", file=sys.stderr)
     try:
         rc = subprocess.run(full, check=False).returncode
     except OSError as exc:
-        error(f"could not {what}: {exc}")
+        if required:
+            error(f"could not {what}: {exc}")
         return False
-    if rc != 0:
+    if rc != 0 and required:
         error(f"{what} failed (exit {rc}).")
     return rc == 0
 
 
-def _discard_unloaded_profile() -> None:
-    """apparmor_parser refused the just-copied profile: remove it so `system
-    apparmor status` doesn't report installed for a profile the kernel never
-    loaded. Best effort; say so if the file survives."""
-    _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="remove the unloaded profile")
+def _discard_failed_install() -> None:
+    """Remove the partial file a failed copy left where no profile was before,
+    so `system apparmor status` does not report one installed."""
+    _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="remove the failed install")
     if Path(_APPARMOR_PROFILE_PATH).is_file():
         warn(
-            f"{_APPARMOR_PROFILE_PATH} was left on disk UNLOADED;"
+            f"{_APPARMOR_PROFILE_PATH} was left on disk after the failed install;"
             " remove it with `agent6 system apparmor remove`."
         )
     else:
         print(
-            f"Removed {_APPARMOR_PROFILE_PATH} again: apparmor_parser refused to load it,"
-            " so nothing is installed.",
+            f"Removed {_APPARMOR_PROFILE_PATH} again because the install did not complete.",
             file=sys.stderr,
         )
 
@@ -114,6 +113,26 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         print("  Verify the effective sandbox isolation with `agent6 check sandbox`.")
         return 0
 
+    if action == "remove":
+        if not installed:
+            print(f"Nothing to remove: {_APPARMOR_PROFILE_PATH} is not present.")
+            return 0
+        # Unload from the kernel first (best-effort: the profile may be on disk
+        # but not loaded, in which case -R exits non-zero harmlessly), then
+        # delete the file. Success is "the file is gone", not the -R exit.
+        if _apparmor_present():
+            _run_priv(
+                ["apparmor_parser", "-R", _APPARMOR_PROFILE_PATH],
+                what="unload the profile",
+                required=False,
+            )
+        _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="delete the profile")
+        if Path(_APPARMOR_PROFILE_PATH).is_file():
+            error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
+            return 1
+        print("Removed the agent6-jail AppArmor profile. The sandbox falls back to hardened.")
+        return 0
+
     if not _apparmor_present():
         print(
             "This host does not use AppArmor (LSM: "
@@ -123,21 +142,6 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
             file=sys.stderr,
         )
         return 1
-
-    if action == "remove":
-        if not installed:
-            print(f"Nothing to remove: {_APPARMOR_PROFILE_PATH} is not present.")
-            return 0
-        # Unload from the kernel first (best-effort: the profile may be on disk
-        # but not loaded, in which case -R exits non-zero harmlessly), then
-        # delete the file. Success is "the file is gone", not the -R exit.
-        _run_priv(["apparmor_parser", "-R", _APPARMOR_PROFILE_PATH], what="unload the profile")
-        _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="delete the profile")
-        if Path(_APPARMOR_PROFILE_PATH).is_file():
-            error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
-            return 1
-        print("Removed the agent6-jail AppArmor profile. The sandbox falls back to hardened.")
-        return 0
 
     # install
     from agent6.sandbox.jail import locate_jail_binary  # noqa: PLC0415 - avoid import cycle
@@ -153,17 +157,17 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
     with tempfile.NamedTemporaryFile("w", suffix=".apparmor", delete=False) as fh:
         fh.write(_APPARMOR_PROFILE)
         tmp = fh.name
+    # The kernel loads the profile from the temp file first: one the parser
+    # refuses never reaches the path, so a working profile stays installed.
     try:
-        ok = _run_priv(["cp", tmp, _APPARMOR_PROFILE_PATH], what="install the profile")
-        if ok:
-            ok = _run_priv(
-                ["apparmor_parser", "-r", _APPARMOR_PROFILE_PATH], what="load the profile"
-            )
-            if not ok:
-                _discard_unloaded_profile()
+        ok = _run_priv(["apparmor_parser", "-r", tmp], what="load the profile") and _run_priv(
+            ["cp", tmp, _APPARMOR_PROFILE_PATH], what="install the profile"
+        )
     finally:
         with contextlib.suppress(OSError):
             Path(tmp).unlink()
+    if not ok and Path(_APPARMOR_PROFILE_PATH).is_file() and not installed:
+        _discard_failed_install()
     if ok:
         print(
             f"Installed {_APPARMOR_PROFILE_PATH}. The profile grants the launcher the"

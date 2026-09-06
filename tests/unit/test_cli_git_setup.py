@@ -12,9 +12,11 @@ from typing import cast
 import pytest
 
 from agent6.app.preflight import headless_approval_refusal, require_git_repo
-from agent6.config import Config
-from agent6.git_ops import init_repo, is_git_repo
+from agent6.config import Config, ConfigError
+from agent6.errors import OperatorError
+from agent6.git_ops import GitError, init_repo, is_git_repo
 from agent6.paths import state_dir
+from agent6.ui.cli import init_cmds as ic
 from agent6.ui.cli import main
 from agent6.ui.cli.init_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
 
@@ -66,6 +68,42 @@ def test_offer_git_setup_noninteractive_just_notes(
     out = capsys.readouterr().out
     assert "not a git repository" in out
     assert is_git_repo(tmp_path) is False  # did NOT create a repo non-interactively
+
+
+def test_offer_git_setup_instructions_stage_only_the_scaffold(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    scaffold = tmp_path / "AGENTS.md"
+    scaffold.write_text("new\n", encoding="utf-8")
+    (tmp_path / "operator-wip.txt").write_text("mine\n", encoding="utf-8")
+
+    _offer_git_setup(tmp_path, (scaffold,), interactive=False)
+
+    out = capsys.readouterr().out
+    assert "git add -A" not in out
+    assert "git add AGENTS.md" in out
+    assert "operator-wip.txt" not in out
+
+
+def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    scaffold = tmp_path / "AGENTS.md"
+    scaffold.write_text("new\n", encoding="utf-8")
+
+    def _yes(_prompt: str, default: bool) -> bool:
+        return True
+
+    def _fail_commit(_root: Path, _message: str, _paths: tuple[str, ...]) -> str:
+        raise GitError("identity missing")
+
+    monkeypatch.setattr(ic, "_ask", _yes)
+    monkeypatch.setattr(ic, "commit_paths", _fail_commit)
+    _offer_git_setup(tmp_path, (scaffold,), interactive=True)
+
+    out = capsys.readouterr().out
+    assert "git add -A" not in out
+    assert "git add AGENTS.md" in out
 
 
 def test_offer_git_setup_interactive_inits_and_commits(
@@ -196,6 +234,44 @@ def test_init_refuses_without_tty_or_yes(
     assert not (tmp_path / ".gitignore").exists()
 
 
+def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "state" / "config.toml"
+    monkeypatch.chdir(tmp_path)
+
+    def _target(_root: Path) -> Path:
+        return target
+
+    def _not_a_repo(_root: Path) -> bool:
+        return False
+
+    def _fail(
+        root: Path,
+        *,
+        ecosystem: str,
+        repo_config_target: Path,
+        interactive: bool,
+        config_path: Path | None,
+    ) -> int:
+        target.parent.mkdir()
+        target.write_text("", encoding="utf-8")
+        (root / "AGENTS.md").write_text("new", encoding="utf-8")
+        (root / ".gitignore").write_text("new", encoding="utf-8")
+        raise ConfigError("broken")
+
+    handed_back: list[Path] = []
+    monkeypatch.setattr(ic, "repo_config_path", _target)
+    monkeypatch.setattr(ic, "is_git_repo", _not_a_repo)
+    monkeypatch.setattr(ic, "init_workspace", _fail)
+    monkeypatch.setattr(ic, "chown_to_real_user", handed_back.append)
+
+    with pytest.raises(OperatorError):
+        ic._cmd_init(ecosystem="", assume_yes=True)  # pyright: ignore[reportPrivateUsage]
+
+    assert handed_back == [target.parent, tmp_path / "AGENTS.md", tmp_path / ".gitignore"]
+
+
 def test_an_unanswerable_run_creates_no_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -287,6 +363,35 @@ def test_init_never_commits_the_operators_own_edits(
     assert (repo / "AGENTS.md").read_text(encoding="utf-8") == "theirs v2, still being written\n"
 
 
+def test_init_never_commits_a_gitignore_with_existing_edits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _existing_repo(repo, monkeypatch)
+    (repo / "AGENTS.md").write_text("## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("tracked-entry\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "scaffold"], cwd=repo, check=True)
+    before = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    (repo / ".gitignore").write_text("tracked-entry\noperator-wip\n", encoding="utf-8")
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    assert main(["init", "--yes"]) == 0
+
+    after = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    assert after == before
+    assert _porcelain(repo) == " M .gitignore\n"
+    assert "left uncommitted (already edited): .gitignore" in capsys.readouterr().out
+    text = (repo / ".gitignore").read_text(encoding="utf-8")
+    assert "operator-wip" in text and ".env" in text
+
+
 def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -318,6 +423,34 @@ def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
     ).stdout.split()
     assert head == [".gitignore"], head
     assert (repo / "AGENTS.md").read_text(encoding="utf-8").startswith("theirs\n")
+
+
+def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "fresh"
+    repo.mkdir()
+    (repo / "AGENTS.md").write_text("## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("operator-entry\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def _yes(*_a: object, **_k: object) -> bool:
+        return True
+
+    monkeypatch.setattr("agent6.ui.cli.init_cmds._ask", _yes)
+    monkeypatch.setattr("agent6.init._ask", _yes)
+    assert main(["init"]) == 0
+
+    head = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert head.returncode != 0
+    assert "?? .gitignore" in _porcelain(repo)
 
 
 def test_init_does_not_call_a_committed_scaffold_uncommitted(

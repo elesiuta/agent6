@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import sys
 from pathlib import Path
 
@@ -26,12 +25,11 @@ from agent6.ui.cli._common import error
 _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
 
 
-def _digest(path: Path) -> str | None:
-    """The file's content hash, or None when it does not exist."""
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return None
+def _workspace_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
+    """Existing *created* paths contained by *root*, relative to it."""
+    return tuple(
+        str(p.relative_to(root)) for p in created if p.exists() and root in p.resolve().parents
+    )
 
 
 def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...]:
@@ -43,12 +41,7 @@ def _scaffold_rel_paths(root: Path, created: tuple[Path, ...]) -> tuple[str, ...
     A path with nothing pending is dropped too, so the commit line names what
     the commit holds: init leaves an existing AGENTS.md alone, and listing it
     told the operator it had been committed."""
-    candidates = unignored(
-        root,
-        tuple(
-            str(p.relative_to(root)) for p in created if p.exists() and root in p.resolve().parents
-        ),
-    )
+    candidates = unignored(root, _workspace_rel_paths(root, created))
     return tuple(rel for rel in candidates if paths_dirty(root, (rel,)))
 
 
@@ -63,7 +56,11 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
     print()
     if not interactive:
         print(f"Note: {root} is not a git repository; `agent6 run`/`plan` need one.")
-        print('  Run: git init && git add -A && git commit -m "initial commit"')
+        rel = _workspace_rel_paths(root, created)
+        if rel:
+            print(f'  Run: git init && git add {" ".join(rel)} && git commit -m "initial commit"')
+        else:
+            print("  Run: git init, then review and commit the files you want tracked.")
         return
     if not _ask("This directory is not a git repository. Initialise one now?", default=True):
         print("  Skipped. `agent6 run` needs a repo; run `git init` here first.")
@@ -87,7 +84,7 @@ def _offer_git_setup(root: Path, created: tuple[Path, ...], *, interactive: bool
     except GitError as exc:
         # Most likely a missing git identity, actionable, not fatal.
         print(f"  commit skipped: {exc}")
-        print("  Set git user.name / user.email, then: git add -A && git commit")
+        print(f"  Set git user.name / user.email, then: git add {' '.join(rel)} && git commit")
 
 
 def _offer_scaffold_commit(root: Path, created: tuple[Path, ...], *, interactive: bool) -> None:
@@ -153,40 +150,50 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
     # not this is a repo yet: committing it by path would put THEIR work in
     # agent6's scaffold commit, so it is excluded and reported instead.
     scaffold_all = (cwd / "AGENTS.md", cwd / ".gitignore")
-    before = {p: _digest(p) for p in scaffold_all}
+    missing_before = tuple(p for p in scaffold_all if not p.exists())
+    if is_git_repo(cwd):
+        theirs = tuple(p for p in scaffold_all if paths_dirty(cwd, (str(p.relative_to(cwd)),)))
+    else:
+        theirs = tuple(p for p in scaffold_all if p.exists())
     try:
-        rc = init_workspace(
-            cwd,
-            ecosystem=ecosystem,
-            repo_config_target=target,
-            interactive=interactive,
-            config_path=config_path,
-        )
-    except ConfigError as exc:
-        # init loads the effective config to infer a verify command; it is also
-        # the command a user runs to repair their setup, so the refusal carries
-        # the way out.
-        raise OperatorError(
-            f"{exc}\nFix or delete the per-repo config at {target}, then re-run `agent6 init`."
-        ) from exc
-    if rc == 0:
-        theirs = tuple(p for p in scaffold_all if before[p] is not None and _digest(p) == before[p])
-        # Only the repo-tracked scaffold; the per-repo config is out of the
-        # workspace (under the state dir) and never committed.
-        _offer_git_setup(
-            cwd, tuple(p for p in scaffold_all if p not in theirs), interactive=interactive
-        )
-        # Only where a scaffold commit was on the table: outside a repo (and
-        # after a declined `git init`) nothing was committed to leave out of.
-        dirty = (
-            tuple(p for p in theirs if paths_dirty(cwd, (str(p.relative_to(cwd)),)))
-            if is_git_repo(cwd)
-            else ()
-        )
-        if dirty:
-            names = ", ".join(sorted(p.name for p in dirty))
-            print(f"  left uncommitted (already edited): {names}")
-        _print_next_steps(cwd, config_path)
-    # Don't leave root-owned scaffolding in the user's repo (sudo case).
-    chown_to_real_user(target.parent)
-    return rc
+        try:
+            rc = init_workspace(
+                cwd,
+                ecosystem=ecosystem,
+                repo_config_target=target,
+                interactive=interactive,
+                config_path=config_path,
+            )
+        except ConfigError as exc:
+            # init loads the effective config to infer a verify command; it is also
+            # the command a user runs to repair their setup, so the refusal carries
+            # the way out.
+            raise OperatorError(
+                f"{exc}\nFix or delete the invalid config, following the error above,"
+                " then re-run `agent6 init`."
+            ) from exc
+        if rc == 0:
+            # Only the repo-tracked scaffold; the per-repo config is out of the
+            # workspace (under the state dir) and never committed.
+            _offer_git_setup(
+                cwd, tuple(p for p in scaffold_all if p not in theirs), interactive=interactive
+            )
+            # Only where a scaffold commit was on the table: outside a repo (and
+            # after a declined `git init`) nothing was committed to leave out of.
+            dirty = (
+                tuple(p for p in theirs if paths_dirty(cwd, (str(p.relative_to(cwd)),)))
+                if is_git_repo(cwd)
+                else ()
+            )
+            if dirty:
+                names = ", ".join(sorted(p.name for p in dirty))
+                print(f"  left uncommitted (already edited): {names}")
+            _print_next_steps(cwd, config_path)
+        return rc
+    finally:
+        # Don't leave root-owned config or newly-created repo scaffolding in the
+        # real user's trees when init ran through sudo, even on a failed step.
+        chown_to_real_user(target.parent)
+        for path in missing_before:
+            if path.exists():
+                chown_to_real_user(path)
