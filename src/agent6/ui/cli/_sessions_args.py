@@ -187,9 +187,9 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "--delete-squashed",
         action="store_true",
         help=(
-            "Also force-delete run branches confirmed squash-merged into their base"
-            " (git branch -d refuses these; the content is safe in the base commit)."
-            " Each deletion prints an undelete command."
+            "Also force-delete run branches and chain refs confirmed squash-merged into"
+            " their base (git branch -d refuses these; the content is safe in the base"
+            " commit). Each deletion prints an undelete command."
         ),
     )
 

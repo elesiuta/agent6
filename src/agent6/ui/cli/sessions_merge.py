@@ -354,10 +354,11 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     worktrees of merged forks (an unmerged fork keeps its worktree; `sessions
     rm` removes a fork's with its record).
 
-    With `--delete-squashed` also force-delete branches the manifest confirms
-    were squash-merged into an existing base -- their content is safe in that
-    base commit, and each deletion prints the exact command to undelete it (the
-    commit survives in the reflog until GC). Unmerged branches are never
+    With `--delete-squashed` also force-delete branches and chain refs the
+    manifest confirms were squash-merged into an existing base -- their content
+    is safe in that base commit, and each deletion prints the exact command to
+    undelete it (a branch's commit survives in its reflog until GC; a chain ref
+    has none, so its line carries the sha). Unmerged runs are never
     force-deleted."""
     cwd = Path.cwd()
     if not is_git_repo(cwd):
@@ -492,4 +493,7 @@ def _prune_chain_refs(
         refs_deleted += 1
         how = "merged" if state.verdict == "merged" else "squash-merged"
         print(f"[agent6] deleted {ref} ({how} into {stamp.into})")
+        if state.verdict == "squashed":
+            # A chain ref has no reflog: the sha is the only way back.
+            print(sgr(f"          undelete: git update-ref {ref} {sha[:12]}", "2"))
     return refs_deleted, kept

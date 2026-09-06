@@ -441,8 +441,8 @@ class HomeScreen(ScreenChrome, Screen[None]):
             ConfirmModal(
                 "Prune merged runs, squash-merged too?",
                 "Runs `agent6 sessions prune --delete-squashed`: also force-deletes branches"
-                " the manifest confirms were squash-merged into a base that still holds the"
-                " merge commit. Each deletion prints its undelete command.",
+                " and chain refs the manifest confirms were squash-merged into a base that"
+                " still holds what the merge landed. Each deletion prints its undelete command.",
                 confirm_label="Prune",
             ),
             self._on_prune_confirm(delete_squashed=True),

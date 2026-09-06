@@ -358,7 +358,7 @@ function sessionsCard(sessions) {
   const sqBox = document.createElement('input'); sqBox.type = 'checkbox';
   sq.appendChild(sqBox); sq.appendChild(document.createTextNode(' also squash-merged branches'));
   prune.onclick = async () => {
-    if (sqBox.checked && !confirm('Force-delete branches recorded as squash-merged? Their commits stay in the base and in the reflog.')) return;
+    if (sqBox.checked && !confirm('Force-delete branches and chain refs recorded as squash-merged? Their commits stay in the base; each deletion prints an undelete command.')) return;
     try { const d = await postJSON('/api/sessions/prune', { delete_squashed: sqBox.checked }); toast(d.message || 'pruned'); route(); }
     catch (e) { toast(e.message, true); }
   };

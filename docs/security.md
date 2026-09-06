@@ -307,7 +307,7 @@ Under `none` isolation nothing is enforced or refused.
     - it wraps the safe ops (status, add, commit, diff, branch, checkout)
     - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable (pinned by `test_git_ops_never_spells_a_destructive_verb`, which exempts two argv: `push` inside a `git stash push`, and the one `branch -D` below)
     - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags: `sessions diff` and `ask` read only, and `review` stages untracked files with `add -N` so they appear in its diff, undoing it with `reset` in a `finally`; `skills install` clones with fixed argv
-- One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch the manifest confirms was squash-merged (the commit survives in the reflog).
+- One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged (a branch's commit survives in its reflog; a chain ref's line carries the sha to undelete it).
 - `git_ops.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
     - PATH, SSH, proxy, and credential-helper vars stay
     - the read-only collectors inherit the environment untouched (no remote contact; the hardening flags leave no repo-controlled code to receive it)

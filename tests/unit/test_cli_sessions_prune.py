@@ -669,6 +669,36 @@ def test_prune_reaches_chain_refs_with_no_run_branches(
     assert f"deleted {chain_ref_for('run-NOBR11')}" in capsys.readouterr().out
 
 
+def test_a_squash_deleted_chain_ref_prints_its_undelete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A chain ref has no reflog: with `branch_per_run` off it is the commits'
+    only anchor, and `--delete-squashed` deleted it printing no sha, where
+    the flag's help promises an undelete for every deletion."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "run-SQCH11", "s.txt")
+    tip = _git(tmp_path, "rev-parse", "agent6/run-SQCH11")
+    _git(tmp_path, "merge", "--squash", "agent6/run-SQCH11")
+    _git(tmp_path, "commit", "-q", "-m", "squash")
+    _git(tmp_path, "update-ref", chain_ref_for("run-SQCH11"), tip)
+    _git(tmp_path, "branch", "-D", "agent6/run-SQCH11")
+    _manifest(tmp_path, "run-SQCH11", base, merged=True, merged_tip=tip)
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+
+    out = capsys.readouterr().out
+    assert not _chain_ref_exists(tmp_path, "run-SQCH11")
+    assert f"deleted {chain_ref_for('run-SQCH11')} (squash-merged into main)" in out
+    assert f"undelete: git update-ref {chain_ref_for('run-SQCH11')} {tip[:12]}" in out, out
+
+
 def test_prune_with_nothing_at_all_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
