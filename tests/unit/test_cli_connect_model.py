@@ -773,3 +773,19 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
     rc = main(["connect", "chatgpt"])
     assert rc == 0
     assert secrets.load_oauth_tokens("chatgpt") is not None
+
+
+def test_connect_eof_at_the_api_format_prompt_says_why(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """EOF at the api_format prompt names the abort: a custom provider name
+    has no preset format, so a piped connect that ran dry there exited 2
+    having printed only the bare prompt."""
+
+    def _eof(prompt: str = "") -> str:
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", _eof)
+    rc = main(["connect", "mycustom"])
+    assert rc == 2
+    assert "no input." in capsys.readouterr().err

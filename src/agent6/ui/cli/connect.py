@@ -385,6 +385,7 @@ def _prompt_api_format(name: str, preset_format: str) -> str | None:
                 or "anthropic"
             )
         except EOFError:
+            error("no input.")
             return None
     if api_format not in ("anthropic", "openai", "chatgpt", "claude_code"):
         error(
