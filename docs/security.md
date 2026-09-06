@@ -36,6 +36,8 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary
     - the exception is the jail's persistent `HOME` (`hardened`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run, and under `hardened` it is executable; the operator's own shell, tools, and dotfiles never read it
     - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
+    - so do the create paths that take a mode: `creat`, `mknod`/`mknodat`, and `open`/`openat` with `O_CREAT` or `O_TMPFILE`.
+      `openat2` carries its mode behind a struct pointer, out of seccomp's reach.
     - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable
     - `/tmp` allows exec (toolchain helpers)
     - children write inside the jail's mount namespace (`strict`) or the Landlock write grants (`hardened`)

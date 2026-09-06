@@ -799,6 +799,53 @@ def test_a_jailed_command_cannot_set_the_setuid_bit(
 
 
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
+def test_the_setuid_block_covers_the_create_family(
+    jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
+) -> None:
+    """chmod is not the only way to write the bit: creat(2) and mknod(2) take a
+    mode outright and open/openat take one with O_CREAT or O_TMPFILE, so the
+    filter that stops `chmod 4755` left three ways to the same host inode.
+    Ordinary creates through the same syscalls stay allowed.
+    """
+    probe = (
+        "import ctypes, os, stat\n"
+        "libc = ctypes.CDLL(None, use_errno=True)\n"
+        "def t(fn):\n"
+        "    try:\n"
+        "        fn(); return 'ok'\n"
+        "    except OSError:\n"
+        "        return 'refused'\n"
+        "print('open', t(lambda: os.close(os.open('a', os.O_CREAT | os.O_WRONLY, 0o4755))))\n"
+        "print('setgid', t(lambda: os.close(os.open('g', os.O_CREAT | os.O_WRONLY, 0o2755))))\n"
+        "print('tmpfile', t(lambda: os.close(os.open('.', os.O_TMPFILE | os.O_RDWR, 0o4755))))\n"
+        "print('mknod', t(lambda: os.mknod('c', stat.S_IFREG | 0o4755, 0)))\n"
+        "fd = libc.creat(b'b', ctypes.c_uint(0o4755))\n"
+        "print('creat', 'ok' if fd >= 0 else 'refused')\n"
+        "print('plain', t(lambda: os.close(os.open('p', os.O_CREAT | os.O_WRONLY, 0o755))))\n"
+        "print('plain_mknod', t(lambda: os.mknod('m', stat.S_IFREG | 0o644, 0)))\n"
+        "print('fifo', t(lambda: os.mkfifo('f')))\n"
+    )
+    res = run_in_jail(
+        JailPolicy(cwd=tmp_path, argv=("python3", "-c", probe), isolation=isolation, timeout_s=20.0)
+    )
+    got = dict(line.split() for line in res.stdout.split("\n") if line.strip())
+    assert got == {
+        "open": "refused",
+        "setgid": "refused",
+        "tmpfile": "refused",
+        "mknod": "refused",
+        "creat": "refused",
+        "plain": "ok",
+        "plain_mknod": "ok",
+        "fifo": "ok",
+    }, res.stdout
+    for name in ("a", "g", "c", "b"):
+        assert not (tmp_path / name).exists() or not (tmp_path / name).stat().st_mode & (
+            stat.S_ISUID | stat.S_ISGID
+        )
+
+
+@pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_the_setuid_block_covers_fchmodat2(
     jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
 ) -> None:

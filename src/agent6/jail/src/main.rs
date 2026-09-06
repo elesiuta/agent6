@@ -1896,21 +1896,54 @@ fn apply_seccomp() -> io::Result<()> {
         (libc::SYS_fchmodat, 2),
         (SYS_FCHMODAT2, 2),
     ];
-    for (syscall, mode_arg) in chmod_syscalls {
-        let mut per_bit = Vec::new();
+    // The CREATE family carries the same bits to the same host inode: creat(2)
+    // and mknod(2) take a mode outright, open/openat take one whenever the flags
+    // ask for a new file. Their mode is a vararg the kernel ignores without
+    // O_CREAT/O_TMPFILE (uninitialized stack on an ordinary open), so those
+    // entries name the flags argument too -- conditions within a rule are AND-ed.
+    // openat2 keeps its mode behind a struct pointer, out of seccomp's reach,
+    // the same limit clone3 has above.
+    // The syscall, the argument carrying the mode, and for open/openat the
+    // flags argument with the flag that makes that mode real.
+    type SetidWrite = (i64, u8, Option<(u8, i32)>);
+    let mut setid_syscalls: Vec<SetidWrite> = vec![
+        (libc::SYS_mknodat, 2, None),
+        (libc::SYS_openat, 3, Some((2, libc::O_CREAT))),
+        (libc::SYS_openat, 3, Some((2, libc::O_TMPFILE))),
+    ];
+    #[cfg(not(target_arch = "aarch64"))]
+    setid_syscalls.extend([
+        (libc::SYS_creat, 1, None),
+        (libc::SYS_mknod, 1, None),
+        (libc::SYS_open, 2, Some((1, libc::O_CREAT))),
+        (libc::SYS_open, 2, Some((1, libc::O_TMPFILE))),
+    ]);
+    setid_syscalls.extend(chmod_syscalls.map(|(syscall, mode_arg)| (syscall, mode_arg, None)));
+    for (syscall, mode_arg, flags) in setid_syscalls {
         for bit in [0o4000_u64, 0o2000] {
-            per_bit.push(
-                seccompiler::SeccompRule::new(vec![seccompiler::SeccompCondition::new(
-                    mode_arg,
-                    seccompiler::SeccompCmpArgLen::Dword,
-                    seccompiler::SeccompCmpOp::MaskedEq(bit),
-                    bit,
-                )
-                .map_err(|e| io::Error::other(format!("seccomp cond: {e}")))?])
-                .map_err(|e| io::Error::other(format!("seccomp rule: {e}")))?,
+            let mut conds = vec![seccompiler::SeccompCondition::new(
+                mode_arg,
+                seccompiler::SeccompCmpArgLen::Dword,
+                seccompiler::SeccompCmpOp::MaskedEq(bit),
+                bit,
+            )
+            .map_err(|e| io::Error::other(format!("seccomp cond: {e}")))?];
+            if let Some((flags_arg, wanted)) = flags {
+                conds.push(
+                    seccompiler::SeccompCondition::new(
+                        flags_arg,
+                        seccompiler::SeccompCmpArgLen::Dword,
+                        seccompiler::SeccompCmpOp::MaskedEq(wanted as u64),
+                        wanted as u64,
+                    )
+                    .map_err(|e| io::Error::other(format!("seccomp cond: {e}")))?,
+                );
+            }
+            rules.entry(syscall).or_default().push(
+                seccompiler::SeccompRule::new(conds)
+                    .map_err(|e| io::Error::other(format!("seccomp rule: {e}")))?,
             );
         }
-        rules.insert(syscall, per_bit);
     }
     // Device nodes. Blocked by MODE, not outright: `mkfifo` and socket nodes go
     // through the same syscalls and builds legitimately use them. Under
@@ -1939,7 +1972,7 @@ fn apply_seccomp() -> io::Result<()> {
                 .map_err(|e| io::Error::other(format!("seccomp rule: {e}")))?,
             );
         }
-        rules.insert(syscall, per_type);
+        rules.entry(syscall).or_default().append(&mut per_type);
     }
     let filter = SeccompFilter::new(
         rules,
