@@ -38,7 +38,7 @@ from agent6.git_ops import (
 )
 from agent6.models.pricing import lookup_price
 from agent6.providers import TranscriptSink
-from agent6.sessions.ipc import effective_run_commands
+from agent6.sessions.ipc import AWAY_MODES, effective_run_commands
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command, read_agents_md
@@ -371,26 +371,37 @@ def headless_approval_refusal(
     whose stdin is the protocol pipe and which asks over
     `session/request_permission` -- had every run refused before it started.
 
+    An *away* value outside `AWAY_MODES` is a typo, and a typo names no intent:
+    it refuses on every surface rather than reading as one.
+
     *clamped* says this session kind clamps a standing `run_commands = "yes"`
     to `ask` (plan and ask do), so the remedy names the flag, not the config
     value that is already set.
 
     Returns the message, or None when approval is answerable.
     """
-    if cfg.sandbox.run_commands != "ask" or tui_enabled or can_ask or away:
+    if cfg.sandbox.run_commands != "ask":
+        return None
+    if away and away not in AWAY_MODES:
+        return (
+            f"AGENT6_DETACHED_AWAY={away!r} is not an away-mode, so an absent operator's"
+            " intent is unknown and an approval would wait forever.\n"
+            f"  - set AGENT6_DETACHED_AWAY={'|'.join(AWAY_MODES)}"
+        )
+    if tui_enabled or can_ask or away:
         return None
     unattended = (
         "--auto-approve (this session kind clamps a standing sandbox.run_commands = 'yes' to 'ask')"
         if clamped
         else "sandbox.run_commands = 'yes' (or --auto-approve)"
     )
-    gate = "" if clamped else ", the verify gate included"
+    gate = "" if clamped else ", the verify gate included,"
     return (
         "sandbox.run_commands = 'ask' needs someone to answer, and this run has no"
         f" TUI and no away-mode. Every command{gate} would wait forever.\n"
         f"  - unattended: {unattended}, or 'no' to withhold commands entirely\n"
         "  - attended: start it from a terminal, or set an away-mode"
-        " (AGENT6_DETACHED_AWAY=wait|deny) so an absent operator's intent is known"
+        f" (AGENT6_DETACHED_AWAY={'|'.join(AWAY_MODES)}) so an absent operator's intent is known"
     )
 
 

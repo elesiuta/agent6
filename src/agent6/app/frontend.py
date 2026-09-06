@@ -17,6 +17,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.sessions.ipc import (
+    AWAY_MODES,
     COMMAND_SCOPE,
     MCP_SCOPE_PREFIX,
     away_mode,
@@ -92,7 +93,7 @@ def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> No
         # detach prompt, approve-all sets an allow marker per scope in play.
         for scope in scopes:
             set_session_allow(session_dir, scope)
-    elif away in ("wait", "deny"):
+    elif away in AWAY_MODES:
         set_away_mode(session_dir, away)
 
 

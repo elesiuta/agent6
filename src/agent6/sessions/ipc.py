@@ -542,6 +542,12 @@ def effective_run_commands(configured: str, session_dir: Path) -> str:
 # reattaches and answers. "approve" is not stored here -- detach approve-all
 # sets the command scope's allow marker. Persists like it (not an *.answer).
 AWAY_MODE_FILE = "away.mode"
+# What an operator may set AGENT6_DETACHED_AWAY to. "approve" is not stored in
+# away.mode: like the interactive detach prompt it sets an allow marker per
+# scope. Anything else is a typo, and a typo must not read as "an absent
+# operator's intent is known" -- that lifted the preflight refusal and left the
+# run waiting forever at the first approval.
+AWAY_MODES = ("wait", "deny", "approve")
 
 
 def set_away_mode(session_dir: Path, mode: str) -> None:

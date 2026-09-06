@@ -93,3 +93,29 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
         cfg, "t", frontend=front, reporter=Reporter(out=said.append, err=said.append)
     )
     assert seen == [True], said
+
+
+def test_a_misspelled_away_mode_refuses_instead_of_reading_as_intent() -> None:
+    """Any non-empty AGENT6_DETACHED_AWAY used to lift the refusal, so a typo
+    started the run and the first approval then waited forever."""
+    refusal = headless_approval_refusal(_ask_cfg(), tui_enabled=False, away="denied", can_ask=False)
+    assert refusal is not None
+    assert "'denied' is not an away-mode" in refusal
+    assert "AGENT6_DETACHED_AWAY=wait|deny|approve" in refusal
+
+
+def test_a_misspelled_away_mode_refuses_even_where_a_person_could_answer() -> None:
+    """A setting the run cannot honor is an error on every surface: refuse
+    naming the accepted set rather than prompting as if it were unset."""
+    assert (
+        headless_approval_refusal(_ask_cfg(), tui_enabled=True, away="Deny", can_ask=True)
+        is not None
+    )
+
+
+def test_an_away_mode_that_is_honored_starts_the_run() -> None:
+    for away in ("wait", "deny", "approve"):
+        assert (
+            headless_approval_refusal(_ask_cfg(), tui_enabled=False, away=away, can_ask=False)
+            is None
+        )
