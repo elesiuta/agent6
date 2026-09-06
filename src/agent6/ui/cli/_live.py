@@ -148,6 +148,14 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
         yield
         return
     try:
+        # Opened before the spawn: a failure after it would escape past the
+        # wait below, orphaning a TUI that has taken the terminal.
+        log_fh = (session_dir / "tui_console.log").open("w", encoding="utf-8")
+    except OSError as exc:
+        print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
+        yield
+        return
+    try:
         # -P keeps cwd (the workspace) off sys.path: a top-level `agent6/` in
         # the repo must not shadow the installed package in this co-process.
         proc = subprocess.Popen(
@@ -162,11 +170,11 @@ def tui_session(session_dir: Path, *, enabled: bool) -> Generator[None]:
             ]
         )
     except OSError as exc:
+        log_fh.close()
         print(f"[agent6] could not start TUI ({exc}); continuing without it.", file=sys.stderr)
         yield
         return
     orig_out, orig_err = sys.stdout, sys.stderr
-    log_fh = (session_dir / "tui_console.log").open("w", encoding="utf-8")
     sys.stdout = log_fh
     sys.stderr = log_fh
     try:

@@ -645,3 +645,35 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
     finally:
         fe.close_console_view()
     assert len(paused) == 2, "both prompts pause the view the leg attached"
+
+
+def test_tui_session_degrades_when_console_log_cannot_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unopenable tui_console.log degrades to a TUI-less run, like a spawn
+    failure; opened after the spawn, its OSError escaped the scope past the
+    wait and teardown, orphaning a co-process that had taken the terminal."""
+    import subprocess
+    import types
+
+    session_dir = tmp_path / "sess"
+    session_dir.mkdir()
+    (session_dir / "tui_console.log").mkdir()  # open("w") fails
+
+    spawned: list[list[str]] = []
+
+    def fake_popen(argv: list[str], **kwargs: Any) -> object:
+        spawned.append(argv)  # a spawn before the failing open would be orphaned
+        return object()
+
+    monkeypatch.setattr(
+        livemod,
+        "subprocess",
+        types.SimpleNamespace(Popen=fake_popen, TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    ran = False
+    with livemod.tui_session(session_dir, enabled=True):
+        ran = True
+    assert ran, "the run must continue TUI-less, not abort"
+    assert spawned == [], "the log opens before the spawn, so there is nothing to orphan"
+    assert "could not start TUI" in capsys.readouterr().err
