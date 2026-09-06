@@ -1571,7 +1571,7 @@ def test_live_world_run_tool_uses_the_shared_jail_tool_paths(
 ) -> None:
     # A tool-state jail resolves operator tools EXACTLY like run_command's jail
     # and the machine-check probe: the computed PATH string plus the RO+exec
-    # mounts that make it true (sandbox.jail.operator_tool_paths). Copying the
+    # mounts that make it true (sandbox._tool_paths.operator_tool_paths). Copying the
     # host PATH named dirs the jail never mounts, so a tool `machine check`
     # proved reachable still died 127 on the machine's first real transition.
     from agent6.machine import engine as engine_mod

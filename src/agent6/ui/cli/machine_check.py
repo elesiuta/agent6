@@ -28,7 +28,7 @@ from agent6.machine import (
     load_machine,
     render,
 )
-from agent6.sandbox.jail import jail_search_path
+from agent6.sandbox._tool_paths import jail_search_path
 from agent6.ui.cli._common import plural
 
 

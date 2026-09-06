@@ -17,8 +17,9 @@ from agent6.app.confine import (
 )
 from agent6.config import Config, SandboxConfig
 from agent6.paths import jail_cache_home
+from agent6.sandbox import _tool_paths as tool_paths
+from agent6.sandbox._tool_paths import ToolMountNotes
 from agent6.sandbox.detect import Environment, KernelInfo
-from agent6.sandbox.jail import ToolMountNotes
 
 
 def _env(landlock_abi: int) -> Environment:
@@ -225,7 +226,6 @@ def test_scanner_separates_unreachable_from_home_exposing(
     """A symlink resolving DIRECTLY into $HOME is unreachable (home is never
     mounted); one resolving into a home SUBDIR is reachable but drags that
     subdir in; one resolving inside its own bin dir is neither."""
-    from agent6.sandbox import jail as jail_mod
 
     home = tmp_path / "home"
     binf = home / ".local" / "bin"
@@ -237,9 +237,9 @@ def test_scanner_separates_unreachable_from_home_exposing(
     (binf / "x").symlink_to(home / "x.sh")
     (binf / "y").symlink_to(home / "tools" / "y.sh")
     (binf / "z").symlink_to(binf / "z.sh")
-    monkeypatch.setattr(jail_mod.Path, "home", classmethod(lambda _cls: home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
 
-    notes = jail_mod.tool_mount_notes()
+    notes = tool_paths.tool_mount_notes()
     assert notes.unreachable == (f"{binf}/x -> {home}/x.sh",)
     assert notes.exposes_home_dir == (f"{binf}/y -> {home}/tools/y.sh",)
 

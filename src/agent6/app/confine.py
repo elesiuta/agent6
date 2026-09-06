@@ -20,8 +20,9 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config, MCPServerEntry
 from agent6.models.registry import resolved_adaptive_values
 from agent6.paths import hidden_paths, is_root, jail_cache_home, private_dirs
+from agent6.sandbox._tool_paths import tool_mount_notes
 from agent6.sandbox.detect import Environment, degrade_reason, resolve_isolation
-from agent6.sandbox.jail import JailBinaryError, JailUnavailableError, tool_mount_notes
+from agent6.sandbox.jail import JailBinaryError, JailUnavailableError
 from agent6.tools.policy import (
     jail_home_refusal,
     jail_policy,

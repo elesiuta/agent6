@@ -104,7 +104,7 @@ def test_check_sandbox_strict_runs_network_probe(
 def test_check_sandbox_none_skips_probes(
     monkeypatch: pytest.MonkeyPatch, stub_jail: list[JailPolicy], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.sandbox.jail import ToolMountNotes
+    from agent6.sandbox._tool_paths import ToolMountNotes
 
     _force_profile(monkeypatch, "none")
     monkeypatch.setattr(
@@ -131,7 +131,7 @@ def test_check_sandbox_degraded_names_why(
     userns-blocked host (user.max_user_namespaces = 0): the line read
     `effective isolation (auto): hardened` and nothing said why, while
     `check config` did."""
-    from agent6.sandbox.jail import ToolMountNotes
+    from agent6.sandbox._tool_paths import ToolMountNotes
 
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
     _force_profile(monkeypatch, "hardened", reason=why)

@@ -23,7 +23,8 @@ from agent6.paths import (
     mkdir_for_real_user,
     private_dirs,
 )
-from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths
+from agent6.sandbox._tool_paths import operator_tool_paths
+from agent6.sandbox.jail import JailUnavailableError
 from agent6.tools._path_safety import Workspace
 from agent6.tools._result_format import passthrough_env
 from agent6.types import IsolationLevel, JailPolicy, NetworkMode

@@ -30,13 +30,8 @@ from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.memory import memory_dir
 from agent6.paths import data_dir
-from agent6.sandbox.jail import (
-    JailSession,
-    JailUnavailableError,
-    SessionNetwork,
-    jail_search_path,
-    run_in_jail,
-)
+from agent6.sandbox._tool_paths import jail_search_path
+from agent6.sandbox.jail import JailSession, JailUnavailableError, SessionNetwork, run_in_jail
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
     MCP_SCOPE_PREFIX,
