@@ -23,6 +23,20 @@ from agent6.ui.cli.completers import (
 )
 
 
+def _add_machine_file(parser: argparse.ArgumentParser, help_text: str) -> None:
+    """`--machine-file FILE`: the verb reads or writes a machine file's
+    [config] overlay instead of the global or repo config."""
+    arg = parser.add_argument(
+        "--machine-file",
+        dest="machine_file",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help=help_text,
+    )
+    arg.completer = _complete_machine_files  # type: ignore[attr-defined]
+
+
 def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     config_p = _sub(
         sub,
@@ -61,15 +75,9 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Print each value's meaning under its row (the docs table cell).",
     )
-    config_show_machine = config_show.add_argument(
-        "--machine-file",
-        dest="machine_file",
-        type=Path,
-        default=None,
-        metavar="FILE",
-        help="View every leaf with a machine file's [config] overlay applied.",
+    _add_machine_file(
+        config_show, "View every leaf with a machine file's [config] overlay applied."
     )
-    config_show_machine.completer = _complete_machine_files  # type: ignore[attr-defined]
     config_fill = _sub(
         config_sub,
         "fill",
@@ -102,15 +110,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     config_get_key.completer = partial(  # type: ignore[attr-defined]
         _complete_config_keys, settable=False
     )
-    config_get_machine = config_get.add_argument(
-        "--machine-file",
-        dest="machine_file",
-        type=Path,
-        default=None,
-        metavar="FILE",
-        help="View the value with a machine file's [config] overlay applied.",
-    )
-    config_get_machine.completer = _complete_machine_files  # type: ignore[attr-defined]
+    _add_machine_file(config_get, "View the value with a machine file's [config] overlay applied.")
     for verb, blurb in (
         ("set", "Set a leaf to a scalar value (global by default)."),
         ("unset", "Remove a leaf, reverting it to the next-lower layer / default."),
@@ -128,18 +128,13 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             action="store_true",
             help=REPO_FLAG_HELP,
         )
-        machine_arg = p.add_argument(
-            "--machine-file",
-            dest="machine_file",
-            type=Path,
-            default=None,
-            metavar="FILE",
-            help=(
+        _add_machine_file(
+            p,
+            (
                 "Edit a machine file's [config] overlay (providers, sandbox, presets"
                 " and mcp, and the host-escape leaves, are operator-only and refused)."
             ),
         )
-        machine_arg.completer = _complete_machine_files  # type: ignore[attr-defined]
 
     config_fix = _sub(
         config_sub,
@@ -150,15 +145,9 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " a machine file's [config] overlay instead with --machine-file."
         ),
     )
-    config_fix_machine = config_fix.add_argument(
-        "--machine-file",
-        dest="machine_file",
-        type=Path,
-        default=None,
-        metavar="FILE",
-        help="Repair a machine file's [config] overlay instead of the global/repo config.",
+    _add_machine_file(
+        config_fix, "Repair a machine file's [config] overlay instead of the global/repo config."
     )
-    config_fix_machine.completer = _complete_machine_files  # type: ignore[attr-defined]
 
 
 def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
