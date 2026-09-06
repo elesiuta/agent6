@@ -381,14 +381,22 @@ class ToolDispatcher:
         # session choice and away-mode live there and can change mid-run.
         self._session_dir = session_dir
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResult]] = {
-            Agent6DocsInput.TOOL_NAME: self._agent6_docs,
-            ReadFileInput.TOOL_NAME: self._read_file,
-            ListDirInput.TOOL_NAME: self._list_dir,
-            OutlineInput.TOOL_NAME: self._outline,
-            FindDefinitionInput.TOOL_NAME: self._find_definition,
-            FindReferencesInput.TOOL_NAME: self._find_references,
-            ApplyEditInput.TOOL_NAME: self._apply_edit,
-            ApplyPatchInput.TOOL_NAME: self._apply_patch,
+            Agent6DocsInput.TOOL_NAME: agent6_docs,
+            ReadFileInput.TOOL_NAME: lambda raw: read_file(self._ws, raw),
+            ListDirInput.TOOL_NAME: lambda raw: list_dir(self._ws, raw),
+            OutlineInput.TOOL_NAME: lambda raw: outline(self._ws, self._ensure_index, raw),
+            FindDefinitionInput.TOOL_NAME: lambda raw: find_definition(
+                self._ws, self._ensure_index, raw
+            ),
+            FindReferencesInput.TOOL_NAME: lambda raw: find_references(
+                self._ws, self._ensure_index, raw
+            ),
+            ApplyEditInput.TOOL_NAME: lambda raw: apply_edit(
+                self._ws, self._config, self.extra_protect_paths, self._index, raw
+            ),
+            ApplyPatchInput.TOOL_NAME: lambda raw: apply_patch(
+                self._ws, self._config, self.extra_protect_paths, self._index, raw
+            ),
             RunVerifyInput.TOOL_NAME: lambda _raw: self.run_verify(),
             RunCommandInput.TOOL_NAME: self._run_command,
             ReadSessionInput.TOOL_NAME: self._read_session,
@@ -402,17 +410,19 @@ class ToolDispatcher:
             # finish_session signals the loop should exit. Handler
             # just echoes the summary; the workflow checks for this tool name
             # in resp.tool_uses and terminates after dispatching it.
-            FinishSessionInput.TOOL_NAME: self._finish_session,
-            FinishPlanningInput.TOOL_NAME: self._finish_planning,
+            FinishSessionInput.TOOL_NAME: finish_session,
+            FinishPlanningInput.TOOL_NAME: finish_planning,
             AskUserInput.TOOL_NAME: self._ask_user,
             # DAG-as-tool. Handlers raise ToolError if no curator was
             # wired (so standalone tests can omit it).
-            DagAddTaskInput.TOOL_NAME: self._dag_add_task,
-            DagUpdateTaskInput.TOOL_NAME: self._dag_update_task,
-            DagListTasksInput.TOOL_NAME: self._dag_list_tasks,
+            DagAddTaskInput.TOOL_NAME: lambda raw: add_task(
+                self._curator, self._run_root_node_id, raw
+            ),
+            DagUpdateTaskInput.TOOL_NAME: lambda raw: update_task(self._curator, raw),
+            DagListTasksInput.TOOL_NAME: lambda raw: list_tasks(self._curator, raw),
             # Operator-installed skills; resolved lazily from config + the
             # data dir on first use (see _resolved_skills).
-            UseSkillInput.TOOL_NAME: self._use_skill,
+            UseSkillInput.TOOL_NAME: lambda raw: use_skill(self.resolved_skills, raw),
         }
         self._available = {cls.TOOL_NAME for cls in ALL_TOOLS}
         self._index: SymbolIndex | None = None
@@ -661,21 +671,6 @@ class ToolDispatcher:
 
     # ----- handlers -----
 
-    def _agent6_docs(self, raw: dict[str, Any]) -> ToolResult:
-        return agent6_docs(raw)
-
-    def _read_file(self, raw: dict[str, Any]) -> ToolResult:
-        return read_file(self._ws, raw)
-
-    def _list_dir(self, raw: dict[str, Any]) -> ToolResult:
-        return list_dir(self._ws, raw)
-
-    def _apply_edit(self, raw: dict[str, Any]) -> ToolResult:
-        return apply_edit(self._ws, self._config, self.extra_protect_paths, self._index, raw)
-
-    def _apply_patch(self, raw: dict[str, Any]) -> ToolResult:
-        return apply_patch(self._ws, self._config, self.extra_protect_paths, self._index, raw)
-
     # ----- tree-sitter index handlers -----
 
     def _ensure_index(self) -> SymbolIndex:
@@ -707,15 +702,6 @@ class ToolDispatcher:
         """
         idx = self._ensure_index()
         return idx.file_outlines()
-
-    def _outline(self, raw: dict[str, Any]) -> ToolResult:
-        return outline(self._ws, self._ensure_index, raw)
-
-    def _find_definition(self, raw: dict[str, Any]) -> ToolResult:
-        return find_definition(self._ws, self._ensure_index, raw)
-
-    def _find_references(self, raw: dict[str, Any]) -> ToolResult:
-        return find_references(self._ws, self._ensure_index, raw)
 
     def settle_background(self) -> None:
         """Write down the ending of any background command that has finished.
@@ -1062,23 +1048,6 @@ class ToolDispatcher:
             self.operator_wait_s += time.monotonic() - started
         return AnswersResult(answers=answers)
 
-    def _finish_session(self, raw: dict[str, Any]) -> ToolResult:
-        return finish_session(raw)
-
-    def _finish_planning(self, raw: dict[str, Any]) -> ToolResult:
-        return finish_planning(raw)
-
-    # DAG-as-tool handlers.
-
-    def _dag_add_task(self, raw: dict[str, Any]) -> ToolResult:
-        return add_task(self._curator, self._run_root_node_id, raw)
-
-    def _dag_update_task(self, raw: dict[str, Any]) -> ToolResult:
-        return update_task(self._curator, raw)
-
-    def _dag_list_tasks(self, raw: dict[str, Any]) -> ToolResult:
-        return list_tasks(self._curator, raw)
-
     def resolved_skills(self) -> ResolvedSkills:
         """Discover + state-resolve operator skills, once per dispatcher.
 
@@ -1100,9 +1069,6 @@ class ToolDispatcher:
         `use_skill` is exposed in the loop's tool list."""
         resolved = self.resolved_skills()
         return bool(resolved.enabled or resolved.always)
-
-    def _use_skill(self, raw: dict[str, Any]) -> ToolResult:
-        return use_skill(self.resolved_skills, raw)
 
     def _run_metric(self, _raw: dict[str, Any]) -> MetricResult:
         """Run `cfg.workflow.metric.command` in the jail.
