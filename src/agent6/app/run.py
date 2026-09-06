@@ -285,10 +285,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             clear_away_mode(layout.session_dir)
         else:
             apply_spawned_away_default(layout.session_dir, approval_scopes(cfg))
-        # Record this worker's pid so `agent6 sessions show` can probe liveness even while
-        # the worker is blocked in a long provider call (which emits no events).
-        write_worker_pid(layout.session_dir, os.getpid())
-
         # A visible branch named after the run id is 1:1 with the run (find it
         # from any run id, `agent6 sessions diff <id>`, or delete the branch to
         # drop the pointer). The name is the unique run id. Only real `run`
@@ -439,6 +435,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             )
             return cfg
 
+        # The pid lands only once every refusal is behind: `sessions show` reads
+        # it as a live worker (a long provider call emits no events), and a run
+        # that refused never had one.
+        write_worker_pid(layout.session_dir, os.getpid())
         end = run_leg(
             cfg,
             layout,
