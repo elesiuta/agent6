@@ -67,7 +67,7 @@ from agent6.tools._skill_tools import use_skill
 from agent6.tools.background import SHELLS_DIR, BackgroundError, BackgroundShells
 from agent6.tools.errors import OperatorCommandUnexecutable, ToolDenied, ToolError
 from agent6.tools.fetch import FetchRefused, check_url, fetch, host_allowed
-from agent6.tools.index import Symbol, SymbolIndex
+from agent6.tools.index import SymbolIndex
 from agent6.tools.mcp_client import (
     MCP_TOOL_PREFIX,
     MCPError,
@@ -280,11 +280,6 @@ _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
 }
 
 
-def symbol_tools_hidden() -> frozenset[str]:
-    """The symbol tools the AGENT6_SYMBOL_TOOLS bench switch hides right now."""
-    return _SYMBOL_TOOL_ARMS.get(os.environ.get("AGENT6_SYMBOL_TOOLS", ""), frozenset())
-
-
 def _roster(shells: BackgroundShells) -> tuple[str, ...]:
     return tuple(v.line() for v in shells.roster())
 
@@ -405,12 +400,12 @@ class ToolDispatcher:
             Agent6DocsInput.TOOL_NAME: agent6_docs,
             ReadFileInput.TOOL_NAME: lambda raw: read_file(self._ws, raw),
             ListDirInput.TOOL_NAME: lambda raw: list_dir(self._ws, raw),
-            OutlineInput.TOOL_NAME: lambda raw: outline(self._ws, self._ensure_index, raw),
+            OutlineInput.TOOL_NAME: lambda raw: outline(self._ws, self.symbol_index, raw),
             FindDefinitionInput.TOOL_NAME: lambda raw: find_definition(
-                self._ws, self._ensure_index, raw
+                self._ws, self.symbol_index, raw
             ),
             FindReferencesInput.TOOL_NAME: lambda raw: find_references(
-                self._ws, self._ensure_index, raw
+                self._ws, self.symbol_index, raw
             ),
             ApplyEditInput.TOOL_NAME: lambda raw: apply_edit(
                 self._ws, self._config, self.extra_protect_paths, self._index, raw
@@ -445,7 +440,6 @@ class ToolDispatcher:
             # data dir on first use (see _resolved_skills).
             UseSkillInput.TOOL_NAME: lambda raw: use_skill(self.resolved_skills, raw),
         }
-        self._available = {cls.TOOL_NAME for cls in ALL_TOOLS}
         self._index: SymbolIndex | None = None
         # Guards the lazy build of self._index so concurrent explore-review
         # seats (sharing one dispatcher across ThreadPoolExecutor threads)
@@ -478,11 +472,6 @@ class ToolDispatcher:
         `available_tool_names`, so it asks this instead."""
         return self._config.workflow.metric is not None
 
-    def _commands_have_the_network(self) -> bool:
-        """Whether a jailed command reaches the network on its own, which is
-        what `fetch` exists to stand in for."""
-        return resolve_network(self._config, self.isolation) == "host"
-
     def tool_is_withheld(self, name: str) -> bool:
         """Whether the model is denied *name*, extras included. The tool list is
         built from the mode's surface, which carries tools that are not in
@@ -491,32 +480,25 @@ class ToolDispatcher:
         nothing but a refusal behind it."""
         return name in _COMMAND_TOOLS and self.command_policy() == "no"
 
+    def _tool_refusal(self, name: str) -> str | None:
+        """Why a built-in tool is dynamically withheld, or None when offered."""
+        if self.tool_is_withheld(name):
+            return "not available (run_commands = 'no')"
+        # `fetch` is redundant when a jailed command already has the network.
+        if name == FetchInput.TOOL_NAME and resolve_network(self._config, self.isolation) == "host":
+            return "not available (a jailed command has the network)"
+        if name in _SYMBOL_TOOL_ARMS.get(os.environ.get("AGENT6_SYMBOL_TOOLS", ""), frozenset()):
+            return "not available (AGENT6_SYMBOL_TOOLS)"
+        if os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1" and name == ApplyEditInput.TOOL_NAME:
+            return f"{name} is disabled (AGENT6_DISABLE_APPLY_EDIT=1); use apply_patch instead"
+        return None
+
     def available_tool_names(self) -> tuple[str, ...]:
-        names = [n for n in self._available if not self.tool_is_withheld(n)]
+        names = [cls.TOOL_NAME for cls in ALL_TOOLS if self._tool_refusal(cls.TOOL_NAME) is None]
         # No verify_command (and none inferred) -> a gateless run: hide
         # run_verify_command rather than offer a tool that would error.
         if not self._config.workflow.verify_command:
             names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
-        # `fetch` exists because a jailed command has no network. Where one
-        # DOES, the worker can already run curl, and two ways to do one thing
-        # is the thing we do not do. The RESOLVED network answers that: only
-        # strict has namespaces, so hardened and none put every command on the
-        # host network whatever the config says.
-        if self._commands_have_the_network():
-            names = [n for n in names if n != FetchInput.TOOL_NAME]
-        # Bench / A-B harness: constrain the symbol-tool surface without a
-        # rebuild (see _SYMBOL_TOOL_ARMS).
-        hidden_symbols = symbol_tools_hidden()
-        if hidden_symbols:
-            names = [n for n in names if n not in hidden_symbols]
-        # Bench probe for the "tool-surface fit"
-        # hypothesis. Hide `apply_edit` so the only edit primitive is
-        # `apply_patch` (unified-diff). Lets us measure whether models
-        # that look weak on agent6's diff-style search-and-replace
-        # surface improve when handed a patch tool instead. No-op when
-        # unset (default keeps both tools available).
-        if os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1":
-            names = [n for n in names if n != ApplyEditInput.TOOL_NAME]
         names.extend(d.qualified_name for d in self.mcp_descriptors())
         return tuple(sorted(names))
 
@@ -616,16 +598,8 @@ class ToolDispatcher:
                 raise ToolError(str(exc)) from exc
         if name not in self._handlers:
             raise ToolError(f"Unknown tool: {name}")
-        if self.tool_is_withheld(name):
-            raise ToolError("not available (run_commands = 'no')")
-        if name == FetchInput.TOOL_NAME and self._commands_have_the_network():
-            raise ToolError("not available (a jailed command has the network)")
-        if name in symbol_tools_hidden():
-            raise ToolError("not available (AGENT6_SYMBOL_TOOLS)")
-        if os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1" and name == ApplyEditInput.TOOL_NAME:
-            raise ToolError(
-                f"{name} is disabled (AGENT6_DISABLE_APPLY_EDIT=1); use apply_patch instead"
-            )
+        if (refusal := self._tool_refusal(name)) is not None:
+            raise ToolError(refusal)
         if name not in mode_tools(self._mode).permitted:
             # Backstop the mode's tool surface at the dispatcher, not just by
             # omitting tools from the LLM's list: a tool-list regression or a
@@ -690,35 +664,13 @@ class ToolDispatcher:
 
     # ----- tree-sitter index handlers -----
 
-    def _ensure_index(self) -> SymbolIndex:
+    def symbol_index(self) -> SymbolIndex:
+        """Build the dispatcher's shared symbol index once."""
         if self._index is None:
             with self._index_lock:
                 if self._index is None:
                     self._index = SymbolIndex(self._ws)
         return self._index
-
-    def hot_symbols(
-        self,
-        *,
-        max_symbols: int = 20,
-        min_files_referenced: int = 2,
-    ) -> list[tuple[str, str, str, int, int]]:
-        """Public passthrough to `SymbolIndex.hot_symbols`, sharing the
-        dispatcher's index so an already-paid scan is not repeated."""
-        idx = self._ensure_index()
-        return idx.hot_symbols(
-            max_symbols=max_symbols,
-            min_files_referenced=min_files_referenced,
-        )
-
-    def file_outlines(self) -> dict[Path, list[Symbol]]:
-        """Public passthrough to `SymbolIndex.file_outlines`.
-
-        Used by `Workflow._load_repo_summary` to build the
-        per-file symbol outline injected into the system prompt.
-        """
-        idx = self._ensure_index()
-        return idx.file_outlines()
 
     def settle_background(self) -> None:
         """Write down the ending of any background command that has finished.
@@ -737,7 +689,12 @@ class ToolDispatcher:
         """
         if self._shells is not None:
             self._shells.stop_all()
-        self.close_jail_session()
+        with self._session_lock:
+            if self._session is not None:
+                survivors = self._session.close()
+                self._session = None
+                if survivors:
+                    self._emit("jail.degraded", detail=survivors_message(survivors))
         if self._own_session_net is not None:  # never the run's; that is its own to close
             self._own_session_net.close()
             self._own_session_net = None
@@ -834,7 +791,7 @@ class ToolDispatcher:
         *extra_argv* appends to the configured command (the harness's scoped
         fallback passes the selected test paths); the result's `command`
         carries the argv that actually ran."""
-        argv = tuple(self._config.workflow.verify_command) + extra_argv
+        argv = self._config.workflow.verify_command + extra_argv
         if self.command_policy() == "ask" and not self._approve(
             f"Allow run_verify_command: {shlex.join(argv)}", scope=COMMAND_SCOPE
         ):
@@ -1093,7 +1050,7 @@ class ToolDispatcher:
         metric_cfg = self._config.workflow.metric
         if metric_cfg is None:
             raise ToolError("no [workflow.metric] configured")
-        argv = tuple(metric_cfg.command)
+        argv = metric_cfg.command
         self._emit("metric.start", cmd=list(argv))
         res = self._run_argv_in_jail(
             argv, label="metric_command", timeout_s=self._config.workflow.verify_timeout_s
@@ -1185,17 +1142,6 @@ class ToolDispatcher:
                 except (JailUnavailableError, OSError):
                     self._session_failed = True
             return self._session
-
-    def close_jail_session(self) -> None:
-        """End the run's jail process (under strict, its PID namespace takes
-        any survivors with it); a survivor the sweep could not kill is
-        recorded as a degradation, since it outlives the run."""
-        with self._session_lock:
-            if self._session is not None:
-                survivors = self._session.close()
-                self._session = None
-                if survivors:
-                    self._emit("jail.degraded", detail=survivors_message(survivors))
 
     def _run_argv_in_jail(
         self,

@@ -144,7 +144,9 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
         try:
             hot = tuple(
                 HotSymbol(*t)
-                for t in dispatcher.hot_symbols(max_symbols=20, min_files_referenced=2)
+                for t in dispatcher.symbol_index().hot_symbols(
+                    max_symbols=20, min_files_referenced=2
+                )
             )
         except (BudgetExceeded, KeyboardInterrupt):
             raise
@@ -158,7 +160,9 @@ def load_repo_summary(root: Path, *, dispatcher: ToolDispatcher | None = None) -
             except Exception:
                 co_change = ()
         try:
-            symbol_outline = build_symbol_outline_block(dispatcher.file_outlines(), root=root)
+            symbol_outline = build_symbol_outline_block(
+                dispatcher.symbol_index().file_outlines(), root=root
+            )
         except (BudgetExceeded, KeyboardInterrupt):
             raise
         except Exception:
