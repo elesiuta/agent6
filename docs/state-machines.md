@@ -226,13 +226,14 @@ A single command, argv-style (never a shell string), through the existing `run_i
 
 - `nonzero` is any non-zero exit
 - stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#45-names-references-and-namespaces-normative))
+- a capture binds only on `ok`: `nonzero` and `timeout` leave the blackboard as it was, so a branch reading a captured var on those edges reads the previous iteration's value
 - capture has two modes; a state uses at most one:
     - **Opaque whole-capture**: `capture = { stdout_json = "<var>" }` binds the entire parsed stdout to one variable
         - no `output_schema` needed; `result` is opaque and may not be dotted
     - **Typed field-capture**: `output_schema = "<record>"` types `result`; pull fields with `set = { <var> = "{{ result.<field> }}" }`
         - every `result.<field>` is statically checked, mirroring how an `agent` state validates `finish_session`
 
-- a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element ([Templating and list-splicing](#44-templating-and-list-splicing))
+- a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element, and an EMPTY list contributes no argument at all ([Templating and list-splicing](#44-templating-and-list-splicing))
 - `scan-inbox` is an illustrative stand-in: a `tool` state runs whatever audited command the operator names
 
 **Network (opt-in, host network off by default).**
@@ -381,6 +382,7 @@ There are exactly two filters, both zero-argument:
 **List-splicing (argv only).**
 
 - a `command` element that is exactly `"{{ listvar }}"` (lone list reference, no filter, no surrounding text) expands to one argv element per item
+- an empty list contributes NO argument, so the command runs one element shorter: guard it with a `branch` on `len(x)` where that changes the command's meaning
 - the only way a list crosses into a command; injection-safe (each element stays a distinct argument, never shell-re-parsed)
 - two load errors guard it: splicing a non-list, and embedding `{{ listvar }}` inside a larger string (`"--x={{ items }}"`)
 - filter and reference grammar are validated at `machine check`
