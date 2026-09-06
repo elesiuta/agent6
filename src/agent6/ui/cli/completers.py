@@ -23,11 +23,11 @@ from agent6.config.layer import (
     preset_catalog,
     resolved_state_dir,
 )
-from agent6.sessions.ipc import worker_is_alive
 from agent6.ui.cli._common import (
     _plans_dir,
     session_bucket_dirs,
 )
+from agent6.viewmodel.listing import session_is_live
 
 
 def _explicit_config(kw: dict[str, object]) -> Path | None:
@@ -305,8 +305,10 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: the sessions with a live worker, for the verbs that reach
-    a running one (steer, answer, exec, forward, sessions stop)."""
+    """argcomplete: the sessions the operator can still act on, for the verbs
+    that reach a running one (steer, answer, exec, forward, sessions stop).
+    `session_is_live` is those verbs' own gate: a finished run whose worker
+    pid is still up in its teardown window is refused, so it is not offered."""
     out: list[str] = []
     for bucket in session_bucket_dirs(Path.cwd()):
         if not bucket.is_dir():
@@ -314,7 +316,7 @@ def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
         out += [
             d.name
             for d in bucket.iterdir()
-            if d.is_dir() and d.name.startswith(prefix) and worker_is_alive(d)
+            if d.is_dir() and d.name.startswith(prefix) and session_is_live(d)
         ]
     return sorted(out)
 

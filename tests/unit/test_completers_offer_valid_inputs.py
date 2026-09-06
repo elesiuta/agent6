@@ -150,3 +150,28 @@ def test_live_only_verbs_offer_only_live_sessions(
         )
         completer = getattr(target, "completer", None)
         assert completer is completers._complete_live_session_ids, verb  # pyright: ignore[reportPrivateUsage]
+
+
+def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The verbs gate on `session_is_live` (the affordance question); the
+    completer gated on `worker_is_alive`, so a run that had ended while its
+    worker pid was still up was offered and then refused on Enter."""
+    import json
+    import os
+
+    from agent6.sessions.ipc import write_worker_pid
+
+    monkeypatch.chdir(tmp_path)
+    ended = bucket_dir(resolved_state_dir(tmp_path), "runs") / "ended-one-EEEEEE"
+    ended.mkdir(parents=True)
+    (ended / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run"})
+        + "\n"
+        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(ended, os.getpid())
+    assert completers._complete_live_session_ids("") == []  # pyright: ignore[reportPrivateUsage]
