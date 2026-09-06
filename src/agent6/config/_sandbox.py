@@ -73,7 +73,8 @@ class SandboxConfig(BaseModel):
         default="ask",
         description=(
             "Whether the model may run commands (`run_command`, `run_verify_command`, "
-            "`stop_background`, one decision for all three): `yes` runs them, `no` withholds the "
+            "`run_metric_command`, `stop_background`, one decision for all four): `yes` runs "
+            "them, `no` withholds the "
             "tools (and the verify gate with them), `ask` prompts per call with "
             "allow-for-this-session answers. `ask` and `plan` clamp `yes` to `ask`. Per "
             "invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run "

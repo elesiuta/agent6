@@ -406,7 +406,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/spawn.py`: the shared front-end spawn helper.
   Spawns the agent6 CLI detached for run and machine launches, and captures `sessions merge` / `prune` / `config set`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present machine notification.
-- `ui/cli/` helpers: `$EDITOR` for plan and steer editing; `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail; `rg` for history search; the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`; `cp` / `rm` / `apparmor_parser` via sudo with fixed argv for `agent6 system apparmor`.
+- `ui/cli/` helpers: `$EDITOR` for plan and steer editing; `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail; `rg` for history search; the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`; `cp` / `rm` / `apparmor_parser` via sudo with fixed argv for `agent6 system apparmor`; `agent6 completions` running the wrapped executable with fixed argv to delegate a completion.
 - `app/finalize.py`: both operator notify hooks (`run_notify_hook`): `[notify].on_complete` at run end and `[machine.notify].on_event` from a machine.
   Argv from config, env from `hook_env` (a minimal base plus `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`, never the provider keys in the operator environment).
 - `app/machine/_scriptcheck.py`: ruff and ty with fixed argv, reading generated scripts statically.

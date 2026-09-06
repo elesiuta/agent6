@@ -175,7 +175,7 @@ It runs in agent6's own process with your environment (operator-only, same trust
 
 ## `[models.<role>]`
 
-Role routing. **`worker`** drives `run`/`resume` (its pricing also drives the USD→token budget conversion); **`planner`** drives `plan`; **`reviewer`** drives `review` + the in-loop review panel.
+Role routing. **`worker`** drives `run`/`resume` (its pricing also drives the USD→token budget conversion); **`planner`** drives `plan`; **`reviewer`** drives `review`, the in-loop review panel, the context summariser and gister, and the prompt reviser.
 `planner`/`reviewer` fall back to `worker`.
 Cross-vendor mixes are fine.
 
@@ -195,7 +195,7 @@ The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox)
 |---|---|---|
 | `isolation` | `"auto"` | How jailed commands are confined: `strict` (user + mount namespaces, Landlock, seccomp), `hardened` (Landlock + seccomp, no namespaces), or `none` (unconfined). `auto` picks the strongest the host supports and says so when that is `none`. An explicit `strict` or `hardened` refuses to start where the host cannot honor it. `none` also via `--dangerously-disable-sandbox` or `AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1`. |
 | `network` | `"auto"` | Which network jailed commands join. `session`: the run's private network (commands reach each other, nothing off the box, nothing outside reaches in), refused where it cannot be enforced. `host`: the machine's network. `only_explicit_states`: strict only, machine `tool` states opt in. `auto`: `session` under `strict`, degraded to the host's network with a warning under `hardened` or `none`. A run's commands share one launcher, so there is no per-command `none`. |
-| `run_commands` | `"ask"` | Whether the model may run commands (`run_command`, `run_verify_command`, `stop_background`, one decision for all three): `yes` runs them, `no` withholds the tools (and the verify gate with them), `ask` prompts per call with allow-for-this-session answers. `ask` and `plan` clamp `yes` to `ask`. Per invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run set to `ask` with nobody to answer refuses to start. |
+| `run_commands` | `"ask"` | Whether the model may run commands (`run_command`, `run_verify_command`, `run_metric_command`, `stop_background`, one decision for all four): `yes` runs them, `no` withholds the tools (and the verify gate with them), `ask` prompts per call with allow-for-this-session answers. `ask` and `plan` clamp `yes` to `ask`. Per invocation: `--auto-approve` (never over a configured `no`), `--no-commands`. A run set to `ask` with nobody to answer refuses to start. |
 | `fetch_hosts` | `[]` | Hosts the `fetch` tool reads without asking; any other host prompts, and an absent operator is a no. Empty: every fetch prompts. `["*"]`: any host. A leading dot allows subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when a jailed command already has the host network (`network = "host"`, or any isolation but `strict`); withheld from machine and agent states. |
 | `protect_git` | `true` | Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter that agent6's host-side commits would execute. Needs a mount namespace: `strict` only. Under `hardened` the default `true` degrades with a warning; an explicit `true` refuses to start. The in-process edit tools refuse `.git` writes at every level regardless. |
 | `home` | `"tmp"` | The HOME jailed commands get under `strict`: `tmp` is `/tmp/agent6-home` inside the run's private tmpfs, gone with the run; `cache` is the persistent `$XDG_CACHE_HOME/agent6/home` (created `0700`, refused once loosened), bind-mounted read-write at its real path. `hardened` and `none` have no private tmpfs and always use the cache dir; an explicit `tmp` refuses to start there. Persistence is a cross-run channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias written by one run reaches the next jailed run, never your own tools. |
@@ -495,6 +495,11 @@ None of them is reachable by the model.
 |---|---|
 | `AGENT6_CONFIG_HOME` | Override the global config directory. |
 | `AGENT6_CACHE_HOME` | Override the cache directory. |
+| `AGENT6_DATA_HOME` | Override the data directory (installed skills, machine bundles). |
+| `AGENT6_STATE_HOME` | Override the state base directory; `[agent6].state_dir` in the global config wins over it. |
+| `AGENT6_DETACHED_AWAY` | `wait`, `deny` or `approve`: what a run with no operator at a terminal does at an approval or question. The hub and machine spawns set `wait`. |
+| `AGENT6_AUTO_APPROVE` | `1` grants every command approval to a machine's agent states, as `--auto-approve` does (a configured `no` stays no). |
+| `AGENT6_NO_COMMANDS` | `1` withholds every command tool from a machine's agent states, as `--no-commands` does. |
 | `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else bundled). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
 

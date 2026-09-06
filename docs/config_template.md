@@ -157,7 +157,7 @@ It runs in agent6's own process with your environment (operator-only, same trust
 
 ## `[models.<role>]`
 
-Role routing. **`worker`** drives `run`/`resume` (its pricing also drives the USD→token budget conversion); **`planner`** drives `plan`; **`reviewer`** drives `review` + the in-loop review panel.
+Role routing. **`worker`** drives `run`/`resume` (its pricing also drives the USD→token budget conversion); **`planner`** drives `plan`; **`reviewer`** drives `review`, the in-loop review panel, the context summariser and gister, and the prompt reviser.
 `planner`/`reviewer` fall back to `worker`.
 Cross-vendor mixes are fine.
 
@@ -358,6 +358,11 @@ None of them is reachable by the model.
 |---|---|
 | `AGENT6_CONFIG_HOME` | Override the global config directory. |
 | `AGENT6_CACHE_HOME` | Override the cache directory. |
+| `AGENT6_DATA_HOME` | Override the data directory (installed skills, machine bundles). |
+| `AGENT6_STATE_HOME` | Override the state base directory; `[agent6].state_dir` in the global config wins over it. |
+| `AGENT6_DETACHED_AWAY` | `wait`, `deny` or `approve`: what a run with no operator at a terminal does at an approval or question. The hub and machine spawns set `wait`. |
+| `AGENT6_AUTO_APPROVE` | `1` grants every command approval to a machine's agent states, as `--auto-approve` does (a configured `no` stays no). |
+| `AGENT6_NO_COMMANDS` | `1` withholds every command tool from a machine's agent states, as `--no-commands` does. |
 | `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else bundled). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
 
