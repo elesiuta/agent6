@@ -47,6 +47,7 @@ from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    branch_exists,
     chain_tip,
     is_git_repo,
     machine_branch_for,
@@ -499,18 +500,25 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             f"WAITING: {spec.machine} paused in {result.state!r}"
             f" after {_transitions(result.transitions)} ({result.reason})"
         )
-        return 0
-    if result.status == "stopped":
+    elif result.status == "stopped":
         reporter.out(
             f"STOPPED: {spec.machine} parked in {result.state!r}"
             f" after {_transitions(result.transitions)} ({result.reason});"
             " resume with `agent6 machine run`."
         )
-        return 0
-    spend, _ = machine_spend(journal.read(), root, alive=False)
-    reporter.out(
-        f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
-        f" after {_transitions(result.transitions)} ({result.reason});"
-        f" spent {format_cost(spend.usd, partial=spend.partial)}"
-    )
-    return 0 if result.status == "ok" else 1
+    else:
+        spend, _ = machine_spend(journal.read(), root, alive=False)
+        reporter.out(
+            f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
+            f" after {_transitions(result.transitions)} ({result.reason});"
+            f" spent {format_cost(spend.usd, partial=spend.partial)}"
+        )
+    # A machine with run states commits to its own branch and never touches the
+    # checkout, so "tests passing" was said over a tree whose tests still fail,
+    # with nothing naming where the work went. Same three lines a run ends on.
+    branch = machine_branch_for(spec.machine)
+    if has_run_agent and branch_exists(cwd, branch):
+        reporter.out(f"\nchanges are on {branch}")
+        reporter.out(f"  merge with:  git merge {branch}")
+        reporter.out(f"  inspect:     git diff HEAD...{branch}")
+    return 0 if result.status in ("ok", "waiting", "stopped") else 1

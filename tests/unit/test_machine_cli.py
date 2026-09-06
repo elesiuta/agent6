@@ -722,6 +722,78 @@ AGENT_RUN_MACHINE = AGENT_MACHINE_HARD.replace(
 ).replace('kind = "agent"', 'kind = "agent"\nmode = "run"', 1)
 
 
+WAIT_THEN_RUN = (
+    WAITER_DELAYED.replace('machine = "waiter_delayed"', 'machine = "wait-then-run"')
+    .replace('on = { tick = "done", signal = "woken" }', 'on = { tick = "work", signal = "work" }')
+    .replace(
+        "[states.done]",
+        """[schemas.r]
+ok = "bool"
+
+[vars.agent]
+out = { type = "r", default = {} }
+
+[states.work]
+kind = "agent"
+mode = "run"
+prompt = "fix it"
+output_schema = "r"
+capture = { finish_json = "out" }
+timeout_secs = 60
+on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
+
+[states.done]""",
+    )
+    .replace('[states.woken]\nkind = "terminal"\nstatus = "ok"\nreason = "signalled"\n', "")
+)
+
+
+def test_run_says_where_a_machines_work_landed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A machine with run states commits to `agent6/machine-<id>` and never
+    touches the checkout, so "tests passing" was reported over a tree whose
+    tests still fail, with nothing naming where the work went."""
+    cfg_home = tmp_path.parent / (tmp_path.name + "-cfg")  # outside the workspace
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    cfg_home.mkdir(parents=True)
+    (cfg_home / "config.toml").write_text(
+        "\n".join(
+            (
+                "[agent6]",
+                "config_version = 1",
+                "[providers.anthropic]",
+                'api_format = "anthropic"',
+                'api_key_env = "ANTHROPIC_API_KEY"',
+                "[models.worker]",
+                'provider = "anthropic"',
+                'model = "x"',
+            )
+        ),
+        encoding="utf-8",
+    )
+    _git_init(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "f.txt"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "init"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "branch", "agent6/machine-wait-then-run"], check=True
+    )
+    f = tmp_path / "wtr.asm.toml"
+    f.write_text(WAIT_THEN_RUN, encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "wtr.asm.toml"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "machine"], check=True)
+
+    assert main(["machine", "run", str(f), "--exit-on-wait", "--auto-approve"]) == 0
+
+    out = capsys.readouterr().out
+    assert "WAITING" in out
+    assert "changes are on agent6/machine-wait-then-run" in out
+    assert "git merge agent6/machine-wait-then-run" in out
+
+
 def test_run_warns_on_mode_run_states_under_ask_policy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
