@@ -1437,8 +1437,8 @@ def list_run_commits(path: Path, base_sha: str, run_branch: str) -> tuple[Commit
 
 
 def worktree_name_status(path: Path) -> tuple[tuple[str, str], ...]:
-    """`(status, path)` pairs for every pending change (``status
-    --porcelain`), untracked reported as `A``: the conventional-subject
+    """`(status, path)` pairs for every pending change (`status
+    --porcelain`), untracked reported as `A`: the conventional-subject
     deriver's input at checkpoint time."""
     res = _run(path, "status", "--porcelain", check=False)
     pairs: list[tuple[str, str]] = []

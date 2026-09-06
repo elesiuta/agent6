@@ -242,7 +242,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         frozen at construction: the task name lands after the first fold, and
         the end hold must survive whichever stamp runs last."""
         if self._end_hold:
-            return f"{context} · {self._task_lead()} · {self.dir_status[0]} — ctrl+q to leave"
+            return f"{context} · {self._task_lead()} · {self.dir_status[0]} · Ctrl+Q to leave"
         return f"{context} · {self._task_lead()}"
 
     def run_title(self) -> str:
@@ -442,7 +442,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             self._end_hold = True
             self.sub_title = self.run_title()
             self.notify(
-                f"{self.dir_status[0]} — Ctrl+Q to leave, or type below to continue the session",
+                f"{self.dir_status[0]} · Ctrl+Q to leave, or type below to continue the session",
                 timeout=8.0,
             )
             self._dirty = True

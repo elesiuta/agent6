@@ -11,12 +11,13 @@ class ToolError(Exception):
 
 
 class ToolDenied(ToolError):
-    """A run_command refused by POLICY before execution: the approval gate did
-    not approve (a human said no, or the ask-policy auto-denied an unattended
-    run), or the git guard refused a mutating command. The command never
-    executed, so the loop's sandbox-reachability heuristic must not count it as
-    a tool that "fails in the jail", and the repeat-error nudge says "refused,
-    stop retrying" instead of "your call is malformed"."""
+    """A tool call refused by POLICY before it ran: the approval gate did not
+    approve (a human said no, or the ask-policy auto-denied an unattended run).
+    A command, an MCP server's tool and a `fetch` whose host is outside
+    `sandbox.fetch_hosts` all raise it. Nothing executed, so the loop's
+    sandbox-reachability heuristic must not count it as a tool that "fails in
+    the jail", and the repeat-error nudge says "refused, stop retrying" instead
+    of "your call is malformed"."""
 
 
 class OperatorCommandUnexecutable(Exception):

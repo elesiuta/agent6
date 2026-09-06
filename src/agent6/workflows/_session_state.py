@@ -14,16 +14,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-# Every way a session can end -- run, plan, ask alike, which is why the
-# reasons include finish_planning and answered. The loop constructs all of
-# these except
-# "ask_repl_empty" (an interactive ask session that ended before any question
-# was asked, ui/cli/_ask.py). Typed so a new outcome must be declared here
-# before a SessionResult can carry it.
+# Every way a session can end, run, plan and ask alike. Typed so a new outcome
+# must be declared here before a SessionResult can carry it; the SessionResult
+# docstring says what each means and where it is constructed.
 SessionEndReason = Literal[
     "finish_session",
     "finish_planning",
-    "answered",  # ask mode: the final prose IS the answer (a normal, successful end)
+    "answered",
     "silent_finish",
     "went_quiet",
     "budget_exhausted",
@@ -36,11 +33,11 @@ SessionEndReason = Literal[
     "verify_command_unexecutable",
     "loop_guard_killed",
     "interactive_stop",
-    "interrupted",  # KeyboardInterrupt; emitted by the app layer, not the loop
-    "crashed",  # the loop escaped with a fault; also app-layer only
+    "interrupted",
+    "crashed",
     "steer_abort",
-    "steer_exit",  # /exit at the pause menu: stop AND leave (no follow-up prompt)
-    "undone",  # /undo forked back before the last message; the fork continues
+    "steer_exit",
+    "undone",
     "detached",
     "prompt_revision_failed",
     "plan_unreadable",
@@ -48,8 +45,8 @@ SessionEndReason = Literal[
     "ask_repl_empty",
     "gate_stale",
     "gate_red_at_base",
-    "no_lane_result",  # a run --parallel fan-out: no lane produced a rankable result
-    "no_lane_passed",  # a run --parallel fan-out: gates ran and no lane's went green
+    "no_lane_result",
+    "no_lane_passed",
 ]
 
 
@@ -72,16 +69,19 @@ class SessionResult:
     `reason` values (constructed in loop.py unless noted):
       finish_session        - agent called the finish_session tool explicitly.
       finish_planning   - plan-mode agent called the finish_planning tool.
+      answered          - ask mode: the final prose is the answer.
+      interrupted       - KeyboardInterrupt (the app layer).
+      crashed           - the loop escaped with a fault (the app layer).
+      steer_exit        - /exit at the pause menu: stop and leave.
       silent_finish     - agent emitted text but no tool_use (talking).
       went_quiet        - agent emitted neither text nor tool_use.
       budget_exhausted  - BudgetTracker raised; partial progress kept.
       provider_error    - ProviderError after retry; loop aborted.
       metric_plateau    - metric run tied prior best after enough samples.
       verify_settled    - verify passed and the worker stopped making changes.
-      settled           - a GATELESS run's quiet finish: work committed, the
-                          worker went idle, and no verify ever gated it (none
-                          existed, or a mid-run adopted one never passed;
-                          all_passed stays False).
+      settled           - a quiet finish nothing verified: no gate existed, an
+                          adopted one never passed, or edits landed after the
+                          last green (all_passed stays False).
       no_progress       - the same verify failure survived ten consecutive
                           runs and two harness interventions; stopped to save
                           the remaining budget (resumable).
@@ -104,7 +104,8 @@ class SessionResult:
       plan_unreadable   - plan mode could not re-read plan.md; parked with
                           the remedy in the summary (resumable).
       max_iterations    - hit max_iterations cap without finish.
-      ask_repl_empty    - interactive ask session ended with no question asked.
+      ask_repl_empty    - interactive ask session ended with no question asked
+                          (ui/cli/_ask.py).
       gate_stale        - the worker finished over a red gate it says no longer
                           matches the task (it tests behaviour this run changed,
                           or cannot run at all) and proposed a replacement. The
@@ -115,9 +116,9 @@ class SessionResult:
                           unmodified tree and failed). "Your run failed" and
                           "your change broke nothing new" are different facts.
       no_lane_result    - a `run --parallel` fan-out: no lane produced a
-                          rankable result (exit 1).
+                          rankable result (exit 1; app/parallel.py).
       no_lane_passed    - a `run --parallel` fan-out: gates ran and no lane's
-                          went green (exit 4).
+                          went green (exit 4; app/parallel.py).
     """
 
     completed: bool

@@ -177,7 +177,7 @@ def edit_mismatch_error(path: str, edit_index: int, file_text: str, old_string: 
         )
         return (
             f"old_string not found in {path} (edit #{edit_index}). {why} Retry"
-            f" apply_edit using the EXACT on-disk text below as old_string — do"
+            f" apply_edit using the EXACT on-disk text below as old_string; do"
             f" NOT call read_file first; this IS the current content of lines"
             f" {start_line}-{end_line}.\n"
             f"<<<ON_DISK (copy this verbatim, without these <<< >>> markers)\n"

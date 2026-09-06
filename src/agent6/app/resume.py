@@ -270,8 +270,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
     NOTE: token budget on resume is a FRESH ceiling, not a continuation
     of the prior run's accounting. Each `agent6 resume` invocation
-    starts at 0 against the `[budget]` ledgers. This is by design - the budget is a per-
-    invocation runaway-cost circuit breaker.
+    starts at 0 against the `[budget]` ledgers. This is by design: the budget is a
+    per-invocation runaway-cost circuit breaker.
 
     Runs from the repository (the process cwd: its state dir, config, and
     the cwd a detached continuation spawns in). A fork's leg drives the

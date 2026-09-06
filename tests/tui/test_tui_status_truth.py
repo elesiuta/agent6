@@ -519,7 +519,7 @@ def test_exit_on_end_holds_over_a_ghost_prompt_and_ctrl_q_leaves(tmp_path: Path)
         app = Agent6TUI(d, exit_on_end=True)
         async with app.run_test(size=(140, 40)) as pilot:
             await _wait_for(pilot, lambda: app._end_hold, "the end hold")
-            assert "ctrl+q to leave" in app.sub_title
+            assert "Ctrl+Q to leave" in app.sub_title
             assert app.is_running
             await pilot.press("ctrl+q")
             deadline = time.monotonic() + 5.0
@@ -549,12 +549,12 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: Path) 
             await _wait_for(pilot, lambda: app._end_hold, "the end hold")
             assert app.is_running
             # The hold leads with the hub's own status word ("passed" here).
-            assert "passed" in app.sub_title and "ctrl+q to leave" in app.sub_title
+            assert "passed" in app.sub_title and "Ctrl+Q to leave" in app.sub_title
             # A screen stamping its title AFTER the hold began (the mount /
             # tick order is load-dependent) must not wipe the hold: titles are
             # computed at stamp time, not frozen at construction.
             app._conv.on_screen_resume()
-            assert "passed" in app.sub_title and "ctrl+q to leave" in app.sub_title
+            assert "passed" in app.sub_title and "Ctrl+Q to leave" in app.sub_title
             assert "· t ·" in app.sub_title, "the live task name, not the dir fallback"
             await _open_dash(app, pilot)
             assert app._dash.query_one("#dash-input", SteerInput).border_title == (

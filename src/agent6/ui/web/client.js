@@ -480,7 +480,7 @@ function makeConv(url, box, body) {
   // A run/machine that produced no conversation: "yet ... as it streams" while it
   // can still stream, past tense once it has ended (a terminal tool-only machine).
   const emptyNote = () => conv.deadState
-    ? conv.deadState + (conv.deadVerb === 'resume' ? ' \u2014 the composer below resumes it' : ' \u2014 the composer below starts it')
+    ? conv.deadState + ': the composer below resumes it'
     : conv.finished
       ? 'this session made no conversation'
       : 'no conversation yet; it appears as the session streams';
@@ -532,7 +532,6 @@ function makeConv(url, box, body) {
   conv.setLive = (s) => {
     conv.finished = notLive(s); // steers emptyNote()'s tense (may run before paintItems)
     conv.deadState = s.dead_state || ''; // parked / created / stale, worded by the read model
-    conv.deadVerb = s.status === 'stale' ? 'resume' : 'start'; // a crashed run is resumed, not started
     const r = s.last_role;
     const follow = following();
     liveHost.innerHTML = '';

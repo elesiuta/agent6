@@ -255,8 +255,8 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     `secrets.toml` (via `agent6 connect`). Checked over every provider the
     run can STATICALLY reach: the configured `[models.<role>]` entries, any
     provider a `[review].seats` spec pins, and *extra_providers* (a machine's
-    per-state pins) -- a route discovered only mid-run used to fail after
-    state existed and spend started. OpenAI-compat providers with no key
+    per-state pins), so a route discovered only mid-run cannot fail after
+    state exists and spend has started. OpenAI-compat providers with no key
     configured at all are skipped (unauthenticated local endpoints like
     Ollama).
     """

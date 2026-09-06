@@ -57,8 +57,8 @@ class PredicateError(Exception):
 @dataclass(frozen=True, slots=True)
 class Reference:
     """A blackboard reference: a root variable plus zero or more record
-    field navigations. `verdict.confidence` is ``Reference("verdict",
-    ("confidence",))``."""
+    field navigations. `verdict.confidence` is `Reference("verdict",
+    ("confidence",))`."""
 
     root: str
     path: tuple[str, ...]

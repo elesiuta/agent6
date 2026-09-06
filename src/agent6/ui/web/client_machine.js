@@ -135,7 +135,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     ctx.endedNotified = true;
     const banner = el('div', 'notif-banner error');
     banner.appendChild(el('div', 'grow',
-      `${esc(m.machine || '')} stopped: ${esc(m.worker_lost.reason)} — resumable with agent6 machine run`));
+      `${esc(m.machine || '')} stopped: ${esc(m.worker_lost.reason)}; resumable with agent6 machine run`));
     const x = el('button', 'nb-x', '×'); x.onclick = () => banner.remove();
     banner.appendChild(x); ctx.notifsHost.appendChild(banner);
     osNotify('agent6: ' + (m.machine || 'machine') + ' stopped', m.worker_lost.reason || '');
@@ -169,7 +169,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (!(m.transitions||[]).length) path.appendChild(el('div', 'muted', 'no transitions yet'));
   pathBody.appendChild(path);
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
-  if (m.worker_lost) pathBody.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)} — resumable`));
+  if (m.worker_lost) pathBody.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
 
   // An ended machine takes no input: poking or steering it would only pretend
   // to work (nothing reads the signal), and its final state's log often has no

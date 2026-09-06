@@ -425,7 +425,7 @@ class HistorySearchModal(ModalScreen[str | None]):
 class QuestionModal(ModalScreen["tuple[str, ...] | None"]):
     """An `ask_user` prompt: one or more related questions the operator answers
     together and reviews before submitting. Each question has an answer field; its
-    option buttons fill that field (or type free text). Submit (ctrl+s) returns all
+    option buttons fill that field (or type free text). Submit (Ctrl+S) returns all
     answers aligned to the questions; Esc submits empties (the agent gets defaults).
     """
 

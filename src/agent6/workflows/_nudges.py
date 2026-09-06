@@ -42,7 +42,7 @@ TOOL_ERROR_ESCALATION = (
     "[harness tool-error] The identical error persists; the run ends at the eighth."
 )
 
-# A streak of ToolDenied refusals (approval policy, the git guard): the call
+# A streak of ToolDenied refusals (the approval policy): the call
 # was REFUSED, not malformed, so the generic "fix the call shape" text would
 # be false and invite pointless reshuffling of the same command.
 TOOL_DENIED_NUDGE = (
@@ -262,7 +262,7 @@ QUESTION_NUDGE = (
 # mode with a memory store wired, and only while the worker has recorded
 # nothing; a run whose verify never failed is never nudged.
 # "State the rule, not the instance": measured on orchard leg 3 (FINDINGS #2
-# day 3) — a store that spelled the house convention in words transferred to
+# day 3), a store that spelled the house convention in words transferred to
 # a new computation; a store carrying only the formula it was first seen in
 # did not.
 MEMORY_FLIP_NUDGE = (

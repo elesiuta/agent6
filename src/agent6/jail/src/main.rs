@@ -817,7 +817,7 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     // Per-uid: a shared path in a sticky /tmp is a cross-user denial of
     // service, since whoever creates it first owns it and every other user's
     // jail then fails closed forever. *real_uid* is the caller's, captured
-    // before the user namespace mapped this process to 0.
+    // before entering the user namespace (strict maps it to itself).
     //
     // Shared by every launcher this user runs, and that is fine: each mounts
     // its own tmpfs over it in its OWN mount namespace, so they see different

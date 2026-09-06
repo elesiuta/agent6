@@ -3227,7 +3227,7 @@ class Workflow:
                     f" output budget ({resp.output_tokens} tokens) on"
                     " reasoning_content with no visible content and"
                     " no tool_use. STOP REASONING. On this next turn,"
-                    " emit a tool_use IMMEDIATELY — do not think"
+                    " emit a tool_use IMMEDIATELY; do not think"
                     " further. If you genuinely don't know what to do"
                     " next, call `read_file` on the most relevant"
                     " source file to ground your next decision, or"
@@ -4046,7 +4046,7 @@ class Workflow:
         else:
             checkoff_req = ""
         focus_req = (
-            f"\n\nOperator focus for this summary — weigh these aspects heavily:\n{focus}"
+            f"\n\nOperator focus for this summary, weigh these aspects heavily:\n{focus}"
             if focus
             else ""
         )
@@ -4780,7 +4780,7 @@ class Workflow:
             "loop.pin.added", text=instruction, chars=len(instruction), count=len(state.pins)
         )
         conversation.notice(
-            "OPERATOR STEERING (PINNED — this instruction survives context "
+            "OPERATOR STEERING (PINNED: this instruction survives context "
             "compaction; it stays binding for the rest of the run):\n"
             f"{instruction}"
         )

@@ -176,9 +176,9 @@ def _print_unknown_baseline(
     A run whose FIRST verify ran against an unmodified tree already answered
     this for free, and ends `gate_red_at_base`. This is the other case: the
     model edited before it ever verified, so nobody knows. Saying "I do not
-    know" beats what used to happen here -- a second full gate run in the
-    teardown, holding the checkout for up to verify_timeout_s after the run
-    visibly ended, whose own failures repeatedly answered the question wrong.
+    know" beats a second full gate run in the teardown, which holds the
+    checkout for up to verify_timeout_s after the run visibly ended and
+    answers the question wrong whenever it fails for its own reasons.
     """
     if result.verified != "failed" or result.reason == "gate_red_at_base":
         return

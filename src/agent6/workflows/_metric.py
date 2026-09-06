@@ -233,7 +233,7 @@ def format_metric_feedback(
         direction = "below" if goal == "minimize" else "above"
         lines.append(
             f"next target: drive the metric {direction} {next_target:g}"
-            f" (current {latest.score:g}) — the nearest threshold you have not"
+            f" (current {latest.score:g}): the nearest threshold you have not"
             f" cleared yet; aim edits at crossing it."
         )
     if latest.score is None:
@@ -276,16 +276,16 @@ METRIC_PLATEAU_STOP_BELOW_BUDGET = 0.25
 # "[harness plateau]" prefix keeps the signal greppable across tiers.
 METRIC_PLATEAU_NUDGE_EXPLORE = (
     "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric \u2014 you have hit a local optimum. You still have most of your"
+    " metric: you have hit a local optimum. You still have most of your"
     " budget left, so you can afford to explore boldly. Do NOT call finish_session"
     " yet. Keep the current best commit, then run an experiment you have not"
     " tried: a structurally different algorithm, a different data layout, or a"
     " property of the problem you have not exploited. A failed experiment is"
-    " cheap right now \u2014 a wasted budget is not. Be ambitious."
+    " cheap right now; a wasted budget is not. Be ambitious."
 )
 METRIC_PLATEAU_NUDGE_PIVOT = (
     "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric \u2014 you are polishing the same approach and have hit a local"
+    " metric: you are polishing the same approach and have hit a local"
     " optimum. About half your budget is gone and micro-tuning is no longer"
     " paying off. Do NOT call finish_session yet. Pivot decisively to a"
     " fundamentally different strategy: re-read the problem for a structurally"
@@ -295,7 +295,7 @@ METRIC_PLATEAU_NUDGE_PIVOT = (
 )
 METRIC_PLATEAU_NUDGE_FINAL = (
     "[harness plateau] Your recent verified edits have stopped improving the"
-    " metric and your budget is nearly spent \u2014 this is your last chance to"
+    " metric and your budget is nearly spent: this is your last chance to"
     " move the number. Do NOT fritter the remainder on micro-tuning. Identify"
     " the single change with the highest expected payoff (the biggest"
     " structural rewrite you are confident you can land and verify) and spend"
@@ -309,13 +309,13 @@ METRIC_PLATEAU_NUDGE_EXPLORE_ABOVE = 0.5
 # Nudge injected when the worker calls finish_session on an optimisation run while
 # real budget still remains. On metric runs the task explicitly asks the worker
 # to keep optimising up to the cap, but workers routinely call finish_session with
-# most of the budget unspent \u2014 leaving measurable gains (and money) on the
+# most of the budget unspent, leaving measurable gains (and money) on the
 # table. This is a worker-initiated early stop, distinct from a metric plateau,
 # so it carries its own "[harness budget]" prefix to stay greppable.
 METRIC_FINISH_NUDGE = (
     "[harness budget] You called finish_session, but this is an optimisation run"
     " and a large share of your budget is still unspent. Stopping now leaves"
-    " measurable gains on the table \u2014 the task asks you to keep optimising"
+    " measurable gains on the table: the task asks you to keep optimising"
     " right up to the budget cap. Do NOT finish yet. Keep your current best"
     " commit as a floor, then make another concrete attempt to move the metric:"
     " profile the hot path again, try a structurally different approach, or"

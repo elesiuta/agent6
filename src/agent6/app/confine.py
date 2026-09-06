@@ -454,8 +454,8 @@ def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
     """A refusal message if the network config EXPLICITLY enforces something
     this isolation cannot provide, else None.
 
-    Only jailed commands have a network boundary. ``network =
-    "only_explicit_states"` (singling one tool out) and `"session"`` (the
+    Only jailed commands have a network boundary. `network =
+    "only_explicit_states"` (singling one tool out) and `"session"` (the
     run's own network, with no route off the box) both need a network
     namespace, which only `strict` provides. On `hardened` we refuse rather than silently
     under-confine, naming what is unsupported and the fix; `"auto"` is the
