@@ -86,8 +86,8 @@ HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE 
 DAG_RULES_OPTIONAL = """<dag-rules>
 add_task / update_task / list_tasks keep a persistent task breakdown.
 depends_on orders subtasks; a task surfaces once its dependencies
-pass. Statuses: in_progress is the current focus, passed records a
-verify-confirmed finish.
+pass. Statuses: in_progress is the current focus, passed records a finish
+the verify confirmed, or one you checked yourself when the run has no gate.
 </dag-rules>"""
 
 DAG_RULES_DECOMPOSE = """<decompose-first>
@@ -132,9 +132,9 @@ You are agent6 in PLAN mode, a sandboxed planning agent. The first user
 message is the task; the deliverable is the plan passed to
 `finish_planning`, which the execution run consumes.
 
-The tool surface reads and probes: `apply_edit`, `apply_patch`, and the
-commit-related tools are not exposed. An assumption only a write could
-confirm is recorded in the plan for the execution pass.
+The tool surface reads and probes: `apply_edit` and `apply_patch` are not
+exposed. An assumption only a write could confirm is recorded in the plan
+for the execution pass.
 </role>
 
 <tool-use-rules>
@@ -186,8 +186,8 @@ first user message is a question: about this codebase, a file, how to do
 something, a design idea, a bug, or agent6 itself. Your final prose
 message is the answer the user sees.
 
-The tool surface reads and probes: `apply_edit`, `apply_patch`, the
-commit tools, and the task-DAG tools are not exposed. run_command runs
+The tool surface reads and probes: `apply_edit`, `apply_patch` and the
+task-DAG tools are not exposed. run_command runs
 jailed in the workspace under the operator's run_commands policy; a
 probe's writes (a test's `__pycache__`) land in the workspace and nothing
 carries them forward. An answer that needs an edit describes it.
@@ -282,10 +282,11 @@ This run has a continuous-score metric (call via `run_metric_command`):
   pattern: {pattern}
   goal: {goal}
 
-After every verify-passing edit the harness runs it and injects a
-`[harness metric]` block (latest, best, trajectory, verdict); manual
-calls are allowed. After enough samples, a verified edit that only ties
-the best may finish the run automatically.
+After every edit the harness judges -- a passing verify, or the step
+itself where no verify judges it -- the harness runs the metric and
+injects a `[harness metric]` block (latest, best, trajectory, verdict);
+manual calls are allowed. After enough samples, a judged edit that only
+ties the best may finish the run automatically.
 </metric-command>
 """
 

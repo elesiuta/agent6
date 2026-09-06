@@ -266,9 +266,9 @@ class RunMetricInput(_ToolInput):
 class FinishSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "finish_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "End the run cleanly. summary: one paragraph for the operator on"
-        " what was done and left undone. Tool calls after it are not"
-        " executed."
+        "End the run cleanly. summary: for the operator, what was done and"
+        " left undone, a paragraph at most (a machine's step answers in one"
+        " line). Tool calls after it are not executed."
     )
 
     summary: str = Field(min_length=1)
@@ -368,8 +368,9 @@ class DagAddTaskInput(_ToolInput):
 class DagUpdateTaskInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "update_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Update a task: status (in_progress moves focus; passed only after"
-        " verify confirms), note, or depends_on (task ULIDs that must pass"
+        "Update a task: status (in_progress moves focus; passed once the verify"
+        " confirms it, or once you have checked it yourself in a gateless"
+        " run), note, or depends_on (task ULIDs that must pass"
         " first). Fields omitted stay unchanged."
     )
 
