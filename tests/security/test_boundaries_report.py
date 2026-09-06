@@ -55,6 +55,25 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None =
     )
 
 
+def test_both_levels_build_their_landlock_rules_from_the_one_set_owner() -> None:
+    """A right the ruleset does not pass to `handle_access` is left
+    unrestricted, so a handled set narrower than the full ABI turns a lock
+    off without any rule changing; and `AccessFs::from_read` carries Execute,
+    so a read grant on /proc let a jailed command execve files there. Both
+    levels take `landlock_sets`, whose /proc set strips it. The behaviour pins
+    cannot see either: seccomp refuses mknod first, and nothing under /proc
+    is executable on a stock kernel."""
+    src = _MAIN_RS.read_text(encoding="utf-8")
+    assert src.count("let handled = AccessFs::from_all(ABI::V3);") == 1
+    assert src.count("all: handled & !AccessFs::MakeChar & !AccessFs::MakeBlock,") == 1
+    assert src.count("read_noexec: read & !AccessFs::Execute,") == 1
+    assert src.count(".handle_access(sets.handled)") == 2, "a level builds its own handled set"
+    proc_rules = re.findall(
+        r'PathFd::new\("/proc"\)[^;]*?PathBeneath::new\(fd, (sets\.\w+)\)', src, re.S
+    )
+    assert proc_rules == ["sets.read_noexec"], proc_rules
+
+
 def test_boundaries_report_covers_every_actor(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

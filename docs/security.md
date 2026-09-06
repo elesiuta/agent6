@@ -134,7 +134,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute); each must be a char/block device on the host or the launch refuses, and on `hardened` the same grant is a Landlock read+write rule on the node
     - creating one is denied at both levels: Landlock handles `MakeChar` / `MakeBlock` and grants them nowhere, seccomp `EPERM`s the `mknod` pair by device type (below), and `strict` also has the user namespace (no `CAP_MKNOD` in the initial one) and `MS_NODEV` on the `/dev` binds
     - under `hardened` with `--allow-root` only Landlock and seccomp stand
-- `/proc` (`strict`): fresh and private, empty if that fails
+- `/proc` (`strict`): fresh and private, empty if that fails; Landlock grants it read without execute
     - the launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`
 - seccomp: a 36-syscall deny-list returning `EPERM`, covering process inspection (`ptrace`, `pidfd_getfd`, `process_vm_readv`/`writev`, `kcmp`), `io_uring_setup`, `userfaultfd`, the whole mount family (`mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`), `setns`, `unshare`, `kexec`, `bpf`, `perf_event_open`, the keyring calls (`keyctl`, `add_key`, `request_key`), module loading, `reboot`, swap, and the clock-setting family
     - the list denies unconditionally; argument-conditional rules `EPERM` two more cases on syscalls that stay allowed: a mode carrying `S_ISUID` / `S_ISGID` on `chmod` and the create family (above), and a `mknod` / `mknodat` naming a character or block device (`/dev` above)

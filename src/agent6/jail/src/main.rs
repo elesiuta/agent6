@@ -819,15 +819,12 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     // jail then fails closed forever. *real_uid* is the caller's, captured
     // before entering the user namespace (strict maps it to itself).
     //
-    // Shared by every launcher this user runs, and that is fine: each mounts
-    // its own tmpfs over it in its OWN mount namespace, so they see different
-    // roots through the same mount point, and create_dir_all is idempotent.
-    // What was NOT fine was clearing it first: two launchers starting at once
-    // -- /parallel lanes, or a command while an MCP server's launcher lives --
-    // had one remove_dir_all the tree the other was still building, and that
-    // one died "rootfs setup failed: No such file or directory". Nothing needs
-    // clearing anyway: everything a launcher writes goes inside the tmpfs, so
-    // the directory underneath is empty by construction.
+    // Shared by every launcher this user runs: each mounts its own tmpfs over
+    // it in its own mount namespace, so they see different roots through the
+    // same mount point, and create_dir_all is idempotent. Nothing needs
+    // clearing: everything a launcher writes goes inside the tmpfs, so the
+    // directory underneath is empty by construction, and a remove_dir_all here
+    // would delete the tree a concurrent launcher is still building.
     let new_root = PathBuf::from(format!("/tmp/agent6-jail-root-{real_uid}"));
     fs::create_dir_all(&new_root).map_err(|e| {
         io::Error::other(format!(
@@ -1361,6 +1358,33 @@ fn mask_hidden_paths(policy: &Policy, new_root: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// The Landlock access sets both isolation levels build their rules from.
+struct LandlockSets {
+    /// Every right the ruleset restricts: the full ABI::V3 set. A right left
+    /// out here is not restricted at all, so it is never narrower than `all`.
+    handled: BitFlags<AccessFs>,
+    /// The writable grant (cwd, /tmp, extra_rw_paths): everything but the
+    /// creation of device nodes, which no rule grants.
+    all: BitFlags<AccessFs>,
+    /// Read plus execute (`from_read` carries Execute): the system paths and
+    /// operator tool dirs a spawned binary runs from, and the read half of
+    /// the device and protected-path grants.
+    read: BitFlags<AccessFs>,
+    /// Read without execute, for /proc.
+    read_noexec: BitFlags<AccessFs>,
+}
+
+fn landlock_sets() -> LandlockSets {
+    let handled = AccessFs::from_all(ABI::V3);
+    let read = AccessFs::from_read(ABI::V3);
+    LandlockSets {
+        handled,
+        all: handled & !AccessFs::MakeChar & !AccessFs::MakeBlock,
+        read,
+        read_noexec: read & !AccessFs::Execute,
+    }
+}
+
 fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // Strict runs inside the pivoted rootfs; the cwd bind (at its real path)
     // and /tmp (a fresh private tmpfs, see setup_rootfs) are writable, and
@@ -1382,21 +1406,16 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // unrestricted by the kernel. Device-node creation is denied here by
     // Landlock, by the user namespace (the child holds no CAP_MKNOD in the
     // initial one) and by the seccomp mode rule below.
-    let handled = AccessFs::from_all(ABI::V3);
-    let access_all = handled & !AccessFs::MakeChar & !AccessFs::MakeBlock;
-    let access_read = AccessFs::from_read(ABI::V3);
-    // from_read excludes EXECUTE; system paths must be read+execute so spawned
-    // binaries can actually run (otherwise execve EACCES).
-    let access_read_exec = access_read | AccessFs::Execute;
+    let sets = landlock_sets();
     let ruleset = Ruleset::default()
-        .handle_access(handled)
+        .handle_access(sets.handled)
         .map_err(|e| io::Error::other(format!("handle_access: {e}")))?
         .create()
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
     if let Ok(fd) = PathFd::new(policy.cwd.as_path()) {
         ruleset = ruleset
-            .add_rule(PathBeneath::new(fd, access_all))
+            .add_rule(PathBeneath::new(fd, sets.all))
             .map_err(|e| io::Error::other(format!("rule cwd: {e}")))?;
     }
     // /tmp is a fresh private tmpfs in this jail's own mount namespace (mounted
@@ -1410,7 +1429,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     for writable in ["/tmp", "/dev/shm"] {
         if let Ok(fd) = PathFd::new(writable) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_all))
+                .add_rule(PathBeneath::new(fd, sets.all))
                 .map_err(|e| io::Error::other(format!("rule {writable}: {e}")))?;
         }
     }
@@ -1424,13 +1443,13 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // ps needs the listing.
     if let Ok(fd) = PathFd::new("/proc") {
         ruleset = ruleset
-            .add_rule(PathBeneath::new(fd, access_read))
+            .add_rule(PathBeneath::new(fd, sets.read_noexec))
             .map_err(|e| io::Error::other(format!("rule /proc: {e}")))?;
     }
     for ro in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"] {
         if let Ok(fd) = PathFd::new(ro) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_read_exec))
+                .add_rule(PathBeneath::new(fd, sets.read))
                 .map_err(|e| io::Error::other(format!("rule {ro}: {e}")))?;
         }
     }
@@ -1438,7 +1457,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     for tp in &policy.tool_paths {
         if let Ok(fd) = PathFd::new(tp) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_read_exec))
+                .add_rule(PathBeneath::new(fd, sets.read))
                 .map_err(|e| io::Error::other(format!("rule tool: {e}")))?;
         }
     }
@@ -1462,7 +1481,7 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     for dev in &policy.extra_device_paths {
         if let Ok(fd) = PathFd::new(dev) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_read | AccessFs::WriteFile))
+                .add_rule(PathBeneath::new(fd, sets.read | AccessFs::WriteFile))
                 .map_err(|e| io::Error::other(format!("rule dev {}: {e}", dev.display())))?;
         }
     }
@@ -1476,14 +1495,14 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     for ro in &policy.extra_ro_paths {
         if let Ok(fd) = PathFd::new(ro) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_read_exec))
+                .add_rule(PathBeneath::new(fd, sets.read))
                 .map_err(|e| io::Error::other(format!("rule ro {}: {e}", ro.display())))?;
         }
     }
     for rw in &policy.extra_rw_paths {
         if let Ok(fd) = PathFd::new(rw) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_all))
+                .add_rule(PathBeneath::new(fd, sets.all))
                 .map_err(|e| io::Error::other(format!("rule rw {}: {e}", rw.display())))?;
         }
     }
@@ -1593,12 +1612,9 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // hardened has no user namespace, so under sudo the child is real root
     // with CAP_MKNOD and no MS_NODEV bind, and this and the seccomp mode rule
     // below are the two locks left.
-    let handled = AccessFs::from_all(ABI::V3);
-    let access_all = handled & !AccessFs::MakeChar & !AccessFs::MakeBlock;
-    let access_read = AccessFs::from_read(ABI::V3);
-    let access_read_exec = access_read | AccessFs::Execute;
+    let sets = landlock_sets();
     let ruleset = Ruleset::default()
-        .handle_access(handled)
+        .handle_access(sets.handled)
         .map_err(|e| io::Error::other(format!("handle_access: {e}")))?
         .create()
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
@@ -1634,7 +1650,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         // R on cwd recursively, so protected paths remain readable.
         if let Ok(fd) = PathFd::new(&policy.cwd) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_read))
+                .add_rule(PathBeneath::new(fd, sets.read))
                 .map_err(|e| {
                     io::Error::other(format!("rule r cwd {}: {e}", policy.cwd.display()))
                 })?;
@@ -1644,12 +1660,12 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
             .cwd
             .canonicalize()
             .unwrap_or_else(|_| policy.cwd.clone());
-        ruleset = grant_rw_carved(ruleset, &policy.cwd, &protect_set, &canon_cwd, access_all)?;
+        ruleset = grant_rw_carved(ruleset, &policy.cwd, &protect_set, &canon_cwd, sets.all)?;
     } else {
         // No protect set: original behavior, RW on cwd as a whole.
         if let Ok(fd) = PathFd::new(&policy.cwd) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_all))
+                .add_rule(PathBeneath::new(fd, sets.all))
                 .map_err(|e| {
                     io::Error::other(format!("rule rw cwd {}: {e}", policy.cwd.display()))
                 })?;
@@ -1686,7 +1702,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         }
         if let Ok(fd) = PathFd::new(dev) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_read | AccessFs::WriteFile))
+                .add_rule(PathBeneath::new(fd, sets.read | AccessFs::WriteFile))
                 .map_err(|e| io::Error::other(format!("rule dev {}: {e}", dev.display())))?;
         }
     }
@@ -1706,7 +1722,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
         }
         if let Ok(fd) = PathFd::new(p) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_all))
+                .add_rule(PathBeneath::new(fd, sets.all))
                 .map_err(|e| io::Error::other(format!("rule rw {}: {e}", p.display())))?;
         }
     }
@@ -1732,7 +1748,7 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     for p in &ro_paths {
         if let Ok(fd) = PathFd::new(p) {
             ruleset = ruleset
-                .add_rule(PathBeneath::new(fd, access_read_exec))
+                .add_rule(PathBeneath::new(fd, sets.read))
                 .map_err(|e| io::Error::other(format!("rule ro {}: {e}", p.display())))?;
         }
     }
@@ -2696,6 +2712,29 @@ mod tests {
             .unwrap_or_else(|e| e.into_inner())
             .render(Some(Stream::Out));
         rendered
+    }
+
+    #[test]
+    fn landlock_sets_handle_everything_and_the_writable_set_cannot_make_devices() {
+        let sets = landlock_sets();
+        assert_eq!(sets.handled, AccessFs::from_all(ABI::V3));
+        assert!(sets
+            .handled
+            .contains(AccessFs::MakeChar | AccessFs::MakeBlock));
+        assert!(!sets.all.contains(AccessFs::MakeChar));
+        assert!(!sets.all.contains(AccessFs::MakeBlock));
+        assert_eq!(
+            sets.all | AccessFs::MakeChar | AccessFs::MakeBlock,
+            sets.handled
+        );
+    }
+
+    #[test]
+    fn landlock_read_carries_execute_and_read_noexec_does_not() {
+        let sets = landlock_sets();
+        assert!(sets.read.contains(AccessFs::Execute));
+        assert!(!sets.read_noexec.contains(AccessFs::Execute));
+        assert_eq!(sets.read_noexec | AccessFs::Execute, sets.read);
     }
 
     #[test]
