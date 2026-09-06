@@ -113,6 +113,27 @@ def test_a_bad_byte_costs_one_character_not_the_index(tmp_path: Path) -> None:
     assert all(name in after for name in ("alpha", "beta", "gamma", "delta")), after
 
 
+def test_index_lines_stay_adjacent_across_adds(tmp_path: Path) -> None:
+    """The append asked the STRIPPED index text for its trailing newline, which
+    it never has, so every add after the first opened with a blank line."""
+    add(tmp_path, "one", "first fact")
+    add(tmp_path, "two", "second fact")
+    add(tmp_path, "three", "third fact")
+    assert index_path(tmp_path).read_text(encoding="utf-8") == (
+        "- one: first fact\n- two: second fact\n- three: third fact\n"
+    )
+
+
+def test_index_add_starts_a_line_of_its_own(tmp_path: Path) -> None:
+    """An index edited by hand without a final newline gets one before the
+    appended entry, so the two never share a line."""
+    idx = index_path(tmp_path)
+    idx.parent.mkdir(parents=True)
+    idx.write_text("- hand: written by hand", encoding="utf-8")
+    add(tmp_path, "two", "second fact")
+    assert idx.read_text(encoding="utf-8") == "- hand: written by hand\n- two: second fact\n"
+
+
 def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(tmp_path: Path) -> None:
     """The harness-owned DECISIONS.md: append-only entries (question, answer
     verbatim with continuation lines indented, session, UTC time); the

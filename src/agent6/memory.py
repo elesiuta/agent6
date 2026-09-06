@@ -181,17 +181,17 @@ def _index_has(state_dir: Path, name: str) -> bool:
 
 
 def _append_index_line(state_dir: Path, name: str, hook: str) -> None:
-    """Append one line to the index, keeping every line already there.
-
-    A rebuild from an EMPTY read is a delete: with the index unreadable this
-    wrote a one-line file over it, so a single bad byte cost every memory the
-    repo had. Unreadable and empty are one answer here, so it appends."""
+    """Append one line to the index, never rewriting the lines it holds: a
+    rewrite from an unreadable (so empty) read deletes every one of them."""
     idx = index_path(state_dir)
-    line = f"- {name}: {hook}"
+    try:
+        tail = idx.read_bytes()[-1:]
+    except OSError:
+        tail = b""
     with idx.open("a", encoding="utf-8") as fh:
-        if idx.stat().st_size and not index_text(state_dir).endswith("\n"):
+        if tail not in (b"", b"\n"):
             fh.write("\n")
-        fh.write(line + "\n")
+        fh.write(f"- {name}: {hook}\n")
 
 
 def add(state_dir: Path, name: str, body: str) -> Path:
