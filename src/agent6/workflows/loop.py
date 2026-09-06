@@ -1759,9 +1759,18 @@ class Workflow:
         self, state: LoopState, turn: TurnState, *, sha: str
     ) -> SessionResult | None:
         """Run the configured metric over the step just taken and hand the
-        model the reading, unless it ran the metric itself this turn."""
+        model the reading, unless it ran the metric itself this turn.
+
+        One reading per state of the tree: with nothing committing between
+        steps (`commit_per_step = false`) the tree stays dirty for the rest of
+        the run, and sampling on dirt alone re-ran the operator's benchmark on
+        every turn, read-only ones included."""
         if turn.metric_after_verify_pass:
             return None
+        tree = self._worktree_tree_sha()
+        if tree and tree == state.metric_tree:
+            return None
+        state.metric_tree = tree
         # The auto path raises OperatorCommandUnexecutable just like a
         # manual run_metric_command would; abort the same way the
         # per-tool handler does (it is a distinct exception, NOT a

@@ -51,6 +51,9 @@ class LoopState:
     # or a huge kept tail) must not summarise every other iteration. Leg-local
     # (not snapshotted): a resumed leg rebuilds a small context anyway.
     tier2_floor_chars: int = 0
+    # The worktree tree the metric was last sampled on: one reading per state
+    # of the tree, whether or not the harness commits between them.
+    metric_tree: str = ""
     # Consecutive before_finish review rejections, so a stubborn worker can't
     # burn the budget bouncing off the panel.
     consecutive_review_rejections: int = 0

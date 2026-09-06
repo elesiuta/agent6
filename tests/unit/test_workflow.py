@@ -691,6 +691,64 @@ def test_call_with_retry_passes_through_none_temperature() -> None:
 # --- automatic metric feedback ------------------------------------------
 
 
+def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: Path) -> None:
+    """With nothing committing between steps the worktree stays dirty for the
+    rest of the run, so sampling on dirt alone re-ran the operator's benchmark
+    every turn -- read-only ones included, and a benchmark is not free."""
+    import subprocess as sp
+
+    from agent6.tools.results import MetricResult
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+    sp.run(["git", "add", "-A"], cwd=repo, check=True)
+    sp.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
+        cwd=repo,
+        check=True,
+    )
+
+    calls: list[str] = []
+
+    class _Dispatcher(_StubDispatcher):
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> ToolResult:
+            calls.append(name)
+            return MetricResult(
+                returncode=0,
+                stdout="CYCLES: 42\n",
+                stderr="",
+                duration_s=0.1,
+                exec_failed=False,
+                score=42.0,
+            )
+
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="never",
+            verify_retries=2,
+            verify_command=(),
+            metric=SimpleNamespace(goal="minimize"),
+        ),
+    )
+    wf = _wf(root=repo, config=config, dispatcher=_Dispatcher(), commit_per_step=False)
+    state = _state()
+
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's edit
+    wf._sample_metric(state, _turn(iteration=1), sha="")  # pyright: ignore[reportPrivateUsage]
+    wf._sample_metric(state, _turn(iteration=2), sha="")  # pyright: ignore[reportPrivateUsage]
+
+    assert calls == ["run_metric_command"], "a read-only turn re-ran the benchmark"
+
+    (repo / "a.py").write_text("x = 3\n", encoding="utf-8")  # a new state of the tree
+    wf._sample_metric(state, _turn(iteration=3), sha="")  # pyright: ignore[reportPrivateUsage]
+
+    assert calls == ["run_metric_command", "run_metric_command"]
+
+
 @pytest.mark.parametrize("commit_per_step", [True, False])
 def test_drive_loop_auto_runs_metric_after_verify_pass(
     tmp_path: Path, commit_per_step: bool
@@ -711,11 +769,15 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
             if len(self.calls) == 1:
                 return _tool_resp("run_verify_command")
             rendered = str(messages[-1])
-            self.saw_metric_feedback = (
+            self.saw_metric_feedback = self.saw_metric_feedback or (
                 "[harness metric]" in rendered
                 and "score=42" in rendered
                 and "first parsed metric sample" in rendered
             )
+            if len(self.calls) == 2:
+                # A read-only turn after the verify: the tree is unchanged, so
+                # the metric must not be sampled again.
+                return _tool_resp("read_file", {"path": "x"}, tool_id="tool-read")
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-2")
 
     class DispatcherStub(_StubDispatcher):
@@ -737,6 +799,8 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
                     exec_failed=False,
                     score=42.0,
                 )
+            if name == "read_file":
+                return RawResult({"content": "x = 1\n"})
             if name == "finish_session":
                 return RawResult({"acknowledged": True, "summary": raw_input["summary"]})
             raise AssertionError(f"unexpected tool: {name}")
@@ -758,7 +822,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
         config=config,
         provider=provider,
         dispatcher=dispatcher,
-        max_iterations=3,
+        max_iterations=4,
         # `[git].commit_per_step` governs the COMMIT; the measurement the
         # prompt promises after every verified edit is not the commit's.
         commit_per_step=commit_per_step,
@@ -778,7 +842,15 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
     assert result.completed is True
     assert result.reason == "finish_session"
     assert provider.saw_metric_feedback is True
-    assert dispatcher.calls == ["run_verify_command", "run_metric_command", "finish_session"]
+    # Exactly one reading: with nothing committing between steps the tree stays
+    # dirty for the rest of the run, and sampling on dirt alone re-ran the
+    # operator's benchmark every turn, read-only ones included.
+    assert dispatcher.calls == [
+        "run_verify_command",
+        "run_metric_command",
+        "read_file",
+        "finish_session",
+    ]
 
 
 def test_drive_loop_tracks_iterations_reached(tmp_path: Path) -> None:
