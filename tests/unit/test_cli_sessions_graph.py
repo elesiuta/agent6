@@ -100,6 +100,31 @@ def test_history_graph_renders_dfs_order(
     ]
 
 
+def test_a_half_linked_task_is_still_shown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`add_subtask` writes the child before its parent's `children` list, and
+    says so: a crash between them leaves a node with a valid parent_id that no
+    parent names. The frontier, `list_tasks` and the TUI all show it; the CLI
+    walked children only, so the operator's view omitted the very task the run
+    was working on."""
+    monkeypatch.chdir(tmp_path)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="half-run-AAAA11")
+    layout.ensure()
+    (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
+    root_id, orphan_id = "0" * 25 + "R", "0" * 25 + "C"
+    root = _node(root_id, parent=None, title="root task")  # children never updated
+    orphan = _node(orphan_id, parent=root_id, title="step A")
+    nodes = {n.id: n for n in (root, orphan)}
+    for n in nodes.values():
+        write_node(layout, nodes, n)
+
+    assert main(["sessions", "graph", "half-run-AAAA11"]) == 0
+
+    out = capsys.readouterr().out
+    assert "step A" in out, out
+
+
 def test_history_graph_uses_most_recent_when_no_arg(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

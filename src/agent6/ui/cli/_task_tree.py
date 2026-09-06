@@ -28,24 +28,17 @@ def tree_lines_from_event_nodes(nodes: dict[str, object], cursor: str | None = N
 def task_tree_lines(nodes: dict[str, TaskNode], *, show_commit: bool = False) -> list[str]:
     """DFS, left-to-right, one line per node: `<indent><glyph> <title>`.
 
-    Roots are ordered by creation; children keep insertion order (the curator
-    preserves it). Returns [] for an empty graph."""
-    roots = sorted((n for n in nodes.values() if n.parent_id is None), key=lambda n: n.created_at)
+    Through the read model's own walk, so this renders what the frontier and
+    `list_tasks` see: a node its parent's `children` list does not name (the
+    crash window `add_subtask` documents) is still shown, where a walk of its
+    own dropped it -- and the operator's DAG view then omitted the very task
+    the run was working on. Nodes are ordered by id, which is a ULID, so roots
+    read in creation order however the graph came off disk."""
+    ordered = {nid: nodes[nid].model_dump() for nid in sorted(nodes)}
     out: list[str] = []
-    for root in roots:
-        _walk(root, nodes, depth=0, out=out, show_commit=show_commit)
+    for view in task_tree_views(ordered, None):
+        commit_sha = nodes[view.id].commit_sha
+        commit = f"  ({commit_sha[:7]})" if show_commit and commit_sha else ""
+        glyph = TASK_STATUS_GLYPH.get(view.status, "·")
+        out.append(f"{'  ' * view.depth}{glyph} {view.title}{commit}")
     return out
-
-
-def _walk(
-    node: TaskNode, nodes: dict[str, TaskNode], *, depth: int, out: list[str], show_commit: bool
-) -> None:
-    glyph = TASK_STATUS_GLYPH.get(node.status, "·")
-    commit = f"  ({node.commit_sha[:7]})" if show_commit and node.commit_sha else ""
-    out.append(f"{'  ' * depth}{glyph} {node.title}{commit}")
-    for child_id in node.children:
-        child = nodes.get(child_id)
-        if child is None:
-            out.append(f"{'  ' * (depth + 1)}? <missing child {child_id}>")
-            continue
-        _walk(child, nodes, depth=depth + 1, out=out, show_commit=show_commit)
