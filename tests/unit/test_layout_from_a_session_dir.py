@@ -9,7 +9,6 @@ retargets a plan or an ask at a directory that does not exist.
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -66,33 +65,6 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
     # pointed at runs/, load_graph found nothing, and the block printed nothing.
     out = capsys.readouterr().out
     assert "plan:" in out and "root task" in out
-
-
-def test_prune_can_confirm_a_forked_plans_branch(tmp_path: Path) -> None:
-    """A forked PLAN cuts `agent6/<id>` like any other session but lives in
-    plans/. A runs/-only manifest read returned "" -- which prune reads as
-    "never merged", so the branch was kept forever."""
-    from agent6.ui.cli import sessions_merge
-
-    _merge_stamp = sessions_merge._merge_stamp  # pyright: ignore[reportPrivateUsage]
-
-    layout = SessionLayout(state_dir=tmp_path, session_id="brave-oak-AAAAAA", subdir="plans")
-    layout.ensure()
-    layout.manifest_path.write_text(
-        json.dumps(
-            {
-                "version": 3,
-                "session_id": "brave-oak-AAAAAA",
-                "mode": "plan",
-                "user_task": "t",
-                "merged": {"into": "master", "sha": "abc123", "tip": "def456"},
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    stamp = _merge_stamp(tmp_path, "agent6/brave-oak-AAAAAA")
-    assert stamp is not None and stamp.into == "master"
 
 
 def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:

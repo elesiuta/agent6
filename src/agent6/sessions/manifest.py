@@ -24,8 +24,6 @@ from typing import cast
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent6.git_ops import BRANCH_PREFIX
-from agent6.sessions.layout import session_layout
 from agent6.types import ResumableMode, UnknownSessionKind, session_kind
 
 _MODEL_CONFIG = ConfigDict(frozen=True, extra="ignore")
@@ -284,19 +282,3 @@ def read_manifest(session_dir: Path) -> SessionManifest:
         return SessionManifest.model_validate(data)
     except ValidationError as exc:
         raise ManifestError(str(exc)) from exc
-
-
-def manifest_for_branch(state_dir: Path, branch: str) -> SessionManifest | None:
-    """The manifest of the session that cut *branch*, or None.
-
-    Across buckets: any session that forks cuts `agent6/<id>`, and a forked plan
-    lives in plans/. Reading out of runs/ alone broke the base-branch chain walk
-    and left `sessions prune` unable to confirm such a branch merged.
-    """
-    layout = session_layout(state_dir, branch.removeprefix(BRANCH_PREFIX))
-    if layout is None:
-        return None
-    try:
-        return read_manifest(layout.session_dir)
-    except ManifestError:
-        return None

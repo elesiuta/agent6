@@ -1239,3 +1239,94 @@ def test_delete_squashed_names_a_chain_ref_whose_merge_tip_was_never_recorded(
         assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("notip1"))
         assert "1 no merge tip was recorded" in out, argv
         assert "advanced" not in out and "squash-merged" not in out, argv
+
+
+def test_prune_confirms_a_forked_plans_branch_across_buckets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A forked PLAN cuts `agent6/<id>` like any other session but lives in
+    plans/; a runs/-only manifest read once made prune keep its squash-merged
+    branch forever."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "brave-oak-AAAAAA", "p.txt")
+    tip = _git(tmp_path, "rev-parse", "agent6/brave-oak-AAAAAA")
+    _git(tmp_path, "merge", "--squash", "agent6/brave-oak-AAAAAA")
+    _git(tmp_path, "commit", "-q", "-m", "squash the plan")
+    layout = SessionLayout(
+        state_dir=resolved_state_dir(tmp_path), session_id="brave-oak-AAAAAA", subdir="plans"
+    )
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "brave-oak-AAAAAA",
+                "mode": "plan",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": "agent6/brave-oak-AAAAAA",
+                "user_task": "t",
+                "merged": {"into": "main", "sha": _git(tmp_path, "rev-parse", "HEAD"), "tip": tip},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert "deleted agent6/brave-oak-AAAAAA (squash-merged into main)" in capsys.readouterr().out
+    assert not _branch_exists(tmp_path, "agent6/brave-oak-AAAAAA")
+
+
+def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only the chain-ref half skipped a live run; the branch half would
+    force-delete the branch a resumed run was still committing to when its
+    stamp read squash-merged and the flag was given. Both halves classify
+    through one decision, and a live run is kept before it."""
+    import os
+
+    from agent6.sessions.ipc import write_worker_pid
+
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "live1", "l.txt")
+    tip = _git(tmp_path, "rev-parse", "agent6/live1")
+    _git(tmp_path, "merge", "--squash", "agent6/live1")
+    _git(tmp_path, "commit", "-q", "-m", "squash live1")
+    _manifest(
+        tmp_path,
+        "live1",
+        base,
+        merged=True,
+        merged_tip=tip,
+        merged_sha=_git(tmp_path, "rev-parse", "HEAD"),
+    )
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="live1")
+    write_worker_pid(layout.session_dir, os.getpid())
+
+    _make_branch(tmp_path, "live2", "m.txt")
+    _git(tmp_path, "merge", "--no-ff", "-q", "-m", "merge live2", "agent6/live2")
+    _manifest(tmp_path, "live2", base, merged=True, merged_sha=_git(tmp_path, "rev-parse", "HEAD"))
+    live2 = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="live2")
+    write_worker_pid(live2.session_dir, os.getpid())
+    live2.manifest_path.write_text("{", encoding="utf-8")  # torn: its liveness still counts
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert _branch_exists(tmp_path, "agent6/live1") and _branch_exists(tmp_path, "agent6/live2")
+    assert "kept agent6/live1 (live)" in out and "kept agent6/live2 (live)" in out
+    assert "2 live" in out
