@@ -404,6 +404,26 @@ def headless_approval_refusal(
     )
 
 
+def headless_parking_note(
+    cfg: Config, *, tui_enabled: bool, away: str, can_ask: bool
+) -> str | None:
+    """The note for a run :func:`headless_approval_refusal` lets start with no
+    one to answer: commands are settled (`yes` or `no`), but a fetch outside
+    `sandbox.fetch_hosts` or an MCP call still asks, and with no terminal, no
+    front-end and no away-mode that approval parks the run until a front-end
+    attaches. Say so at the start, with the away-mode that auto-denies.
+
+    Returns None when the run can be asked or an away-mode decides.
+    """
+    if cfg.sandbox.run_commands == "ask" or tui_enabled or can_ask or away:
+        return None
+    return (
+        "no terminal, no front-end and no away-mode: a fetch outside sandbox.fetch_hosts or an"
+        " MCP call parks the run at its approval until `agent6 attach` answers it"
+        " (AGENT6_DETACHED_AWAY=deny auto-denies, =approve grants every scope)."
+    )
+
+
 def drop_gate_if_unrunnable(cfg: Config, *, session_dir: Path, reporter: Reporter) -> Config:
     """Empty the verify command when this LEG cannot run one.
 

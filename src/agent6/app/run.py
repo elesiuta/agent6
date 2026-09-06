@@ -47,6 +47,7 @@ from agent6.app.preflight import (
     drop_gate_if_unrunnable,
     git_preflight,
     headless_approval_refusal,
+    headless_parking_note,
     infer_verify_if_unset,
     unmerged_run_holding_the_tree,
 )
@@ -184,6 +185,14 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     if refusal is not None:
         reporter.refuse(refusal)
         return 2
+    parking = headless_parking_note(
+        cfg,
+        tui_enabled=tui_enabled,
+        away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
+        can_ask=frontend.capabilities.can_ask,
+    )
+    if parking is not None:
+        reporter.note(parking)
     cwd = Path.cwd()
     try:
         isolation = select_isolation(

@@ -33,6 +33,7 @@ from agent6.app.preflight import (
     SessionRefused,
     drop_gate_if_unrunnable,
     headless_approval_refusal,
+    headless_parking_note,
     require_git_repo,
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
@@ -603,6 +604,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         if refusal is not None:
             reporter.refuse(refusal)
             return 2
+        parking = headless_parking_note(
+            cfg,
+            tui_enabled=tui_enabled,
+            away=effective_away(layout.session_dir),
+            can_ask=frontend.capabilities.can_ask,
+        )
+        if parking is not None:
+            reporter.note(parking)
 
         def _gate(cfg: Config, _budget: BudgetTracker) -> Config:
             # Resume reuses the verify command the ORIGINAL run resolved

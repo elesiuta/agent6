@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.app.preflight import headless_approval_refusal
+from agent6.app.preflight import headless_approval_refusal, headless_parking_note
 from agent6.config import Config
 
 
@@ -133,3 +133,19 @@ def test_the_preflight_notices_go_through_the_injected_reporter() -> None:
     source = inspect.getsource(preflight)
     body = source[source.index("def budget_preflight") :]
     assert "print(" not in body, "a preflight notice still bypasses the Reporter"
+
+
+def test_a_headless_run_with_settled_commands_is_told_what_still_parks_it() -> None:
+    """`--auto-approve` settles commands, so the refusal lets the run start;
+    a fetch outside `sandbox.fetch_hosts` or an MCP call still asks, and with
+    nobody to answer it the run parks until a front-end attaches. The start
+    says so and names the away-mode that auto-denies; a run that can be asked,
+    or one with an away-mode, gets no note."""
+    yes = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    note = headless_parking_note(yes, tui_enabled=False, away="", can_ask=False)
+    assert note is not None
+    assert "parks the run" in note and "AGENT6_DETACHED_AWAY=deny" in note
+    assert headless_parking_note(_ask_cfg(), tui_enabled=False, away="", can_ask=False) is None
+    assert headless_parking_note(yes, tui_enabled=False, away="deny", can_ask=False) is None
+    assert headless_parking_note(yes, tui_enabled=False, away="", can_ask=True) is None
+    assert headless_parking_note(yes, tui_enabled=True, away="", can_ask=False) is None

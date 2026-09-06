@@ -40,7 +40,7 @@ agent6 run "add a --json output mode to the CLI"
 agent6 edits your working tree, commits each step to a per-run chain, and certifies the finished tree with the verify command.
 
 - your branch, HEAD, and index are never touched (the chain gets an `agent6/<id>` branch by default)
-- commands prompt for approval under the default `sandbox.run_commands = "ask"`: allow one call or the whole session; a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does), a hub-spawned one parks it
+- commands prompt for approval under the default `sandbox.run_commands = "ask"`: allow one call or the whole session; a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does), a hub-spawned one parks it; with commands settled (`--auto-approve`, `--no-commands`) and no away-mode, a fetch outside `sandbox.fetch_hosts` or an MCP call parks the run at its approval until a front-end answers, and the start says so
 - the run ends when the model declares it finished or a budget ceiling stops it
 - at a terminal it then asks for the next input: type to continue the session, `/exit` to finish (still resumable)
 - without a terminal (CI, detached) the resume line prints instead
