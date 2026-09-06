@@ -11,6 +11,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from agent6.app._leg import detach_to_background
 from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.reporter import Reporter
@@ -98,3 +100,37 @@ def test_a_recorded_away_mode_is_the_runs_away_answer(
     # A launcher's env still wins: it is this invocation's own intent.
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     assert effective_away(session_dir) == "deny"
+
+
+def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: Path) -> None:
+    """A fresh run asks about the operator's uncommitted changes; a resume
+    swept them into the run's next auto-commit, under the agent's identity and
+    into what `sessions diff` and `merge` present as the run's own work, with
+    nothing said. The crashed leg's own uncommitted tail lands there too, so
+    this names them rather than refusing."""
+    import subprocess as sp
+
+    from agent6.git_ops import chain_commit, chain_dirty_paths, chain_ref_for
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+    sp.run(["git", "add", "-A"], cwd=repo, check=True)
+    sp.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
+        cwd=repo,
+        check=True,
+    )
+    base = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    ref = chain_ref_for("resume-run-A1")
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's own leg-1 work
+    chain_commit(repo, "iter 1", ref=ref, fallback_parent=base)
+
+    assert chain_dirty_paths(repo, ref, base, 5) == []
+
+    (repo / "a.py").write_text("x = 2\n# the operator's note\n", encoding="utf-8")
+
+    assert chain_dirty_paths(repo, ref, base, 5) == ["a.py"]

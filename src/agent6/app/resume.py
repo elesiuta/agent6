@@ -53,6 +53,7 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     branch_exists,
+    chain_dirty_paths,
     chain_ref_for,
     chain_tip,
     is_ancestor,
@@ -645,6 +646,20 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # This leg's models and policy, so `agent6 exec` joins the jail the
         # agent is in and every policy surface describes the leg that is live.
         stamp_leg(layout.session_dir, cfg, mode, isolation)
+        if writes_code:
+            # What the tree holds that the chain does not: the previous leg's
+            # uncommitted tail after a crash, and any edit of the operator's
+            # between legs. The next auto-commit takes both, under the agent's
+            # identity and into what `sessions diff` and `merge` present as the
+            # run's work -- silently, where a fresh run asks about exactly this.
+            with contextlib.suppress(GitError, OSError):
+                dirty = chain_dirty_paths(cwd, chain_ref_for(session_id), resume_base_sha, 5)
+                if dirty:
+                    named = ", ".join(dirty[:4]) + (", ..." if len(dirty) > 4 else "")
+                    reporter.note(
+                        f"the tree holds changes no commit has ({named});"
+                        " this leg's next commit takes them"
+                    )
         end = run_leg(
             cfg,
             layout,
