@@ -872,9 +872,19 @@ def test_a_fresh_instance_over_a_stale_chain_is_refused(
         ["git", "init", "-q"],
         ["git", "add", "runwarn.asm.toml"],
         ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"],
-        ["git", "update-ref", "refs/agent6/machine-run-warn/head", "HEAD"],
     ):
         subprocess.run(argv, cwd=repo, check=True)
+    # The old instance's work: a commit past HEAD that nothing merged.
+    work = subprocess.run(
+        ["git", "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "work"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "update-ref", "refs/agent6/machine-run-warn/head", work], cwd=repo, check=True
+    )
     cfg = tmp_path / "agent6.toml"
     cfg.write_text(
         """[providers.p]
@@ -894,6 +904,97 @@ model = "m"
     assert code == 2
     assert "chain branch 'agent6/machine-run-warn' exists" in err
     assert "git branch -D agent6/machine-run-warn" in err
+
+
+PARKED_RUN_MACHINE = """
+machine = "run-warn"
+version = 1
+initial = "park"
+
+[budget]
+max_usd = 1.0
+max_transitions = 10
+
+[vars.operator]
+secs = { type = "int", value = 3600 }
+
+[schemas.r]
+ok = "bool"
+
+[vars.agent]
+out = { type = "r", default = {} }
+
+[states.park]
+kind = "wait"
+every_secs = "{{ secs }}"
+on = { tick = "judge", signal = "judge" }
+
+[states.judge]
+kind = "agent"
+mode = "run"
+prompt = "judge"
+output_schema = "r"
+capture = { finish_json = "out" }
+timeout_secs = 60
+on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "done"
+"""
+
+
+def test_a_fresh_instance_over_a_merged_chain_starts_from_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The refusal's keep remedy is `git merge <branch>`, then rerun: the merge
+    left the chain ref in place, so the rerun refused again with the same
+    remedy. A chain whose tip HEAD already holds is spent: the instance drops
+    it and starts from HEAD, saying so."""
+    import subprocess
+
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    f = repo / "runwarn.asm.toml"
+    f.write_text(PARKED_RUN_MACHINE, encoding="utf-8")
+    for argv in (
+        ["git", "init", "-q"],
+        ["git", "add", "runwarn.asm.toml"],
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"],
+        ["git", "update-ref", "refs/agent6/machine-run-warn/head", "HEAD"],
+    ):
+        subprocess.run(argv, cwd=repo, check=True)
+    cfg = tmp_path / "agent6.toml"
+    cfg.write_text(
+        """[providers.p]
+api_format = "openai"
+base_url = "http://127.0.0.1:9"
+api_key_env = "AGENT6_TEST_KEY"
+
+[models.worker]
+provider = "p"
+model = "m"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_TEST_KEY", "x")
+    code = main(["--config", str(cfg), "machine", "run", str(f), "--exit-on-wait"])
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert "REFUSING" not in captured.err
+    assert "work on 'agent6/machine-run-warn' is in HEAD" in captured.err
+    assert "WAITING" in captured.out
+    gone = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", "refs/agent6/machine-run-warn/head"],
+        cwd=repo,
+        check=False,
+    )
+    assert gone.returncode != 0  # the spent chain ref is dropped
 
 
 def test_run_no_commands_withholds_them_from_the_machine(

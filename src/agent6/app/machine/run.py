@@ -49,6 +49,8 @@ from agent6.git_ops import (
     GitError,
     branch_exists,
     chain_tip,
+    delete_ref,
+    is_ancestor,
     is_git_repo,
     machine_branch_for,
     machine_chain_ref_for,
@@ -438,15 +440,24 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 # A fresh instance must not silently continue a dead one's
                 # tree: the chain ref outlives an archived instance dir, and
                 # its tip is the OLD instance's work, not this repo's HEAD.
-                stale = has_run_agent and chain_tip(cwd, machine_chain_ref_for(spec.machine))
-                if stale:
-                    branch = machine_branch_for(spec.machine)
+                # Once that work is in HEAD the chain is spent, and a chain
+                # with no ref starts from HEAD (`clone_at_machine_chain`).
+                ref = machine_chain_ref_for(spec.machine)
+                branch = machine_branch_for(spec.machine)
+                tip = chain_tip(cwd, ref) if has_run_agent else None
+                if tip is not None and is_ancestor(cwd, tip, "HEAD"):
+                    delete_ref(cwd, ref)
+                    reporter.note(
+                        f"the previous instance's work on {branch!r} is in HEAD;"
+                        " this instance starts from HEAD"
+                    )
+                elif tip is not None:
                     reporter.refuse(
                         f"no journal for {spec.machine!r}, but its chain branch"
                         f" {branch!r} exists with a previous instance's work."
                         f" Keep it (`git merge {branch}`) or discard it"
-                        f" (`git branch -D {branch}` and `git update-ref -d"
-                        f" {machine_chain_ref_for(spec.machine)}`), then rerun."
+                        f" (`git branch -D {branch}` and `git update-ref -d {ref}`),"
+                        " then rerun."
                     )
                     return 2
                 write_bundle(root, path)
