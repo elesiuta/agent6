@@ -460,3 +460,57 @@ def test_edit_survives_a_non_utf8_save(
     monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
     assert _select_revised_prompt("orig", "revised", ()) == "revised"
     assert "not UTF-8" in capsys.readouterr().err
+
+
+def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One Ctrl-C leaves the revise_prompt choice, as at every other idle CLI
+    prompt. The leg installs the run's escalating steer handler before the
+    loop reaches this prompt, so without `repl_prompt_sigint` the press was
+    absorbed by the retried input(): three presses to leave, a "pausing after
+    this step" line with no step in flight, and an armed stage that opened a
+    pause menu at the run's first boundary."""
+    import contextlib
+    import os
+    import signal
+    import sys
+    import threading
+    import time
+    from typing import Any
+
+    from agent6.ui.cli._steer import select_revised_prompt
+
+    read_fd, write_fd = os.pipe()
+    reader = os.fdopen(read_fd, encoding="utf-8")
+    blocked = threading.Event()
+
+    class NotifyingStdin:
+        def readline(self) -> str:
+            blocked.set()
+            return reader.readline()
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(reader, name)
+
+    monkeypatch.setattr(sys, "stdin", NotifyingStdin())
+    steer = install_steer_sigint(MagicMock(), tmp_path)
+
+    def press_then_rescue() -> None:
+        blocked.wait(10.0)
+        os.kill(os.getpid(), signal.SIGINT)
+        # A swallowed press leaves the prompt blocked: answer it so the test
+        # reports the wrong result instead of hanging the suite.
+        time.sleep(1.0)
+        with contextlib.suppress(OSError):
+            os.write(write_fd, b"a\n")
+
+    presser = threading.Thread(target=press_then_rescue)
+    presser.start()
+    try:
+        assert select_revised_prompt("original", "revised", ()) is None
+        assert steer.armed() is False
+    finally:
+        steer.restore()
+        presser.join()
+        os.close(write_fd)

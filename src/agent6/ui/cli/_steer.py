@@ -90,11 +90,12 @@ def _select_revised_prompt(
     print(original, file=sys.stderr)
     while True:
         try:
-            choice = (
-                input("[agent6] revise_prompt: [a]ccept, [o]riginal, [e]dit, [q]uit? ")
-                .strip()
-                .lower()
-            )
+            with repl_prompt_sigint():
+                choice = (
+                    input("[agent6] revise_prompt: [a]ccept, [o]riginal, [e]dit, [q]uit? ")
+                    .strip()
+                    .lower()
+                )
         except (EOFError, KeyboardInterrupt):
             return None
         if choice in {"", "a", "accept", "y", "yes"}:
