@@ -169,6 +169,7 @@ def forward(
                 try:
                     join_session_network(layout.session_dir)
                     inside = socket.create_connection(("127.0.0.1", remote_port), timeout=10)
+                    inside.settimeout(None)  # the 10 s bounds the connect, not the bridge
                     _pump(conn, inside)
                 except (SessionNetworkUnavailable, OSError):
                     code = 1

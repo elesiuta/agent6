@@ -409,3 +409,70 @@ def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
     finally:
         holder.kill()
         holder.wait()
+
+
+def test_forward_leaves_no_connect_timeout_on_the_bridge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`socket.create_connection(..., timeout=10)` sets the 10 s on the socket
+    it returns and never clears it, so a dev server merely slow to drain made
+    `sendall` raise TimeoutError ten seconds in, which `_pump` reads as a
+    hang-up and answers by dropping the connection in silence. The bound is the
+    connect's, not the bridge's."""
+    import io
+    import socket
+    import subprocess
+    import sys
+
+    from agent6.sessions.ipc import write_session_netns_pid
+    from agent6.ui.cli import net_cmds
+
+    inside_server = socket.socket()
+    inside_server.bind(("127.0.0.1", 0))
+    inside_server.listen(4)
+    remote_port = inside_server.getsockname()[1]
+    free = socket.socket()
+    free.bind(("127.0.0.1", 0))
+    local_port = free.getsockname()[1]
+    free.close()
+    layout = SessionLayout(state_dir=tmp_path, session_id="busy-run", subdir="runs")
+    layout.session_dir.mkdir(parents=True)
+    write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
+    # The client ends the run once connected, so the next accept timeout
+    # returns the loop; the bridge for its connection is already forked.
+    client_script = (
+        "import os, socket, time\n"
+        "for _ in range(40):\n"
+        "    try:\n"
+        f"        sock = socket.create_connection(('127.0.0.1', {local_port}))\n"
+        "        break\n"
+        "    except OSError:\n"
+        "        time.sleep(0.25)\n"
+        f"os.unlink({str(layout.session_dir / 'netns.pid')!r})\n"
+        "time.sleep(5)\n"
+    )
+
+    read_fd, write_fd = os.pipe()
+
+    def _joined(_dir: Path) -> None:
+        return None  # the netns join needs a live run; the bridge socket does not
+
+    def _record(_local: socket.socket, inside: socket.socket) -> None:
+        os.write(write_fd, f"{inside.gettimeout()}\n".encode())
+
+    monkeypatch.setattr(net_cmds, "join_session_network", _joined)
+    monkeypatch.setattr(net_cmds, "_pump", _record)
+
+    client = subprocess.Popen([sys.executable, "-c", client_script])
+    try:
+        out = io.StringIO()
+        assert net_cmds.forward(layout, remote_port, local_port, out=out) == 0
+        os.close(write_fd)
+        with os.fdopen(read_fd, encoding="utf-8") as pipe:
+            handed = pipe.readline().strip()
+    finally:
+        client.kill()
+        client.wait(timeout=10)
+        inside_server.close()
+
+    assert handed == "None", f"the bridge carries the connect's {handed}s timeout"
