@@ -175,6 +175,8 @@ The detached spawn it drives (`ui.spawn`, the path `attach` and `resume` use) is
 
 **`agent6 run --parallel N|model-a,model-b`** plans one `LaneSpec` per lane, each spawned as an ordinary detached `agent6 run` with its own jail and `run_commands` policy.
 
+- the fan-out is a session of its own under the origin's runs, named by the fan-out id: a manifest with the fan-out stamp and no run branch, a journal (the dispatch, `loop.parallel.compared` with the ranking, the judge's cost as its own spend, the end), and a worker pid while the lanes run and the judge ranks them; `sessions stop <id>` ends it the way Ctrl+C does, and `resume` refuses it
+- every lane's manifest names the session that dispatched it (`parallel.coordinator`, stamped from the spawn env), so each listing nests lanes under their coordinator, folded into a count
 - each lane's live session dir symlinks into `<origin_state>/sessions/runs/` on locate: a fan-out is visible in every hub while it runs
 - on completion a lane imports and the symlink becomes the real directory; a failed-to-start, still-running, or refused lane keeps its clone and symlink (never the only copy lost)
 - imported candidates auto-compare into a ranked report with `sessions merge <id>` lines: a structured judge ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/judge.py)) where a reviewer model exists, else verify-then-cost

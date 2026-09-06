@@ -91,7 +91,7 @@ agent6 sessions graph         # the persisted task graph
 ```
 
 `agent6 history search <query>` greps across the transcripts of every run.
-`agent6 ps` lists the live sessions of every repository on the machine, with the directory to cd to and the id to attach.
+`agent6 ps` lists the live sessions of every repository on the machine, with the directory to cd to and the id to attach; a fan-out's live lanes fold under it (`--lanes` lists them).
 
 ## Answer a parked prompt
 
@@ -155,6 +155,8 @@ agent6 ask "how does the task-graph curator work?"
   - `agent6 config presets` lists them; `agent6 config set preset <name>` persists one
   - a preset cannot change mid-run; `agent6 resume <id> --preset <name>` continues a stopped run under another
 - `--parallel 3` (or `model-a,model-b`): isolated fan-out lanes, auto-compared into a ranked report
+  - the fan-out is a session of its own: `attach` follows it, `sessions stop` ends it, `sessions show` lists its lanes with their placement
+  - its lanes nest under it in every listing, folded into a count: `sessions list --lanes` and `ps --lanes` list them, Space in the TUI hub and the `lanes` line in the web hub expand them
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
   - new work outranks it; it never passes, and only the operator retires it; budget, stop, and the iteration cap still end the run
