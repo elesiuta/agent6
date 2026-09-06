@@ -175,6 +175,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     refusal = headless_approval_refusal(
         cfg,
         tui_enabled=tui_enabled,
+        # A fresh run has no dir yet, so the env is the only away answer there
+        # is (`effective_away` is resume's, where a recorded one exists).
         away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
         can_ask=frontend.capabilities.can_ask,
         clamped=session_kind(mode).clamps_commands,

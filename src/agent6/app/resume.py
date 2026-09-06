@@ -67,6 +67,7 @@ from agent6.sessions.ipc import (
     clear_away_mode,
     clear_pending_answers,
     clear_worker_pid,
+    effective_away,
     submit_steer,
     write_worker_pid,
 )
@@ -572,7 +573,10 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         refusal = headless_approval_refusal(
             cfg,
             tui_enabled=tui_enabled,
-            away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
+            # The env a launcher set, else the choice recorded on the run dir:
+            # the approver reads the file, so a refusal keyed on the env alone
+            # told a detached run it had no away-mode while its dir carried one.
+            away=effective_away(layout.session_dir),
             can_ask=frontend.capabilities.can_ask,
             clamped=session_kind(mode).clamps_commands,
         )

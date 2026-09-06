@@ -74,3 +74,27 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: Pa
     )
     assert [c[0] for c in calls] == ["spawn"]  # yes-policy: nothing to ask
     assert said == ["[agent6] agent6 exe not found"]
+
+
+def test_a_recorded_away_mode_is_the_runs_away_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run detached from a terminal (or spawned by the hub) carries the
+    operator's choice in `approvals/away.mode`. The preflight read only the
+    env, so a later resume from cron, CI or a script was refused as
+    unanswerable -- saying the run had no away-mode while its own dir had one.
+    The approver has always read the file."""
+    from agent6.sessions.ipc import effective_away, set_away_mode
+
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+
+    assert effective_away(session_dir) == ""
+
+    set_away_mode(session_dir, "wait")
+    assert effective_away(session_dir) == "wait"
+
+    # A launcher's env still wins: it is this invocation's own intent.
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
+    assert effective_away(session_dir) == "deny"
