@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from agent6.app.fork import sweep_fork_worktrees
+from agent6.app.fork_worktrees import sweep_fork_worktrees
 from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
 from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
 from agent6.commit_message import render_commit_trailer

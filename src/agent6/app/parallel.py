@@ -231,7 +231,7 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
     philosophy). Returns (swept, kept). A lane clone holding any commit the
     origin lacks keeps its whole fan-out dir: the clone may be the only copy.
     Only a dir holding `lane-*` clones is a fan-out group: anything else
-    under the scope (a fork's worktree, which `fork.sweep_fork_worktrees`
+    under the scope (a fork's worktree, which `fork_worktrees.sweep_fork_worktrees`
     owns through its manifest; a directory the operator put there) is left
     alone."""
     base = workdir_base(cfg, origin)

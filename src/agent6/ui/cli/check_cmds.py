@@ -20,7 +20,7 @@ from agent6.app._setup import (
     wants_session_network,
 )
 from agent6.app.confine import check_network_support, config_refusal, mcp_network_refusal
-from agent6.app.fork import worktree_owners
+from agent6.app.fork_worktrees import worktree_owners
 from agent6.config import (
     Config,
     ConfigError,

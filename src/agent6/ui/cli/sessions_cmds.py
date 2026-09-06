@@ -13,7 +13,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.app.fork import remove_fork_worktree, uncommitted_in_worktree, worktree_owners
+from agent6.app.fork_worktrees import (
+    remove_fork_worktree,
+    uncommitted_in_worktree,
+    worktree_owners,
+)
 from agent6.app.resume import covering_stamp
 from agent6.git_ops import (
     DIFF_SHOW_SAFETY_FLAGS,
