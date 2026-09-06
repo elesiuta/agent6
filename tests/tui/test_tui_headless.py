@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from rich.text import Text
 from textual.app import App, ScreenStackError
 from textual.widgets import Button, DataTable, Input, RichLog, Static, TextArea, Tree
 
@@ -106,6 +107,32 @@ def test_question_modal_digit_in_freetext_is_not_hijacked() -> None:
             await pilot.press("ctrl+s")  # submit collects the answers
             await pilot.pause()
             assert result.get("v") == ("alpha",)  # tuple of answers, aligned to questions
+
+    asyncio.run(scenario())
+
+
+def test_diff_colors_content_with_header_like_prefixes(tmp_path: Path) -> None:
+    """Added and removed content stays colored when its text begins with a file header."""
+    (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6TUI(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _show_dashboard(pilot)
+            app._handle_event(
+                _ev(
+                    type="diff.updated",
+                    patch="--- a/file\n+++ b/file\n@@ -1 +1 @@\n----old\n++++new",
+                )
+            )
+            app._tick()
+            await pilot.pause()
+            content = app._dash.query_one("#diff-body", Static).content
+            assert isinstance(content, Text)
+            removed_style = content.get_style_at_offset(app.console, content.plain.index("----old"))
+            added_style = content.get_style_at_offset(app.console, content.plain.index("++++new"))
+            assert str(removed_style) == "red"
+            assert str(added_style) == "green"
 
     asyncio.run(scenario())
 

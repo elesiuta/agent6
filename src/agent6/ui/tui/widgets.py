@@ -26,8 +26,15 @@ def _scroll_row_into_view(widget: Widget, row: int) -> None:
     no-ops; the ancestor must be driven directly)."""
     for node in widget.ancestors:
         if isinstance(node, ScrollableContainer):
-            region = Region(0, row, max(widget.size.width, 1), 1)
-            node.scroll_to_region(region, animate=False, force=True)
+            content_y = (
+                widget.content_region.y
+                + row
+                - node.scrollable_content_region.y
+                + node.scroll_offset.y
+            )
+            node.scroll_to_region(
+                Region(0, content_y, 1, 1), animate=False, force=True, x_axis=False
+            )
             return
 
 
@@ -70,7 +77,7 @@ class ChoiceField(Widget, can_focus=True):
     consumes the key; Enter also bubbles, so a dialog can confirm on Enter."""
 
     DEFAULT_CSS = """
-    ChoiceField { height: auto; width: 1fr; }
+    ChoiceField { height: auto; width: 1fr; text-wrap: nowrap; text-overflow: ellipsis; }
     """
 
     class Changed(Message):
@@ -297,7 +304,12 @@ class TypeaheadField(Widget, can_focus=True):
         self._fresh = bool(current)
 
     def set_suggestions(self, suggestions: list[str]) -> None:
+        matches = self._matches
+        highlighted = matches[self._index] if 0 <= self._index < len(matches) else None
         self._all = list(suggestions)
+        if highlighted is not None:
+            matches = self._matches
+            self._index = matches.index(highlighted) if highlighted in matches else -1
         if self.is_mounted:
             self.refresh(layout=True)
 
@@ -364,7 +376,7 @@ class TypeaheadField(Widget, can_focus=True):
     def _moved(self) -> None:
         # layout=True: the visible match count changes, so re-measure the height.
         self.refresh(layout=True)
-        self.scroll_visible(animate=False)
+        self.call_after_refresh(_scroll_row_into_view, self, max(self._index + 1, 0))
         self.post_message(self.Changed(self))
 
     def on_key(self, event: events.Key) -> None:

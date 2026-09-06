@@ -283,6 +283,37 @@ def test_dead_worker_leads_with_the_hub_word_stale(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: Path) -> None:
+    """A partial response left in flight by a worker death is not live output."""
+    d = tmp_path / "crashed-stream"
+    _mk_crashed(d)
+    with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {"type": "role.text_delta", "role": "worker", "text": "partial stale answer"}
+            )
+            + "\n"
+        )
+
+    async def scenario() -> None:
+        app = Agent6TUI(d)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_dash(app, pilot)
+            await _wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await _wait_for(
+                pilot,
+                lambda: app.state.last_role is not None and bool(app.state.last_role.streamed_text),
+                "the partial response",
+            )
+            app._dash.render_heartbeat()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
+            body = str(app._dash.query_one("#stream-body", Static).render())
+            assert "worker exited without finishing" in body
+            assert "partial stale answer" not in body
+
+    asyncio.run(scenario())
+
+
 def test_crash_then_resume_recovers_liveness(tmp_path: Path) -> None:
     """The dead-worker state is DERIVED, not latched: after the operator
     resumes (new leg appends events, live worker.pid), the dashboard label

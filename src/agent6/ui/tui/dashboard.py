@@ -592,7 +592,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         role = s.last_role
         st = Text()
         streaming = (
-            role is not None and role.in_flight and (role.streamed_thinking or role.streamed_text)
+            active
+            and role is not None
+            and role.in_flight
+            and (role.streamed_thinking or role.streamed_text)
         )
         if s.finished:
             # The end story, not a stale "idle": how it ended + the closing
@@ -781,9 +784,9 @@ class DashboardScreen(ScreenChrome, Screen[None]):
 def _append_colored_diff(dt: Text, patch: str) -> None:
     """Append a unified diff with +/- line coloring (no markup parsing)."""
     for line in patch.splitlines():
-        if line.startswith("+") and not line.startswith("+++"):
+        if line.startswith("+") and not line.startswith("+++ "):
             dt.append(line + "\n", style="green")
-        elif line.startswith("-") and not line.startswith("---"):
+        elif line.startswith("-") and not line.startswith("--- "):
             dt.append(line + "\n", style="red")
         elif line.startswith("@@"):
             dt.append(line + "\n", style="cyan")
