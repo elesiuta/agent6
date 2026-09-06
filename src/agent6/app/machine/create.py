@@ -151,7 +151,10 @@ def _discard_workspace(workspace: Path, reporter: Reporter) -> None:
     """
     errors: list[str] = []
     for path in (resolved_state_dir(workspace), workspace):
-        shutil.rmtree(path, onexc=lambda _fn, target, exc: errors.append(f"{target}: {exc}"))
+        # A workspace that never ran has no state dir, and rmtree reports a
+        # missing path through onexc like any other failure.
+        if path.exists():
+            shutil.rmtree(path, onexc=lambda _fn, target, exc: errors.append(f"{target}: {exc}"))
     if errors:
         reporter.err(f"machine create: the drafting workspace stays ({errors[0]})")
 

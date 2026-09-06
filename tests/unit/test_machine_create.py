@@ -1083,7 +1083,7 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
 
 
 def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The bundle is files in a workspace, not a finish payload: a ~20KB TOML
     string inside tool-call JSON defeated kimi-k2.6's emitter three times in a
@@ -1130,6 +1130,9 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     assert cfg["models"] == {"worker": {"provider": "openrouter", "model": "test-model"}}
     assert cfg["sandbox"]["run_commands"] == "no", "and it still carries no command tool"
     assert "state_dir" not in cfg.get("agent6", {}), "global-only; the overlay forbids it"
+    # A workspace that never ran has no state dir to remove, which rmtree
+    # reports like a failure: every published create printed that it stayed.
+    assert "the drafting workspace stays" not in capsys.readouterr().err
 
 
 def test_create_publishes_the_files_a_referenced_script_needs(
