@@ -127,7 +127,11 @@ def test_a_pure_subscription_model_still_costs_an_authoritative_zero() -> None:
 
     bt.check()
     assert bt.estimate_usd() == (0.0, False)
-    assert "(subscription)" in bt.format_summary()
+    summary = bt.format_summary()
+    assert "(subscription)" in summary
+    # `of <cap>` states what meters this spend, and max_usd meters none of it:
+    # the receipt named a ceiling the same run's preflight says does not apply.
+    assert "of $" not in summary
 
 
 def test_fraction_remaining_tracks_the_tighter_ledger() -> None:

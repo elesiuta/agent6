@@ -603,24 +603,29 @@ class BudgetTracker:
             total_usd += cost.usd
         return total_usd, any_unknown
 
-    def _model_lines(self, snap: BudgetSnapshot) -> tuple[list[str], int, bool]:
-        """One line per model, with how many were priced and whether any figure
-        is an estimate. The TOTAL is the tracker's own (`estimate_usd`)."""
+    def _model_lines(self, snap: BudgetSnapshot) -> tuple[list[str], int, int, bool]:
+        """One line per model, with how many priced, how many the USD ledger
+        actually meters (a plan's calls cost dollars nowhere) and whether any
+        figure is an estimate. The TOTAL is the tracker's own
+        (`estimate_usd`)."""
         lines: list[str] = []
         priced = 0
+        metered = 0
         any_estimated = False
         for model, totals in snap.per_model.items():
             cost = _model_cost_usd(model, totals)
+            subscription = totals.percent_metered and not _billed_apart_from_plan(totals)
             if cost is None:
                 cost_str = "$? (unknown price)"
             else:
                 priced += 1
+                metered += 0 if subscription else 1
                 any_estimated = any_estimated or cost.estimated
                 if cost.partial:
                     note = " (reported, some calls unpriced)"
                 elif cost.reported and cost.estimated:
                     note = " (reported + estimated)"
-                elif totals.percent_metered and not cost.estimated:
+                elif subscription:
                     note = " (subscription)"
                 elif cost.reported:
                     note = " (reported)"
@@ -634,7 +639,7 @@ class BudgetTracker:
                 f"cache_c={totals.cache_creation_tokens} "
                 f"calls={totals.calls} {cost_str}"
             )
-        return lines, priced, any_estimated
+        return lines, priced, metered, any_estimated
 
     def format_summary(self) -> str:
         """Human-facing end-of-run summary with USD estimate where known."""
@@ -644,7 +649,7 @@ class BudgetTracker:
         # purchased credits a plan-metered run spent; the per-model lines below
         # report the authoritative $0 those calls cost.
         total_usd, any_unknown = self.estimate_usd()
-        model_lines, priced, any_estimated = self._model_lines(snap)
+        model_lines, priced, metered, any_estimated = self._model_lines(snap)
         lines.extend(model_lines)
         any_unknown = any_unknown or priced < len(snap.per_model)
         approx = "~" if any_unknown or any_estimated else "="
@@ -654,10 +659,10 @@ class BudgetTracker:
         # as "fallback tokens)+".
         total = format_usd(total_usd) + ("+" if any_unknown else "")
         # `of <cap>` states what meters this spend. With every model unpriced,
-        # max_usd meters none of it (the preflight says so too), and naming it
-        # here contradicted that.
+        # or every one drawing on a subscription plan, max_usd meters none of it
+        # (the preflight says so too), and naming it here contradicted that.
         cap = ""
-        if priced or not snap.per_model:
+        if metered or not snap.per_model:
             usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
             cap = f" of {usd_cap}"
         budget_line = (
