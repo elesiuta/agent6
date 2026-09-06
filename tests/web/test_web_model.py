@@ -702,3 +702,53 @@ def test_a_waiting_machine_is_not_labelled_failed(tmp_path: Path) -> None:
 
     assert row["label"] == "waiting · waiting on an approval in 0001-work"
     assert row["level"] == "warn"
+
+
+def test_the_web_machine_header_does_not_hide_a_zero_cost(tmp_path: Path) -> None:
+    """`machine status` and the TUI watch print `spend: $0.0000`; the web
+    header appended the cost only when `spend.usd` was truthy, so the figure
+    an unattended machine is watched for was missing while it was zero."""
+    from agent6.machine.journal import BranchFact, MachineJournal, StepEvent
+    from agent6.ui.web.page import CLIENT_JS
+
+    (tmp_path / "machine.asm.toml").write_text(
+        """machine = "tiny"
+version = 1
+initial = "route"
+
+[budget]
+max_transitions = 10
+
+[vars.code]
+n = { type = "int", default = 0 }
+
+[states.route]
+kind = "branch"
+when = [{ if = "n == 0", goto = "done" }, { else = true, goto = "done" }]
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "routed"
+""",
+        encoding="utf-8",
+    )
+    j = MachineJournal(tmp_path)
+    j.ensure_dirs()
+    j.begin(machine="tiny", version=1)
+    j.append(
+        StepEvent(
+            ts="t",
+            seq=0,
+            state="route",
+            label="n == 0",
+            goto="done",
+            fact=BranchFact(clause_index=0),
+        )
+    )
+    snap = machine_snapshot(tmp_path)
+    assert snap["spend"] == {"usd": 0.0, "usd_partial": False} or snap["spend"]["usd"] == 0.0
+
+    start = CLIENT_JS.index("const sp = m.spend || {};")
+    line = CLIENT_JS[start : CLIENT_JS.index("\n", CLIENT_JS.index("const cost", start))]
+    assert "sp.usd ||" not in line, f"a clean $0 is falsy and drops the figure: {line!r}"

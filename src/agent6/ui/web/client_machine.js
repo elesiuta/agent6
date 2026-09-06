@@ -154,7 +154,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // say what it had spent: `spend` is the instance total, as `machine status`
   // reports it.
   const sp = m.spend || {};
-  const cost = sp.usd || sp.usd_partial ? ' · ' + fmtUsd(sp.usd, sp.usd_partial) : '';
+  const cost = typeof sp.usd === 'number' ? ' · ' + fmtUsd(sp.usd, sp.usd_partial) : '';
   structBody.appendChild(el('div', 'sub muted',
     `${esc(m.machine)} v${esc(m.version)}${word ? ' · ' + esc(word) : ''} · current: ${esc(m.current)}${cost}`));
   const tree = el('div', 'tree');
