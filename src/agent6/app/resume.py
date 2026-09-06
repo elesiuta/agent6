@@ -522,7 +522,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Needs the config: "approve everything while away" is a grant per
         # scope, and the scopes in play include one per configured MCP server.
-        if sys.stdin.isatty():  # a foreground start clears a stale detach answer
+        if sys.stdin.isatty():  # a foreground start: the away-mode and the grants expire
             clear_away_mode(layout.session_dir)
             clear_session_grants(layout.session_dir)
         else:

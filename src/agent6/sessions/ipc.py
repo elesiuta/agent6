@@ -603,9 +603,10 @@ def clear_away_mode(session_dir: Path) -> None:
 
 
 def clear_session_grants(session_dir: Path) -> None:
-    """Drop the per-scope approve-all grants beside the away-mode: the detach's
-    three answers are one question, so they expire together when the operator
-    is back at a terminal. `--auto-approve` is the grant that stays."""
+    """Drop every per-scope approve-all grant (`record_answer`'s "allow all of
+    this scope", the detach's answers among them) beside the away-mode: they
+    expire together when the operator is back at a terminal. `--auto-approve`
+    is the grant that stays."""
     approvals = approvals_path(session_dir)
     if approvals.is_dir():
         for marker in approvals.glob(f"{SESSION_ALLOW_FILE}.*"):

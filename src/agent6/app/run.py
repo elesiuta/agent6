@@ -285,7 +285,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         clear_pending_answers(layout.session_dir)
         if initial_steer.strip():
             submit_steer(layout.session_dir, initial_steer.strip())
-        if sys.stdin.isatty():  # a foreground start clears a stale detach answer
+        if sys.stdin.isatty():  # a foreground start: the away-mode and the grants expire
             clear_away_mode(layout.session_dir)
             clear_session_grants(layout.session_dir)
         else:
