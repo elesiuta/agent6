@@ -217,6 +217,12 @@ def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: Path) -> None:
     cp.write_text(json.dumps({"version": 2}), encoding="utf-8")  # missing required keys
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
         load_session_snapshot(cp)
+    # A torn file is the likeliest corruption of all (a full disk, a power
+    # loss), and its refusal named neither the run nor the file: just a JSON
+    # position, where both of its siblings above carry the path.
+    cp.write_text('{"messages": [{"role":', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"unreadable run-state snapshot at .*0001\.json"):
+        load_session_snapshot(cp)
 
 
 # --- fork command -----------------------------------------------------------
@@ -917,6 +923,37 @@ def test_fork_steer_passes_through_to_the_continuation(monkeypatch: pytest.Monke
     )
     assert rc == 0
     assert captured["steer"] == "try the lock-free design instead"
+
+
+def test_forking_a_finished_run_with_no_new_work_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The child would continue a conversation that already ended: a paid call,
+    a nudge, a silent finish, a new branch, and a listing row offering a merge
+    of the parent's own tree. `resume` refuses exactly this and cannot see it
+    from the child, whose log is empty by construction."""
+    import agent6.ui.cli.fork as fork_cli
+
+    monkeypatch.chdir(tmp_path)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="done-run-AAAA11")
+    layout.ensure()
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def _must_not_fork(*_a: object, **_k: object) -> tuple[str, int]:
+        pytest.fail("create_fork must not run when the fork has nothing to do")
+
+    monkeypatch.setattr(fork_cli, "create_fork", _must_not_fork)
+
+    assert fork_cli._cmd_fork(None, "done-run") == 2  # pyright: ignore[reportPrivateUsage]
+
+    err = capsys.readouterr().err
+    assert "--steer" in err and "--at-turn" in err
 
 
 def test_fork_steer_with_no_run_is_refused(

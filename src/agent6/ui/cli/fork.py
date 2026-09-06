@@ -15,8 +15,11 @@ from agent6.app.fork import create_fork
 from agent6.app.preflight import headless_approval_refusal
 from agent6.app.resume import resume_task
 from agent6.config import Config
+from agent6.sessions.id import SessionIdError
 from agent6.types import session_kind
+from agent6.ui.cli._common import resolve_or_newest_layout
 from agent6.ui.cli.run import session_frontend
+from agent6.viewmodel.listing import finished_needs_new_work
 
 
 def _cmd_fork(
@@ -44,6 +47,25 @@ def _cmd_fork(
             file=sys.stderr,
         )
         return 2
+    if not no_run and not steer.strip() and at_turn is None:
+        # The child would continue a conversation that already ended: a paid
+        # call, a nudge, a silent finish, a new branch and a listing row
+        # offering a merge of the parent's own tree. `resume` refuses this and
+        # cannot see it here -- the check reads the SOURCE, and the child's log
+        # is empty by construction.
+        try:
+            source = resolve_or_newest_layout(Path.cwd(), source_session_id)
+        except SessionIdError:
+            source = None
+        if source is not None and finished_needs_new_work(source.session_dir):
+            print(
+                f"ERROR: run {source.session_id!r} already finished (the agent called"
+                " finish_session), so a fork of its last turn has nothing to do."
+                ' Give the fork new work with --steer "<what to do next>",'
+                " or fork an earlier turn with --at-turn N.",
+                file=sys.stderr,
+            )
+            return 2
     frontend = session_frontend(config_path)
 
     def refuse_continuation(cfg: Config, mode: str) -> str | None:

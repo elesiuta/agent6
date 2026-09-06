@@ -228,7 +228,13 @@ def _load_state_object(path: Path, what: str) -> dict[str, Any]:
     `AttributeError`/`TypeError` traceback the callers do not catch. Failing
     with a clean `ValueError` routes it to the same loud message as a version
     mismatch or a JSON decode error."""
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        # The likeliest corruption of all (a snapshot torn by a full disk or a
+        # power loss) is the one whose error said nothing about which run or
+        # which file, while its siblings below both name the path.
+        raise ValueError(f"unreadable {what} at {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError(
             f"malformed {what} at {path}: expected a JSON object, got {type(raw).__name__}"
