@@ -660,9 +660,9 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         events.append({"kind": "provider_call"})
         return orig_call(*a, **kw)
 
-    def _spy_compact(msgs: Any, state: Any) -> bool:
+    def _spy_compact(msgs: Any, state: Any, **kw: Any) -> bool:
         events.append({"kind": "compact"})
-        return orig_compact(msgs, state)
+        return orig_compact(msgs, state, **kw)
 
     wf._save_resume_snapshot = _spy_save  # type: ignore[method-assign]
     wf._call_with_retry = _spy_call  # type: ignore[method-assign]

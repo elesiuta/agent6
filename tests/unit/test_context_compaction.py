@@ -157,6 +157,29 @@ def test_an_operator_answer_is_never_elided() -> None:
     assert any("elided" in c for c in contents), "the rest still compacts"
 
 
+def test_tier2_measures_the_request_not_just_the_conversation() -> None:
+    """The model's window bounds the WHOLE request. Measured on the
+    conversation alone, the threshold left a band exactly the size of the
+    system prompt and tool definitions where the loop saw room and the
+    provider answered 400 -- and a resumed leg re-issued the same request."""
+    from agent6.providers.types import ToolDefinition
+    from agent6.workflows._compaction import request_prefix_chars
+
+    tools = (
+        ToolDefinition(
+            name="read_file",
+            description="Read a file.",
+            input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+        ),
+    )
+    system = "s" * 4096
+
+    prefix = request_prefix_chars(system, tools)
+
+    assert prefix > len(system), "the tool definitions ride in every request too"
+    assert request_prefix_chars("", ()) == 0
+
+
 def test_compact_noop_when_under_threshold() -> None:
     conv = Conversation()
     _reads(conv, "small")

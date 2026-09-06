@@ -100,6 +100,7 @@ from agent6.workflows._compaction import (
     parse_gist_lines,
     recent_tail_start,
     recently_edited_paths,
+    request_prefix_chars,
     strip_checkoff,
     strip_old_thinking,
 )
@@ -843,9 +844,14 @@ class Workflow:
         in-memory state to `self.resume_state_path` (if set) so a
         crash mid-call can be resumed from the same point.
         """
-        state = LoopState(original_task=original_task, tool_calls=tool_calls)
-        state.root_task_id = root_task_id  # steer-boundary phases parent DAG nodes here
-        state.system = system  # ... and snapshot with it (see _dispatch_parallel)
+        state = LoopState(
+            original_task=original_task,
+            tool_calls=tool_calls,
+            # steer-boundary phases parent DAG nodes here, and snapshot with
+            # the system prompt (see _dispatch_parallel).
+            root_task_id=root_task_id,
+            system=system,
+        )
         self._seed_carryover(state, conversation, resume_from)
         # This LEG's allowance: start..start-1+max (-1 = unbounded); a resumed
         # leg re-arms rather than inheriting a spent absolute counter.
@@ -855,20 +861,16 @@ class Workflow:
             else itertools.count(start_iteration)
         ):
             self.iterations_reached = iteration
-            # A resume seeded with `--steer` queues the operator's follow-up
-            # BEFORE the loop starts (resume.py write_steer_answer). Consume it
-            # up front so it enters the conversation ahead of the first provider
-            # call and drives this turn -- otherwise a resumed already-finished
-            # conversation silent-finishes on iteration 1 and returns before the
-            # end-of-iteration poll ever runs, dropping the follow-up. Only the
-            # first resumed iteration: mid-run Ctrl-C steering stays on the
-            # completed-iteration poll below (a Ctrl-C cannot precede this point).
             if resume_from is not None and iteration == start_iteration:
-                outcome = self._steer_outcome(
-                    self._maybe_handle_steer(conversation, iteration, state), iteration, state
-                )
-                if outcome is not None:
-                    return outcome
+                seeded = self._seeded_steer(conversation, iteration, state)
+                if seeded is not None:
+                    return seeded
+            # Rebuilt per turn, not per leg: a gate adopted mid-run, or a
+            # policy the operator denies mid-run, changes what the worker has.
+            # A frozen list offers a tool that is gone, or keeps offering one
+            # that only raises. Built BEFORE the context prep, which measures
+            # the request the tools ride in.
+            tools = tool_definitions(self.dispatcher, mode=self.mode)
             wire = self._turn_pre_call(
                 system=system,
                 conversation=conversation,
@@ -876,18 +878,15 @@ class Workflow:
                 iteration=iteration,
                 start_iteration=start_iteration,
                 root_task_id=root_task_id,
+                prefix_chars=request_prefix_chars(system, tools),
             )
             if isinstance(wire, SessionResult):
                 return wire
-            # Rebuilt per turn, not per leg: a gate adopted mid-run, or a
-            # policy the operator denies mid-run, changes what the worker has.
-            # A frozen list offers a tool that is gone, or keeps offering one
-            # that only raises.
             got = self._turn_provider_call(
                 system,
                 conversation,
                 wire,
-                tool_definitions(self.dispatcher, mode=self.mode),
+                tools,
                 state,
                 iteration=iteration,
             )
@@ -995,6 +994,22 @@ class Workflow:
             tool_calls=state.tool_calls,
         )
 
+    def _seeded_steer(
+        self, conversation: Conversation, iteration: int, state: LoopState
+    ) -> SessionResult | None:
+        """Consume the follow-up a `resume --steer` queued before the loop
+        started (`resume.py` write_steer_answer).
+
+        Up front, so it enters the conversation ahead of the first provider
+        call and drives this turn: a resumed already-finished conversation
+        silent-finishes on iteration 1 and returns before the end-of-iteration
+        poll ever runs, dropping the follow-up. Only the first resumed
+        iteration -- mid-run Ctrl-C steering stays on the completed-iteration
+        poll, and a Ctrl-C cannot precede this point."""
+        return self._steer_outcome(
+            self._maybe_handle_steer(conversation, iteration, state), iteration, state
+        )
+
     def _turn_pre_call(
         self,
         *,
@@ -1004,6 +1019,7 @@ class Workflow:
         iteration: int,
         start_iteration: int,
         root_task_id: str | None,
+        prefix_chars: int = 0,
     ) -> list[dict[str, Any]] | SessionResult:
         """Prepare the context for this turn's provider call: budget heartbeat,
         tiered compaction, the plan re-read, pre-call nudges, rolling cache
@@ -1017,7 +1033,7 @@ class Workflow:
         After the snapshot write, a crash anywhere up to the next iteration's
         snapshot can be resumed by re-running this same call."""
         self._emit_budget(iteration)
-        if self._maybe_compact(conversation, state):
+        if self._maybe_compact(conversation, state, prefix_chars=prefix_chars):
             # A tier-2 restart wiped the surfaced focus banner and the plan
             # block; let the passes below put both back into the fresh context.
             state.surfaced_task_id = None
@@ -3833,7 +3849,9 @@ class Workflow:
 
     # ---- context compaction drivers --------------------------------------------
 
-    def _maybe_compact(self, conversation: Conversation, state: LoopState) -> bool:
+    def _maybe_compact(
+        self, conversation: Conversation, state: LoopState, *, prefix_chars: int = 0
+    ) -> bool:
         """Tiered compaction. Returns True iff a tier-2 summarise-and-restart
         actually replaced the history (so the caller can re-surface the
         current-task banner the restart wiped); False otherwise.
@@ -3896,10 +3914,12 @@ class Workflow:
                 paths=list(stats.gist_paths),
                 demoted_paths=list(stats.demoted_paths),
             )
-        # Measure the WHOLE post-elision context, not just tool_results: tier 1
+        # Measure the WHOLE post-elision request, not just tool_results: tier 1
         # already bounded those, so re-measuring them could never cross the
-        # larger tier-2 threshold.
-        total = context_chars(conversation)
+        # larger tier-2 threshold -- and the window bounds the request, so the
+        # system prompt and the tool definitions count too
+        # (`request_prefix_chars`).
+        total = context_chars(conversation) + prefix_chars
         # Tier 2 needs at least an original-task turn plus enough history
         # to be worth summarising; below that a restart would lose more than
         # it saves. The growth floor (see LoopState.tier2_floor_chars) keeps

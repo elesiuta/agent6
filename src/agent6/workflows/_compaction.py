@@ -27,6 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from agent6.providers.types import ToolDefinition
 from agent6.tools.schema import AskUserInput
 from agent6.workflows._conversation import (
     AssistantTurn,
@@ -403,6 +404,21 @@ def strip_old_thinking(conversation: Conversation, *, keep_turns: int) -> tuple[
             n += 1
             chars += removed
     return n, chars
+
+
+def request_prefix_chars(system: str, tools: Sequence[ToolDefinition]) -> int:
+    """The chars every request carries besides the conversation: the system
+    prompt and the tool definitions.
+
+    The model's window bounds the WHOLE request, so a threshold measured on the
+    conversation alone left a band -- exactly the size of this prefix -- where
+    the loop saw room and the provider answered 400 (prompt too long). A
+    resumed leg re-issued the same over-window request, so the run was wedged.
+    The system prompt is the unbounded half: AGENTS.md rides in it whole."""
+    return len(system) + sum(
+        len(t.name) + len(t.description) + len(json.dumps(t.input_schema, separators=(",", ":")))
+        for t in tools
+    )
 
 
 def recent_tail_start(turns: Sequence[Turn], cap_chars: int) -> int:
