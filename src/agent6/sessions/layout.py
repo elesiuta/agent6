@@ -104,10 +104,6 @@ class SessionLayout:
     def logs_path(self) -> Path:
         return self.session_dir / LOGS_NAME
 
-    @property
-    def untracked_at_start_path(self) -> Path:
-        return self.session_dir / UNTRACKED_AT_START_NAME
-
     def ensure(self) -> None:
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.graph_dir.mkdir(exist_ok=True)

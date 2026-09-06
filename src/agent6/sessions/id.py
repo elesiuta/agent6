@@ -25,7 +25,13 @@ from pathlib import Path
 from agent6._data.words import ADJECTIVES, NOUNS
 from agent6.git_ops import valid_branch_name
 from agent6.graph.ulid import new_ulid
-from agent6.sessions.layout import SESSION_BUCKETS, SessionLayout, bucket_dir, session_matches
+from agent6.sessions.layout import (
+    SESSION_BUCKETS,
+    SessionLayout,
+    bucket_dir,
+    is_safe_session_id,
+    session_matches,
+)
 
 _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -55,7 +61,7 @@ def validate_explicit_session_id(session_id: str) -> str:
       rather than reporting success while its work stays uncommitted.
 
     Generated ids are slug-safe by construction and skip this."""
-    if not session_id or session_id in (".", "..") or "/" in session_id or "\\" in session_id:
+    if not is_safe_session_id(session_id):
         raise SessionIdError(
             f"invalid --session-id {session_id!r}: must be a single name with no '/', '\\', or '..'"
         )
@@ -117,14 +123,6 @@ def unused_session_id(state_dir: Path, bucket: str) -> str:
     raise RuntimeError(f"could not mint an unused session id under {bucket_dir(state_dir, bucket)}")
 
 
-def list_session_ids(runs_dir: Path) -> list[str]:
-    """Return run-id directory names under `runs_dir` (unsorted)."""
-
-    if not runs_dir.is_dir():
-        return []
-    return [p.name for p in runs_dir.iterdir() if p.is_dir()]
-
-
 def resolve_session(state_dir: Path, query: str) -> SessionLayout:
     """The one session *query* names (an id, or a prefix of exactly one id) in
     any bucket. Raises SessionIdError otherwise, `ambiguous` set when the
@@ -142,6 +140,14 @@ def resolve_session(state_dir: Path, query: str) -> SessionLayout:
     if not matches:
         raise SessionIdError(f"no session matches {query!r} (looked under {state_dir})")
     return matches[0]
+
+
+def list_session_ids(runs_dir: Path) -> list[str]:
+    """Return run-id directory names under `runs_dir` (unsorted)."""
+
+    if not runs_dir.is_dir():
+        return []
+    return [p.name for p in runs_dir.iterdir() if p.is_dir()]
 
 
 def resolve_session_id(runs_dir: Path, query: str) -> str:
