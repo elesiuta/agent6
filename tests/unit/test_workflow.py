@@ -3355,6 +3355,20 @@ def test_maybe_compact_returns_restart_signal() -> None:
     assert len(big) == 3
 
 
+def test_tier2_summariser_is_told_the_task() -> None:
+    """The summary's goal line comes from the task itself, never guessed from a
+    transcript that starts mid-work."""
+    summariser = MagicMock()
+    summariser.call.return_value = _resp("progress summary")
+    wf = _wf(summariser_provider=summariser, compact_summarise_at_chars=500_000)
+    big = _big_text_history("TASK: x", blocks=8, block_chars=100_000)
+    st = _state()
+    st.original_task = "make the tests pass"
+    assert _compact_via_wire(wf, big, state=st) is True
+    user_msg = summariser.call.call_args.kwargs["messages"][0]["content"]
+    assert "TASK (the goal, verbatim):\nmake the tests pass" in user_msg
+
+
 def test_compact_request_forces_a_tier2_restart() -> None:
     """An operator compact.request (the TUI's "Compact now") forces the tier-2
     summarise-and-restart at the next boundary even far below the size

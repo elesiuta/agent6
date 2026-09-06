@@ -3992,6 +3992,7 @@ class Workflow:
                     )
         user_msg = (
             "Summarise the following agent transcript for a context restart."
+            f"\n\nTASK (the goal, verbatim):\n{state.original_task}"
             f"{checkoff_req}{focus_req}{pins_req}{prior_req}"
             f"\n\nTRANSCRIPT (oldest first):\n{transcript}"
         )
