@@ -116,3 +116,37 @@ def test_enum_value_completion_is_derived_from_the_schema(
     )
     assert "none" not in iso and {"auto", "strict", "hardened"} <= set(iso)
     assert Config()  # the schema loaded
+
+
+def test_live_only_verbs_offer_only_live_sessions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """steer, answer, exec, forward and sessions stop refuse a finished run,
+    so offering every session offered four suggestions that fail on Enter."""
+    import argparse
+    import os
+
+    from agent6.sessions.ipc import write_worker_pid
+    from agent6.ui.cli.parser import build_parser
+
+    monkeypatch.chdir(tmp_path)
+    _seed(tmp_path)
+    live = bucket_dir(resolved_state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
+    write_worker_pid(live, os.getpid())
+    offered = completers._complete_live_session_ids("")  # pyright: ignore[reportPrivateUsage]
+    assert offered == ["runny-one-AAAAAA"]
+
+    parser = build_parser()
+    subs = next(
+        a
+        for a in parser._actions  # pyright: ignore[reportPrivateUsage]
+        if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
+    )
+    for verb in ("steer", "answer", "forward"):
+        target = next(
+            a
+            for a in subs.choices[verb]._actions  # pyright: ignore[reportPrivateUsage]
+            if a.dest == "target"
+        )
+        completer = getattr(target, "completer", None)
+        assert completer is completers._complete_live_session_ids, verb  # pyright: ignore[reportPrivateUsage]

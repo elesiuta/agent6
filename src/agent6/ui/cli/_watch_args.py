@@ -10,7 +10,7 @@ import argparse
 
 from agent6.ui.cli._common import SESSION_ID, SESSION_ID_HELP, _sub
 from agent6.ui.cli.completers import (
-    _complete_session_ids,
+    _complete_live_session_ids,
     _complete_session_ports,
     _complete_watch_targets,
 )
@@ -124,7 +124,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         ),
     )
     steer_target = steer_p.add_argument("target", help=f"{SESSION_ID}.")
-    steer_target.completer = _complete_session_ids  # type: ignore[attr-defined]
+    steer_target.completer = _complete_live_session_ids  # type: ignore[attr-defined]
     steer_p.add_argument("text", help="The instruction; rides verbatim.")
     steer_p.add_argument(
         "--now",
@@ -148,7 +148,7 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     answer_target = answer_p.add_argument("target", help=f"{SESSION_ID}.")
-    answer_target.completer = _complete_session_ids  # type: ignore[attr-defined]
+    answer_target.completer = _complete_live_session_ids  # type: ignore[attr-defined]
     answer_p.add_argument(
         "answers",
         nargs="*",
@@ -181,7 +181,7 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         nargs=argparse.REMAINDER,
         help="[SESSION --] CMD... The command rides verbatim.",
     )
-    exec_rest.completer = _complete_session_ids  # type: ignore[attr-defined]
+    exec_rest.completer = _complete_live_session_ids  # type: ignore[attr-defined]
 
     fwd_p = _sub(
         sub,
@@ -202,7 +202,7 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " session by giving both arguments)."
         ),
     )
-    fwd_target.completer = _complete_session_ids  # type: ignore[attr-defined]
+    fwd_target.completer = _complete_live_session_ids  # type: ignore[attr-defined]
     fwd_port = fwd_p.add_argument(
         "port", nargs="?", type=int, help="The port inside the session. Omit to list them."
     )

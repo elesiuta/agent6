@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 
 from agent6.ui.cli._common import SESSION_ID, SESSION_ID_HELP, _sub
-from agent6.ui.cli.completers import _complete_session_ids
+from agent6.ui.cli.completers import _complete_live_session_ids, _complete_session_ids
 
 
 def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -167,7 +167,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default="",
         help=SESSION_ID_HELP,
     )
-    sessions_stop_id.completer = _complete_session_ids  # type: ignore[attr-defined]
+    sessions_stop_id.completer = _complete_live_session_ids  # type: ignore[attr-defined]
 
     sessions_dir = _sub(
         sessions_sub,

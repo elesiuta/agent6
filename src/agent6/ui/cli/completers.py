@@ -23,6 +23,7 @@ from agent6.config.layer import (
     preset_catalog,
     resolved_state_dir,
 )
+from agent6.sessions.ipc import worker_is_alive
 from agent6.ui.cli._common import (
     _plans_dir,
     session_bucket_dirs,
@@ -299,6 +300,22 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
         if not bucket.is_dir():
             continue
         out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]
+    return sorted(out)
+
+
+@_never_raises
+def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: the sessions with a live worker, for the verbs that reach
+    a running one (steer, answer, exec, forward, sessions stop)."""
+    out: list[str] = []
+    for bucket in session_bucket_dirs(Path.cwd()):
+        if not bucket.is_dir():
+            continue
+        out += [
+            d.name
+            for d in bucket.iterdir()
+            if d.is_dir() and d.name.startswith(prefix) and worker_is_alive(d)
+        ]
     return sorted(out)
 
 
