@@ -937,6 +937,18 @@ def chain_tip(path: Path, ref: str) -> str | None:
     return sha if res.returncode == 0 and sha else None
 
 
+def commit_is_reachable(path: Path, sha: str) -> bool:
+    """Whether any ref in *path* reaches *sha*.
+
+    Existence is not the same question: `rev-parse <sha>^{commit}` succeeds for
+    a loose object no ref reaches, and such a commit is one `git gc` from gone.
+    A sweep that deletes the last copy of work has to ask this one."""
+    res = _run(
+        path, "for-each-ref", "--contains", sha, "--count=1", "--format=%(refname)", check=False
+    )
+    return res.ok and bool(res.stdout.strip())
+
+
 def worktree_tree(path: Path, seed: str | None, exclude: Collection[str]) -> str:
     """Tree sha of the worktree's CURRENT content, staged into a temp index;
     the shared index is never read or written.

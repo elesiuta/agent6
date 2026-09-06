@@ -52,6 +52,7 @@ from agent6.git_ops import (
     branch_exists,
     chain_tip,
     checkout_detached,
+    commit_is_reachable,
     diff_since,
     list_chain_refs,
     list_run_branches,
@@ -212,7 +213,11 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
             except GitError:
                 safe = False
                 break
-            if any(tip is not None and chain_tip(origin, tip) is None for tip in tips):
+            # Reachability, not existence: a tip the origin holds only as a
+            # loose object (its branch deleted, as the prune's own message
+            # tells the operator to do) is one `git gc` from gone, and the
+            # clone is the last ref that reaches it.
+            if any(tip is not None and not commit_is_reachable(origin, tip) for tip in tips):
                 safe = False
                 break
         if safe:

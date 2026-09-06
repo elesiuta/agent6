@@ -1835,6 +1835,39 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     assert (foreign / ".git").exists()  # out of scope: untouched
 
 
+def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
+    origin: Path, tmp_path: Path
+) -> None:
+    """The proof was `rev-parse <sha>^{commit}` in the origin, which succeeds
+    for a loose object no ref reaches -- exactly what the operator is left with
+    after the `git branch -D` prune's own message tells them to run. The clone
+    was then deleted and the work went with the next `git gc`."""
+    import subprocess as sp
+
+    from agent6.app.parallel import sweep_fanout_clones
+    from agent6.paths import repo_id
+
+    workdir = tmp_path / "cache"
+    cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+    scoped = workdir / repo_id(origin)
+    lane = scoped / "fan-x" / "lane-1"
+    lane.parent.mkdir(parents=True)
+    clone_workspace(origin, lane)
+    create_branch(lane, "agent6/fan-x-l1")
+    (lane / "x.txt").write_text("lane work\n", encoding="utf-8")
+    commit_all(lane, "lane work")
+    tip = sp.run(
+        ["git", "-C", str(lane), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    # The origin has the OBJECT (fetched) but no ref reaching it.
+    sp.run(["git", "-C", str(origin), "fetch", str(lane), tip], check=True, capture_output=True)
+
+    swept, kept = sweep_fanout_clones(origin, cfg)
+
+    assert (swept, kept) == (0, 1)
+    assert lane.is_dir(), "the last ref reaching the lane's work was deleted"
+
+
 def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
