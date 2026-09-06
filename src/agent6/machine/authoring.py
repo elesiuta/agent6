@@ -7,10 +7,11 @@ a `.asm.toml` state machine from a natural-language task. This module holds
 the prompt-assembly pieces of that flow: the per-attempt draft→check→fix
 prompt, built around the grammar reference in `agent6.prompts.machine`.
 
-It deliberately imports nothing from the workflow stack, the orchestration
+It deliberately imports nothing from the workflow stack: the orchestration
 (running the agent loop, validating with `load_machine`, writing the draft)
-lives in the CLI, which already depends on both `agent6.machine` and
-`agent6.workflows`. Keeping this module pure keeps the tach graph acyclic.
+lives in `app/machine/create.py`, which already depends on both
+`agent6.machine` and `agent6.workflows`. Keeping this module pure keeps the
+tach graph acyclic.
 """
 
 from __future__ import annotations

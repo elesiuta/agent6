@@ -4,8 +4,8 @@ An agent state machine is a declarative, human-editable, machine-parseable progr
 It lets an operator compose small deterministic agents that run for a long time, and agent6 is the runner.
 
 This document specifies the format and its runtime.
-The runtime lives under `src/agent6/machine/`, driven by the `agent6 machine` subcommands: `list`, `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#7-cli-surface)).
-It changes neither the security model, the tool surface, nor the stability policy in [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md); [Security considerations](#9-security-considerations) records how each invariant holds.
+The runtime lives under `src/agent6/machine/` (the engine and the format) with the lifecycles around it in `src/agent6/app/machine*`, driven by the `agent6 machine` subcommands: `list`, `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#7-cli-surface)).
+It changes neither the security model nor the tool surface [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) binds; [Security considerations](#9-security-considerations) records how each invariant holds.
 
 ---
 
@@ -187,7 +187,7 @@ Where a run state's work lands:
 
 - each run state executes in a fresh clone (the `--parallel` lane mechanism, `[parallel].workdir` cache) checked out at the machine chain's tip
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
-- merge the branch when you want the work; `sessions prune` sweeps landed clones
+- merge the branch when you want the work; a state's clone is removed as it lands, so nothing is left for `sessions prune` to sweep
 - the branch outlives the instance dir: a fresh instance over a leftover `agent6/machine-<id>` refuses, naming the merge and delete remedies
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip, so an edit-then-check loop sees the committed work with no plumbing
 - a `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR`
@@ -353,7 +353,7 @@ reason = "done"
 - presentation only: no edge, no control-flow effect, no blackboard write
 - `machine.end` is also a notify trigger, so a terminal need not set `notify` to be surfaced
 - the message is a blackboard template, checked at `machine check`
-- emission is at-least-once across a crash (a resume re-enters and re-emits)
+- a `wait` state emits once per park: the armed wake record is the machine's memory that it already entered, so a resume that re-enters mid-park does not page the operator again. Every other state kind re-emits on a resume that re-enters it
 
 Two channels render it; agent6 owns no push infrastructure:
 
@@ -491,7 +491,7 @@ Unset keys read straight through to the lower layers, so a machine only states w
 Two hard rules:
 
 - **No connections/secrets, no sandbox policy, no presets, no MCP servers, no host hooks**
-    - `[config.providers.*]`, `[config.sandbox.*]`, `[config.presets.*]`, `[config.mcp.*]`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `notify.on_complete`, `prompt.system_prompt_file`: each a load-time error
+    - `[config.providers.*]`, `[config.sandbox.*]`, `[config.presets.*]`, `[config.mcp.*]`, a top-level `preset`, `[config.agent6].state_dir`, `git.run_repo_hooks`, `git.run_repo_filters`, `machine.notify`, `notify.on_complete`, `prompt.system_prompt_file`: each a load-time error
     - endpoints, key-env names, and secrets live in the global config / secrets store; sandbox policy, presets, MCP servers, and host-argv hooks are operator decisions in the global/repo config
     - a machine file may be LLM-drafted or shared: it must not widen its own egress, weaken its jail, or run host code through the overlay, directly or via a preset the operator's selection would resolve
     - the overlay only routes to a provider name that already exists, and sets benign knobs (commit identity)
@@ -600,18 +600,19 @@ Sizing for long-running machines:
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
 | `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail; failures hand the problems back (`--max-attempts`, default 3); output: a DRAFT for operator review + commit ([Security considerations](#9-security-considerations)) |
-| `agent6 machine check <file>`             | validate: parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff + ty, config from the nearest `pyproject.toml`/`ruff.toml` above the file); no execution, no network |
+| `agent6 machine check <file>`             | validate: the `[config]` overlay against the config schema (and its refusals); parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff + ty, config from the nearest `pyproject.toml`/`ruff.toml` above the file); no execution, no network |
 | `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/*_test.py` mock tests in a no-network jail; a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
-| `agent6 machine run <file> [--exit-on-wait]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. |
+| `agent6 machine run <file> [--exit-on-wait] [--auto-approve\|--no-commands] [--dangerously-disable-sandbox]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. The approval and sandbox flags are the run flags, for the same reasons and with the same refusals. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
 | `agent6 machine` (`machine list`)         | this repo's machines: each instance's status and current state joined with the authored `.asm.toml` that declares it, then the authored files no instance has run (spec validity per file). Read-only. |
-| `agent6 attach <id>`                       | follow a running instance live (the unified watcher; the same command follows a run): state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. |
+| `agent6 attach <id>`                       | follow a running instance live (the unified watcher; the same command follows a run): state overview + current state, each transition as it lands, and the active agent state's reasoning (its per-state `logs.jsonl`). Read-only; Ctrl-C to stop. `agent6 attach --tui <id>` opens the machine screen, where a running agent state takes a steer (`s`), as the web machine page does. |
 | `agent6 machine poke <id> [--data <json>\|--message <text>]` | signal a waiting instance to wake on its next check; an optional payload reaches the next `tool` at `$AGENT6_MACHINE_DATA_DIR/poke.json` (journaled, replay-safe). |
 | `agent6 machine stop <id>`                | park at the next transition boundary: a durable marker, not a kill; wakes a sleeping `wait`, leaving it armed; no `MachineEnd` journaled (resumes with `machine run`); ended/not-running refused; also on the web machine page and the TUI machine screen (`x`) |
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
+| `agent6 config set/get/fix --machine-file FILE` | read and write the machine's own `[config]` overlay through the config surfaces, with the same refusals as hand-editing it. |
 
-`machine check` is the human-editability payoff: precise, fail-loud diagnostics (`state "act": branch is not total (no else); add { else = true, goto = ... }`).
+`machine check` is the human-editability payoff: precise, fail-loud diagnostics (``state 'act': branch is not total (no final `else`)``), and a warning when a `tool` state's binary is not on the jail's PATH.
 
 ### 7.1 `machine create`
 
@@ -637,7 +638,7 @@ An `agent` state needs to *invoke* the `loop` workflow, so the engine cannot its
 
 The engine does not import the workflow stack.
 Rather than constructing a `Workflow` itself, `engine.drive` runs an `agent` state through an injected `agent_runner` callable (`Callable[[AgentRequest, Path | None], AgentExecResult]`, the second argument being the per-state event-log path (`<instance>/states/<seq>-<state>/logs.jsonl`) each agent-state execution streams to).
-The CLI, which already depends on both `agent6.machine` and `agent6.workflows`, builds that runner and the orchestration around `machine create`/`run`, so `agent6.machine` never gains an edge into `agent6.workflows` and the tach graph stays acyclic.
+`app/`, which already depends on both `agent6.machine` and `agent6.workflows`, builds that runner and the orchestration around `machine create`/`run` (`app/machine_agent.py`, `app/machine/`), with `ui/cli` adapting argv and rendering, so `agent6.machine` never gains an edge into `agent6.workflows` and the tach graph stays acyclic.
 
 Files (all `from __future__ import annotations`, strict pyright, pydantic only at the parse boundary, `@dataclass(frozen=True, slots=True)` for the internal value types):
 

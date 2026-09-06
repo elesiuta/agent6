@@ -202,7 +202,7 @@ The detached spawn it drives (`ui.spawn`, the path `attach` and `resume` use) is
 
 ## The curator and its locks
 
-An in-process `GraphCurator` (`graph/curator.py`) owns the task graph; the agent constructs one per run, and the worker, planner, and alignment-guard roles mutate through it.
+An in-process `GraphCurator` (`graph/curator.py`) owns the task graph; the agent constructs one per run, and the worker, the planner and the operator's own steering all mutate through it.
 The same process writes the rest of the run state.
 Every mutation validates against a pydantic schema before it applies.
 

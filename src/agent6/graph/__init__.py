@@ -4,9 +4,9 @@
 
 The graph is the persistent representation of a single `agent6 run`. It lives in
 the run dir (under the per-repo state dir). The curator owns the task GRAPH files
-(graph.jsonl, graph/*.md, cursor.json); the worker / planner /
-alignment-guard roles are in-process in one loop and mutate through the single
-in-process `GraphCurator`. The main agent process writes the resume snapshot
+(graph.jsonl, graph/*.md, cursor.json); the worker, the planner and the
+operator's own steering all mutate through the single in-process
+`GraphCurator`. The main agent process writes the resume snapshot
 (loop_state.json), the event log (logs.jsonl), and transcripts in-process too.
 The run dir stays safe from jailed commands because it lives OUT of the
 workspace: jailed commands run on the repo cwd and the state dir is outside it,
