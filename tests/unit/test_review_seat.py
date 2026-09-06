@@ -112,6 +112,23 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     assert "before the verdict JSON completed" in v2.error
 
 
+def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
+    """Observed live: the upstream answered finish_reason=error with a null
+    body after the model spent 16,801 tokens in the reasoning channel. There
+    was nothing to parse, and "unparseable reviewer output" blamed the parser
+    for it."""
+    empty = _FakeProvider("")
+    empty_resp = _Resp("", stop_reason="error", output_tokens=16801)
+    empty.call = lambda **_kw: empty_resp  # type: ignore[method-assign]
+
+    v = structured_review(cast(Provider, empty), _ctx(), seat="s", model="kimi-k2.6")
+
+    assert v.error is not None and v.verdict == "pass"
+    assert "unparseable" not in v.error
+    assert "returned no content" in v.error
+    assert "stop_reason=error" in v.error and "16801" in v.error
+
+
 def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
     raw = [
         {"category": "bogus", "severity": "critical", "file_line": "a:1", "title": "t"},

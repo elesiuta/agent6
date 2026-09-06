@@ -129,11 +129,11 @@ def _coerce_findings(raw: object) -> tuple[Finding, ...]:
 
 
 def _no_verdict_error(resp: ProviderResponse) -> str:
-    """Why a seat produced no verdict JSON. Output-cap starvation is named: a
-    reasoning model can spend the entire cap before emitting any content
-    (finish_reason=length, empty text, everything in the reasoning channel),
-    and the generic "unparseable reviewer output" blamed the parser for the
-    provider's truncation -- hiding the one actionable fact."""
+    """Why a seat produced no verdict JSON, in the reviewer's own terms: the
+    output cap ate the answer, the reviewer returned nothing to parse, or what
+    it returned would not parse. A generic "unparseable reviewer output" over
+    the first two blamed the parser for the provider's own truncation or
+    error, hiding the one actionable fact."""
     if output_cap_truncated(resp):
         detail = (
             "before emitting any content (likely all reasoning)"
@@ -144,6 +144,14 @@ def _no_verdict_error(resp: ProviderResponse) -> str:
             f"output hit the cap {detail}"
             f" (stop_reason={resp.stop_reason}, {resp.output_tokens} output tokens);"
             " raise max_tokens or use a model with more output headroom"
+        )
+    if not resp.text.strip():
+        # No content at all: an upstream error, or a reasoning model that spent
+        # its whole budget in the reasoning channel. Blaming the parser for an
+        # empty body hid both.
+        return (
+            f"the reviewer returned no content (stop_reason={resp.stop_reason},"
+            f" {resp.output_tokens} output tokens)"
         )
     return "unparseable reviewer output"
 
