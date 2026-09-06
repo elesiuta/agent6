@@ -13,6 +13,8 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.portable import atomic_write
+
 
 def is_safe_session_id(session_id: str) -> bool:
     """True iff *session_id* is a single path component (no separator, not `.`/`..`).
@@ -127,8 +129,9 @@ def read_untracked_at_start(session_dir: Path) -> frozenset[str]:
 
 
 def write_untracked_at_start(session_dir: Path, paths: Collection[str]) -> None:
-    (session_dir / UNTRACKED_AT_START_NAME).write_bytes(
-        b"\0".join(p.encode("utf-8", "surrogateescape") for p in sorted(paths))
+    atomic_write(
+        session_dir / UNTRACKED_AT_START_NAME,
+        b"\0".join(p.encode("utf-8", "surrogateescape") for p in sorted(paths)),
     )
 
 

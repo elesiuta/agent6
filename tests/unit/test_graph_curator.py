@@ -12,7 +12,6 @@ from agent6.graph.curator import CuratorError, GraphCurator
 from agent6.graph.models import (
     AddDependencyIntent,
     AddSubtaskIntent,
-    ObsoleteIntent,
     RecordCommitIntent,
     SetCursorIntent,
     TaskNodeDraft,
@@ -145,11 +144,11 @@ def test_a_container_with_open_children_cannot_pass(tmp_path: Path) -> None:
     assert c.get(open_child.id).status == "pending"
 
 
-def test_obsolete_and_record_commit(tmp_path: Path) -> None:
+def test_retire_as_obsolete_and_record_commit(tmp_path: Path) -> None:
     c = GraphCurator(_layout(tmp_path))
     n = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft()))
     c.record_commit(RecordCommitIntent(id=n.id, sha="abcd1234"))
-    c.obsolete(ObsoleteIntent(id=n.id, reason="user-canceled"))
+    c.update_status(UpdateStatusIntent(id=n.id, new_status="obsolete", note="user-canceled"))
     final = c.get(n.id)
     assert final.commit_sha == "abcd1234"
     assert final.status == "obsolete"
@@ -193,7 +192,7 @@ def test_journal_entry_shapes_are_pinned(tmp_path: Path) -> None:
     c.update_status(UpdateStatusIntent(id=a.id, new_status="in_progress"))
     c.add_dependency(AddDependencyIntent(id=b.id, depends_on=a.id))
     c.record_commit(RecordCommitIntent(id=a.id, sha="abcd1234"))
-    c.obsolete(ObsoleteIntent(id=b.id, reason="dropped"))
+    c.update_status(UpdateStatusIntent(id=b.id, new_status="obsolete", note="dropped"))
     c.set_cursor(SetCursorIntent(id=a.id))
 
     lines = [
@@ -228,7 +227,7 @@ def test_journal_entry_shapes_are_pinned(tmp_path: Path) -> None:
         {"op": "update_status", "id": a.id, "new_status": "in_progress", "graph_version": 4},
         {"op": "add_dependency", "id": b.id, "depends_on": a.id, "graph_version": 5},
         {"op": "record_commit", "id": a.id, "sha": "abcd1234", "graph_version": 6},
-        {"op": "obsolete", "id": b.id, "reason": "dropped", "graph_version": 7},
+        {"op": "update_status", "id": b.id, "new_status": "obsolete", "graph_version": 7},
         {"op": "set_cursor", "id": a.id, "graph_version": 8},
     ]
 

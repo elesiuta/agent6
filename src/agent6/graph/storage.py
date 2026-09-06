@@ -360,13 +360,24 @@ def write_cursor(layout: SessionLayout, node_id: str | None) -> None:
 
 
 def read_cursor(layout: SessionLayout) -> str | None:
+    """The focused node's id, None when none is recorded. A malformed or
+    unreadable cursor.json reads as none, said on stderr: a torn pointer must
+    not brick resume, fork or /undo, as a torn node file does not."""
     if not layout.cursor_path.is_file():
         return None
-    raw = json.loads(layout.cursor_path.read_text(encoding="utf-8"))
-    cursor = raw.get("node_id")
-    if cursor is None or isinstance(cursor, str):
-        return cursor
-    raise ValueError(f"malformed cursor.json: {raw!r}")
+    try:
+        raw = json.loads(layout.cursor_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError(f"not an object: {raw!r}")
+        if "node_id" not in raw:
+            raise ValueError("no node_id")
+        cursor = raw["node_id"]
+        if cursor is None or isinstance(cursor, str):
+            return cursor
+        raise ValueError(f"node_id is {cursor!r}")
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"agent6: ignoring malformed {layout.cursor_path}: {exc}\n")
+        return None
 
 
 def list_checkpoint_turns(layout: SessionLayout) -> list[int]:

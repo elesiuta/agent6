@@ -95,7 +95,7 @@ def graph_at_version(
         nid = _str_field(e, "id")
         if nid is None:
             continue
-        if e["op"] == "obsolete":
+        if e["op"] == "obsolete":  # a journal written before `update_status` owned retirement
             status[nid] = "obsolete"
         elif e["op"] == "update_status" and (new := _str_field(e, "new_status")) is not None:
             status[nid] = new

@@ -15,6 +15,8 @@ from agent6.graph.storage import (
     _dump_frontmatter,  # pyright: ignore[reportPrivateUsage]
     _parse_frontmatter,  # pyright: ignore[reportPrivateUsage]
     load_graph,
+    read_cursor,
+    write_cursor,
     write_node,
 )
 
@@ -185,3 +187,19 @@ def test_graph_version_round_trips_and_old_files_default_zero(tmp_path: Path) ->
         encoding="utf-8",
     )
     assert load_graph(layout)[node.id].graph_version == 0
+
+
+def test_a_malformed_cursor_reads_as_none_and_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A torn or hand-edited cursor.json crashed fork and /undo (a bare
+    AttributeError for a list, a JSONDecodeError for a fragment) and left a
+    half-built run dir; its sibling readers degrade, and so does this one."""
+    layout = SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+    layout.ensure()
+    for bad in ("[]", '{"node_id"', '{"node_id": 5}', '"n9"', "{}"):
+        layout.cursor_path.write_text(bad, encoding="utf-8")
+        assert read_cursor(layout) is None
+    assert capsys.readouterr().err.count("ignoring malformed") == 5
+    write_cursor(layout, "n1")
+    assert read_cursor(layout) == "n1"

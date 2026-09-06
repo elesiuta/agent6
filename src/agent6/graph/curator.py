@@ -50,7 +50,6 @@ from agent6.graph.models import (
     AddSubtaskIntent,
     NodeActor,
     NodeStatus,
-    ObsoleteIntent,
     RecordCommitIntent,
     SetCursorIntent,
     TaskNode,
@@ -108,12 +107,6 @@ class AddDependencyJournal(_JournalBase):
     depends_on: str
 
 
-class ObsoleteJournal(_JournalBase):
-    op: Literal["obsolete"] = "obsolete"
-    id: str
-    reason: str
-
-
 class RecordCommitJournal(_JournalBase):
     op: Literal["record_commit"] = "record_commit"
     id: str
@@ -129,7 +122,6 @@ JournalEntry = (
     AddSubtaskJournal
     | UpdateStatusJournal
     | AddDependencyJournal
-    | ObsoleteJournal
     | RecordCommitJournal
     | SetCursorJournal
 )
@@ -352,24 +344,6 @@ class GraphCurator:
             )
             updated = self._write(updated)
             self._post_mutation(AddDependencyJournal(id=updated.id, depends_on=intent.depends_on))
-            return updated
-
-    def obsolete(self, intent: ObsoleteIntent) -> TaskNode:
-        with self._mutating():
-            node = self.get(intent.id)
-            updated = node.model_copy(
-                update={
-                    "status": "obsolete",
-                    "updated_at": _now(),
-                    "notes": (
-                        f"{node.notes}\n[obsolete] {intent.reason}".strip()
-                        if intent.reason
-                        else node.notes
-                    ),
-                }
-            )
-            updated = self._write(updated)
-            self._post_mutation(ObsoleteJournal(id=updated.id, reason=intent.reason))
             return updated
 
     def record_commit(self, intent: RecordCommitIntent) -> TaskNode:

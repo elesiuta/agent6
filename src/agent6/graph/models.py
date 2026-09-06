@@ -138,14 +138,6 @@ class AddDependencyIntent(BaseModel):
     depends_on: str
 
 
-class ObsoleteIntent(BaseModel):
-    model_config = _MODEL_CONFIG
-
-    op: Literal["obsolete"] = "obsolete"
-    id: str
-    reason: str
-
-
 class RecordCommitIntent(BaseModel):
     model_config = _MODEL_CONFIG
 
