@@ -71,21 +71,26 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
         print(f"  judge: {rationale}")
 
 
-def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -> str:
-    """The one-line state `sessions show` prints (and emits as --json "state").
+def _status_state(
+    session_dir: Path, scan: LogScan, *, last_age: float | None
+) -> tuple[str, str, str]:
+    """This run's state as `(status, label, detail)`.
 
-    Leads with the LISTING's label -- `status_label` over
-    `status_for_session_dir`, the one decision every surface feeds -- then
-    appends this surface's diagnostic detail (what to do, or why the word
-    applies). The pre-unification words lied twice: a crashed run led with
-    "stopped" (the hub's word for an OPERATOR stop) and a launching run with
-    "running" (the hub said "starting")."""
+    `status` is the LISTING's own word (`status_for_session_dir`), so every
+    surface names the state the same way; `label` is that word rendered
+    (`status_label`), and `detail` is this surface's diagnostic: what to do, or
+    why the word applies. The text render joins label and detail; --json emits
+    the three, the word included, so a script never parses prose.
+
+    The pre-unification words lied twice: a crashed run led with "stopped"
+    (the hub's word for an OPERATOR stop) and a launching run with "running"
+    (the hub said "starting")."""
     word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if scan.finished:
         # The raw end reason is the diagnostic; it is not repeated when the
         # label already carries it (an ask's word, a failure's reason).
-        label = status_label(word, reason)
-        return label if scan.end_reason in (word, reason) else f"{label} ({scan.end_reason})"
+        end = "" if scan.end_reason in (word, reason) else scan.end_reason
+        return word, status_label(word, reason), end
     detail = {
         "waiting": "needs answer; attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
@@ -96,7 +101,7 @@ def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -
     }.get(word, "")
     if word == "running" and last_age is not None and last_age > 120:
         detail = "long step, likely a provider call"
-    return f"{word} ({detail})" if detail else word
+    return word, word, detail
 
 
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
@@ -143,7 +148,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         else None
     )
 
-    state = _status_state(target, scan, last_age=last_age)
+    status, status_cell, status_detail = _status_state(target, scan, last_age=last_age)
+    state = f"{status_cell} ({status_detail})" if status_detail else status_cell
 
     driver = manifest.models.driver
     model = (driver.model if driver else "") or "?"
@@ -157,7 +163,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "session_id": target.name,
                     "mode": mode_display,
                     "model": model,
-                    "state": state,
+                    "status": status,
+                    "label": status_cell,
+                    "detail": status_detail,
                     "alive": alive,
                     "pid": pid,
                     "iteration": scan.iteration,

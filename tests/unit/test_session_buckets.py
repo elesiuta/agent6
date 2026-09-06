@@ -118,7 +118,8 @@ def test_every_hub_lists_every_hub_bucket(
     assert main(["sessions", "list"]) == 0
     assert "brave-oak-AAAAAA" in capsys.readouterr().out
     assert [p.name for p in session_dirs(state)] == ["brave-oak-AAAAAA"]
-    assert [s["id"] for s in web_model.hub_payload(tmp_path)["sessions"]] == ["brave-oak-AAAAAA"]
+    hub_ids = [s["session_id"] for s in web_model.hub_payload(tmp_path)["sessions"]]
+    assert hub_ids == ["brave-oak-AAAAAA"]
 
 
 def test_a_machine_draft_does_not_collide_with_a_machine_instance(tmp_path: Path) -> None:

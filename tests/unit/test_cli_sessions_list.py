@@ -70,16 +70,19 @@ def test_runs_list_json_carries_the_row_facts(
     row = rows[0]
     assert row["winner"] is True
     assert (row["mode"], row["status"], row["task"]) == ("run", "passed", "fan-l2")
+    # The one listing row shape, shared with `/api/hub` (viewmodel.summary_row).
     assert set(row) == {
         "session_id",
         "mode",
         "status",
         "reason",
+        "label",
+        "level",
         "unmerged",
         "verify_ok",
         "cost_usd",
         "usd_partial",
-        "updated",
+        "mtime",
         "winner",
         "task",
     }

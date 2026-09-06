@@ -45,11 +45,11 @@ from agent6.viewmodel import (
     session_state_as_dict,
     summarize_machine_dir,
     summarize_session_dir,
+    summary_row,
     tail_events,
-    task_snippet,
 )
 from agent6.viewmodel.config_view import render_show
-from agent6.viewmodel.format import listing_status_label, status_level
+from agent6.viewmodel.format import status_level
 from agent6.viewmodel.transcript_style import item_lines
 
 
@@ -99,27 +99,15 @@ def draft_dir_paths(cwd: Path) -> list[Path]:
 
 
 def _session_summary(session_dir: Path, branch_tips: Mapping[str, str]) -> dict[str, Any]:
-    """The hub's one-line run summary, from the shared scanner: id, mode, task,
-    status (+ reason detail, + the unmerged mark), when, usd. The label comes
-    from `viewmodel.listing_status_label`, so a provider_error death or an
-    unmerged pass reads here exactly as in the TUI hub and `agent6 sessions
-    list` (the web row shows the mode itself, so the label keeps it out)."""
-    s = summarize_session_dir(session_dir, branch_tips=branch_tips)
-    return {
-        "id": s.session_id,
-        "mode": s.mode,
-        "task": task_snippet(s.task, max_chars=100),
-        "status": s.status,
-        "reason": s.reason,
-        # The one shared human label and its colour level; the client renders
-        # both verbatim instead of keeping JS copies of the status maps.
-        "label": listing_status_label("run", s.status, s.reason, unmerged=s.unmerged),
-        "level": status_level(s.status),
-        "mtime": s.mtime,
-        "usd": s.cost_usd,
-        "usd_partial": s.usd_partial,
-        "winner": is_winner(session_dir),  # fan-out compare winner: a ★ on the hub row
-    }
+    """The hub's one-line run summary: the shared listing row (`summary_row`),
+    task clipped for the card. One shape across `/api/hub`, `sessions list
+    --json` and the TUI hub, so a provider_error death or an unmerged pass
+    reads the same everywhere and the client keeps no copy of the status maps."""
+    return summary_row(
+        summarize_session_dir(session_dir, branch_tips=branch_tips),
+        winner=is_winner(session_dir),  # fan-out compare winner: a ★ on the hub row
+        task_chars=100,
+    )
 
 
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:

@@ -267,6 +267,7 @@ An `/undo` fork adds no worktree: it keeps the undone session's checkout.
 
 One headless core feeds four front-ends: the CLI, the Textual TUI, the browser UI (`agent6 web`), and the ACP agent an editor drives.
 All four fold the same event stream and render their own way.
+One listing row shape (`viewmodel.summary_row`) serves `sessions list --json` and `/api/hub`, and `sessions show --json` names the state with the same `status` word.
 Two shared layers sit under them: the read side [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (the `SessionState` and `MachineState` fold plus its wire form, exactly what `agent6 attach --json` and the web endpoints emit), and the write side, [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, steer, and compact-request file contract the workflow polls.
 
 The journal is durable by contract: an append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`) rather than running on with an unrecordable outcome, and in-process listeners see an event only after its write landed.

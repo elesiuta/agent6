@@ -69,7 +69,7 @@ def test_status_json_is_machine_readable(
     obj = json.loads(capsys.readouterr().out)
     assert obj["session_id"] == "winsome-dawn-YWH5ZS"
     assert obj["alive"] is True
-    assert obj["state"] == "running"
+    assert obj["status"] == "running"
     # A live run keeps elapsing while it waits (its last event is 5 s old and
     # it wrote nothing since); a dead one stops at its last event.
     assert obj["elapsed_s"] >= 4
@@ -123,7 +123,7 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
     assert "provider call" not in out
     assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert obj["state"].startswith("waiting")
+    assert (obj["status"], obj["detail"]) == ("waiting", "needs answer; attach to respond")
 
 
 def test_status_crashed_when_pid_dead_and_no_run_end(
@@ -152,7 +152,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
 def test_status_words_lead_with_the_listing_word_in_every_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions show --json` "state" leads with exactly the word the hub row shows
+    """`sessions show --json` "status" is exactly the word the hub row shows
     for the SAME dir, for every non-session.end state: "created" (was "unknown"),
     "starting" (was a bare "running" while the hub said starting), "waiting",
     "stale". One decision -- status_for_session_dir -- so the two can't drift."""
@@ -162,7 +162,7 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
 
     def state_word() -> str:
         assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
-        word = json.loads(capsys.readouterr().out)["state"].split(" (")[0]
+        word = json.loads(capsys.readouterr().out)["status"]
         assert word == summarize_session_dir(d).status
         return word
 
@@ -227,7 +227,12 @@ def test_status_of_a_scoped_green_names_the_scoped_gate(
         ],
     )
     assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
-    assert json.loads(capsys.readouterr().out)["state"] == "passed · scoped gate (finish_session)"
+    obj = json.loads(capsys.readouterr().out)
+    assert (obj["status"], obj["label"], obj["detail"]) == (
+        "passed",
+        "passed · scoped gate",
+        "finish_session",
+    )
     assert _cmd_status("winsome-dawn-YWH5ZS") == 0
     assert "state:      passed · scoped gate (finish_session)\n" in capsys.readouterr().out
 
@@ -408,7 +413,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     obj = json.loads(capsys.readouterr().out)
     assert obj["cost_usd"] == pytest.approx(0.025)
     assert obj["usd_partial"] is True  # sticky: leg 1's unpriced spend
-    assert obj["state"] == "running"  # not leg 1's "passed (finish_session)"
+    assert obj["status"] == "running"  # not leg 1's "passed (finish_session)"
     assert obj["input_tokens"] == 300  # token gauges stay per-leg
 
 

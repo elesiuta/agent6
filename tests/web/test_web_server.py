@@ -184,9 +184,9 @@ def test_hub_lists_runs(server: tuple[WebServer, int], tmp_path: Path) -> None:
     status, body, _ = _get(port, "/api/hub")
     assert status == 200
     hub = json.loads(body)
-    ids = {r["id"] for r in hub["sessions"]}
+    ids = {r["session_id"] for r in hub["sessions"]}
     assert ids == {"run-a", "run-b"}
-    by_id = {r["id"]: r for r in hub["sessions"]}
+    by_id = {r["session_id"]: r for r in hub["sessions"]}
     assert by_id["run-b"]["status"] == "passed"
     assert by_id["run-b"]["task"] == "task b"
 

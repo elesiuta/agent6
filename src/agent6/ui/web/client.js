@@ -303,12 +303,12 @@ function listCard(title, entries, empty, paint) {
 
 function sessionsCard(sessions) {
   const card = listCard('Sessions', sessions, 'no sessions yet', (r, it, g) => {
-    it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.id);
+    it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
     g.appendChild(el('div', 'title', (r.winner ? '★ ' : '') + (r.task || '(no task)')));
     // A genuinely clean $0 (no spend, not partial) is blanked, like the CLI/TUI
     // hub rows; an all-unpriced ~$0 still shows (spend happened, price unknown).
-    const cost = (!r.usd && !r.usd_partial) ? '' : ' · ' + fmtUsd(r.usd, r.usd_partial);
-    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id)} · ${when(r.mtime)}${cost}`));
+    const cost = (!r.cost_usd && !r.usd_partial) ? '' : ' · ' + fmtUsd(r.cost_usd, r.usd_partial);
+    g.appendChild(el('div', 'sub', `${esc(r.session_id)} · ${when(r.mtime)}${cost}`));
     it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   });
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
@@ -346,9 +346,9 @@ function machinesCard(machines) {
 
 function draftsCard(drafts) {
   return listCard('Machine drafts', drafts, '', (d, it, g) => {
-    it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.id);
-    g.appendChild(el('div', 'title', d.task || d.id));
-    g.appendChild(el('div', 'sub', `draft · ${esc(d.id)} · ${when(d.mtime)}`));
+    it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.session_id);
+    g.appendChild(el('div', 'title', d.task || d.session_id));
+    g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${when(d.mtime)}`));
     it.appendChild(pill(d.level, d.label || d.status)); // keep the reason (failed · provider_error)
   });
 }

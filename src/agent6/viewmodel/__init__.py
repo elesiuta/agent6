@@ -45,6 +45,7 @@ from agent6.viewmodel.listing import (
     status_for_session_dir,
     status_word,
     summarize_session_dir,
+    summary_row,
     task_snippet,
 )
 from agent6.viewmodel.log_line import format_log_line
@@ -183,6 +184,7 @@ __all__ = [
     "status_word",
     "summarize_machine_dir",
     "summarize_session_dir",
+    "summary_row",
     "tail_events",
     "task_snippet",
     "worker_models",

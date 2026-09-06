@@ -43,7 +43,7 @@ def test_run_summary_captures_cost_and_status(tmp_path: Path) -> None:
     assert s["mode"] == "run"
     assert s["task"] == "the task"
     assert s["status"] == "passed"
-    assert s["usd"] == 0.0123
+    assert s["cost_usd"] == 0.0123
     assert s["usd_partial"] is False
     assert s["label"] == "passed"  # the one shared human label, rendered verbatim
 
@@ -306,7 +306,7 @@ def test_machine_dir_for_rejects_traversal(tmp_path: Path) -> None:
 def test_hub_payload_shape(tmp_path: Path) -> None:
     _run(tmp_path, "r3", [{"type": "session.start", "mode": "plan"}])
     hub = model.hub_payload(tmp_path)
-    assert [r["id"] for r in hub["sessions"]] == ["r3"]
+    assert [r["session_id"] for r in hub["sessions"]] == ["r3"]
     assert hub["machines"] == []
 
 
@@ -320,7 +320,7 @@ def test_hub_payload_lists_machine_drafts(tmp_path: Path) -> None:
     )
     hub = model.hub_payload(tmp_path)
     (s,) = hub["drafts"]
-    assert s["id"] == "breezy-fern-AB12CD"
+    assert s["session_id"] == "breezy-fern-AB12CD"
     assert s["task"] == "author a triage machine"
 
 
@@ -655,3 +655,29 @@ def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: Path) -> None
     flat = "".join(t for line in item["lines"] for t, _s in line)
     assert "no result (the run died)" in flat and "running" not in flat
     assert "no result (the run died)" in model.restate_payload(d)["text"]
+
+
+def test_the_hub_row_and_the_cli_json_row_are_one_shape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One name per fact: `/api/hub` said `id`/`usd`/`mtime` where `sessions
+    list --json` said `session_id`/`cost_usd`/`updated`, so a script reading
+    one could not read the other."""
+    from agent6.ui.cli.sessions_cmds import _cmd_list  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.chdir(tmp_path)
+    _run(
+        tmp_path,
+        "r1",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "the task"},
+            {"type": "session.end", "all_passed": True},
+        ],
+    )
+
+    (hub_row,) = model.hub_payload(tmp_path)["sessions"]
+    assert _cmd_list(as_json=True) == 0
+    (cli_row,) = json.loads(capsys.readouterr().out)
+
+    assert set(hub_row) == set(cli_row)
+    assert hub_row["session_id"] == cli_row["session_id"] == "r1"

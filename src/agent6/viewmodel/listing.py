@@ -21,7 +21,7 @@ from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.task_text import operator_task_text
 from agent6.viewmodel.events import event_epoch
-from agent6.viewmodel.format import format_age
+from agent6.viewmodel.format import format_age, listing_status_label, status_level
 
 
 def session_mtime(session_dir: Path) -> float:
@@ -168,6 +168,33 @@ class SessionSummary:
     # status word: the compare table and the judge read it, and the word calls
     # a red-gated finish "finished".
     verify_ok: bool | None = None
+
+
+def summary_row(
+    s: SessionSummary, *, winner: bool = False, task_chars: int | None = None
+) -> dict[str, object]:
+    """One listing row as JSON: the shape `sessions list --json` prints and
+    `/api/hub` serves, so one name per fact reaches every reader.
+
+    `label` and `level` are the rendered status cell and its colour level, so a
+    client needs no copy of the status maps. *task_chars* clips the task for a
+    fixed-width row.
+    """
+    return {
+        "session_id": s.session_id,
+        "mode": s.mode,
+        "task": task_snippet(s.task, max_chars=task_chars),
+        "status": s.status,
+        "reason": s.reason,
+        "label": listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
+        "level": status_level(s.status),
+        "mtime": s.mtime,
+        "cost_usd": s.cost_usd,
+        "usd_partial": s.usd_partial,
+        "unmerged": s.unmerged,
+        "verify_ok": s.verify_ok,
+        "winner": winner,
+    }
 
 
 def status_word(

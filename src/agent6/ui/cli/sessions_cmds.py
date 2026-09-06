@@ -57,6 +57,7 @@ from agent6.viewmodel import (
     newest_session_dir,
     session_is_live,
     summarize_session_dir,
+    summary_row,
     task_snippet,
 )
 from agent6.viewmodel.format import (
@@ -94,22 +95,7 @@ def _cmd_list(*, as_json: bool = False) -> int:
         reverse=True,
     )
     if as_json:
-        rows_json = [
-            {
-                "session_id": s.session_id,
-                "mode": s.mode,
-                "status": s.status,
-                "reason": s.reason,
-                "unmerged": s.unmerged,
-                "verify_ok": s.verify_ok,
-                "cost_usd": s.cost_usd,
-                "usd_partial": s.usd_partial,
-                "updated": s.mtime,
-                "winner": s.session_id in winners,
-                "task": s.task,
-            }
-            for s in summaries
-        ]
+        rows_json = [summary_row(s, winner=s.session_id in winners) for s in summaries]
         print(json.dumps(rows_json, indent=2))
         return 0
     color = sys.stdout.isatty()
