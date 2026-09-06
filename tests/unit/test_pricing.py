@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.models.cache import _parse_pricing  # pyright: ignore[reportPrivateUsage]
-from agent6.models.pricing import lookup_price
+from agent6.models.pricing import Price, lookup_price
 
 
 def _write_pricing(cache: Path, name: str, pricing: dict[str, list[float]]) -> None:
@@ -23,7 +23,7 @@ def _write_pricing(cache: Path, name: str, pricing: dict[str, list[float]]) -> N
 def test_lookup_price_reads_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
     _write_pricing(tmp_path, "openrouter", {"a/model": [0.5, 2.5]})
-    assert lookup_price("a/model") == (0.5, 2.5)
+    assert lookup_price("a/model") == Price(0.5, 2.5)
     assert lookup_price("nobody/else") is None
 
 
@@ -35,7 +35,7 @@ def test_lookup_price_sees_cache_written_after_first_miss(
     monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
     assert lookup_price("a/model") is None
     _write_pricing(tmp_path, "openrouter", {"a/model": [0.5, 2.5]})
-    assert lookup_price("a/model") == (0.5, 2.5)
+    assert lookup_price("a/model") == Price(0.5, 2.5)
 
 
 def test_lookup_price_ignores_malformed_entries(
@@ -56,7 +56,7 @@ def test_lookup_price_ignores_malformed_entries(
         ),
         encoding="utf-8",
     )
-    assert lookup_price("ok/model") == (1.0, 2.0)
+    assert lookup_price("ok/model") == Price(1.0, 2.0)
     for bad in ("neg/model", "str/model", "short/model"):
         assert lookup_price(bad) is None
 
@@ -74,7 +74,11 @@ def test_parse_pricing_openrouter_shape() -> None:
         ]
     }
     got = _parse_pricing(payload)
-    assert got["moonshotai/kimi-k2.6"] == (pytest.approx(0.68), pytest.approx(3.41))
+    assert (got["moonshotai/kimi-k2.6"].input, got["moonshotai/kimi-k2.6"].output) == (
+        pytest.approx(0.68),
+        pytest.approx(3.41),
+    )
+    assert got["moonshotai/kimi-k2.6"].cache_read is None
     assert "no-pricing-model" not in got
     assert "bad-pricing" not in got
 
@@ -94,9 +98,9 @@ def test_lookup_price_direct_anthropic_alias(
             "anthropic/claude-sonnet-5": [2.0, 10.0],
         },
     )
-    assert lookup_price("claude-haiku-4-5-20251001") == (1.0, 5.0)
-    assert lookup_price("claude-opus-4-8") == (5.0, 25.0)
-    assert lookup_price("claude-sonnet-5") == (2.0, 10.0)
+    assert lookup_price("claude-haiku-4-5-20251001") == Price(1.0, 5.0)
+    assert lookup_price("claude-opus-4-8") == Price(5.0, 25.0)
+    assert lookup_price("claude-sonnet-5") == Price(2.0, 10.0)
 
 
 def test_lookup_price_alias_never_shadows_exact(
@@ -108,7 +112,7 @@ def test_lookup_price_alias_never_shadows_exact(
         "openrouter",
         {"claude-opus-4-8": [9.0, 9.0], "anthropic/claude-opus-4.8": [5.0, 25.0]},
     )
-    assert lookup_price("claude-opus-4-8") == (9.0, 9.0)
+    assert lookup_price("claude-opus-4-8") == Price(9.0, 9.0)
 
 
 def test_lookup_price_alias_misses_stay_unpriced(
@@ -143,8 +147,8 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
         json.dumps({"models": ["openai/gpt-4o"], "pricing": {"openai/gpt-4o": [2.50, 10.00]}}),
         encoding="utf-8",
     )
-    assert lookup_price("openai/gpt-4o", "openrouter") == (2.5, 10.0)
-    assert lookup_price("openai/gpt-4o", "aaa_cheap") == (0.1, 0.2)
+    assert lookup_price("openai/gpt-4o", "openrouter") == Price(2.5, 10.0)
+    assert lookup_price("openai/gpt-4o", "aaa_cheap") == Price(0.1, 0.2)
     budget = BudgetTracker(max_usd=100.0, max_tokens_fallback=-1, max_percent=-1)
     budget.note_route("openai/gpt-4o", "openrouter")
     budget.record(
@@ -155,3 +159,67 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
         cache_creation_tokens=0,
     )
     assert budget.estimate_usd()[0] == pytest.approx(12.5)
+
+
+def test_a_listing_that_publishes_cache_rates_prices_them(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cache-token pricing applied Anthropic's multipliers (0.1x read, 1.25x
+    write) to every provider, while OpenRouter publishes each model's own
+    `input_cache_read` / `input_cache_write` (OpenAI's cached input is 0.5x
+    and carries no write premium)."""
+    import json
+
+    from agent6.budget import BudgetTracker
+    from agent6.models.cache import _parse_pricing  # pyright: ignore[reportPrivateUsage]
+
+    got = _parse_pricing(
+        {
+            "data": [
+                {
+                    "id": "openai/gpt-x",
+                    "pricing": {
+                        "prompt": "0.000002",
+                        "completion": "0.000008",
+                        "input_cache_read": "0.000001",
+                        "input_cache_write": "0.000002",
+                    },
+                }
+            ]
+        }
+    )
+    price = got["openai/gpt-x"]
+    assert (price.cache_read, price.cache_write) == (pytest.approx(1.0), pytest.approx(2.0))
+    assert price.as_list() == pytest.approx([2.0, 8.0, 1.0, 2.0])
+
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "openrouter.json").write_text(
+        json.dumps(
+            {
+                "models": ["openai/gpt-x", "listed-only/plain"],
+                "pricing": {"openai/gpt-x": [2.0, 8.0, 1.0, 2.0], "listed-only/plain": [2.0, 8.0]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    listed = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    listed.record(
+        model="openai/gpt-x",
+        input_tokens=0,
+        output_tokens=0,
+        cache_read_tokens=1_000_000,
+        cache_creation_tokens=0,
+    )
+    assert listed.estimate_usd()[0] == pytest.approx(1.0)  # the listed 0.5x, not 0.1x
+    assumed = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    assumed.record(
+        model="listed-only/plain",
+        input_tokens=0,
+        output_tokens=0,
+        cache_read_tokens=1_000_000,
+        cache_creation_tokens=0,
+    )
+    assert assumed.estimate_usd()[0] == pytest.approx(0.2)  # Anthropic's 0.1x of $2
+    assert "cache rates assumed" in assumed.format_summary()
+    assert "cache rates assumed" not in listed.format_summary()

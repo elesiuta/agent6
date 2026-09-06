@@ -187,6 +187,7 @@ class _ModelCost:
     reported: bool
     estimated: bool
     partial: bool = False
+    cache_assumed: bool = False  # cache tokens priced by the multipliers, not a listed rate
 
 
 def format_usd(usd: float, *, partial: bool = False) -> str:
@@ -230,14 +231,15 @@ def _model_cost_usd(
     only when the model has no cached price and reported nothing: the caller
     reports it as unknown.
 
-    Pricing model (Anthropic-accurate):
-      fresh input:      price[0]         (already excludes cached portion)
-      cache_creation:   price[0] * 1.25  (5-min cache write surcharge)
-      cache_read:       price[0] * 0.10  (cache hit discount)
-      output:           price[1]
-    OpenAI-route models (Kimi etc.) currently report cache_creation_tokens=0
-    since the chat-completions usage block has no separate write-surcharge
-    field, so the 1.25x branch is a no-op for them.
+    Pricing model:
+      fresh input:      price.input        (already excludes cached portion)
+      cache_creation:   price.cache_write, else price.input * 1.25 (Anthropic's
+                        5-min cache write surcharge)
+      cache_read:       price.cache_read, else price.input * 0.10 (Anthropic's
+                        cache hit discount)
+      output:           price.output
+    A listing that publishes its cache rates (OpenRouter) prices them; one
+    that does not gets Anthropic's multipliers, and the receipt says so.
     """
     if t.percent_metered and not _billed_apart_from_plan(t):
         # Included-plan subscription calls: not billed per token, so the figure is
@@ -257,12 +259,20 @@ def _model_cost_usd(
                 partial=t.reported_calls < t.calls,
             )
         return None
-    in_usd = t.unreported_input_tokens * price[0] / 1e6
-    cache_creation_usd = t.unreported_cache_creation_tokens * (price[0] * 1.25) / 1e6
-    cache_read_usd = t.unreported_cache_read_tokens * (price[0] * 0.1) / 1e6
-    out_usd = t.unreported_output_tokens * price[1] / 1e6
+    write_rate = price.cache_write if price.cache_write is not None else price.input * 1.25
+    read_rate = price.cache_read if price.cache_read is not None else price.input * 0.1
+    cache_tokens = t.unreported_cache_creation_tokens + t.unreported_cache_read_tokens
+    in_usd = t.unreported_input_tokens * price.input / 1e6
+    cache_creation_usd = t.unreported_cache_creation_tokens * write_rate / 1e6
+    cache_read_usd = t.unreported_cache_read_tokens * read_rate / 1e6
+    out_usd = t.unreported_output_tokens * price.output / 1e6
     estimate = in_usd + cache_creation_usd + cache_read_usd + out_usd
-    return _ModelCost(t.reported_cost_usd + estimate, reported=reported, estimated=estimate > 0.0)
+    return _ModelCost(
+        t.reported_cost_usd + estimate,
+        reported=reported,
+        estimated=estimate > 0.0,
+        cache_assumed=cache_tokens > 0 and (price.cache_read is None or price.cache_write is None),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -644,6 +654,8 @@ class BudgetTracker:
                     note = " (reported)"
                 else:
                     note = ""
+                if cost.cache_assumed:
+                    note += " (cache rates assumed: 0.1x read, 1.25x write)"
                 cost_str = f"{format_usd(cost.usd)}{note}"
             lines.append(
                 f"  {model}: "

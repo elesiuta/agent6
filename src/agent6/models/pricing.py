@@ -30,6 +30,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -82,13 +83,32 @@ def _cache_state() -> tuple[tuple[str, float], ...]:
     return tuple(out)
 
 
+@dataclass(frozen=True, slots=True)
+class Price:
+    """USD per 1M tokens: fresh input, output, and the cache rates a listing
+    publishes (OpenRouter's `input_cache_read` / `input_cache_write`); None
+    where the listing carries none, and the cost arithmetic then applies
+    Anthropic's multipliers to the input rate."""
+
+    input: float
+    output: float
+    cache_read: float | None = None
+    cache_write: float | None = None
+
+    def as_list(self) -> list[float]:
+        """The cache file's row: `[input, output]`, plus both cache rates when known."""
+        if self.cache_read is None or self.cache_write is None:
+            return [self.input, self.output]
+        return [self.input, self.output, self.cache_read, self.cache_write]
+
+
 @lru_cache(maxsize=4)
 def _load_pricing(
     state: tuple[tuple[str, float], ...],
-) -> dict[str, dict[str, tuple[float, float]]]:
+) -> dict[str, dict[str, Price]]:
     """The pricing map of every provider cache file, keyed by the provider
     name the file is named for. Never raises."""
-    out: dict[str, dict[str, tuple[float, float]]] = {}
+    out: dict[str, dict[str, Price]] = {}
     root = _models_cache_dir()
     if root is None:
         return out
@@ -100,18 +120,19 @@ def _load_pricing(
             if not isinstance(pricing, dict):
                 continue
             table = out.setdefault(path.stem, {})
-            for model, pair in pricing.items():
+            for model, row in pricing.items():
                 if (
                     isinstance(model, str)
-                    and isinstance(pair, list)
-                    and len(pair) == 2
-                    and all(isinstance(x, (int, float)) and x >= 0 for x in pair)
+                    and isinstance(row, list)
+                    and len(row) in (2, 4)
+                    and all(isinstance(x, (int, float)) and x >= 0 for x in row)
                 ):
-                    table[model] = (float(pair[0]), float(pair[1]))
+                    rates = [float(x) for x in row]
+                    table[model] = Price(*rates[:2], *rates[2:])
     return out
 
 
-def _price_in(table: dict[str, tuple[float, float]], model: str) -> tuple[float, float] | None:
+def _price_in(table: dict[str, Price], model: str) -> Price | None:
     hit = table.get(model)
     if hit is not None:
         return hit
@@ -119,8 +140,8 @@ def _price_in(table: dict[str, tuple[float, float]], model: str) -> tuple[float,
     return table.get(alias) if alias is not None else None
 
 
-def lookup_price(model: str, provider: str = "") -> tuple[float, float] | None:
-    """(input, output) USD per 1M tokens for *model*, or None if unknown.
+def lookup_price(model: str, provider: str = "") -> Price | None:
+    """The listed price of *model* (USD per 1M tokens), or None if unknown.
 
     *provider* names the config entry the call went through: two providers
     can list one model id at different prices, and the route's own listing

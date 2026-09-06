@@ -231,7 +231,7 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
     models_cache.refresh_pricing_catalog()
     price = models_pricing.lookup_price("claude-opus-5")
     assert price is not None
-    assert price[0] > 0 and price[1] > 0
+    assert price.input > 0 and price.output > 0
 
 
 def test_chatgpt_listing_fetches_with_the_sign_in(

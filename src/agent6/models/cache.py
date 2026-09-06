@@ -24,7 +24,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx2
@@ -36,6 +36,7 @@ from agent6.config import (
     OpenAIProviderEntry,
     ProviderEntry,
 )
+from agent6.models.pricing import Price
 from agent6.paths import cache_dir
 from agent6.providers.types import ProviderError
 from agent6.providers.wire import auth_header
@@ -74,7 +75,7 @@ def _read_cache(path: Path | None) -> list[str] | None:
 def _write_cache(
     path: Path | None,
     models: list[str],
-    pricing: dict[str, tuple[float, float]],
+    pricing: dict[str, Price],
     context: dict[str, int],
 ) -> None:
     if path is None:
@@ -84,10 +85,11 @@ def _write_cache(
         body: dict[str, object] = {"models": models}
         if pricing:
             # Consumed by agent6.models.pricing.lookup_price (USD per 1M tokens,
-            # [input, output]). Only providers that publish pricing on their
-            # models endpoint (OpenRouter does, Anthropic does not) get this
-            # key; there is deliberately no static fallback anywhere.
-            body["pricing"] = {m: [p[0], p[1]] for m, p in pricing.items()}
+            # [input, output] plus the cache read and write rates where the
+            # listing publishes them). Only providers that publish pricing on
+            # their models endpoint (OpenRouter does, Anthropic does not) get
+            # this key; there is deliberately no static fallback anywhere.
+            body["pricing"] = {m: p.as_list() for m, p in pricing.items()}
         if context:
             # Per-model context window in tokens, consumed by `context_window`
             # to size adaptive compaction. Same story as pricing: only providers
@@ -111,14 +113,29 @@ def _parse_models(payload: object) -> list[str]:
     return out
 
 
-def _parse_pricing(payload: object) -> dict[str, tuple[float, float]]:
+def _per_mtok(pricing: dict[str, Any], key: str) -> float | None:
+    """One USD-per-token string of an OpenRouter pricing block as USD per 1M
+    tokens; None when absent, boolean (float(True) is $1) or unparseable."""
+    raw = pricing.get(key)
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw) * 1_000_000
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def _parse_pricing(payload: object) -> dict[str, Price]:
     """Extract per-model pricing from an OpenRouter-style `{"data": [...]}` body.
 
-    OpenRouter reports `pricing.prompt`/`pricing.completion` as USD per
-    TOKEN strings; normalize to USD per 1M tokens. Models without a usable
-    pair are simply absent (unknown beats wrong)."""
+    OpenRouter reports `pricing.prompt`/`pricing.completion` (and, for models
+    that cache, `input_cache_read`/`input_cache_write`) as USD per TOKEN
+    strings; normalize to USD per 1M tokens. Models without a usable
+    prompt/completion pair are simply absent (unknown beats wrong); the cache
+    rates ride along only when both parse."""
     data = payload.get("data") if isinstance(payload, dict) else None
-    out: dict[str, tuple[float, float]] = {}
+    out: dict[str, Price] = {}
     if not isinstance(data, list):
         return out
     for item in data:
@@ -128,15 +145,17 @@ def _parse_pricing(payload: object) -> dict[str, tuple[float, float]]:
         pricing = item.get("pricing")
         if not (isinstance(mid, str) and mid and isinstance(pricing, dict)):
             continue
-        if isinstance(pricing.get("prompt"), bool) or isinstance(pricing.get("completion"), bool):
-            continue  # float(True)=1.0 would fabricate a $1/MTok price
-        try:
-            in_mtok = float(pricing.get("prompt", "")) * 1_000_000
-            out_mtok = float(pricing.get("completion", "")) * 1_000_000
-        except (TypeError, ValueError):
+        in_mtok, out_mtok = _per_mtok(pricing, "prompt"), _per_mtok(pricing, "completion")
+        if in_mtok is None or out_mtok is None:
             continue
-        if in_mtok >= 0 and out_mtok >= 0:
-            out[mid] = (in_mtok, out_mtok)
+        read, write = (
+            _per_mtok(pricing, "input_cache_read"),
+            _per_mtok(pricing, "input_cache_write"),
+        )
+        if read is None or write is None:
+            out[mid] = Price(in_mtok, out_mtok)
+        else:
+            out[mid] = Price(in_mtok, out_mtok, read, write)
     return out
 
 
@@ -246,7 +265,7 @@ def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:
 
 def _fetch(
     provider_name: str, entry: ProviderEntry, api_key: str | None, timeout_s: float
-) -> tuple[list[str], dict[str, tuple[float, float]], dict[str, int]]:
+) -> tuple[list[str], dict[str, Price], dict[str, int]]:
     if isinstance(entry, ClaudeCodeProviderEntry):
         return [], {}, {}  # no endpoint: the binary resolves model names itself
     if isinstance(entry, ChatGPTProviderEntry):

@@ -420,7 +420,7 @@ depends_on = ["agent6.config.model", "agent6.config._providers", "agent6.config.
 
 [[modules]]
 path = "agent6.models.cache"
-depends_on = ["agent6.config", "agent6.paths", "agent6.providers", "agent6.secrets"]
+depends_on = ["agent6.config", "agent6.models.pricing", "agent6.paths", "agent6.providers", "agent6.secrets"]
 
 [[modules]]
 # Curated model capabilities (context windows, compaction sizing, per-model
