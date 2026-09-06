@@ -289,6 +289,9 @@ def test_restart_notice_is_dag_aware() -> None:
         assert "list_tasks" in notice
         assert "dag_list_tasks" not in notice
         assert "DAG" in notice
+        # `list_tasks` returns tasks and a count; the focus banner carries the
+        # cursor, so the notice must not send the worker after it there.
+        assert "cursor" not in notice
         # Still tells the worker not to start over.
         assert "Do NOT start over" in notice
     # ask/machine/agent have no DAG tools: instructing list_tasks there burns a

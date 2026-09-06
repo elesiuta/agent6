@@ -74,8 +74,8 @@ _CONTEXT_RESTART_HEAD = (
 )
 _CONTEXT_RESTART_DAG = (
     "Your task DAG is durable curator-owned state and was NOT compacted: call"
-    " `list_tasks` to recover the full task breakdown, each task's status,"
-    " and the current cursor, then resume from the first unfinished task."
+    " `list_tasks` to recover the full task breakdown and each task's status,"
+    " then resume from the first unfinished task."
     " Treat the DAG as the authoritative record of what is done vs. pending —"
     " the summary below is only a narrative supplement."
 )
