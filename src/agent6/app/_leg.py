@@ -333,6 +333,10 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
                     result = frontend.run_ask_repl(wf, budget, layout, inputs.task)
                 else:
                     result = wf.run(inputs.task)
+                # A background command that ended after the last turn is written
+                # down now, not at teardown: a viewer left open reads `/shells`
+                # meanwhile.
+                dispatcher.settle_background()
         except ResumeError as exc:
             reporter.error(str(exc))
             return LegEnd(1)
