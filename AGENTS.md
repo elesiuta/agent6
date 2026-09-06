@@ -1,22 +1,8 @@
 # AGENTS.md: instructions for coding agents working on this repo
 
 Read by coding agents (agent6 itself included) working in this repository.
-Principles live here; detail lives in `docs/`.
+Every rule here binds; principles live here, detail lives in `docs/`.
 Two registers stay distinct, each binding only itself: how we develop agent6, and how agent6 behaves.
-
-## Hard rules (every PR preserves these)
-
-- Push, `--force`, history rewrites and `reset --hard` belong to the operator: `git_ops.py` refuses them unconditionally, with no override.
-  `branch -D` has ONE operator-only exception: `sessions prune --delete-squashed` on a branch the manifest confirms was squash-merged (the commit survives in the reflog).
-  The jail bounds what the MODEL can do to a repo; `run_command` argv stays unscreened, because a script the model writes bypasses any blocklist.
-- Every child process whose argv depends on LLM output goes through `agent6.sandbox.jail.run_in_jail` (audit: `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`).
-  A module shelling out with fixed argv from operator input may call `subprocess` directly; that allowlist lives in `docs/security.md`, pinned by `tests/security/test_subprocess_allowlist.py`.
-- Adding a tool (`tools/schema.py`), loosening a security default, or dialling a host not derived from a provider `base_url` each require a `Security review note:` in the commit message.
-- Secrets (provider API keys, `$XDG_CONFIG_HOME/agent6/secrets.toml`) stay `0600` and stay put: out of `config show`, out of transcripts, out of the jail.
-- Keep the suite green: the full gate (see Verify command) certifies every series of commits.
-  A red `tach check` means the module map is stale: record the new edge in `tach.toml` and move on.
-- Rip out wrong shapes: a rename lands everywhere at once, without shims, aliases, or migrations.
-- Commit messages carry no `Co-Authored-By` line.
 
 ## How we develop agent6
 
@@ -29,6 +15,7 @@ The agent6 concretions, and the principles the Zen doesn't cover:
   Simple and stupid beats clever, in code, shapes and interfaces: what a beginner can follow is the target, because cleverness hides bugs and raises the cost of every later read.
   A reviewer reads a module top to bottom in one sitting: inline a one-caller helper, make a stateless class a function, delete pass-through wrappers and symmetry-for-its-own-sake.
   Refactoring is continuous: every series leaves the shapes it touched simpler.
+- **Rip out wrong shapes.** A rename lands everywhere at once, without shims, aliases, or migrations.
 - **Right-shaped data.** Fix the shape first and the code around it gets small.
   Interfaces are shapes too: settle a feature's config keys, schema and payload before implementing behind them.
   Fields that are set together belong in one frozen type; repeated conversion between shapes means the shape is wrong.
@@ -153,10 +140,12 @@ The shortest version that still carries the point wins.
 
 ### Git and commit practices
 
+- Push, `--force`, history rewrites and `reset --hard` belong to the operator: `git_ops.py` refuses them unconditionally, with no override.
+  `branch -D` has ONE operator-only exception: `sessions prune --delete-squashed` on a branch the manifest confirms was squash-merged (the commit survives in the reflog).
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`; the scope matches a directory under `src/agent6/` or a top-level area.
 - One concern per commit, each worth keeping on its own.
   Squash iterative churn only: a fix-up to unpushed work folds into its origin commit.
-- A commit message is committed prose and meets the same test (Writing style); the author field is the one place a name appears.
+- A commit message is committed prose and meets the same test (Writing style); the author field is the one place a name appears, and no `Co-Authored-By` line follows.
 - The operator signs and pushes, from another machine.
   Messages and docs name neither commit hashes (signing changes them) nor branch names (transient).
 - Pushed history is immutable; unpushed commits are rewritten when asked, and never force-pushed.
@@ -174,10 +163,10 @@ uv run ruff check && uv run ruff format --check && \
   uv run pyright && uv run tach check && uv run pytest
 ```
 
-All five must pass.
+All five must pass, and a red `tach check` means the module map is stale: record the new edge in `tach.toml` and move on.
 Read the gate's own exit status: capture to a file and test `$?`, or `set -o pipefail`, since a bare pipe through `tail`/`head`/`grep` reports the filter's code instead.
 
-Scoped runs guide iteration; the full gate certifies a series, at the end of the batch and before calling master push-ready.
+Scoped runs guide iteration; the full gate certifies a series of commits, at the end of the batch and before calling master push-ready.
 On failure, bisect to the offending commit and fold the fix there.
 
 Push-ready adds the CI mirror: pyright at its latest release (`PYRIGHT_PYTHON_FORCE_VERSION=<latest> uv run pyright`), and, when `src/agent6/jail/` or `Cargo.*` changed, both musl target builds plus the wheel with the bundled jail binary exercised.
@@ -187,10 +176,15 @@ Push-ready adds the CI mirror: pyright at its latest release (`PYRIGHT_PYTHON_FO
 agent6 reviews its own source via `agent6 review`, into the per-repo state directory (`$XDG_STATE_HOME/agent6/<repo-id>/reviews/`).
 When working on a module, read its review there if present.
 
-## Security invariants (preserved by every change)
+## Security invariants
 
-The threat model, defense layers, and rationale live in `docs/security.md`; beyond the hard rules above, a change must preserve:
+The threat model, defense layers, and rationale live in `docs/security.md`; a change preserves:
 
+- The jail bounds what the MODEL can do to a repo; `run_command` argv stays unscreened, because a script the model writes bypasses any blocklist.
+- Every child process whose argv depends on LLM output goes through `agent6.sandbox.jail.run_in_jail` (audit: `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`).
+  A module shelling out with fixed argv from operator input may call `subprocess` directly; that allowlist lives in `docs/security.md`, pinned by `tests/security/test_subprocess_allowlist.py`.
+- Adding a tool (`tools/schema.py`), loosening a security default, or dialling a host not derived from a provider `base_url` each require a `Security review note:` in the commit message.
+- Secrets (provider API keys, `$XDG_CONFIG_HOME/agent6/secrets.toml`) stay `0600` and stay put: out of `config show`, out of transcripts, out of the jail.
 - The LLM tool surface is the fixed set in `src/agent6/tools/schema.py`, plus tools from operator-configured MCP servers when `[mcp].enabled` is set (default off).
 - Config is secure by default: every field has a default, security-sensitive ones default safe, and `agent6 config show` audits every leaf.
   `Config` stays `extra="forbid", frozen=True`, and push, force and history rewrites have no knob at all.
