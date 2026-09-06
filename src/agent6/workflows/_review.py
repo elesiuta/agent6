@@ -91,7 +91,7 @@ def _build_user_message(ctx: ReviewContext) -> str:
     if ctx.agents_md.strip():
         parts.append(f"AGENTS.md:\n{ctx.agents_md.strip()[:8000]}")
     if ctx.verify_ok is None:
-        parts.append("VERIFY: none configured for this run.")
+        parts.append("VERIFY: not run.")
     else:
         status = "PASSED" if ctx.verify_ok else "FAILED"
         out = ctx.verify_output.strip()[-2000:]

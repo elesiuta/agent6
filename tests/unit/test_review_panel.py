@@ -573,3 +573,12 @@ def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
     assert is_grounded("img.png", ranges) and is_grounded("new.py", ranges)
     assert not is_grounded("img.png:3", ranges)
 
+
+def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
+    """`agent6 review` runs no verify command, and the loop has none to run
+    when none is configured; the prompt told the seats "none configured" in
+    both cases, wrong for a review of a repo that has one."""
+    from agent6.workflows._review import _build_user_message  # pyright: ignore[reportPrivateUsage]
+
+    prompt = _build_user_message(ReviewContext(task="t"))
+    assert "VERIFY: not run." in prompt and "none configured" not in prompt

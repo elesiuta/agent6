@@ -60,7 +60,7 @@ class ReviewContext:
     task: str = ""
     agents_md: str = ""
     diff: str = ""  # the working-tree delta since the last accepted finish
-    verify_ok: bool | None = None  # None = no verify configured
+    verify_ok: bool | None = None  # None = no result: none configured, or `agent6 review`
     verify_output: str = ""
     persona: str = ""
     prior_findings: tuple[Finding, ...] = ()  # already-injected, for dedup (not re-count)
