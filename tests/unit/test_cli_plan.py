@@ -315,3 +315,19 @@ def test_plan_edit_refuses_a_malformed_editor(
     rc = main(["plan", "edit", "happy-tree-mnop"])
     assert rc == 1
     assert "$EDITOR" in capsys.readouterr().err
+
+
+def test_a_bare_run_names_the_plan_the_way_its_execution_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bare `agent6 run` suggests the most recent plan by its title; it
+    embedded the raw `# Plan:` line while the execution prompt strips that
+    convention, so the same plan read "Plan: Do the thing" in one place and
+    "Do the thing" in the other."""
+    monkeypatch.chdir(tmp_path)
+    _seed_plan(tmp_path, "happy-tree-qrst", "# Plan: Do the thing\n\n1. step\n")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    assert main(["run"]) == 2
+    err = capsys.readouterr().err
+    assert "happy-tree-qrst (Do the thing)" in err
+    assert "Plan: Do the thing" not in err

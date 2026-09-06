@@ -33,13 +33,19 @@ def _first_markdown_line(text: str, max_len: int = 80) -> str:
     return "(untitled plan)"
 
 
+def _plan_title(plan_md: str) -> str:
+    """A plan's title: its first line, less the `# Plan: <title>` convention."""
+    title = _first_markdown_line(plan_md)
+    if title.lower().startswith("plan:"):
+        title = title[len("plan:") :].strip() or title
+    return title
+
+
 def _from_plan_task(plan_md: str, session_id: str) -> str:
     """The execution prompt for `run --from <plan>`, LEADING with the plan title so
     a listing (the runs table, the DAG root, attach --json) shows the plan, not
     the 'The following plan was prepared...' boilerplate as the run's task."""
-    title = _first_markdown_line(plan_md)
-    if title.lower().startswith("plan:"):  # the '# Plan: <title>' convention
-        title = title[len("plan:") :].strip() or title
+    title = _plan_title(plan_md)
     return f"Execute the prepared plan: {title}\n\n(from planning pass {session_id})\n\n{plan_md}"
 
 
@@ -138,7 +144,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
             error("'run' needs a task (or --from <plan-id>); no prior plan found to execute.")
             return 2
         plan_md = read_operator_file(_plans_dir(Path.cwd()) / last_plan / "plan.md")
-        title = _first_markdown_line(plan_md)
+        title = _plan_title(plan_md)
         if not sys.stdin.isatty():
             error(
                 f"'run' needs a task. Most recent plan is {last_plan}"
