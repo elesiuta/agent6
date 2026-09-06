@@ -49,6 +49,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 | `forked_from_turn` | `int | None` | `None` |
 | `forked_from_sha` | `str | None` | `None` |
 | `worktree` | `Path | None` | `None` |
+| `worktree_git_dir` | `Path | None` | `None` |
 | `merged` | `MergeStamp | None` | `None` |
 | `parallel_id` | `str | None` | `None` |
 | `lane` | `int | None` | `None` |

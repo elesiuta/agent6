@@ -326,6 +326,7 @@ class ToolDispatcher:
         run_root_node_id: str | None = None,
         mcp_manager: MCPManager | None = None,
         extra_protect_paths: tuple[Path, ...] = (),
+        worktree_git_dir: Path | None = None,
         mode: Literal["run", "plan", "ask", "machine"] = "run",
         state_dir: Path | None = None,
         session_dir: Path | None = None,
@@ -361,6 +362,10 @@ class ToolDispatcher:
         # .asm.toml + scripts bundle, so an agent state can't rewrite them
         # mid-run).
         self._extra_protect_paths = extra_protect_paths
+        # The repository git dir agent6 recorded for a fork's linked worktree
+        # (jail_policy grants it once the worktree's pointer still resolves
+        # to it); None for every other checkout.
+        self._worktree_git_dir = worktree_git_dir
         self._approver: Approver = approver or _default_approver
         self._questioner: _Questioner = questioner or _default_questioner
         # Seconds spent blocked on the operator (approvals, ask_user). The loop
@@ -1145,6 +1150,7 @@ class ToolDispatcher:
             timeout_s=timeout_s,
             extra_rw_paths=extra_rw_paths,
             extra_protect_paths=self._extra_protect_paths,
+            worktree_git_dir=self._worktree_git_dir,
         )
 
     def _net(self) -> SessionNetwork | None:

@@ -79,6 +79,7 @@ def write_session_manifest(
     forked_from_turn: int | None = None,
     forked_from_sha: str | None = None,
     worktree: Path | None = None,
+    worktree_git_dir: Path | None = None,
 ) -> None:
     """Write the canonical manifest.json for a run.
 
@@ -91,7 +92,8 @@ def write_session_manifest(
     set only for a run created by `agent6 fork`; they record the lineage
     (source run + the turn forked from + the workspace sha at that turn + the
     gate the source was judged by). A non-forked run leaves them null.
-    *worktree* is the fork's own checkout (see `SessionManifest.worktree`).
+    *worktree* is the fork's own checkout and *worktree_git_dir* the repository
+    git dir it points into (see `SessionManifest.worktree`).
     """
     lineage = _parallel_lineage()
     m = SessionManifest(
@@ -140,6 +142,7 @@ def write_session_manifest(
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
         worktree=worktree,
+        worktree_git_dir=worktree_git_dir,
         parallel_id=(lineage[0] if lineage else None),
         lane=(lineage[1] if lineage else None),
     )

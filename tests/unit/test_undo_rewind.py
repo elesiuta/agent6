@@ -220,6 +220,7 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
     layout = SessionLayout(state_dir=state_dir, session_id="run-AAAA11")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["worktree"] = str(tmp_path / "gone-worktree")
+    manifest["worktree_git_dir"] = str((repo / ".git").resolve())
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     said: list[str] = []
     before = sorted(p.name for p in (state_dir / "sessions" / "runs").iterdir())
@@ -287,6 +288,7 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
         forked_from_turn=2,
         forked_from_sha=c2,
         worktree=worktree,
+        worktree_git_dir=(repo / ".git").resolve(),
     )
     _checkpoint(fork, 0, head_sha=c2, ops=2)  # the seed: the parent's turn-2 conversation
 

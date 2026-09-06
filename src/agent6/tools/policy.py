@@ -154,13 +154,11 @@ def resolve_network(
 
 
 def linked_worktree_git_dir(root: Path) -> Path | None:
-    """The repository git dir a linked worktree at *root* points into, or
-    None for an ordinary checkout. A fork's leg runs in a linked worktree:
-    its `.git` is a file (`gitdir: <repo>/.git/worktrees/<name>`) and that
-    entry's `commondir` names the repository's `.git`, which every git
-    command there reads. Resolved from those two files, as git does, so the
-    grant every policy consumer sees is the same one and costs no
-    subprocess."""
+    """The repository git dir the linked worktree at *root* points into, or
+    None for an ordinary checkout: its `.git` file (`gitdir: <repo>/.git/
+    worktrees/<name>`) and that entry's `commondir`, resolved as git does.
+    Read to VERIFY a recorded grant, never to make one: both files sit in the
+    workspace, writable by a jailed command under hardened."""
     pointer = root / ".git"
     if not pointer.is_file():
         return None
@@ -191,8 +189,16 @@ def jail_policy(
     extra_protect_paths: tuple[Path, ...] = (),
     network: NetworkMode | None = None,
     env_base: dict[str, str] | None = None,
+    worktree_git_dir: Path | None = None,
 ) -> JailPolicy:
     """The sandbox policy every LLM-influenced argv runs under.
+
+    *worktree_git_dir* is the repository git dir agent6 recorded when it
+    added *root* as a fork's linked worktree (the manifest's
+    `worktree_git_dir`): granted read-only, so git works there, once the
+    worktree's own `.git` pointer still resolves to it; a pointer that names
+    anything else refuses (JailUnavailableError) rather than grant what a
+    jailed command wrote. A linked worktree with no record gets no grant.
 
     One owner, so every caller is confined identically: a foreground command, a
     detached one (`background: true`), the baseline gate re-run, and a spawned
@@ -265,7 +271,16 @@ def jail_policy(
     # mounts. Without this a `uv run` verify dies 127.
     tool_path, tool_mounts = operator_tool_paths()
     env["PATH"] = tool_path
-    git_dir = linked_worktree_git_dir(root)
+    git_dir: Path | None = None
+    if worktree_git_dir is not None:
+        pointed = linked_worktree_git_dir(root)
+        if pointed != worktree_git_dir:
+            raise JailUnavailableError(
+                f"the worktree's .git at {root / '.git'} points at {pointed}, not the"
+                f" repository git dir agent6 recorded for it ({worktree_git_dir});"
+                " a rewritten pointer grants nothing. Restore the pointer, or fork again."
+            )
+        git_dir = worktree_git_dir
     return JailPolicy(
         cwd=root,
         argv=argv,

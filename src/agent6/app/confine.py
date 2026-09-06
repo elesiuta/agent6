@@ -24,7 +24,6 @@ from agent6.sandbox.jail import JailUnavailableError, tool_mount_notes
 from agent6.tools.policy import (
     jail_home_refusal,
     jail_policy,
-    linked_worktree_git_dir,
     persistent_jail_home,
 )
 from agent6.types import IsolationLevel
@@ -36,6 +35,7 @@ def warn_sandbox_gaps(
     cfg: Config,
     *,
     root: Path,
+    worktree_git_dir: Path | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """Print a prominent warning when the isolation confines less than it promises.
@@ -162,7 +162,7 @@ def warn_sandbox_gaps(
             "Landlock ABI 3 (Linux 6.2): upgrade the kernel, or run on 'strict', "
             "whose mount namespace confines truncation on any ABI."
         )
-    for hidden, region, source in unmaskable_exposures(cfg, isolation, root):
+    for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
         reporter.warn(
             f"jailed commands can read {hidden}: it sits inside"
             f" {region} ({source}), which they are granted, and 'hardened' has no"
@@ -281,23 +281,24 @@ def check_jail_home(cfg: Config, isolation: IsolationLevel, *, explicitly_set: b
     return None if persistent is None else jail_home_refusal(persistent)
 
 
-def _hardened_grant_regions(cfg: Config, root: Path) -> tuple[tuple[Path, str], ...]:
+def _hardened_grant_regions(
+    cfg: Config, root: Path, worktree_git_dir: Path | None = None
+) -> tuple[tuple[Path, str], ...]:
     """Every region the hardened launcher grants a command, labeled by its
     source. Derived from the SAME builders the run uses (`jail_policy` for the
     command surface, `mcp_server_policy` per enabled server) so preflight and
     enforcement cannot drift; the fixed sets mirror the launcher's hardened
     ruleset (jail/src/main.rs): /tmp is granted RW, the system roots
     read+exec."""
-    policy = jail_policy(root, cfg, "hardened", ("true",))
+    policy = jail_policy(root, cfg, "hardened", ("true",), worktree_git_dir=worktree_git_dir)
     regions: list[tuple[Path, str]] = [
         (root, "the workspace"),
         (Path("/tmp"), "the host's shared /tmp (hardened has no private tmpfs)"),  # noqa: S108
     ]
     for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
         regions.append((Path(sysdir), "a system dir every command is granted"))
-    git_dir = linked_worktree_git_dir(root)
     for p in policy.extra_ro_paths:
-        if Path(p) == git_dir:
+        if Path(p) == worktree_git_dir:
             regions.append(
                 (Path(p), "the repository's .git, which this linked worktree points into")
             )
@@ -323,7 +324,7 @@ def _hardened_grant_regions(cfg: Config, root: Path) -> tuple[tuple[Path, str], 
 
 
 def unmaskable_exposures(
-    cfg: Config, isolation: IsolationLevel, root: Path
+    cfg: Config, isolation: IsolationLevel, root: Path, worktree_git_dir: Path | None = None
 ) -> tuple[tuple[Path, Path, str], ...]:
     """`(hidden path, granted region, region source)` triples this isolation
     cannot mask, hidden-path first. Empty on strict (it masks) and on `none`
@@ -337,7 +338,7 @@ def unmaskable_exposures(
     """
     if isolation != "hardened":
         return ()
-    regions = _hardened_grant_regions(cfg, root)
+    regions = _hardened_grant_regions(cfg, root, worktree_git_dir)
     out: list[tuple[Path, Path, str]] = []
     for h in hidden_paths(Path(p) for p in cfg.sandbox.hide_paths):
         hr = h.resolve()
@@ -349,7 +350,9 @@ def unmaskable_exposures(
     return tuple(out)
 
 
-def check_hide_paths_support(cfg: Config, isolation: IsolationLevel, root: Path) -> str | None:
+def check_hide_paths_support(
+    cfg: Config, isolation: IsolationLevel, root: Path, worktree_git_dir: Path | None = None
+) -> str | None:
     """A refusal message when an EXPLICIT `[sandbox].hide_paths` entry cannot
     be honored here, else None.
 
@@ -364,7 +367,7 @@ def check_hide_paths_support(cfg: Config, isolation: IsolationLevel, root: Path)
     if isolation != "hardened":
         return None  # before reading config: every other level masks
     listed = {Path(p) for p in cfg.sandbox.hide_paths}
-    for hidden, region, source in unmaskable_exposures(cfg, isolation, root):
+    for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
         if hidden in listed:
             return (
                 f"sandbox.hide_paths lists {str(hidden)!r}, which sits inside"
@@ -407,6 +410,7 @@ def config_refusal(
     workspace: Path,
     *,
     explicit_leaves: frozenset[str] = frozenset(),
+    worktree_git_dir: Path | None = None,
 ) -> str | None:
     """The first refusal for a config this host cannot honor, else None.
 
@@ -422,7 +426,7 @@ def config_refusal(
         # one it cannot make. Refusing that here keeps it a message.
         lambda: check_jail_home(cfg, isolation, explicitly_set="sandbox.home" in explicit_leaves),
         lambda: check_mcp_network_support(cfg, isolation),
-        lambda: check_hide_paths_support(cfg, isolation, workspace),
+        lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),
         lambda: check_workspace_outside_private_dirs(workspace),
         lambda: check_protect_git_support(
             cfg, isolation, explicitly_set="sandbox.protect_git" in explicit_leaves

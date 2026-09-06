@@ -263,6 +263,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.error(f"cannot resume {session_id}: {exc}")
         return 2
     cwd = manifest.worktree or repo
+    if manifest.worktree is not None and manifest.worktree_git_dir is None:
+        reporter.error(
+            f"cannot resume {session_id}: its manifest names a worktree but not the repository"
+            f" git dir it points into, so its jail cannot grant one; `agent6 fork {session_id}`"
+            " continues its commits in a new worktree."
+        )
+        return 2
     if manifest.worktree is not None and not (cwd / ".git").exists():
         reporter.error(
             f"cannot resume {session_id}: its worktree {cwd} is gone (pruned or removed)."
@@ -488,6 +495,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
                 reporter=reporter,
                 explicit_leaves=explicit_leaves,
+                worktree_git_dir=manifest.worktree_git_dir,
             )
         except SessionRefused as refusal:
             return refusal.rc
@@ -599,6 +607,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 resuming=True,
+                worktree_git_dir=manifest.worktree_git_dir,
             ),
             frontend=frontend,
             reporter=reporter,

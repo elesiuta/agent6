@@ -194,6 +194,11 @@ class SessionManifest(BaseModel):
     # absolute. None for a session working in the operator's checkout; an
     # `/undo` fork names its source's.
     worktree: Path | None = None
+    # The repository git dir that worktree points into, recorded when agent6
+    # added it: the one path a fork leg's jail grants beyond the workspace.
+    # Never read back from the worktree's own `.git` pointer, which a jailed
+    # command can rewrite under hardened.
+    worktree_git_dir: Path | None = None
     # merge stamp (null until the run branch is merged)
     merged: MergeStamp | None = None
     # parallel lineage + compare stamp (null outside a fan-out)

@@ -63,6 +63,7 @@ from agent6.git_ops import (
     chain_ref_for,
     chain_tip,
     create_branch_at,
+    git_common_dir,
     merge_stamp_holds,
     remove_worktree,
     run_branch_for,
@@ -400,6 +401,13 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         reporter.error(f"cannot read the manifest of {undone.session_id}: {exc}")
         return None
     checkout = manifest.worktree or cwd
+    if manifest.worktree is not None and manifest.worktree_git_dir is None:
+        reporter.error(
+            f"cannot undo {undone.session_id}: its manifest names a worktree but not the"
+            f" repository git dir it points into; `agent6 fork {undone.session_id}` continues"
+            " its commits in a new worktree."
+        )
+        return None
     if manifest.worktree is not None and not (checkout / ".git").exists():
         commits = manifest.run_branch or chain_ref_for(undone.session_id)
         reporter.error(
@@ -448,7 +456,11 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
             at_turn=target.at_turn,
             cwd=cwd,
             worktree=False,
-            checkout=manifest.worktree,
+            checkout=(
+                Checkout(manifest.worktree, manifest.worktree_git_dir)
+                if manifest.worktree is not None and manifest.worktree_git_dir is not None
+                else None
+            ),
             reporter=reporter,
         )
         if rc != 0:
@@ -486,6 +498,16 @@ def _report_rewind(
         reporter.note(f"the checkout already matches {turn}")
     stood = f"the tree as it stood is commit {kept[:12]} on {where}; " if kept else ""
     reporter.note(f"{stood}the later commits stay on {where}")
+
+
+@dataclass(frozen=True, slots=True)
+class Checkout:
+    """A fork's own checkout: its linked worktree and the repository git dir
+    that worktree points into, recorded together (a fork leg's jail grants
+    the dir from this record, never from the worktree's `.git` pointer)."""
+
+    worktree: Path
+    git_dir: Path
 
 
 class _ForkRefused(Exception):
@@ -738,7 +760,7 @@ def create_fork(
     sandbox_overrides: SandboxOverrides | None = None,
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
     worktree: bool = True,
-    checkout: Path | None = None,
+    checkout: Checkout | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, int]:
     """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
@@ -748,9 +770,9 @@ def create_fork(
     HEAD, the lineage record and, for a run with *worktree* set, a linked
     worktree detached at that sha which the manifest names and `resume` runs
     the leg in. With *worktree* off (`/undo`) the child works in *checkout*
-    (a worktree, or None for the operator's): the checkout the undone
-    session ran in, which its source, an ancestor up the lineage, need not
-    share. A plan or ask fork never edits and reads the operator's checkout,
+    (a worktree with its recorded git dir, or None for the operator's): the
+    checkout the undone session ran in, which its source, an ancestor up the
+    lineage, need not share. A plan or ask fork never edits and reads the operator's checkout,
     so it gets no worktree either way. Returns `(child_id, 0)` on success,
     else `("", rc)` after printing the reason. The caller (`ui/cli/fork.py`)
     then either reports the created id (`--no-run`) or continues it over
@@ -770,30 +792,33 @@ def create_fork(
         )
     except _ForkRefused as refused:
         return "", refused.rc
-    path = checkout
     added = worktree and plan.mode == "run"
     if added:
         path = subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:
+            # The git dir the worktree points into, taken from the repository
+            # agent6 runs in: the record a fork leg's jail grants from.
+            checkout = Checkout(path, git_common_dir(cwd))
             add_worktree(cwd, path, plan.forked_from_sha)
         except GitError as exc:
             reporter.error(f"could not add the fork's worktree at {path}: {exc}")
             return "", 1
-    rc = _materialize_fork(plan, cwd=cwd, worktree=path, reporter=reporter)
+    rc = _materialize_fork(plan, cwd=cwd, checkout=checkout, reporter=reporter)
     if rc != 0:
-        if added and path is not None:
-            remove_fork_worktree(cwd, path)
+        if added and checkout is not None:
+            remove_fork_worktree(cwd, checkout.worktree)
         return "", rc
     return plan.dst.session_id, 0
 
 
 def _materialize_fork(
-    plan: _ForkPlan, *, cwd: Path, worktree: Path | None, reporter: Reporter = STDIO_REPORTER
+    plan: _ForkPlan, *, cwd: Path, checkout: Checkout | None, reporter: Reporter = STDIO_REPORTER
 ) -> int:
     """Write the fork's state on disk: clone the checkpoint + DAG, the manifest
-    (naming *worktree*, the checkout the fork works in; None for the
-    operator's), the git refs, and the lineage record. Returns 0 on success,
-    else an error code (after printing). The source run is never touched."""
+    (naming *checkout*, the worktree the fork works in and its git dir; None
+    for the operator's), the git refs, and the lineage record. Returns 0 on
+    success, else an error code (after printing). The source run is never
+    touched."""
     src, dst = plan.src, plan.dst
     if dst.session_dir.exists():
         reporter.error(f"target run dir already exists: {dst.session_dir}")
@@ -827,7 +852,8 @@ def _materialize_fork(
         forked_from_sha=plan.forked_from_sha,
         gate=plan.gate,
         isolation=resolve_isolation(plan.cfg.sandbox.isolation, detect_env()),
-        worktree=worktree,
+        worktree=checkout.worktree if checkout is not None else None,
+        worktree_git_dir=checkout.git_dir if checkout is not None else None,
     )
 
     # Seed the fork's chain at the historical sha WITHOUT touching the
@@ -855,7 +881,7 @@ def _materialize_fork(
         ),
     )
     at = f"(branch {run_branch} " if run_branch else f"({chain_ref_for(dst.session_id)} "
-    where = f" in {worktree}" if worktree is not None else ""
+    where = f" in {checkout.worktree}" if checkout is not None else ""
     reporter.note(
         f"forked {src.session_id}@turn {plan.forked_from_turn} -> {dst.session_id} "
         f"{at}at {plan.forked_from_sha[:12]}){where}"

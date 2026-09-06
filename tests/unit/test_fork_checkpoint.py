@@ -1115,6 +1115,7 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     worktree = Path(manifest["worktree"])
     assert (worktree / ".git").is_file(), "a linked worktree of the repository"
+    assert manifest["worktree_git_dir"] == str((repo / ".git").resolve())
     assert (worktree / "seed.txt").read_text(encoding="utf-8") == "seed\n"
     assert not (worktree / "notes.md").exists()
     rev = ["git", "rev-parse", "HEAD"]

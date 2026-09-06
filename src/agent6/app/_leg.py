@@ -104,6 +104,9 @@ class LegInputs:
     standing_goal: str = ""
     pins: tuple[str, ...] = ()
     resuming: bool = False
+    # A fork leg's checkout is a linked worktree: the repository git dir agent6
+    # recorded for it, the one grant its jail makes beyond the workspace.
+    worktree_git_dir: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +231,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             mcp_manager=mcp_manager,
             session_net=session_net,
             rm_role=session.rm_role,
+            worktree_git_dir=inputs.worktree_git_dir,
         )
         curator = tools.curator
         dispatcher = tools.dispatcher

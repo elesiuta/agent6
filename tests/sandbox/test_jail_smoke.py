@@ -952,9 +952,9 @@ def test_jail_home_exists_in_the_private_tmpfs(jail_bin: Path, tmp_path: Path) -
 
 def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: Path) -> None:
     """A fork's leg runs in a linked worktree whose `.git` is a pointer into
-    the repository's; the policy builder grants that `.git` read-only from
-    the workspace shape alone, so `git` works there under strict and cannot
-    write it. A policy without the grant cannot even find the repository."""
+    the repository's; the policy grants the git dir agent6 recorded for the
+    worktree read-only, so `git` works there under strict and cannot write
+    it. A policy without the grant cannot even find the repository."""
     from agent6.config import Config
     from agent6.git_ops import add_worktree
     from agent6.tools.policy import jail_policy
@@ -972,7 +972,15 @@ def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: P
         # the session network, which this test has no run to take it from.
         # `granted=False` is a raw policy the builder never shaped.
         policy = (
-            jail_policy(wt, Config(), "strict", argv, timeout_s=30.0, network="none")
+            jail_policy(
+                wt,
+                Config(),
+                "strict",
+                argv,
+                timeout_s=30.0,
+                network="none",
+                worktree_git_dir=(repo / ".git").resolve(),
+            )
             if granted
             else JailPolicy(cwd=wt, argv=argv, timeout_s=30.0)
         )

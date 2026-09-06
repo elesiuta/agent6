@@ -83,6 +83,7 @@ def select_isolation(
     confirm_unconfined: Callable[[IsolationLevel, Config], bool],
     reporter: Reporter,
     explicit_leaves: frozenset[str] = frozenset(),
+    worktree_git_dir: Path | None = None,
 ) -> IsolationLevel:
     """The isolation preflight: pick the sandbox isolation for this environment,
     confirm an unconfined autorun, and refuse configs the isolation cannot honor
@@ -91,7 +92,9 @@ def select_isolation(
     env = detect_env()
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
     try:
-        warn_sandbox_gaps(selected, env, cfg, root=cwd, reporter=reporter)
+        warn_sandbox_gaps(
+            selected, env, cfg, root=cwd, worktree_git_dir=worktree_git_dir, reporter=reporter
+        )
     except JailUnavailableError as exc:
         # The hardened exposure scan builds the run's policy, which creates the
         # jail's HOME and refuses one it cannot make.
@@ -107,7 +110,9 @@ def select_isolation(
         raise SessionRefused(2)
     # The shared list (`config_refusal`): a default this host cannot honour
     # degraded with a warning above; a value the operator wrote down refuses.
-    cfg_err = config_refusal(cfg, selected, cwd, explicit_leaves=explicit_leaves)
+    cfg_err = config_refusal(
+        cfg, selected, cwd, explicit_leaves=explicit_leaves, worktree_git_dir=worktree_git_dir
+    )
     if cfg_err is not None:
         reporter.refuse(cfg_err)
         raise SessionRefused(2)
@@ -232,6 +237,7 @@ def build_session_tools(
     mcp_manager: MCPManager | None,
     rm_role: RoleModel,
     session_net: SessionNetwork | None = None,
+    worktree_git_dir: Path | None = None,
 ) -> SessionTools:
     # The DAG curator runs in-process: the run's worker.lock already makes
     # this the sole writer, so no subprocess or socket is needed.
@@ -246,6 +252,7 @@ def build_session_tools(
         curator=curator,
         run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id
         mcp_manager=mcp_manager,
+        worktree_git_dir=worktree_git_dir,
         mode=mode,
         state_dir=state_dir,
         session_dir=layout.session_dir,

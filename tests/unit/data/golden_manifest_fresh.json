@@ -38,6 +38,7 @@
   "forked_from_turn": null,
   "forked_from_sha": null,
   "worktree": null,
+  "worktree_git_dir": null,
   "merged": null,
   "parallel_id": null,
   "lane": null,
