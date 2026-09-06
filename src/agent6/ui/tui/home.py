@@ -152,7 +152,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
     def on_mount(self) -> None:
         table = self.query_one("#sessions", DataTable)
         table.cursor_type = "row"
-        table.add_columns("when", "status", "cost", "id", "task")
+        table.add_columns("updated", "status", "cost", "id", "task")
         self.action_refresh()
         table.focus()
         self.set_interval(_HUB_POLL_S, self._poll)

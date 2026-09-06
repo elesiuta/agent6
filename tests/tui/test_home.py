@@ -526,3 +526,28 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
             assert screen.check_action("refresh", ()) is True
 
     asyncio.run(scenario())
+
+
+def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: Path) -> None:
+    """The time column had three names across the hubs: `updated` (CLI),
+    `when` (TUI) and a locale string (web)."""
+    import asyncio
+
+    from textual.widgets import DataTable
+
+    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "r1"}])
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HomeScreen)
+            table = screen.query_one("#sessions", DataTable)
+            labels = [str(column.label) for column in table.columns.values()]
+            assert labels == ["updated", "status", "cost", "id", "task"]
+
+    asyncio.run(scenario())

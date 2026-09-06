@@ -93,7 +93,12 @@ function fmtUsd(u, partial) {
   const p = partial ? '~' : '';
   return (u || 0) >= 0.995 ? p + '$' + Number(u || 0).toFixed(2) : p + '$' + Number(u || 0).toFixed(4);
 }
-function when(ts) { if (!ts) return ''; const d = new Date(ts * 1000); return d.toLocaleString(); }
+// The hub's `updated` cell, `MM-DD HH:MM` in local time like the CLI and TUI hubs.
+function when(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000), p = n => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 function setCrumb(t) { crumb.textContent = t || ''; }
 function closeLive() {
   if (live) { live.close(); live = null; }
