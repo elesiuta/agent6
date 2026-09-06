@@ -209,18 +209,20 @@ def test_two_identical_tool_calls_do_not_share_an_id() -> None:
 
 
 def test_a_tool_call_id_is_unique_across_a_sessions_turns() -> None:
-    """One ACP session runs many runs, and the stamped call id is a
-    per-DISPATCHER counter that restarts at "1" each time. Without the run id
-    an editor keyed on toolCallId -- which is the whole reason the field is
-    carried -- overwrites turn 1's FAILED call with turn 2's success."""
-    from agent6.ui.acp.updates import updates_for
+    """A later prompt resumes the same run under a fresh dispatcher, whose
+    stamped call ids restart at "1". Keyed on the run id alone, turn 2's first
+    call overwrote turn 1's in an editor keyed on toolCallId, the reason the
+    field is carried."""
+    from agent6.ui.acp.updates import tool_call_id
     from agent6.viewmodel.transcript import TranscriptItem
 
     item = TranscriptItem(kind="tool", name="run_command", arg="ls", ok=True, call_id="1")
-    first = updates_for(item, acp_session_id="s", session_id="brave-oak-AAAAAA")
-    second = updates_for(item, acp_session_id="s", session_id="clever-elm-BBBBBB")
-    assert first[0]["params"]["update"]["toolCallId"] != second[0]["params"]["update"]["toolCallId"]
-    assert first[0]["params"]["update"]["toolCallId"].startswith("brave-oak-AAAAAA:")
+    first = tool_call_id(item, "brave-oak-AAAAAA", 1)
+    second = tool_call_id(item, "brave-oak-AAAAAA", 2)
+    assert first != second
+    assert first.startswith("brave-oak-AAAAAA:")
+    (announced,) = updates_for(item, acp_session_id="s", wire_id=first)
+    assert announced["params"]["update"]["toolCallId"] == first
 
 
 def test_a_tools_output_is_wrapped_in_acps_tagged_content() -> None:

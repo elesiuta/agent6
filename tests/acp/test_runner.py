@@ -600,3 +600,90 @@ def test_a_second_prompt_resumes_the_same_run(
     (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
     assert bridge.run(session, "and now this") == "end_turn"
     assert calls[1] == ("resume", "run-AAAA11", "and now this")
+
+
+def test_a_tool_call_id_is_unique_across_a_sessions_turns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later prompt resumes the same run under a fresh dispatcher, whose
+    stamped call ids restart at 1: turn 2's first call overwrote turn 1's in
+    an editor keyed on toolCallId."""
+    from agent6.events import EventSink
+
+    monkeypatch.chdir(tmp_path)
+
+    def _layout(session_id: str) -> SessionLayout:
+        return SessionLayout(state_dir=runner.resolved_state_dir(tmp_path), session_id=session_id)
+
+    def _run_task(*_a: object, **kw: Any) -> int:
+        layout = _layout(str(kw["session_id"]))
+        layout.session_dir.mkdir(parents=True, exist_ok=True)
+        events = EventSink(layout.logs_path)
+        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
+        events.emit("tool.result", name="run_command", ok=False, summary="no", call_id=1)
+        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
+        return 0
+
+    def _resume_task(_config_path: object, session_id: str, **_kw: Any) -> int:
+        events = EventSink(_layout(session_id).logs_path)
+        events.emit("loop.resume.start", session_id=session_id, mode="run", iteration=2)
+        events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
+        events.emit("tool.result", name="run_command", ok=True, summary="ok", call_id=1)
+        events.emit("session.end", reason="finish_session", iterations=2, all_passed=True)
+        return 0
+
+    monkeypatch.setattr(runner, "run_task", _run_task)
+    monkeypatch.setattr(runner, "resume_task", _resume_task)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        announced: list[str] = []
+        for req_id in (3, 4):
+            wire.prompt(session_id, "do the thing", req_id=req_id)
+            for _ in range(60):
+                message = wire.recv()
+                if message.get("method") == "session/update":
+                    update = message["params"]["update"]
+                    if update["sessionUpdate"] == "tool_call":
+                        announced.append(update["toolCallId"])
+                elif message.get("id") == req_id:
+                    break
+        assert len(announced) == 2, announced
+        assert announced[0] != announced[1], f"turn 2's first call reused {announced[0]}"
+    finally:
+        wire.close()
+
+
+def test_a_late_tail_keeps_its_own_turn(tmp_path: Path) -> None:
+    """A tail that outlives its turn's join reads the turn it was started for;
+    the next turn's increment must not restamp its late items."""
+    import time
+
+    from agent6.events import EventSink
+
+    sent: list[dict[str, Any]] = []
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge = RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", turn=1)
+    log = tmp_path / "logs.jsonl"
+    log.write_text("", encoding="utf-8")
+    done = threading.Event()
+    tail = threading.Thread(
+        target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
+        args=(session, log, done.is_set, False, 1),
+        daemon=True,
+    )
+    tail.start()
+    session.turn = 2  # the next turn began while this tail still reads
+    EventSink(log).emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
+    for _ in range(100):
+        if sent:
+            break
+        time.sleep(0.05)
+    done.set()
+    tail.join(timeout=5.0)
+    assert sent and sent[0]["params"]["update"]["toolCallId"] == "run-x:1:1", sent

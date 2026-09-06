@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
-from agent6.ui.acp.updates import message_update, updates_for
+from agent6.ui.acp.updates import message_update, tool_call_id, updates_for
 from agent6.viewmodel.transcript import TranscriptFold, TranscriptItem
 
 _SCHEMA = json.loads(
@@ -64,7 +64,7 @@ def _notifications() -> list[dict[str, Any]]:
                     updates_for(
                         item,
                         acp_session_id="s",
-                        session_id="brave-oak-AAAAAA",
+                        wire_id=tool_call_id(item, "brave-oak-AAAAAA", 1),
                         announced=item.call_id in announced,
                     )
                 )
@@ -99,7 +99,7 @@ def test_the_recorded_run_produces_only_valid_session_updates() -> None:
 def test_each_fold_item_projects_to_a_valid_update(item: TranscriptItem) -> None:
     """Item kinds the recorded run does not happen to contain."""
     validator = _validator("SessionNotification")
-    for body in updates_for(item, acp_session_id="s", session_id="r"):
+    for body in updates_for(item, acp_session_id="s", wire_id=tool_call_id(item, "r", 1)):
         assert not _errors(validator, body["params"]), json.dumps(body["params"])
 
 

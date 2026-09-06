@@ -40,7 +40,7 @@ from agent6.types import session_bucket
 from agent6.ui.acp.frontend import acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import ACP_MODE, Session, Sessions, StopReason
-from agent6.ui.acp.updates import message_update, printable, updates_for
+from agent6.ui.acp.updates import message_update, printable, tool_call_id, updates_for
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 from agent6.viewmodel.tail import tail_events
 from agent6.viewmodel.transcript import TranscriptFold
@@ -283,6 +283,7 @@ class RunBridge:
     def _run(self, session: Session, text: str, *, resuming: bool) -> StopReason:
         layout = session.layout(resolved_state_dir(session.cwd))
         os.chdir(session.cwd)
+        session.turn += 1
 
         said: list[str] = []
         ended, drained = threading.Event(), threading.Event()
@@ -305,7 +306,7 @@ class RunBridge:
 
         tail = threading.Thread(
             target=self._stream,
-            args=(session, layout.logs_path, _stop, resuming),
+            args=(session, layout.logs_path, _stop, resuming, session.turn),
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
@@ -345,28 +346,38 @@ class RunBridge:
         return stop_reason(code)
 
     def _stream(
-        self, session: Session, logs_path: Path, stop: Callable[[], bool], resuming: bool
+        self,
+        session: Session,
+        logs_path: Path,
+        stop: Callable[[], bool],
+        resuming: bool,
+        turn: int,
     ) -> None:
         """Project the run's journal into `session/update` as it is written.
 
         A resumed run appends to the journal its prior legs already fill, and
         the editor rendered those turns as they happened -- start at the end,
-        or the whole conversation replays as if new."""
+        or the whole conversation replays as if new. *turn* is the tail's
+        own: a tail that outlives its turn's join must not restamp its late
+        items with the next turn's number."""
         fold = TranscriptFold()
         announced: set[str] = set()  # tool calls the editor has been told about
         for event in tail_events(
             logs_path, stop_when_finished=True, should_stop=stop, start_at_end=resuming
         ):
             for item in fold.feed(event):
+                wire_id = (
+                    tool_call_id(item, session.session_id, turn) if item.kind == "tool" else ""
+                )
                 for body in updates_for(
                     item,
                     acp_session_id=session.acp_id,
-                    session_id=session.session_id,
-                    announced=item.call_id in announced,
+                    wire_id=wire_id,
+                    announced=wire_id in announced,
                 ):
                     self.server.notify_raw(body)
                 if item.kind == "tool":
-                    announced.add(item.call_id)
+                    announced.add(wire_id)
 
 
 def serve_acp(

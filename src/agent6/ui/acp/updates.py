@@ -33,16 +33,21 @@ _CHUNK_KIND = {
 
 
 def updates_for(
-    item: TranscriptItem, *, acp_session_id: str, session_id: str = "", announced: bool = False
+    item: TranscriptItem,
+    *,
+    acp_session_id: str,
+    wire_id: str = "",
+    announced: bool = False,
 ) -> list[dict[str, Any]]:
     """The `session/update` notifications one fold item becomes.
 
     A tool call is announced once (`tool_call`, from its first in-flight item)
     and updated after that (`tool_call_update`: awaiting approval, running
-    again, settled), paired by id; *announced* says the editor already has
-    the call. ACP models a tool call as a thing with a lifecycle, and an
-    editor that only sees the finished one cannot show work in progress,
-    which for a long verify is the whole point.
+    again, settled), paired by *wire_id* (`tool_call_id`; the leg's own stamp
+    when none is given); *announced* says the editor already has the call.
+    ACP models a tool call as a thing with a lifecycle, and an editor that
+    only sees the finished one cannot show work in progress, which for a
+    long verify is the whole point.
     """
     if item.kind == "done":
         return [
@@ -61,18 +66,17 @@ def updates_for(
             )
         ]
     if item.kind == "tool":
+        wire_id = wire_id or _leg_call_id(item)
         if item.ok is None and not announced:
             return [
-                _update(
-                    acp_session_id, {"sessionUpdate": "tool_call", **_tool_call(item, session_id)}
-                )
+                _update(acp_session_id, {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)})
             ]
         return [
             _update(
                 acp_session_id,
                 {
                     "sessionUpdate": "tool_call_update",
-                    "toolCallId": _tool_id(item, session_id),
+                    "toolCallId": wire_id,
                     "status": _tool_status(item),
                     **({"content": _tool_content(item)} if _tool_content(item) else {}),
                 },
@@ -181,29 +185,32 @@ def _tool_content(item: TranscriptItem) -> list[dict[str, Any]]:
     return [{"type": "content", "content": _text(body)}] if body else []
 
 
-def _tool_id(item: TranscriptItem, session_id: str) -> str:
-    """The provider's stamped call id, so every call is its own entity.
-
-    Reconstructing one from name+arg made two identical calls share an id, and
-    an editor keyed on it (ACP models a tool call as one thing with a
-    lifecycle) overwrote the first call's FAILURE with the second's success --
-    the red run vanished from the editor's view. The fall-back is for historical
-    events with no stamped id.
-
-    The stamp is a per-DISPATCHER counter and a dispatcher is per run, so one
-    ACP session's turns all start again at "1"; the run id is what makes it
-    unique for the life of the session.
-    """
-    within_run = item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
-    return f"{session_id}:{within_run}" if session_id else within_run
+def wire_call_id(session_id: str, turn: int, within_leg: str) -> str:
+    """One tool call's id on the wire, `<run>:<turn>:<call>`: unique for the
+    life of the ACP session, which is what an editor keys a call's lifecycle
+    on. *within_leg* is the dispatcher's stamp, a per-leg counter that starts
+    at 1 in every turn, so the run id and the turn join it."""
+    return f"{session_id}:{turn}:{within_leg}" if session_id else within_leg
 
 
-def _tool_call(item: TranscriptItem, session_id: str) -> dict[str, Any]:
+def _leg_call_id(item: TranscriptItem) -> str:
+    """A fold item's stamped call id, which makes every call its own entity
+    (two identical calls share a name+arg key); the name+arg fall-back is for
+    historical events with no stamp."""
+    return item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
+
+
+def tool_call_id(item: TranscriptItem, session_id: str, turn: int) -> str:
+    """`wire_call_id` for a fold item."""
+    return wire_call_id(session_id, turn, _leg_call_id(item))
+
+
+def _tool_call(item: TranscriptItem, wire_id: str) -> dict[str, Any]:
     # The model wrote `arg` (its own argv / path / pattern), so it is scrubbed
     # like any other model text; `content` next door already was.
     title = printable(f"{item.name} {item.arg}".strip())
     return {
-        "toolCallId": _tool_id(item, session_id),
+        "toolCallId": wire_id,
         "title": title,
         # ACP's `kind` drives the editor's icon. agent6's own tool names are
         # the honest source; guessing a finer category from them would be a

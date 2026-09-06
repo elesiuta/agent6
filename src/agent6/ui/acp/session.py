@@ -43,6 +43,9 @@ class Session:
     # agent6's run id: empty until the first prompt mints it; later prompts
     # resume that same run, so the ACP session stays one conversation.
     session_id: str = ""
+    # The turn in progress, 1-based: one leg of the run, and the component
+    # that keeps a tool call's wire id unique across turns (`wire_call_id`).
+    turn: int = 0
     thread: threading.Thread | None = None
     cancelled: bool = False
     # Cleared BEFORE the turn answers. `thread.is_alive()` is still true while
