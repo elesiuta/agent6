@@ -109,12 +109,23 @@ def draft_step_diff_payload(
     """The patch one step of a draft introduced, or the whole bundle as of that
     step (from the empty tree: a draft starts from nothing) when *cumulative*.
     (payload, "") or (None, why)."""
+    return _diff_payload(
+        workspace, sha, base=EMPTY_TREE, cumulative=cumulative, miss="not a commit of this draft"
+    )
+
+
+def _diff_payload(
+    repo: Path, sha: str, *, base: str, cumulative: bool, miss: str
+) -> tuple[dict[str, Any] | None, str]:
+    """One step's patch, or the whole chain `base..sha` when *cumulative* and a
+    base is known; the payload says which it returned."""
     if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
         return None, f"not a commit sha: {sha!r}"
-    patch = diff_range(workspace, EMPTY_TREE, sha) if cumulative else commit_diff(workspace, sha)
+    whole = cumulative and bool(base)
+    patch = diff_range(repo, base, sha) if whole else commit_diff(repo, sha)
     if not patch:
-        return None, f"no diff for {sha[:12]} (not a commit of this draft)"
-    return {"sha": sha, "cumulative": cumulative, "patch": patch}, ""
+        return None, f"no diff for {sha[:12]} ({miss})"
+    return {"sha": sha, "cumulative": whole, "patch": patch}, ""
 
 
 def draft_dir_paths(cwd: Path) -> list[Path]:
@@ -328,11 +339,10 @@ def step_diff_payload(
         return None, f"unreadable manifest: {exc}"
     if m.git_control == "model":
         return None, "the model owns git in this run: no step chain to select from"
-    if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
-        return None, f"not a commit sha: {sha!r}"
-    patch = (
-        diff_range(repo, m.base_sha, sha) if cumulative and m.base_sha else commit_diff(repo, sha)
+    return _diff_payload(
+        repo,
+        sha,
+        base=m.base_sha,
+        cumulative=cumulative,
+        miss="pruned, or not a commit of this run",
     )
-    if not patch:
-        return None, f"no diff for {sha[:12]} (pruned, or not a commit of this run)"
-    return {"sha": sha, "cumulative": cumulative, "patch": patch}, ""

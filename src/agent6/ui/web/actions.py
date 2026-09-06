@@ -112,18 +112,27 @@ def spawn_machine_run(
     return (err == ""), (err or "started")
 
 
-def approve(cwd: Path, session_id: str, prompt_id: str, answer: str) -> tuple[bool, str]:
-    """Answer a pending approval prompt (the run's `approval.prompt`) with the
-    operator's literal choice."""
+def _live_session_dir(cwd: Path, session_id: str) -> Path | tuple[bool, str]:
+    """The session dir a verb acts on, or its refusal. A dead run is refused
+    whatever the page still offers: an approval box outlives the worker (it
+    clears on the answer event a dead run never emits), a crashed run folds as
+    unfinished so the composer still offers steer, and nothing would consume
+    the answer or the marker (the next resume drops them); a session grant
+    would be just as stranded."""
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
-        # The prompt box outlives the worker (it clears on the answer event,
-        # which a dead run will never emit), so refuse like every sibling
-        # action: nothing would consume the answer, and the next resume drops
-        # it. A session grant would be just as stranded.
         return False, "the session is not live"
+    return session_dir
+
+
+def approve(cwd: Path, session_id: str, prompt_id: str, answer: str) -> tuple[bool, str]:
+    """Answer a pending approval prompt (the run's `approval.prompt`) with the
+    operator's literal choice."""
+    session_dir = _live_session_dir(cwd, session_id)
+    if isinstance(session_dir, tuple):
+        return session_dir
     write_answer(session_dir, prompt_id, answer)
     return True, "answered"
 
@@ -132,11 +141,9 @@ def answer_question(
     cwd: Path, session_id: str, question_id: str, answers: list[str]
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt (one answer per question, by index)."""
-    session_dir = model.session_dir_for(cwd, session_id)
-    if session_dir is None:
-        return False, f"no session {session_id!r}"
-    if not session_is_live(session_dir):
-        return False, "the session is not live"  # see approve()
+    session_dir = _live_session_dir(cwd, session_id)
+    if isinstance(session_dir, tuple):
+        return session_dir
     prompt = open_question(session_dir)
     if prompt is None or prompt.id != question_id:
         return False, "that question is no longer open"
@@ -153,14 +160,9 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
     """Steer a live run: pre-place the answer, then drop the request marker the
     run picks up at its next safe boundary. `text` is a free instruction; "" means
     continue, "abort" stops the run (the same contract the TUI steer modal uses)."""
-    session_dir = model.session_dir_for(cwd, session_id)
-    if session_dir is None:
-        return False, f"no session {session_id!r}"
-    if not session_is_live(session_dir):
-        # A crashed run folds as unfinished, so the composer still offers
-        # steer; nothing would ever read the marker (and the next resume
-        # deletes it), so refuse like the stop/compact siblings.
-        return False, "the session is not live"
+    session_dir = _live_session_dir(cwd, session_id)
+    if isinstance(session_dir, tuple):
+        return session_dir
     question = parse_btw(text)
     if question is not None:
         # `/btw <question>` opens a side ask beside the run (the answer lands
@@ -268,22 +270,18 @@ def stop_after_step(cwd: Path, session_id: str) -> tuple[bool, str]:
     """Ask a live run to end cleanly at its next completed-iteration boundary
     (the finished step's tool results and auto-commit land first). The immediate
     stop stays the steer "abort" answer."""
-    session_dir = model.session_dir_for(cwd, session_id)
-    if session_dir is None:
-        return False, f"no session {session_id!r}"
-    if not session_is_live(session_dir):
-        return False, "the session is not live"
+    session_dir = _live_session_dir(cwd, session_id)
+    if isinstance(session_dir, tuple):
+        return session_dir
     request_stop(session_dir)
     return True, "stopping after the current step"
 
 
 def compact_run(cwd: Path, session_id: str) -> tuple[bool, str]:
     """Ask a live run to compact its context at the next safe boundary."""
-    session_dir = model.session_dir_for(cwd, session_id)
-    if session_dir is None:
-        return False, f"no session {session_id!r}"
-    if not session_is_live(session_dir):
-        return False, "the session is not live"
+    session_dir = _live_session_dir(cwd, session_id)
+    if isinstance(session_dir, tuple):
+        return session_dir
     if not request_compact(session_dir):
         return False, "could not write the compaction request"
     return True, "compaction requested"
