@@ -229,8 +229,21 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
 
     assert result is None
     assert any("gone-worktree" in line and "agent6 fork run-AAAA11" in line for line in said)
+    assert any("its commits are on agent6/run-AAAA11" in line for line in said)
     assert sorted(p.name for p in (state_dir / "sessions" / "runs").iterdir()) == before
     assert not (state_dir / "lineage.jsonl").exists()
+
+    # Pruned after a merge (branch gone): the refusal points at the merge that
+    # landed the commits, as `sessions commits` does, never at the gone branch.
+    manifest["merged"] = {"into": "main", "sha": _c2, "tip": _c2}
+    layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    _git(repo, "branch", "-D", "agent6/run-AAAA11")
+    said.clear()
+    assert (
+        undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append)) is None
+    )
+    assert any(f"merged into main as {_c2[:12]}" in line for line in said)
+    assert not any("agent6/run-AAAA11" in line or "refs/agent6" in line for line in said)
 
 
 def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(

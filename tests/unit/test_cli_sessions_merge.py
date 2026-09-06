@@ -529,6 +529,13 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     assert "nothing left to merge" in capsys.readouterr().out
     assert json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"] == stamp
 
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    capsys.readouterr()
+    assert main(["sessions", "commits", "run-SAME11"]) == 0
+    out = capsys.readouterr().out
+    assert "was pruned; already on main, no merge commit" in out
+    assert main_tip[:12] not in out  # the by-hand commit is not the run's
+
 
 def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

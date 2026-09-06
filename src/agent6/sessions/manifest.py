@@ -127,6 +127,20 @@ class MergeStamp(BaseModel):
     # stamp, and those commits exist in no other ref.
     tip: str = ""
 
+    @property
+    def commit(self) -> str:
+        """The merge commit's abbreviated sha, "" for a record that names none
+        (an all-zero sha)."""
+        return "" if not self.sha or set(self.sha) == {"0"} else self.sha[:12]
+
+    def landed(self) -> str:
+        """Where the merge put the run's work, one wording for every surface:
+        `merged into <base> as <sha12>`, or `already on <base>, no merge
+        commit` for a record that names none."""
+        if self.commit:
+            return f"merged into {self.into} as {self.commit}"
+        return f"already on {self.into}, no merge commit"
+
 
 class CompareStamp(BaseModel):
     """A fan-out lane's auto-compare placement. The fan-out id itself lives in

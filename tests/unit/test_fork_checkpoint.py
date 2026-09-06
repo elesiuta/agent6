@@ -1211,3 +1211,67 @@ def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
     err = capsys.readouterr().err
     assert manifest["worktree"] in err and "agent6 fork child-BBBB22" in err
     assert Path.cwd() == repo
+
+
+def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A merged fork whose branch and worktree are gone (deleted here by hand,
+    as `sessions prune --delete-squashed` and the worktree sweep leave them):
+    the refusal points at the merge stamp, what `sessions commits` prints,
+    never at the branch it named unchecked."""
+    import shutil
+
+    from agent6.app import resume as resume_mod
+
+    repo, _turn1, head = _fork_fixture(tmp_path, monkeypatch)
+    state_dir = resolved_state_dir(repo)
+    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    layout = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    manifest["merged"] = {"into": "main", "sha": head, "tip": manifest["forked_from_sha"]}
+    layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    sp.run(["git", "branch", "-D", "agent6/child-BBBB22"], cwd=repo, check=True)
+    shutil.rmtree(manifest["worktree"])
+    capsys.readouterr()
+
+    assert resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False) == 2
+    err = capsys.readouterr().err
+    assert f"merged into main as {head[:12]}" in err
+    assert "agent6/child-BBBB22" not in err and "refs/agent6" not in err
+
+
+def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fork merged, then resumed (a later commit on its branch and chain),
+    then its branch deleted and its worktree removed: the stamp covers only
+    the earlier tip, so the refusal names the chain ref that holds the later
+    commit, never the merge (which trusted the stamp unchecked)."""
+    import shutil
+
+    from agent6.app import resume as resume_mod
+
+    repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
+    state_dir = resolved_state_dir(repo)
+    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    layout = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    manifest["merged"] = {"into": "main", "sha": head, "tip": turn1}
+    layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    later = sp.run(
+        ["git", "commit-tree", f"{turn1}^{{tree}}", "-p", turn1, "-m", "a later leg"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    sp.run(["git", "update-ref", chain_ref_for("child-BBBB22"), later], cwd=repo, check=True)
+    sp.run(["git", "branch", "-D", "agent6/child-BBBB22"], cwd=repo, check=True)
+    shutil.rmtree(manifest["worktree"])
+    capsys.readouterr()
+
+    assert resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False) == 2
+    err = capsys.readouterr().err
+    assert f"its commits are on {chain_ref_for('child-BBBB22')}" in err
+    assert "merged into main" not in err

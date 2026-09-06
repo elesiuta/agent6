@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app.fork import remove_fork_worktree, worktree_owners
+from agent6.app.resume import covering_stamp
 from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import (
     DIFF_SHOW_SAFETY_FLAGS,
@@ -381,24 +382,30 @@ def _committed_nothing(cwd: Path, session_id: str) -> bool:
 
 def _pruned_branch_note(cwd: Path, manifest: SessionManifest, run_branch: str) -> str | None:
     """A friendly message when a run's branch is absent, or None when it is
-    there. Uses the manifest's recorded merge so diff/commits say where the work
-    went instead of leaking a raw git fatal, and separates the two ways to get
-    here: a merged-then-pruned branch, and a run that committed nothing, whose
-    branch was never cut."""
+    there. Says where the work went instead of leaking a raw git fatal, and
+    separates the ways to get here: a merged-then-pruned branch (the stamp
+    covering every commit the run made), a branch deleted past its stamp or
+    with no merge recorded (the chain ref keeps the commits), and a run that
+    committed nothing, whose branch was never cut."""
     if branch_exists(cwd, run_branch):
         return None
-    merged_into = manifest.merged.into if manifest.merged else ""
-    merged_sha = manifest.merged.sha if manifest.merged else ""
-    if merged_into:
-        note = f"[agent6] run branch {run_branch} was pruned; merged into {merged_into}"
-        if merged_sha and set(merged_sha) != {"0"}:
-            note += f" as {merged_sha[:12]}\n  see: git show {merged_sha[:12]}"
+    stamp = covering_stamp(cwd, manifest)
+    if stamp is not None:
+        note = f"[agent6] run branch {run_branch} was pruned; {stamp.landed()}"
+        if stamp.commit:
+            note += f"\n  see: git show {stamp.commit}"
         return note
     if _committed_nothing(cwd, manifest.session_id):
         return f"[agent6] this run committed nothing, so {run_branch} was never cut."
+    chain = chain_ref_for(manifest.session_id)
+    if manifest.merged is not None:
+        return (
+            f"[agent6] run branch {run_branch} is gone; its commits survive at {chain},"
+            f" past the merge into {manifest.merged.into}."
+        )
     return (
         f"[agent6] run branch {run_branch} is gone with no merge recorded; its commits"
-        f" survive at {chain_ref_for(manifest.session_id)}."
+        f" survive at {chain}."
     )
 
 

@@ -52,7 +52,7 @@ from agent6.app._setup import SandboxOverrides, detect_env, session_config
 from agent6.app.manifest import write_session_manifest
 from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.app.resume import resumable_bucket_dirs
+from agent6.app.resume import commits_note, resumable_bucket_dirs
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import (
@@ -409,11 +409,10 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         )
         return None
     if manifest.worktree is not None and not (checkout / ".git").exists():
-        commits = manifest.run_branch or chain_ref_for(undone.session_id)
         reporter.error(
             f"cannot undo {undone.session_id}: its worktree {checkout} is gone (pruned or"
-            f" removed). Its commits are on {commits}; `agent6 fork {undone.session_id}`"
-            " continues them in a new worktree."
+            f" removed); {commits_note(cwd, manifest)}; `agent6 fork {undone.session_id}`"
+            " continues it in a new worktree."
         )
         return None
     try:

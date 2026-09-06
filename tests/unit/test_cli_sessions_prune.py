@@ -110,8 +110,9 @@ def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
 
     assert main(["sessions", "commits", "gone11"]) == 0
     out = capsys.readouterr().out
-    # The manifest stamp records where, not with which strategy.
-    assert "was pruned" in out and "merged into main" in out
+    # The manifest stamp records where, not with which strategy; a stamp naming
+    # no merge commit reads as the content being on the base.
+    assert "was pruned; already on main, no merge commit" in out
 
     assert main(["sessions", "diff", "gone11"]) == 0
     assert "was pruned" in capsys.readouterr().out
@@ -167,6 +168,38 @@ def test_a_deleted_branch_names_the_chain_ref_that_still_holds_the_work(
     out = capsys.readouterr().out
     assert chain_ref_for("gonebr1") in out
     assert "committed nothing" not in out
+
+
+def test_a_deleted_branch_with_a_stale_stamp_names_the_chain_ref(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run merged, then resumed (its chain advanced past the stamp's tip),
+    then its branch deleted: `sessions commits` names the chain ref that
+    holds the later commit, never the merge, which covers only the earlier
+    tip (the stamp was trusted unchecked)."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "stale11", "a.txt")
+    merged_tip = _git(tmp_path, "rev-parse", "agent6/stale11")
+    _git(tmp_path, "checkout", "-q", "agent6/stale11")
+    (tmp_path / "b.txt").write_text("later\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "a later leg")
+    _git(tmp_path, "checkout", "-q", "main")
+    _git(tmp_path, "update-ref", chain_ref_for("stale11"), "agent6/stale11")
+    _git(tmp_path, "branch", "-D", "agent6/stale11")
+    _manifest(tmp_path, "stale11", base, merged=True, merged_tip=merged_tip)
+
+    assert main(["sessions", "commits", "stale11"]) == 0
+    out = capsys.readouterr().out
+    assert chain_ref_for("stale11") in out and "past the merge into main" in out
+    assert "was pruned" not in out
 
 
 def test_runs_prune_delete_squashed_removes_only_confirmed_squash_merged(

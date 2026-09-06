@@ -52,6 +52,7 @@ from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
+    branch_exists,
     chain_ref_for,
     chain_tip,
     is_ancestor,
@@ -79,7 +80,7 @@ from agent6.sessions.lock import (
     release_single_writer,
     repo_writer_holder,
 )
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
 from agent6.types import SESSION_KINDS, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
@@ -104,6 +105,35 @@ def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
         for kind in SESSION_KINDS.values()
         if kind.resumable
     ]
+
+
+def covering_stamp(repo: Path, manifest: SessionManifest) -> MergeStamp | None:
+    """The merge stamp when it describes every commit the run made (its tip
+    is the chain's, the chain is gone, or the stamp predates tips), else
+    None: a resumed run commits past its stamp, and no merge covers those
+    commits."""
+    stamp = manifest.merged
+    if stamp is None or not stamp.into:
+        return None
+    tip = chain_tip(repo, chain_ref_for(manifest.session_id))
+    return stamp if tip is None or not stamp.tip or tip == stamp.tip else None
+
+
+def commits_note(repo: Path, manifest: SessionManifest) -> str:
+    """Where a session's commits are, for a refusal that points at them: on
+    its run branch while that exists, else the merge that landed them (the
+    branch pruned after it, as `sessions commits` reports) while the stamp
+    covers the chain, else on its chain ref; "it recorded no commits" when
+    there is no chain either."""
+    if manifest.run_branch and branch_exists(repo, manifest.run_branch):
+        return f"its commits are on {manifest.run_branch}"
+    stamp = covering_stamp(repo, manifest)
+    if stamp is not None:
+        return f"its commits are {stamp.landed()}"
+    chain = chain_ref_for(manifest.session_id)
+    if chain_tip(repo, chain) is not None:
+        return f"its commits are on {chain}"
+    return "it recorded no commits"
 
 
 def turn_replay_allowed(
@@ -272,9 +302,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         return 2
     if manifest.worktree is not None and not (cwd / ".git").exists():
         reporter.error(
-            f"cannot resume {session_id}: its worktree {cwd} is gone (pruned or removed)."
-            f" Its commits are on {manifest.run_branch or chain_ref_for(session_id)};"
-            f" `agent6 fork {session_id}` continues them in a new worktree."
+            f"cannot resume {session_id}: its worktree {cwd} is gone (pruned or removed);"
+            f" {commits_note(repo, manifest)}; `agent6 fork {session_id}` continues it in a"
+            " new worktree."
         )
         return 2
     # One authoritative writer per run dir (see acquire_single_writer). Refuse a
