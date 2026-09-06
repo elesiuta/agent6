@@ -581,9 +581,9 @@ class Workflow:
     # behaviour. Reasoning-starvation bursts count as went_quiet, so the cap is
     # sized to survive a few of them.
     went_quiet_max_nudges: int = 4
-    # loop-guard escalation. The guard injects a one-shot
-    # notice when the same (tool, args) signature streak hits
-    # `repeat_threshold` (default 3). When the worker ignores it and the
+    # loop-guard escalation. The guard injects a notice when the same
+    # (tool, args) signature streak hits `repeat_threshold` (default 3),
+    # every other turn while it lasts. When the worker ignores it and the
     # streak reaches `loop_guard_kill_threshold`, the loop forcibly
     # terminates with reason="loop_guard_killed" rather than letting
     # the worker burn the rest of the budget circling the same call.
@@ -2150,10 +2150,11 @@ class Workflow:
         _nudges for the measurement behind it).
 
         The loop-guard notice fires when the same (tool, args) signature has
-        been called >= 3 times in a row, re-emitted once per "fresh" streak
-        (when a new streak crosses the threshold) so spamming the same call
-        only triggers once per latch episode. The repeat counter resets on any
-        new signature, so a normal re-read after an edit does not trigger."""
+        been called >= 3 times in a row, and re-arms after one quiet
+        iteration, so an unbroken streak sees it every other turn until
+        `loop_guard_kill_threshold` ends the run. The repeat counter resets on
+        any new signature, so a normal re-read after an edit does not
+        trigger."""
         if turn.review_text:
             turn.tool_results.append(Notice(f"[review]\n{turn.review_text}"))
         if turn.metric_feedback:
