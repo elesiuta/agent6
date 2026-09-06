@@ -83,9 +83,12 @@ def _cache_state() -> tuple[tuple[str, float], ...]:
 
 
 @lru_cache(maxsize=4)
-def _load_pricing(state: tuple[tuple[str, float], ...]) -> dict[str, tuple[float, float]]:
-    """Merge the pricing maps of every provider cache file. Never raises."""
-    out: dict[str, tuple[float, float]] = {}
+def _load_pricing(
+    state: tuple[tuple[str, float], ...],
+) -> dict[str, dict[str, tuple[float, float]]]:
+    """The pricing map of every provider cache file, keyed by the provider
+    name the file is named for. Never raises."""
+    out: dict[str, dict[str, tuple[float, float]]] = {}
     root = _models_cache_dir()
     if root is None:
         return out
@@ -96,6 +99,7 @@ def _load_pricing(state: tuple[tuple[str, float], ...]) -> dict[str, tuple[float
             pricing = data.get("pricing") if isinstance(data, dict) else None
             if not isinstance(pricing, dict):
                 continue
+            table = out.setdefault(path.stem, {})
             for model, pair in pricing.items():
                 if (
                     isinstance(model, str)
@@ -103,15 +107,32 @@ def _load_pricing(state: tuple[tuple[str, float], ...]) -> dict[str, tuple[float
                     and len(pair) == 2
                     and all(isinstance(x, (int, float)) and x >= 0 for x in pair)
                 ):
-                    out.setdefault(model, (float(pair[0]), float(pair[1])))
+                    table[model] = (float(pair[0]), float(pair[1]))
     return out
 
 
-def lookup_price(model: str) -> tuple[float, float] | None:
-    """(input, output) USD per 1M tokens for *model*, or None if unknown."""
-    pricing = _load_pricing(_cache_state())
-    hit = pricing.get(model)
+def _price_in(table: dict[str, tuple[float, float]], model: str) -> tuple[float, float] | None:
+    hit = table.get(model)
     if hit is not None:
         return hit
     alias = _openrouter_alias(model)
-    return pricing.get(alias) if alias is not None else None
+    return table.get(alias) if alias is not None else None
+
+
+def lookup_price(model: str, provider: str = "") -> tuple[float, float] | None:
+    """(input, output) USD per 1M tokens for *model*, or None if unknown.
+
+    *provider* names the config entry the call went through: two providers
+    can list one model id at different prices, and the route's own listing
+    is the price that bills. Without one, the first listing that has the
+    id (by file name) answers."""
+    tables = _load_pricing(_cache_state())
+    if provider and provider in tables:
+        hit = _price_in(tables[provider], model)
+        if hit is not None:
+            return hit
+    for name in sorted(tables):
+        hit = _price_in(tables[name], model)
+        if hit is not None:
+            return hit
+    return None

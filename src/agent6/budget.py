@@ -212,7 +212,9 @@ def _billed_apart_from_plan(t: _ModelTotals | ModelUsage) -> bool:
     )
 
 
-def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | None:
+def _model_cost_usd(
+    model: str, t: _ModelTotals | ModelUsage, provider: str = ""
+) -> _ModelCost | None:
     """Per-model USD cost: the ONE owner of the pricing arithmetic, shared by
     `_estimate_usd_locked` (the enforced USD ceiling) and `format_summary`
     (the printed figure) so a drifted copy can never misreport spend.
@@ -239,7 +241,7 @@ def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | No
         # an authoritative $0 -- never "unknown", never table-priced.
         return _ModelCost(0.0, reported=True, estimated=False)
     reported = t.reported_cost_usd > 0.0
-    price = lookup_price(model)
+    price = lookup_price(model, provider)
     if price is None:
         if reported:
             # Dropping the reported dollars here would zero real spend out of
@@ -326,6 +328,14 @@ class BudgetTracker:
     # dollars (the balance header read as dollars); folds into the USD meter.
     _credits_last_usd: float | None = None
     _credits_spent_usd: float = 0.0
+    # model id -> the provider entry it is routed through, so a model id two
+    # providers list at different prices is priced by the route that bills.
+    _routes: dict[str, str] = field(default_factory=dict)
+
+    def note_route(self, model: str, provider: str) -> None:
+        """Record that *model* is called through provider entry *provider*."""
+        with self._lock:
+            self._routes[model] = provider
 
     def record(
         self,
@@ -387,7 +397,7 @@ class BudgetTracker:
             if plan_usage is not None:
                 self._check_plan_ceilings(model, plan_usage)
                 return
-            metered = cost_usd > 0.0 or lookup_price(model) is not None
+            metered = cost_usd > 0.0 or lookup_price(model, self._routes.get(model, "")) is not None
             if not metered:
                 self._unmetered_tokens += input_tokens + output_tokens
             if metered and self.max_usd == 0.0:
@@ -595,7 +605,7 @@ class BudgetTracker:
         total_usd = self._credits_spent_usd
         any_unknown = False
         for model, t in self._per_model.items():
-            cost = _model_cost_usd(model, t)
+            cost = _model_cost_usd(model, t, self._routes.get(model, ""))
             if cost is None:
                 any_unknown = True
                 continue
@@ -613,7 +623,7 @@ class BudgetTracker:
         metered = 0
         any_estimated = False
         for model, totals in snap.per_model.items():
-            cost = _model_cost_usd(model, totals)
+            cost = _model_cost_usd(model, totals, self._routes.get(model, ""))
             subscription = totals.percent_metered and not _billed_apart_from_plan(totals)
             if cost is None:
                 cost_str = "$? (unknown price)"

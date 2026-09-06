@@ -156,6 +156,7 @@ def _provider_from_entry(
     """Build a Provider for an explicit `[providers.<provider_name>]` entry +
     model + effort. Shared by `build_role_provider` (role routing) and the
     review panel's explicit per-seat `provider/model` routing."""
+    budget.note_route(model, provider_name)
     if isinstance(entry, ClaudeCodeProviderEntry):
         if effort == "off":
             raise ProviderError(
