@@ -2976,6 +2976,9 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
         def nodes(self) -> dict[str, Any]:
             return _typed(self._nodes)
 
+        def cursor(self) -> str | None:
+            return None
+
         def update_status(self, intent: Any) -> None:
             self.passed.append(intent.id)
             self._nodes[intent.id]["status"] = intent.new_status
@@ -3012,6 +3015,9 @@ class _FakeGraph:
 
     def nodes(self) -> dict[str, Any]:
         return _typed(self._nodes)
+
+    def cursor(self) -> str | None:
+        return None
 
 
 def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
@@ -4359,6 +4365,9 @@ def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
 
         def nodes(self) -> dict[str, Any]:
             return _typed(self._nodes)
+
+        def cursor(self) -> str | None:
+            return None
 
         def update_status(self, intent: Any) -> None:
             self.passed.append(intent.id)
@@ -6255,6 +6264,9 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
 
         def nodes(self) -> dict[str, Any]:
             return _typed(self._nodes)
+
+        def cursor(self) -> str | None:
+            return None
 
         def update_status(self, intent: Any) -> None:
             self.passed.append(intent.id)

@@ -12,6 +12,7 @@ end-to-end without spawning real runs. A fake curator records DAG mutations.
 from __future__ import annotations
 
 import subprocess as _sp
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -21,6 +22,8 @@ import pytest
 
 from agent6.app.parallel import build_coordinator_spawner
 from agent6.config import Config
+from agent6.graph.curator import CuratorError
+from agent6.graph.models import TaskNode
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
 from agent6.ui.cli.parallel import lane_runtime
@@ -94,34 +97,52 @@ class _OneShotSteer:
 
 class _FakeGraph:
     """A minimal in-memory curator: records add/update/record_commit, so the
-    loop's DAG stamping is observable without a real curator."""
+    loop's DAG stamping is observable without a real curator. It refuses an
+    unknown parent and links a child into its parent, as the curator does."""
 
     def __init__(self) -> None:
         self._seq = 0
-        self.nodes: dict[str, dict[str, Any]] = {}
+        self.entries: dict[str, TaskNode] = {}
         self.status_calls: list[tuple[str, str, str]] = []
         self.commit_calls: list[tuple[str, str]] = []
 
+    def nodes(self) -> dict[str, TaskNode]:
+        return dict(self.entries)
+
+    def cursor(self) -> str | None:
+        return None
+
     def add_subtask(self, intent: Any) -> Any:
+        parent = self.entries.get(intent.parent_id) if intent.parent_id else None
+        if intent.parent_id and parent is None:
+            raise CuratorError(f"add_subtask: unknown parent {intent.parent_id!r}")
         self._seq += 1
         nid = f"N{self._seq:025d}"  # 26 chars, matches TaskNode.id width
-        self.nodes[nid] = {
-            "parent_id": intent.parent_id,
-            "title": intent.draft.title,
-            "status": "pending",
-            "commit_sha": "",
-            "created_by": intent.draft.created_by,
-        }
+        now = datetime.now(UTC)
+        self.entries[nid] = TaskNode(
+            id=nid,
+            parent_id=intent.parent_id,
+            title=intent.draft.title,
+            created_at=now,
+            updated_at=now,
+            created_by=intent.draft.created_by,
+        )
+        if parent is not None:
+            self.entries[parent.id] = parent.model_copy(
+                update={"children": (*parent.children, nid)}
+            )
         return SimpleNamespace(id=nid)
 
     def update_status(self, intent: Any) -> Any:
         self.status_calls.append((intent.id, intent.new_status, intent.note))
-        self.nodes[intent.id]["status"] = intent.new_status
+        node = self.entries[intent.id]
+        self.entries[intent.id] = node.model_copy(update={"status": intent.new_status})
         return SimpleNamespace(id=intent.id)
 
     def record_commit(self, intent: Any) -> Any:
         self.commit_calls.append((intent.id, intent.sha))
-        self.nodes[intent.id]["commit_sha"] = intent.sha
+        node = self.entries[intent.id]
+        self.entries[intent.id] = node.model_copy(update={"commit_sha": intent.sha})
         return SimpleNamespace(id=intent.id)
 
 
@@ -359,9 +380,9 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     assert log.index("l1") > log.index("l2")  # l1 merged first => older => lower in log
     # Two steering nodes were added (besides the seeded root) and both passed
     # with a recorded commit sha.
-    steering = [n for n in graph.nodes.values() if n["created_by"] == "steering"]
+    steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 2
-    assert all(n["status"] == "passed" and n["commit_sha"] for n in steering)
+    assert all(n.status == "passed" and n.commit_sha for n in steering)
     assert len(graph.commit_calls) == 2
     # Events render the fan-out truthfully: dispatched carries tasks + group
     # (lane ids do not exist yet); joined names the REAL ids from the results.
@@ -418,9 +439,9 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: Path) -> None:
     ]
     # ONE DAG node for the segment (not one per lane), passed with a join sha, and
     # its note names both lanes.
-    steering = [n for n in graph.nodes.values() if n["created_by"] == "steering"]
+    steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1
-    assert steering[0]["status"] == "passed" and steering[0]["commit_sha"]
+    assert steering[0].status == "passed" and steering[0].commit_sha
     note = next(note for _id, _status, note in graph.status_calls)
     assert f"{coord_id}-p1-l1" in note and f"{coord_id}-p1-l2" in note
     # Both lanes still surface per-lane in the joined event.
@@ -454,7 +475,7 @@ def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: Path) -> None:
 
     lanes = spawner.calls[0][0]
     assert [(ln.task, ln.model) for ln in lanes] == [("tidy the imports", None)] * 3
-    steering = [n for n in graph.nodes.values() if n["created_by"] == "steering"]
+    steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1  # one node for the segment, not three
 
 
@@ -502,8 +523,8 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: Path) -> None
     failed = events.of("loop.parallel.failed")
     assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{coord_id}-p1-l2"]
     # The conflicting node is marked failed (NodeStatus has no "blocked").
-    steering = [n for n in graph.nodes.values() if n["created_by"] == "steering"]
-    assert sorted(n["status"] for n in steering) == ["failed", "passed"]
+    steering = [n for n in graph.entries.values() if n.created_by == "steering"]
+    assert sorted(n.status for n in steering) == ["failed", "passed"]
     summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
     assert "CONFLICT" in summary
     assert "git merge agent6/run-cf-p1-l2" in summary
@@ -536,8 +557,8 @@ def test_failed_lane_is_reported_truthfully(tmp_path: Path) -> None:
     assert result.reason == "max_iterations"  # did not crash
     joined = events.of("loop.parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["failed", "joined"]
-    steering = [n for n in graph.nodes.values() if n["created_by"] == "steering"]
-    assert sorted(n["status"] for n in steering) == ["failed", "passed"]
+    steering = [n for n in graph.entries.values() if n.created_by == "steering"]
+    assert sorted(n.status for n in steering) == ["failed", "passed"]
     summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
     assert "FAILED -- lane boom" in summary
 
@@ -586,9 +607,9 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: Path) -> None:
     texts = _user_texts(_final_messages(provider))
     assert any("disk full while cloning lane 2" in t for t in texts)
     # No steering node is orphaned as pending.
-    steering = [n for n in graph.nodes.values() if n["created_by"] == "steering"]
+    steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 2
-    assert all(n["status"] == "failed" for n in steering)
+    assert all(n.status == "failed" for n in steering)
 
 
 def test_bare_parallel_directive_dispatches_nothing(tmp_path: Path) -> None:

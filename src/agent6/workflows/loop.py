@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from pydantic import ValidationError
+
 from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.commit_message import conventional_commit_subject
 from agent6.config import Config
@@ -2525,10 +2527,7 @@ class Workflow:
         """The ready standing task's (id, title), if this run has one."""
         if self.curator is None:
             return None
-        try:
-            nodes = self.curator.nodes()
-        except Exception:
-            return None
+        nodes = self.curator.nodes()
         for nid, node in nodes.items():
             if node.standing and ready_subtask(nodes, node):
                 return nid, node.title[:120]
@@ -2905,16 +2904,12 @@ class Workflow:
         worked for as long as nothing else is ready, and never concludes.
 
         Run mode only; no curator or no open subtask is a no-op (the finish-gate
-        covers the empty-frontier finish). Best-effort throughout: a curator
-        hiccup logs and returns rather than breaking the loop.
+        covers the empty-frontier finish). A curator mutation that fails logs
+        and continues.
         """
         if self.mode != "run" or self.curator is None:
             return
-        try:
-            cursor = self.curator.cursor()
-        except Exception as exc:  # a curator read error must not break the loop
-            self._log(f"LOOP: surface-current-task skipped: {exc}")
-            return
+        cursor = self.curator.cursor()
         nodes = self.curator.nodes()
         current_id = current_task_id(nodes, cursor)
         if current_id is None:
@@ -2926,7 +2921,7 @@ class Workflow:
             # cursor task drops out of the frontier, so this moves forward).
             try:
                 self.curator.set_cursor(SetCursorIntent(id=current_id))
-            except Exception as exc:  # cursor advance is advisory; never fatal
+            except (CuratorError, OSError, ValidationError) as exc:  # advisory; never fatal
                 self._log(f"LOOP: cursor advance skipped: {exc}")
         # Anti-grind: count consecutive turns on the same focus task. Any forward
         # motion (cursor advance, a task marked done, or a decompose that moves the
@@ -2968,7 +2963,7 @@ class Workflow:
                 self.curator.update_status(
                     UpdateStatusIntent(id=current_id, new_status="in_progress")
                 )
-            except Exception as exc:
+            except (CuratorError, OSError, ValidationError) as exc:
                 self._log(f"LOOP: mark in_progress skipped: {exc}")
         banner = current_task_banner(
             current_id, node, decompose=self.config.prompt.decompose == "on"
@@ -3321,7 +3316,7 @@ class Workflow:
             )
             node = self.curator.add_subtask(AddSubtaskIntent(parent_id=None, draft=draft))
             return node.id
-        except Exception as exc:
+        except (CuratorError, OSError, ValidationError) as exc:
             self._log(f"LOOP: failed to seed root task: {exc}")
             return None
 
@@ -3447,7 +3442,7 @@ class Workflow:
                     changed = True
                 except CuratorError as exc:  # this root refused; the next may not
                     self._log(f"LOOP: auto-pass root {nid} refused: {exc}")
-                except Exception as exc:  # a curator write error must not break finish
+                except (OSError, ValidationError) as exc:  # a write fault must not break finish
                     self._log(f"LOOP: auto-pass root {nid} failed: {exc}")
                     break  # a curator write failure fails for every remaining node too
         if changed:
@@ -3547,17 +3542,10 @@ class Workflow:
 
         Project to ONLY the fields the viewer renders, a full node dump carries
         unbounded model-authored text (rationale/acceptance/notes/paths) that
-        bloats the fsync'd event log for no benefit. Best-effort: a curator
-        hiccup must never break the run."""
+        bloats the fsync'd event log for no benefit."""
         if self.curator is None:
             return
-        try:
-            cursor = self.curator.cursor()
-        except Exception as exc:
-            # cursor() reads cursor.json from disk; a hiccup (OSError, a
-            # malformed cursor) must never break an otherwise-healthy run.
-            self._log(f"LOOP: graph snapshot skipped: {exc}")
-            return
+        cursor = self.curator.cursor()
         # FROZEN wire surface: project each node to exactly these four fields,
         # children as a JSON list -- the graph.update shape old run dirs, the
         # viewmodel fold, web and TUI all already hold. Pinned by
@@ -4180,7 +4168,7 @@ class Workflow:
                 self.curator.update_status(
                     UpdateStatusIntent(id=cid, new_status="passed", note="compaction check-off")
                 )
-            except Exception as exc:  # a curator error must not break the run
+            except (CuratorError, OSError, ValidationError) as exc:
                 self._log(f"LOOP: compaction check-off skipped {cid} ({exc})")
                 continue
             passed += 1
@@ -4192,7 +4180,7 @@ class Workflow:
                         draft=TaskNodeDraft(title=title, created_by="planner"),
                     )
                 )
-            except Exception as exc:  # a curator error must not break the run
+            except (CuratorError, OSError, ValidationError) as exc:
                 self._log(f"LOOP: compaction check-off could not queue {title[:60]!r} ({exc})")
                 continue
             queued += 1
@@ -5022,15 +5010,10 @@ class Workflow:
 
     def _parallel_parent_id(self, root_task_id: str | None) -> str | None:
         """Parent for a dispatched subtask: the curator cursor when it points at
-        an open node, else the run root. Best-effort -- a curator hiccup falls
-        back to the root."""
+        an open node, else the run root."""
         if self.curator is None:
             return root_task_id
-        try:
-            cursor = self.curator.cursor()
-        except Exception:
-            return root_task_id
-        return current_task_id(self.curator.nodes(), cursor) or root_task_id
+        return current_task_id(self.curator.nodes(), self.curator.cursor()) or root_task_id
 
     def _add_parallel_node(self, task: str, parent_id: str | None) -> str | None:
         """Add a steering-created DAG node for one dispatched task; None when no
@@ -5050,7 +5033,7 @@ class Workflow:
                 )
             )
             return node.id
-        except Exception as exc:
+        except (CuratorError, OSError, ValidationError) as exc:
             self._log(f"PARALLEL: DAG node add failed: {exc}")
             return None
 
@@ -5065,7 +5048,7 @@ class Workflow:
             if sha:
                 self.curator.record_commit(RecordCommitIntent(id=node_id, sha=sha))
             self.curator.update_status(UpdateStatusIntent(id=node_id, new_status=status, note=note))
-        except Exception as exc:
+        except (CuratorError, OSError, ValidationError) as exc:
             self._log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
 
     def _stamp_segment_node(self, node_id: str | None, lanes: list[LaneJoin]) -> None:
