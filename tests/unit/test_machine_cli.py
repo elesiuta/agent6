@@ -708,6 +708,20 @@ def test_poke_missing_instance_errors(
     assert "no machine instance" in capsys.readouterr().err
 
 
+def test_poke_rejects_an_absolute_path_as_an_instance_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An ID cannot redirect the signal write outside the machine state root."""
+    monkeypatch.chdir(tmp_path)
+    victim = tmp_path / "not-a-machine"
+    victim.mkdir()
+
+    assert main(["machine", "poke", str(victim)]) == 2
+
+    assert "no machine instance" in capsys.readouterr().err
+    assert not (victim / "signal").exists()
+
+
 AGENT_MACHINE_HARD = """
 machine = "hard-usd"
 version = 1

@@ -20,13 +20,12 @@ from pathlib import Path
 from agent6.machine import JournalError, MachineError, load_machine
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.layout import machines_root
 from agent6.ui.cli._common import (
     error,
     resolve_session_layout,
     resolve_target,
 )
-from agent6.ui.cli.machine_cmds import _cmd_machine_watch
+from agent6.ui.cli.machine_cmds import _cmd_machine_watch, machine_instance_root
 from agent6.ui.cli.plan_watch import _cmd_watch
 from agent6.viewmodel import (
     machine_snapshot,
@@ -94,7 +93,6 @@ def _cmd_watch_target(  # noqa: PLR0911
         print("agent6 attach: --since applies to --raw only.", file=sys.stderr)
         return 2
     cwd = Path.cwd()
-    machines_dir = machines_root(state_dir(cwd))
 
     # An ambiguous run prefix or a husk is a run-intent error: surface it
     # rather than falling through to machine lookup and printing "no match".
@@ -116,8 +114,8 @@ def _cmd_watch_target(  # noqa: PLR0911
         return 0
 
     # Else a machine by name.
-    machine_dir = machines_dir / target
-    if machine_dir.is_dir():
+    machine_dir = machine_instance_root(target, cwd)
+    if machine_dir is not None and machine_dir.is_dir():
         if json_out:
             return _machine_json_snapshot(machine_dir)
         return _machine_watch_tui(machine_dir) if tui else _cmd_machine_watch(target)

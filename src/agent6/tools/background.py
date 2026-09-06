@@ -172,16 +172,8 @@ class BackgroundShells:
         except (JailUnavailableError, OSError) as exc:
             os.close(log_fd)
             raise BackgroundError(f"could not start a background command: {exc}") from exc
-        # AFTER the start: this file is the whole roster for a surface in
-        # another process, so writing it first listed a command that never
-        # started as "still running" -- while this run's own roster did not
-        # have it and read_background denied the id existed.
-        (shell_dir / _META_NAME).write_text(
-            json.dumps({"id": shell_id, "command": shlex.join(argv)}), encoding="utf-8"
-        )
         shell = _Shell(id=shell_id, command=shlex.join(argv), dir=shell_dir, job=job, log_fd=log_fd)
-        self._shells[shell_id] = shell
-        return self._view(shell)
+        return self._register(shell)
 
     def adopt(self, handoff: BackgroundHandoff, *, session: JailSession) -> ShellView:
         """Register a command the launcher handed back: it is already running,
@@ -197,6 +189,7 @@ class BackgroundShells:
         shell_dir = self._root / shell_id
         mkdir_for_real_user(shell_dir)
         job = SessionJob(session, handoff.pid, shell_dir, before=handoff.before)
+        command = shlex.join(handoff.argv)
         # The launcher created this with O_EXCL|O_NOFOLLOW under a name no
         # command can predict (its own pid); this side never resolves it again.
         try:
@@ -204,14 +197,50 @@ class BackgroundShells:
         except OSError as exc:
             # Already running and this run's: a registration that refuses it
             # stops it, or nothing can reach it again.
-            job.stop()
-            raise BackgroundError(f"could not open the handed-back command's log: {exc}") from exc
-        command = shlex.join(handoff.argv)
-        (shell_dir / _META_NAME).write_text(
-            json.dumps({"id": shell_id, "command": command}), encoding="utf-8"
-        )
+            stop_error = job.stop()
+            if stop_error:
+                self._shells[shell_id] = _Shell(
+                    id=shell_id,
+                    command=command,
+                    dir=shell_dir,
+                    job=job,
+                    log_fd=-1,
+                    stopped=True,
+                    stop_error=stop_error,
+                )
+            detail = f"; stopping it failed: {stop_error}" if stop_error else ""
+            raise BackgroundError(
+                f"could not open the handed-back command's log: {exc}{detail}"
+            ) from exc
         shell = _Shell(id=shell_id, command=command, dir=shell_dir, job=job, log_fd=log_fd)
-        self._shells[shell_id] = shell
+        return self._register(shell)
+
+    def _register(self, shell: _Shell) -> ShellView:
+        """Record and expose *shell*, or stop it if the record cannot be written."""
+        meta = shell.dir / _META_NAME
+        try:
+            # AFTER the start: this file is the whole roster for a surface in
+            # another process, so writing it first listed a command that never
+            # started while read_background denied the id existed.
+            meta.write_text(
+                json.dumps({"id": shell.id, "command": shell.command}), encoding="utf-8"
+            )
+        except OSError as exc:
+            stop_error = shell.job.stop()
+            if stop_error:
+                # Keep a command whose stop was not confirmed reachable for a
+                # later stop and the teardown sweep.
+                shell.stop_error = stop_error
+                self._shells[shell.id] = shell
+            else:
+                os.close(shell.log_fd)
+            with contextlib.suppress(OSError):
+                meta.unlink()
+            detail = f"; stopping it failed: {stop_error}" if stop_error else ""
+            raise BackgroundError(
+                f"could not record background command {shell.id}: {exc}{detail}"
+            ) from exc
+        self._shells[shell.id] = shell
         return self._view(shell)
 
     def _open_log(self, shell_id: str) -> int:
@@ -330,9 +359,15 @@ class BackgroundShells:
         sweeps those. Only the ones that WERE running are reported as stopped.
         """
         stopped: list[ShellView] = []
-        for shell in self._shells.values():
-            if self._stop(shell):
-                stopped.append(self._view(shell))
+        try:
+            for shell in self._shells.values():
+                if self._stop(shell):
+                    stopped.append(self._view(shell))
+        finally:
+            for shell in self._shells.values():
+                log_fd, shell.log_fd = shell.log_fd, -1
+                with contextlib.suppress(OSError):
+                    os.close(log_fd)
         return stopped
 
     def _stop(self, shell: _Shell) -> bool:
@@ -387,12 +422,18 @@ def roster_from_dir(root: Path) -> list[str]:
         return []
     lines: list[str] = []
     # By sequence: as text, bg10 sorts ahead of bg2.
-    for d in sorted(root.iterdir(), key=lambda p: (_seq_of(p.name), p.name)):
+    try:
+        directories = sorted(root.iterdir(), key=lambda p: (_seq_of(p.name), p.name))
+    except OSError:
+        return []
+    for d in directories:
         if not d.is_dir():
             continue
         try:
             meta = json.loads((d / _META_NAME).read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            continue
+        if not isinstance(meta, dict):
             continue
         command = str(meta.get("command", ""))
         try:

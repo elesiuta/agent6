@@ -211,11 +211,36 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
     return f" Did you mean {close[0]!r}?" if close else ""
 
 
+def machine_instance_root(machine_id: str, cwd: Path) -> Path | None:
+    """The instance dir for one leaf ID, or None for a path or symlink escape."""
+    candidate = Path(machine_id)
+    if candidate.name != machine_id:
+        return None
+    machines = machines_root(state_dir(cwd))
+    root = machines / machine_id
+    try:
+        if root.resolve().parent != machines.resolve():
+            return None
+    except (OSError, RuntimeError):
+        return None
+    return root
+
+
+def _existing_machine_root(machine_id: str, cwd: Path) -> Path | None:
+    """Resolve an instance ID and print the shared missing-instance error."""
+    root = machine_instance_root(machine_id, cwd)
+    if root is not None and root.is_dir():
+        return root
+    machines = machines_root(state_dir(cwd))
+    location = f"at {root}" if root is not None else f"for id {machine_id!r} under {machines}"
+    error(f"no machine instance {location}.{_no_instance_hint(machine_id, cwd)}")
+    return None
+
+
 def _cmd_machine_replay(machine_id: str) -> int:
     cwd = Path.cwd()
-    root = machines_root(state_dir(cwd)) / machine_id
-    if not root.is_dir():
-        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
+    root = _existing_machine_root(machine_id, cwd)
+    if root is None:
         return 2
     source_path = root / "machine.asm.toml"
     try:
@@ -247,9 +272,8 @@ def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | 
 
 def _cmd_machine_status(machine_id: str) -> int:
     cwd = Path.cwd()
-    root = machines_root(state_dir(cwd)) / machine_id
-    if not root.is_dir():
-        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
+    root = _existing_machine_root(machine_id, cwd)
+    if root is None:
         return 2
     source_path = root / "machine.asm.toml"
     try:
@@ -333,9 +357,8 @@ def _cmd_machine_poke(
     machine_id: str, *, data: str | None = None, message: str | None = None
 ) -> int:
     cwd = Path.cwd()
-    root = machines_root(state_dir(cwd)) / machine_id
-    if not root.is_dir():
-        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
+    root = _existing_machine_root(machine_id, cwd)
+    if root is None:
         return 2
     # An ended machine consumes no signals: a poke would sit unread, so the
     # "it will wake on its next signal check" reply would be a lie. Refuse.
@@ -371,9 +394,8 @@ def _cmd_machine_stop(machine_id: str) -> int:
     is not running gets a refusal, not a marker that would ambush the next
     `machine run`."""
     cwd = Path.cwd()
-    root = machines_root(state_dir(cwd)) / machine_id
-    if not root.is_dir():
-        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
+    root = _existing_machine_root(machine_id, cwd)
+    if root is None:
         return 2
     if refusal := machine_verb_refusal(root, machine_id, "stop"):
         error(f"{refusal}")
@@ -422,9 +444,8 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     when the worker is dead (parked or crashed), when the instance ended, or on
     Ctrl-C. Read-only."""
     cwd = Path.cwd()
-    root = machines_root(state_dir(cwd)) / machine_id
-    if not root.is_dir():
-        error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
+    root = _existing_machine_root(machine_id, cwd)
+    if root is None:
         return 2
     source = root / "machine.asm.toml"
     try:
