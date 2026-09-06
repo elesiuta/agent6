@@ -8,6 +8,8 @@ and the id to attach."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agent6.paths import repo_root_of_id, state_base
 from agent6.sessions.ipc import frontend_is_live, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import SESSION_BUCKETS
@@ -21,6 +23,9 @@ def cmd_ps() -> int:
     whether a front end is attached. Liveness is the worker-pid rule every
     listing uses (a foreign-owned or reused pid reads dead)."""
     base = state_base()
+    # Keyed on the real session dir: a fan-out lane is linked under its
+    # coordinator repo as well as its own, and the row with a repo wins.
+    rows_by_dir: dict[Path, tuple[str, str, str, str, str, str]] = {}
     rows: list[tuple[str, str, str, str, str, str]] = []
     if base.is_dir():
         for repo_dir in sorted(base.iterdir()):
@@ -36,19 +41,22 @@ def cmd_ps() -> int:
                 if not bucket_path.is_dir():
                     continue
                 for sdir in sorted(bucket_path.iterdir()):
-                    if not sdir.is_dir() or not worker_is_alive(sdir):
+                    real = sdir.resolve()
+                    if (
+                        not sdir.is_dir()
+                        or not worker_is_alive(sdir)
+                        or (real in rows_by_dir and root is None)
+                    ):
                         continue
                     summary = summarize_session_dir(sdir)
                     pid = read_worker_pid(sdir)
-                    rows.append(
-                        (
-                            where,
-                            sdir.name,
-                            summary.mode,
-                            status_label(summary.status, summary.reason),
-                            str(pid) if pid is not None else "?",
-                            "attached" if frontend_is_live(sdir) else "",
-                        )
+                    rows_by_dir[real] = (
+                        where,
+                        sdir.name,
+                        summary.mode,
+                        status_label(summary.status, summary.reason),
+                        str(pid) if pid is not None else "?",
+                        "attached" if frontend_is_live(sdir) else "",
                     )
             # A machine instance is a live session too: its worker.pid sits at
             # the instance root, one dir per machine name.
@@ -68,6 +76,7 @@ def cmd_ps() -> int:
                             "",
                         )
                     )
+    rows = [*rows_by_dir.values(), *rows]
     if not rows:
         print("no live agent6 sessions.")
         return 0
