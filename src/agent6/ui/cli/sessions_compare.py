@@ -11,6 +11,7 @@ from pathlib import Path
 
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import (
+    GitError,
     branch_exists,
     diff_range,
 )
@@ -38,14 +39,28 @@ from agent6.viewmodel.format import (
 from agent6.workflows.judge import CandidateBrief
 
 
-def _candidate_diff(cwd: Path, base_sha: str, run_branch: str) -> str:
-    """The diff a run's branch introduced (base_sha..run_branch), read-only,
-    without checking out the branch (unlike `_cmd_diff`, several candidates are
-    compared in one call, and only one can be the current checkout). "" if the
-    branch is gone -- never blocks the comparison."""
-    if not base_sha or not run_branch or not branch_exists(cwd, run_branch):
-        return ""
-    return diff_range(cwd, base_sha, run_branch)
+def _candidate_diff(cwd: Path, manifest: SessionManifest) -> tuple[str, bool]:
+    """The diff a run introduced (base_sha..run_branch), read-only, without
+    checking out the branch (unlike `_cmd_diff`, several candidates are compared
+    in one call, and only one can be the current checkout). A pruned branch
+    reads from the recorded merge: its merged tip while the objects exist, else
+    the commit it landed as. Returns (diff, from_merge); "" when nothing records
+    the change -- never blocks the comparison."""
+    base_sha, run_branch = manifest.base_sha, manifest.run_branch or ""
+    if not base_sha:
+        return "", False
+    if run_branch and branch_exists(cwd, run_branch):
+        return diff_range(cwd, base_sha, run_branch), False
+    merged = manifest.merged
+    if merged is None:
+        return "", False
+    for ref in (merged.tip, merged.sha):
+        if ref and set(ref) != {"0"}:
+            try:
+                return diff_range(cwd, base_sha, ref), True
+            except GitError:
+                continue
+    return "", False
 
 
 def _screen_candidates(
@@ -73,11 +88,17 @@ def _screen_candidates(
                 " excluded from the ranking"
             )
             continue
+        diff, from_merge = _candidate_diff(cwd, manifest)
+        if from_merge:
+            notes.append(
+                f"note: {layout.session_id}'s branch is pruned; its change is read from"
+                " the recorded merge"
+            )
         candidates.append(
             CandidateBrief(
                 session_id=layout.session_id,
                 task=manifest_task(layout.session_dir, fallback=layout.session_id),
-                diff=_candidate_diff(cwd, manifest.base_sha, manifest.run_branch or ""),
+                diff=diff,
                 verify_ok=summary.verify_ok,
                 cost_usd=summary.cost_usd,
             )

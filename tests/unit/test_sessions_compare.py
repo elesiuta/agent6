@@ -781,3 +781,30 @@ def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
     assert getattr(parallel, "rank") is app_compare.rank  # noqa: B009
     # `sessions compare` goes through the CLI wrapper, which delegates to that core.
     assert sessions_compare.rank is compare_mod.rank
+
+
+def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After `prune --delete-squashed` the run branch is gone; the candidate's
+    diff comes from the recorded merge instead of reading as empty."""
+    base = _init_repo(repo)
+    _setup_run(repo, "run-PPPP77", base_sha=base, commits=[("p.txt", "p\n", "add p")])
+    tip = _git(repo, "rev-parse", "agent6/run-PPPP77")
+    _git(repo, "checkout", "-q", "main")
+    _git(repo, "merge", "-q", "--squash", "agent6/run-PPPP77")
+    _git(repo, "commit", "-q", "-m", "squash p")
+    landed = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "branch", "-D", "agent6/run-PPPP77")
+    state_dir = resolved_state_dir(repo)
+    manifest = SessionLayout(
+        state_dir=state_dir, session_id="run-PPPP77", subdir="runs"
+    ).manifest_path
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["merged"] = {"into": "main", "sha": landed, "tip": tip}
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    _setup_run(repo, "run-QQQQ88", base_sha=base, commits=[("q.txt", "q\n", "add q")])
+    assert main(["sessions", "compare", "run-PPPP77", "run-QQQQ88"]) == 0
+    out = capsys.readouterr().out
+    assert "read from the recorded merge" in out
+    assert "empty diff" not in out.lower()
