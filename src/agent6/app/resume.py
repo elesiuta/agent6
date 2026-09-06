@@ -150,20 +150,22 @@ def turn_replay_allowed(
     stale marker cleared silently -- no false prompt. A marker matching the
     turn about to re-run is a genuine mid-turn crash: its tools may have
     partially applied, so the front-end decides (interactive default no;
-    headless warns and proceeds). Approval clears the marker so one crash
-    asks once."""
+    headless warns and proceeds).
+
+    Approval does NOT clear the marker: the caller clears it once the leg
+    actually starts. Cleared here, a resume the operator approved and that then
+    hit any preflight refusal (a diverged chain, a missing key, a config typo)
+    replayed the turn on the next attempt with no warning at all -- and the
+    tools it had already run applied twice."""
     marker_path = session_dir / TURN_IN_FLIGHT_NAME
     marker = read_turn_marker(marker_path)
     if marker is None:
         return True
     iteration, tools = marker
     if iteration < next_iteration:
-        clear_turn_marker(marker_path)
+        clear_turn_marker(marker_path)  # stale: the turn completed, never ask
         return True
-    if not confirm(iteration, tools):
-        return False
-    clear_turn_marker(marker_path)
-    return True
+    return confirm(iteration, tools)
 
 
 def snapshot_head_mismatch(
@@ -633,6 +635,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # the child owning the run (`spawn_and_confirm`). `sessions show`
         # probes liveness by it while the worker sits in a long provider call.
         write_worker_pid(layout.session_dir, os.getpid())
+        # The crash marker's answer is spent only now, at the point of no
+        # return: every refusal above leaves it for the next attempt to ask.
+        clear_turn_marker(layout.session_dir / TURN_IN_FLIGHT_NAME)
         end = run_leg(
             cfg,
             layout,

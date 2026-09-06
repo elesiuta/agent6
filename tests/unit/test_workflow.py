@@ -6805,9 +6805,11 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: Pat
 
 
 def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
-    """No marker proceeds; a stale one proceeds and clears silently; a
-    matching one asks -- decline keeps the marker (resume again to be asked
-    again), accept clears it so one crash asks once."""
+    """No marker proceeds; a stale one proceeds and clears silently; a matching
+    one asks, and the marker survives EITHER answer -- the resume clears it
+    only once the leg starts. Cleared on approval, a resume that then hit any
+    preflight refusal replayed the turn on the next attempt with no warning,
+    and its tools' side effects happened twice."""
     from agent6.app.resume import turn_replay_allowed
     from agent6.workflows._session_state import TURN_IN_FLIGHT_NAME, write_turn_marker
 
@@ -6831,7 +6833,7 @@ def test_turn_replay_allowed_marker_semantics(tmp_path: Path) -> None:
     assert turn_replay_allowed(tmp_path, 5, _no) is False  # matching + decline
     assert marker.exists()  # stays for the next resume to ask again
     assert turn_replay_allowed(tmp_path, 5, _yes) is True  # matching + accept
-    assert not marker.exists()  # asks once
+    assert marker.exists(), "the answer is spent by the leg, not by the question"
     assert asked == [(5, ("run_command",)), (5, ("run_command",))]
 
 
