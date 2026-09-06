@@ -342,8 +342,8 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `role.thinking_delta` | streamed reasoning chunk |
 | `session.steer_requested` | `source` (`"sigint"`): mid-run Ctrl-C |
 | `budget.update` | totals and caps for input and output tokens |
-| `approval.prompt` / `.answer` | `id`, `prompt`, `standing` / `id`, `approved`, `source` |
-| `question.prompt` / `.answer` | `id`, `question`, `options` / `id`, `answer`, `source`: the `ask_user` tool and machine questioner states |
+| `approval.prompt` / `.answer` | `id`, `prompt`, `standing`, `call_id` (the gated tool call; null for a verify the harness runs itself) / `id`, `approved`, `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `session`, `headless`, `acp`) |
+| `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-wait`, `headless-default`, `headless`, `acp`): the `ask_user` tool and the start question |
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat, read by `agent6 sessions show` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |
@@ -351,7 +351,9 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 
 A `run_command` approval publishes as `approval.prompt`.
 
-- the TUI's Allow/Deny writes the literal choice to `approvals/<id>.answer`; the workflow reads it before recording `approval.answer`
+- one gate (`tools/operator_prompts.py`, held by the dispatcher) mints the ids and journals every prompt/answer pair, whichever front-end answers; a front-end's approver and questioner only answer and name their source
+- the TUI's Allow/Deny writes the literal choice to `approvals/<id>.answer`; the gate clears that slot before journaling the prompt, and the approver reads it before the gate records `approval.answer`
+- the transcript fold marks the call a prompt's `call_id` names as awaiting (`sessions show`, the web and TUI conversation, ACP's `pending`)
 - the asking side decides what a choice grants: each prompt names its "allow all" scope (`command`, or one MCP server); standing answers record per scope; a no-standing gate sets `standing: false` and no front-end shows the button
 - the answer poll falls back headless (stdin, or deny for a machine state) only after the front-end stays dead 30 consecutive seconds: a page reload or locked phone never converts a pending approval into a deny
 - a watching browser registers as the run's answer front-end; prompts bridge to the page

@@ -33,12 +33,13 @@ Everything the lifecycle prints (the `agent6 run` footer: where the changes are,
 `session/request_permission` carries every approval the CLI would prompt for: `run_commands = "ask"`, a `fetch` to a host outside the allow-list, an unsandboxed autorun.
 The editor renders the buttons.
 The request names the tool call it gates (its `toolCall` carries that call's id and nothing else; the prompt text is the request's own) and is sent once the run's journal tail has announced that call (a tail that stopped reading, or a cancelled turn, releases the request); a prompt that gates no call (a pre-run question) announces a tool call of its own and closes it with the answer.
-The prompt and its answer are journaled as `approval.prompt` / `approval.answer` (`question.*` for an `ask_user`), the same events the CLI writes, the answer with `source: "acp"` (`"headless"` when the client declared it cannot be asked), so `agent6 attach` and the web show the run as awaiting the answer.
+The prompt and its answer are journaled as `approval.prompt` / `approval.answer` (`question.*` for an `ask_user`) by the same gate every front-end answers through, the answer with `source: "acp"` (`"headless"` when the client declared it cannot be asked), so `agent6 attach` and the web show the run as awaiting the answer.
 
 Two rules hold whoever is driving:
 
 - An unanswered request denies: after five minutes with no reply the approval is refused and the run continues without it.
 - An off-list `fetch` host is offered as `allow_once` only, so an editor's "always allow" cannot cover a different host later.
+- A standing "allow all" recorded on the run by an earlier front-end (a CLI leg's `a`) answers that scope's later prompts without asking the editor; the answer journals `source: "session"`.
 
 ## Sessions
 
