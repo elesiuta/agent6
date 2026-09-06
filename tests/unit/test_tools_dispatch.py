@@ -2165,3 +2165,23 @@ def test_an_omitted_edit_kind_follows_the_pair_it_was_sent_with(tmp_path: Path) 
         "apply_edit", {"path": "new.py", "edits": [{"old_string": "x = 1", "new_string": "z = 3"}]}
     )
     assert (tmp_path / "new.py").read_text(encoding="utf-8") == "z = 3\n"
+
+
+def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
+    """Each section is staged against the file as it is ON DISK, so two
+    sections over one file both start from the original and the last write
+    wins: the earlier edit vanished while the result reported it applied, and
+    double-counted its bytes."""
+    d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    (tmp_path / "m.py").write_text("A = 1\nB = 2\nC = 3\nD = 4\nE = 5\n", encoding="utf-8")
+    patch = (
+        "diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n"
+        "@@ -1,3 +1,3 @@\n A = 1\n-B = 2\n+B = 22\n C = 3\n"
+        "diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n"
+        "@@ -3,3 +3,3 @@\n C = 3\n-D = 4\n+D = 44\n E = 5\n"
+    )
+
+    with pytest.raises(ToolError, match="appears in 2 sections"):
+        d.dispatch("apply_patch", {"patch": patch})
+
+    assert (tmp_path / "m.py").read_text(encoding="utf-8") == "A = 1\nB = 2\nC = 3\nD = 4\nE = 5\n"

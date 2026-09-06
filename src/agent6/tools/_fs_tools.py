@@ -319,6 +319,16 @@ def apply_edit(
     return EditResult(applied=tuple(applied), path=str(sp.rel_path))
 
 
+def _first_repeated_path(staged: list[tuple[SafePath, str, str | None]]) -> str | None:
+    """The first path two staged sections both target, or None."""
+    seen: set[Path] = set()
+    for sp, _target, _new in staged:
+        if sp.abs_path in seen:
+            return str(sp.rel_path)
+        seen.add(sp.abs_path)
+    return None
+
+
 def _stage_patch_section(
     ws: Workspace,
     config: Config,
@@ -392,6 +402,15 @@ def apply_patch(
             previews.append(preview_result(target, existing, new_content or ""))
             continue
         staged.append((sp, target, new_content))
+    if (dupe := _first_repeated_path(staged)) is not None:
+        # Each section reads the file from DISK during staging, so two sections
+        # over one file both start from the original and the last write wins:
+        # the earlier edit vanished while the result reported it applied.
+        raise ToolError(
+            f"apply_patch: {dupe} appears in {len(sections)} sections of one patch;"
+            " a section reads the file as it is on disk, so only the last would"
+            " land. Send one section per file, with every hunk for it inside."
+        )
     if args.preview:
         if len(previews) == 1:
             return previews[0]
