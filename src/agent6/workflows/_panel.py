@@ -184,18 +184,19 @@ def diff_hunks(diff: str) -> dict[str, list[Hunk]]:
     return hunks
 
 
-def _norm_path(p: str) -> str:
-    return re.sub(r"^[ab]/", "", _unquote_git_path(p))
-
-
-def _split_cite(file_line: str) -> tuple[str, tuple[int, int] | None]:
-    """One citation parsed into `(normalized path, cited line span or None)`.
+def _split_cite(file_line: str, hunks: dict[str, list[Hunk]]) -> tuple[str, tuple[int, int] | None]:
+    """One citation parsed into `(repo path, cited line span or None)`.
 
     The forms a reviewer writes: 'foo.py', 'a/foo.py:2', 'foo.py:2-4',
     'foo.py:2:' and 'foo.py:12:5' (the standard compiler/grep -n
     `path:line:col`). ONE owner: a per-consumer single-rpartition parse would read a line:col
     citation's COLUMN as the line and 'foo.py:12' as the path, so grounding
     would miss and a real block silently downgrade to a warning.
+
+    `hunks` is keyed on repo paths, so the path resolves there first; a
+    leading `a/` or `b/` is dropped only when the unstripped path is not in
+    the diff, so a real top-level `a/` dir the diff touched keeps its name
+    and a prefix copied from a header grounds on the file under it.
     """
     cite = file_line.strip().rstrip(":")
     if not cite:
@@ -207,7 +208,8 @@ def _split_cite(file_line: str) -> tuple[str, tuple[int, int] | None]:
     nums: list[str] = []
     while len(parts) > 1 and _is_span(parts[-1]):
         nums.insert(0, parts.pop())
-    path = _norm_path(":".join(parts))
+    raw = _unquote_git_path(":".join(parts))
+    path = raw if raw in hunks else re.sub(r"^[ab]/", "", raw)
     if not nums:
         return path, None
     ends = nums[0].split("-", 1)  # "2-4" -> ["2", "4"]; "2" -> ["2"]
@@ -234,7 +236,7 @@ def is_grounded(file_line: str, hunks: dict[str, list[Hunk]]) -> bool:
     unchanged-but-interior (the hunk modified the middle of the cited span)
     would be wrongly treated as ungrounded and a legit block silently
     downgraded to warn."""
-    path, span = _split_cite(file_line)
+    path, span = _split_cite(file_line, hunks)
     if not path:
         return False
     if span is None:  # path-only: grounded if the diff touched that file at all
@@ -258,7 +260,7 @@ def _dedup_key(f: Finding, hunks: dict[str, list[Hunk]]) -> DedupKey:
     does (deleted code at its old number); the two sides of one hunk key
     alike. A citation outside every hunk keys on its own span, a path-only
     one on the file."""
-    path, span = _split_cite(f.file_line)
+    path, span = _split_cite(f.file_line, hunks)
     if span is None:
         return (path, f.category, None)
     mine = hunks.get(path, ())

@@ -327,6 +327,24 @@ def test_grounding_range_overlap_not_just_start_line() -> None:
     assert is_grounded("foo.py:12-10", ranges)  # reversed range normalized, still grounds
 
 
+def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
+    """Hunks are keyed on repo paths (git pins `a/` `b/` onto its headers), so a
+    citation resolves on the repo path first and drops a prefix only when the
+    unstripped path is not in the diff: in a repo with a real top-level `a/`
+    dir, a block on `a/foo.py` stayed ungrounded and every block there was
+    downgraded to a warning in silence."""
+    diff = "--- a/a/foo.py\n+++ b/a/foo.py\n@@ -1,2 +1,2 @@\n x\n-y\n+z\n"
+    ranges = diff_hunks(diff)
+    assert list(ranges) == ["a/foo.py"]
+    assert is_grounded("a/foo.py:2", ranges) and is_grounded("a/foo.py", ranges)
+    assert not is_grounded("foo.py:2", ranges)  # a different file
+    assert _dedup_key(_block("security", "a/foo.py:2"), ranges)[0] == "a/foo.py"
+    res = _agg([_seat("m1", _block("security", "a/foo.py:2"))], ctx=ReviewContext(diff=diff))
+    assert res.blocked is True and res.merged_findings[0].severity == "block"
+    # A prefix copied from the diff header still grounds on the repo path.
+    assert is_grounded("b/foo.py:11", diff_hunks(SAMPLE_DIFF))
+
+
 def test_range_block_with_unchanged_start_still_gates() -> None:
     # End-to-end: a grounded block citing a real range whose start line is
     # unchanged must keep blocking (not be silently downgraded to warn).
