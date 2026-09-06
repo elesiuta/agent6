@@ -40,7 +40,13 @@ from agent6.sandbox.detect import (
     sandbox_disabled_by_env,
 )
 from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
-from agent6.tools.policy import Workspace, resolve_network, workspace_for
+from agent6.tools.policy import (
+    JAIL_TMP_HOME,
+    Workspace,
+    persistent_jail_home,
+    resolve_network,
+    workspace_for,
+)
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, SandboxReport
 from agent6.verify_infer import infer_verify_command, read_agents_md
 
@@ -387,6 +393,16 @@ def _device_lines(cfg: Config) -> list[str]:
     return [f"    dev {p}  (sandbox.extra_device_paths)" for p in cfg.sandbox.extra_device_paths]
 
 
+def _home_line(cfg: Config, selected: IsolationLevel) -> str:
+    """The jail's HOME, a grant at every level: strict's tmpfs one, or the
+    persistent cache dir and why it is that."""
+    persistent = persistent_jail_home(cfg, selected)
+    if persistent is None:
+        return f"    rw  {JAIL_TMP_HOME}  (HOME, inside the private /tmp)"
+    why = "sandbox.home = cache" if selected == "strict" else f"{selected} has no private /tmp"
+    return f"    rw  {persistent}  (HOME, persists across runs: {why})"
+
+
 def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -> None:
     # The resolved fact, not the knob's value: "no" WITHHOLDS the command tools
     # from the model rather than prompting for them, and the paths below are
@@ -403,6 +419,7 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
     )
     if selected == "none":
         print("    UNCONFINED: no jail on this host; commands run as you.")
+        print(_home_line(cfg, selected))
         return
     git_note = (
         "; .git re-bound read-only" if selected == "strict" and cfg.sandbox.protect_git else ""
@@ -413,6 +430,7 @@ def _boundaries_commands(cfg: Config, ws: Workspace, selected: IsolationLevel) -
         print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)} (+ a minimal /etc)")
     else:
         print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")
+    print(_home_line(cfg, selected))
     notes = tool_mount_notes()
     if notes.exposes_home_dir:
         print(
@@ -548,9 +566,16 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
     # has no jail to hold a read-only bind).
     with tempfile.TemporaryDirectory(prefix="agent6-check-mcp-") as probe_dir:
         probe_root = Path(probe_dir)
-        manager = start_mcp_manager_if_enabled(
-            cfg, probe_root, isolation, session_net=session_net, probe=True
-        )
+        try:
+            manager = start_mcp_manager_if_enabled(
+                cfg, probe_root, isolation, session_net=session_net, probe=True
+            )
+        except JailUnavailableError as exc:
+            # The policy builder refused: the jail's HOME cannot be made.
+            if session_net is not None:
+                session_net.close()
+            print(f"[FAIL] mcp: {exc}")
+            return [*out, _DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
         if manager is None:
             if session_net is not None:
                 session_net.close()

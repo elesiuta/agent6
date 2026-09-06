@@ -934,7 +934,7 @@ def test_jail_operator_hide_paths_mask_a_file(jail_bin: Path, tmp_path: Path) ->
 
 
 def test_jail_home_exists_in_the_private_tmpfs(jail_bin: Path, tmp_path: Path) -> None:
-    # dispatch points HOME at /tmp/agent6-home; the launcher creates it in the
+    # strict's default HOME is /tmp/agent6-home; the launcher creates it in the
     # fresh tmpfs, so `cd ~` and a toolchain's first write under it work.
     try:
         res = run_in_jail(

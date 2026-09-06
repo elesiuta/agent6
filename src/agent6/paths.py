@@ -150,6 +150,15 @@ def cache_dir(user: RealUser | None = None) -> Path:
     return _user_dir(user, _CACHE_DIR_ENV, "XDG_CACHE_HOME", ".cache")
 
 
+def jail_cache_home(user: RealUser | None = None) -> Path:
+    """The persistent HOME a jailed command gets (`<cache>/home`): under
+    `hardened` and `none`, which have no private /tmp to put one in, and under
+    `strict` with `[sandbox].home = "cache"`. Model-writable across runs, 0700,
+    and never the operator's own home; `app.confine.check_jail_home` creates
+    it and refuses a symlink or another user's directory at the path."""
+    return cache_dir(user) / "home"
+
+
 _DATA_DIR_ENV = "AGENT6_DATA_HOME"  # points at the agent6 data dir itself
 
 

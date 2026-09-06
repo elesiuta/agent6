@@ -16,6 +16,7 @@ from agent6.app.confine import (
     warn_sandbox_gaps,
 )
 from agent6.config import Config, SandboxConfig
+from agent6.paths import jail_cache_home
 from agent6.sandbox.detect import Environment, KernelInfo
 from agent6.sandbox.jail import ToolMountNotes
 
@@ -147,14 +148,29 @@ def test_hardened_warning_names_shared_tmp_and_persistent_home(
 ) -> None:
     """'strict' gives each run a private /tmp tmpfs with HOME
     (/tmp/agent6-home) inside it, gone when the run ends. 'hardened' has no
-    mount namespace, so /tmp is the host's shared /tmp and that HOME is a real
-    host dir that persists and is shared across runs. The run-entry warning must
-    say so rather than imply strict's private tmpfs."""
-    warn_sandbox_gaps("hardened", _env(4), _cfg())
+    mount namespace, so /tmp is the host's shared /tmp and HOME is the
+    persistent cache dir. The run-entry warnings say so rather than imply
+    strict's private tmpfs, and the HOME one stands on its own: it rode the
+    .git warning once, so `protect_git = false` lost it."""
+    for cfg in (_cfg(), Config(sandbox=SandboxConfig(protect_git=False))):
+        warn_sandbox_gaps("hardened", _env(4), cfg)
+        err = capsys.readouterr().err
+        assert str(jail_cache_home()) in err
+        assert "/tmp/agent6-home" not in err
+        assert "persists across runs" in err and "executable" in err
+        assert ("cannot protect .git" in err) == cfg.sandbox.protect_git
+
+
+def test_strict_cache_home_warns_naming_the_cost(capsys: pytest.CaptureFixture[str]) -> None:
+    """`home = "cache"` under strict is an explicit widening: it runs, with a
+    loud warning naming the persistence and the executable grant. The default
+    strict HOME warns nothing."""
+    warn_sandbox_gaps("strict", _env(4), Config(sandbox=SandboxConfig(home="cache")))
     err = capsys.readouterr().err
-    assert "/tmp/agent6-home" in err
-    assert "shared /tmp" in err
-    assert "persists" in err
+    assert "sandbox.home = 'cache'" in err and str(jail_cache_home()) in err
+    assert "persists across runs" in err and "executable" in err
+    warn_sandbox_gaps("strict", _env(4), _cfg())
+    assert str(jail_cache_home()) not in capsys.readouterr().err
 
 
 def test_a_cleartext_credential_endpoint_warns_at_run_entry(
@@ -291,8 +307,10 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
 
     # Private homes OUTSIDE every hardened grant region (/tmp is granted RW,
     # so a tmp-based home is genuinely exposed there -- the twin below pins
-    # that as a true positive). The normal ~/.local layout is this case.
-    for var in ("CONFIG", "STATE", "DATA", "CACHE"):
+    # that as a true positive). The normal ~/.local layout is this case. The
+    # cache stays where the suite put it: the jail's HOME lives there, and the
+    # policy build creates it.
+    for var in ("CONFIG", "STATE", "DATA"):
         monkeypatch.setenv(f"AGENT6_{var}_HOME", f"/nonexistent-private/{var.lower()}")
     ws = tmp_path / "ws"
     ws.mkdir()
@@ -300,7 +318,11 @@ def test_a_plain_hardened_run_neither_warns_nor_refuses(
     monkeypatch.setattr("agent6.app.confine.tool_mount_notes", ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(network="host", protect_git=False))
     warn_sandbox_gaps("hardened", _env(4), cfg)
-    assert capsys.readouterr().err == ""
+    err = capsys.readouterr().err
+    # hardened's persistent HOME is the one notice every such run carries;
+    # nothing here is an exposure.
+    assert err.count("WARNING") == 1 and str(jail_cache_home()) in err, err
+    assert "can read" not in err
     assert check_hide_paths_support(cfg, "hardened") is None
 
 

@@ -374,7 +374,13 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 machine_id=spec.machine if has_run_agent else None,
                 clone_root=clone_root if has_run_agent else None,
             )
-    warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
+    try:
+        warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
+    except JailUnavailableError as exc:
+        # The hardened exposure scan builds the run's policy, which creates the
+        # jail's HOME and refuses one it cannot make.
+        reporter.refuse(str(exc))
+        return 2
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     root = machines_root(resolved_state_dir(cwd)) / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)

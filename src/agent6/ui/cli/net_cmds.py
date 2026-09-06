@@ -228,7 +228,11 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
         )
         isolation = resolve_isolation(cfg.sandbox.isolation, detect_env())
         network = "session" if pid else None
-    policy = jail_policy(cwd, cfg, isolation, argv, network=network, timeout_s=0.0)
+    try:
+        policy = jail_policy(cwd, cfg, isolation, argv, network=network, timeout_s=0.0)
+    except JailUnavailableError as exc:
+        print(f"agent6 exec: {exc}", file=sys.stderr)
+        return 2
     if policy.network == "session" and pid is None:
         # Config asked for the session network but this session has none to
         # join (the run ended, or never held one): refuse rather than open

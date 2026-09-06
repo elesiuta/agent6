@@ -342,8 +342,8 @@ class LiveWorld:
         # what the isolation level truthfully provides.
         if self.tool_policy is None:
             raise EngineError("LiveWorld has no tool_policy factory wired")
-        policy = self.tool_policy(tuple(argv), float(timeout_s), network)
         try:
+            policy = self.tool_policy(tuple(argv), float(timeout_s), network)
             result = (self.jail_runner or run_in_jail)(policy)
         except JailUnavailableError as exc:
             raise EngineError(f"jail unavailable: {exc}") from exc

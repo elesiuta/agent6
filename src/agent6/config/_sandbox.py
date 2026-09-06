@@ -121,6 +121,24 @@ class SandboxConfig(BaseModel):
             "regardless."
         ),
     )
+    # Where a jailed command's HOME lives. Only `strict` has a private /tmp
+    # to put a throwaway one in; `hardened` and `none` always use the
+    # persistent cache dir (`paths.jail_cache_home`), which strict opts into
+    # with `cache`. Persistent means model-writable across runs: a poisoned
+    # cache or a `~/.gitconfig` alias reaches the next jailed run.
+    home: Literal["tmp", "cache"] = Field(
+        default="tmp",
+        description=(
+            "The HOME jailed commands get under `strict`: `tmp` is `/tmp/agent6-home` inside the "
+            "run's private tmpfs, gone with the run; `cache` is the persistent "
+            "`$XDG_CACHE_HOME/agent6/home` (created `0700`, refused once loosened), bind-mounted "
+            "read-write at its real "
+            "path. `hardened` and `none` have no private tmpfs and always use the cache dir; an "
+            "explicit `tmp` refuses to start there. Persistence is a cross-run channel inside the "
+            "jail's world: a poisoned cache or a `~/.gitconfig` alias written by one run reaches "
+            "the next jailed run, never your own tools."
+        ),
+    )
     # Per-process memory cap in MiB for every JAILED child (`run_command`,
     # verify, metric, machine `tool` states, offline script tests), applied as
     # RLIMIT_DATA by the launcher and inherited by the child's descendants.
@@ -269,7 +287,7 @@ class MCPSandbox(BaseModel):
 
     A server is spawned by agent6 and fed model input, so it is confined the
     same way and by the same launcher: the workspace, the system dirs, the
-    operator's tool dirs, a writable /tmp as HOME. This block names only what
+    operator's tool dirs, a writable HOME. This block names only what
     is EXTRA -- which is why there is nothing to name for most servers, and
     why nobody has to know where their interpreter lives.
 
@@ -286,8 +304,8 @@ class MCPSandbox(BaseModel):
         default=(),
         description=(
             "Read+execute paths for this server beyond the sandbox a jailed command gets "
-            "(absolute or `~`). The workspace, system dirs, tool dirs and a writable `/tmp` as "
-            "`HOME` are already there, so a block names only the server's own data."
+            "(absolute or `~`). The workspace, system dirs, tool dirs and a writable `HOME` are "
+            "already there, so a block names only the server's own data."
         ),
     )
     write_paths: StrTuple = Field(

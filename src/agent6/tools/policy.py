@@ -9,16 +9,95 @@ already imports `mcp_client`, so leaving it there would have forced a cycle.
 
 from __future__ import annotations
 
+import os
+import stat
 from pathlib import Path
 from typing import Any
 
 from agent6.config import Config
 from agent6.memory import DECISIONS_NAME
-from agent6.paths import hidden_paths
-from agent6.sandbox.jail import operator_tool_paths
+from agent6.paths import (
+    effective_user,
+    hidden_paths,
+    jail_cache_home,
+    mkdir_for_real_user,
+    private_dirs,
+)
+from agent6.sandbox.jail import JailUnavailableError, operator_tool_paths
 from agent6.tools._path_safety import Workspace
 from agent6.tools._result_format import passthrough_env
 from agent6.types import IsolationLevel, JailPolicy, NetworkMode
+
+# strict's default HOME: the launcher creates it inside the run's private /tmp
+# tmpfs, so it goes with the run.
+JAIL_TMP_HOME = Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
+
+
+def persistent_jail_home(config: Config, isolation: IsolationLevel) -> Path | None:
+    """The persistent HOME a jailed command gets, or None where strict's
+    private tmpfs one (`JAIL_TMP_HOME`) applies.
+
+    Only `strict` has a private /tmp to put a throwaway HOME in; every other
+    level gets :func:`agent6.paths.jail_cache_home`, and strict opts into it
+    with `[sandbox].home = "cache"`. `jail_policy` creates it and grants it
+    read-write at its real path.
+    """
+    if isolation == "strict" and config.sandbox.home == "tmp":
+        return None
+    return jail_cache_home()
+
+
+def jail_home_refusal(home: Path) -> str | None:
+    """Why *home* cannot be the jail's persistent HOME, else None; an absent
+    path is fine (`jail_policy` creates it).
+
+    Inspection only: a symlink (a redirect into the operator's own home), a
+    non-directory, another user's directory, a mode with any group or other
+    bit (a jailed command owns the dir and may chmod it, and an open one lets
+    another local user plant what the next jailed run consumes; checked on
+    every build, never restored), or a path inside an agent6-private dir,
+    which the strict mask would re-bind writable. The config validator
+    refuses the same for `extra_write_paths`; this grant comes from
+    `AGENT6_CACHE_HOME`, so it is checked here, on resolved paths so a
+    symlinked ancestor cannot dodge it.
+    """
+    real = home.resolve()
+    for private in private_dirs():
+        if real.is_relative_to(private.resolve()):
+            where = "" if real == home else f" (really {str(real)!r})"
+            return (
+                f"the jail's HOME {str(home)!r}{where} is inside agent6's private dir"
+                f" {str(private)!r} (secrets/state). Point AGENT6_CACHE_HOME elsewhere."
+            )
+    try:
+        st = os.lstat(home)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        return f"the jail's HOME {str(home)!r} cannot be read: {exc}"
+    uid = effective_user().uid
+    mode = stat.S_IMODE(st.st_mode)
+    fix = "Remove it, or point AGENT6_CACHE_HOME at a directory of your own."
+    if stat.S_ISLNK(st.st_mode):
+        problem = (
+            f"is a symlink (to {str(home.readlink())!r}): jailed commands would write through it"
+        )
+    elif not stat.S_ISDIR(st.st_mode):
+        problem = "is not a directory"
+    elif st.st_uid != uid:
+        problem = (
+            f"is owned by uid {st.st_uid}, not you (uid {uid}):"
+            " another user's directory is never bound"
+        )
+    elif mode & 0o077:
+        problem = (
+            f"has mode {mode:04o}, open to other users, who could plant a ~/.gitconfig or"
+            " cache content for the next jailed run"
+        )
+        fix = f"Run: chmod 700 {home}"
+    else:
+        return None
+    return f"the jail's HOME {str(home)!r} {problem}. {fix}"
 
 
 def workspace_for(config: Config, root: Path, *, memory_dir: Path | None = None) -> Workspace:
@@ -97,8 +176,8 @@ def jail_policy(
     stack ends up without seccomp, a private /proc, or hidden-path masking.
 
     Callers name only what is EXTRA. Everything a child needs to exist -- the
-    system dirs, the operator's tool dirs, a writable /tmp as HOME -- is here,
-    so nobody has to know where their interpreter lives.
+    system dirs, the operator's tool dirs, a writable HOME -- is here, so
+    nobody has to know where their interpreter lives.
     """
     network = resolve_network(config, isolation, override=network)
     protect_paths: list[Path] = []
@@ -127,15 +206,33 @@ def jail_policy(
     # defaults below (PATH, HOME, the uv/bytecode settings) apply either way.
     env = passthrough_env() if env_base is None else dict(env_base)
     # Toolchains need a writable cache root (go test -> $HOME/.cache/go-build,
-    # cargo -> $CARGO_HOME, pip/uv likewise). The jail's /tmp is writable on both
-    # isolation levels, so point HOME there. FORCED, like PATH: the host's HOME
-    # does not exist inside the jail, so inheriting one (curated_env carries it)
-    # gives the child an unwritable path and every cache write fails.
-    env["HOME"] = "/tmp/agent6-home"  # noqa: S108 - resolved inside the jail
+    # cargo -> $CARGO_HOME, pip/uv likewise). FORCED, like PATH: the operator's
+    # HOME is not in the jail, so inheriting one (curated_env carries it) gives
+    # the child an unwritable path and every cache write fails. The persistent
+    # HOME is a write grant below; the tmpfs one is inside strict's private
+    # /tmp, which the launcher populates.
+    persistent = persistent_jail_home(config, isolation)
+    if persistent is not None:
+        # Created where the grant is decided, so every surface that builds a
+        # policy (a run, `agent6 exec`, an MCP probe) gets a HOME that exists:
+        # the launcher skips a missing rw path silently.
+        # Inspected before creation (a path inside a private dir is never
+        # created there) and again after it (what sits at the path now).
+        refusal = jail_home_refusal(persistent)
+        if refusal is None and not os.path.lexists(persistent):
+            try:
+                mkdir_for_real_user(persistent)
+            except OSError as exc:
+                raise JailUnavailableError(
+                    f"the jail's HOME {str(persistent)!r} cannot be created: {exc}"
+                ) from exc
+            refusal = jail_home_refusal(persistent)
+        if refusal is not None:
+            raise JailUnavailableError(refusal)
+    env["HOME"] = str(persistent or JAIL_TMP_HOME)
     env.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     # `uv run` inside the jail must use the venv the operator already synced: the
-    # jail is offline and HOME is a fresh tmpfs, so a sync would re-resolve
-    # against an empty cache and fail.
+    # jail is offline, so a sync would re-resolve against a cold cache and fail.
     env.setdefault("UV_NO_SYNC", "1")
     # Make operator-installed tools reachable: a controlled PATH extending
     # /usr/bin:/bin with the standard bin dirs, plus their real dirs as RO+exec
@@ -156,6 +253,7 @@ def jail_policy(
         extra_rw_paths=(
             *(Path(p) for p in config.sandbox.extra_write_paths),
             *extra_rw_paths,
+            *(() if persistent is None else (persistent,)),
         ),
         extra_device_paths=tuple(Path(p) for p in config.sandbox.extra_device_paths),
         tool_paths=tool_mounts,

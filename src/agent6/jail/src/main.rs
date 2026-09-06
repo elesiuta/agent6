@@ -863,7 +863,7 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
             floor_submounts(&dst, RO_FLOOR)?;
         }
     }
-    // /tmp -> tmpfs. HOME points here (dispatch sets HOME=/tmp/agent6-home so
+    // /tmp -> tmpfs. strict's default HOME lives here (/tmp/agent6-home, so
     // toolchain caches have a writable root), and go's build cache alone needs
     // several hundred MB for stdlib artifacts -- at 64m `go test` died ENOSPC
     // and models burned budgets fighting the sandbox. 1g is a hard ceiling on
@@ -880,8 +880,9 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         Some("size=1g"),
     )
     .map_err(io_err)?;
-    // HOME itself (dispatch sets /tmp/agent6-home): a missing home breaks `cd ~`
-    // and `git config --global` before any cache dir gets created under it.
+    // The default HOME itself: a missing home breaks `cd ~` and `git config
+    // --global` before any cache dir gets created under it. A persistent HOME
+    // ([sandbox].home = "cache") arrives as an extra_rw_paths bind instead.
     fs::create_dir_all(new_root.join("tmp/agent6-home")).map_err(io_err)?;
     // Operator tool dirs (uv etc.) at their REAL locations, RO. After /tmp so a dir
     // that happens to live under it is not shadowed by the fresh tmpfs. Best-effort:

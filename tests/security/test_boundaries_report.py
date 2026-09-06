@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config, SandboxConfig
+from agent6.paths import jail_cache_home
 from agent6.sandbox.jail import ToolMountNotes
 from agent6.ui.cli import check_cmds
 
@@ -67,6 +68,7 @@ def test_boundaries_report_covers_every_actor(
     assert "jailed commands" in out
     assert "(the workspace; .git re-bound read-only)" in out
     assert "ro  system: /usr /bin /sbin /lib /lib64 /etc/alternatives" in out
+    assert "rw  /tmp/agent6-home  (HOME" in out
     assert "operator tools: 1 resolved bin-dir" in out
     assert "/work/secrets" in out and "masked out of the jail's view" in out
     assert "network  session" in out
@@ -87,10 +89,37 @@ def test_boundaries_report_is_level_aware(
     assert [c.status for c in checks] == ["PASS"]
     assert "not strict: userns blocked (test)" in out
     assert "ro  system (Landlock): /usr /bin /sbin /lib /lib64 /etc /dev" in out
+    assert f"rw  {jail_cache_home()}  (HOME" in out and "persists" in out
     assert "denied by Landlock" in out
     assert "re-bound" not in out
     assert "private to the command" not in out
     assert "network  host" in out
+
+
+def test_boundaries_report_names_the_opted_in_persistent_home(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The jail's HOME is a write grant, so the report lists it: under
+    `home = "cache"` strict's is the persistent cache dir, named as such."""
+    _force(monkeypatch, "strict")
+    check_cmds._check_boundaries_section(  # pyright: ignore[reportPrivateUsage]
+        Config(sandbox=SandboxConfig(home="cache"))
+    )
+    out = capsys.readouterr().out
+    assert f"rw  {jail_cache_home()}  (HOME" in out and "sandbox.home = cache" in out
+    assert "/tmp/agent6-home" not in out
+
+
+def test_boundaries_report_names_the_home_under_none(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`none` has no jail and still a HOME of agent6's own; the report says so
+    after the UNCONFINED line, so the HOME grant is listed at every level."""
+    _force(monkeypatch, "none")
+    check_cmds._check_boundaries_section(Config())  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert "UNCONFINED" in out
+    assert f"rw  {jail_cache_home()}  (HOME, persists across runs: none has no private /tmp)" in out
 
 
 def test_boundaries_report_says_withheld_rather_than_unapproved(

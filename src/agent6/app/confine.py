@@ -12,15 +12,16 @@ these checks warn or refuse instead of pretending.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from agent6.app._setup import mcp_server_policy
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
-from agent6.paths import hidden_paths, is_root, private_dirs
+from agent6.paths import hidden_paths, is_root, jail_cache_home, private_dirs
 from agent6.sandbox.detect import Environment, degrade_reason
-from agent6.sandbox.jail import tool_mount_notes
-from agent6.tools.policy import jail_policy
+from agent6.sandbox.jail import JailUnavailableError, tool_mount_notes
+from agent6.tools.policy import jail_home_refusal, jail_policy, persistent_jail_home
 from agent6.types import IsolationLevel
 
 
@@ -58,6 +59,10 @@ def warn_sandbox_gaps(
 
     `protect_git` degrades the same way: strict-only, because it is a read-only
     bind. An explicitly-set one refuses (check_protect_git_support).
+
+    The persistent HOME is named once per run: an explicit widening under
+    `strict` (`home = "cache"`), the level's own shape under `hardened`. `none`
+    has no jail, and the unsandboxed warning covers it.
 
     Running as ROOT is the operator's explicit widening, so it warns rather
     than refuses -- but on `hardened` it says what the widening costs, since
@@ -112,9 +117,26 @@ def warn_sandbox_gaps(
             "'hardened' cannot protect .git: the read-only bind "
             "needs a mount namespace, which only 'strict' has. A jailed command can "
             "write .git; the in-process edit tools still refuse. For the same "
-            "reason /tmp is the host's shared /tmp, and HOME (/tmp/agent6-home) is a "
-            "host dir that persists and is shared by every run on this machine. "
-            "Use 'strict' for a private /tmp and a protected .git."
+            "reason /tmp is the host's shared /tmp. Use 'strict' for a private /tmp "
+            "and a protected .git."
+        )
+    persistent = persistent_jail_home(cfg, isolation)
+    if persistent is not None and isolation != "none":
+        cause, fix = (
+            (
+                "sandbox.home = 'cache'",
+                "Set sandbox.home = 'tmp' for a HOME that goes with the run.",
+            )
+            if isolation == "strict"
+            else (
+                "'hardened' has no private /tmp",
+                "Use 'strict' for a HOME that goes with the run.",
+            )
+        )
+        reporter.warn(
+            f"{cause}: HOME ({persistent}) persists across runs and is executable, so a "
+            "cache poisoned by one run, or a ~/.gitconfig alias, reaches the next jailed "
+            f"run (never your own tools). {fix}"
         )
     if isolation == "hardened" and cfg.sandbox.network == "auto":
         reporter.warn(
@@ -226,10 +248,31 @@ def check_protect_git_support(
         return None
     return (
         "sandbox.protect_git = true requires the strict isolation (a read-only"
-        " bind of .git), but this host supports only 'hardened', where Landlock"
+        " bind of .git), but this run resolved to 'hardened', where Landlock"
         " could only provide it by refusing every write at the workspace root."
         " Set sandbox.protect_git = false to run here, or use strict."
     )
+
+
+def check_jail_home(cfg: Config, isolation: IsolationLevel, *, explicitly_set: bool) -> str | None:
+    """A refusal when the jail's HOME cannot be what the config says, else
+    None.
+
+    `home = "tmp"` is a private tmpfs, which only `strict` has: the default
+    degrades to the cache dir with a warning (`warn_sandbox_gaps`), an explicit
+    one refuses (the `protect_git` rule). The persistent dir is created by the
+    policy builder; this refuses what the builder could not make agent6's own
+    (`jail_home_refusal`), without creating anything.
+    """
+    if isolation != "strict" and explicitly_set and cfg.sandbox.home == "tmp":
+        return (
+            "sandbox.home = 'tmp' requires the strict isolation (a private /tmp tmpfs),"
+            f" but this run resolved to {isolation!r}, where HOME is the persistent"
+            f" cache dir {str(jail_cache_home())!r}. Set sandbox.home = 'cache' to"
+            " run here, or use strict."
+        )
+    persistent = persistent_jail_home(cfg, isolation)
+    return None if persistent is None else jail_home_refusal(persistent)
 
 
 def _hardened_grant_regions(cfg: Config, root: Path) -> tuple[tuple[Path, str], ...]:
@@ -247,7 +290,11 @@ def _hardened_grant_regions(cfg: Config, root: Path) -> tuple[tuple[Path, str], 
     for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
         regions.append((Path(sysdir), "a system dir every command is granted"))
     regions += [(Path(p), "sandbox.extra_read_paths") for p in policy.extra_ro_paths]
-    regions += [(Path(p), "sandbox.extra_write_paths") for p in policy.extra_rw_paths]
+    home = persistent_jail_home(cfg, "hardened")
+    regions += [
+        (Path(p), "the jail's HOME" if p == home else "sandbox.extra_write_paths")
+        for p in policy.extra_rw_paths
+    ]
     regions += [(Path(p), "an operator tool dir (PATH mount)") for p in policy.tool_paths]
     if cfg.mcp.enabled:
         for name, srv in cfg.mcp.servers.items():
@@ -356,14 +403,23 @@ def config_refusal(
     NETWORK checks stay per-lifecycle: machines route theirs through
     `resolve_network_fix` and allow per-state opt-ins.
     """
-    for err in (
-        check_mcp_network_support(cfg, isolation),
-        check_hide_paths_support(cfg, isolation),
-        check_workspace_outside_private_dirs(workspace),
-        check_protect_git_support(
+    checks: tuple[Callable[[], str | None], ...] = (
+        # First, and one at a time: `check_hide_paths_support` builds the run's
+        # policy under hardened, which creates the jail's HOME and raises for
+        # one it cannot make. Refusing that here keeps it a message.
+        lambda: check_jail_home(cfg, isolation, explicitly_set="sandbox.home" in explicit_leaves),
+        lambda: check_mcp_network_support(cfg, isolation),
+        lambda: check_hide_paths_support(cfg, isolation),
+        lambda: check_workspace_outside_private_dirs(workspace),
+        lambda: check_protect_git_support(
             cfg, isolation, explicitly_set="sandbox.protect_git" in explicit_leaves
         ),
-    ):
+    )
+    for check in checks:
+        try:
+            err = check()
+        except JailUnavailableError as exc:
+            return str(exc)
         if err is not None:
             return err
     return None
@@ -387,13 +443,13 @@ def check_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
     if sb.network == "only_explicit_states":
         return (
             "sandbox.network = 'only_explicit_states' requires the strict"
-            " isolation (network namespaces), but this host supports only"
+            " isolation (network namespaces), but this run resolved to"
             " 'hardened'. Use 'auto' or 'host'."
         )
     if sb.network == "session":
         return (
             "sandbox.network = 'session' requires the strict isolation (a"
-            " network namespace), but this host supports only 'hardened', where"
+            " network namespace), but this run resolved to 'hardened', where"
             " a jailed command shares this process's network. Use 'auto' to run"
             " with a warning, or 'host' to accept it."
         )

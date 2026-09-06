@@ -41,7 +41,7 @@ from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
 from agent6.providers import CLAUDE_CODE_RESULT_CAP_CHARS, Provider, TranscriptSink
 from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
-from agent6.sandbox.jail import SessionNetwork
+from agent6.sandbox.jail import JailUnavailableError, SessionNetwork
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
@@ -89,7 +89,13 @@ def select_isolation(
     Raises :class:`SessionRefused`."""
     env = detect_env()
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
-    warn_sandbox_gaps(selected, env, cfg, reporter=reporter)
+    try:
+        warn_sandbox_gaps(selected, env, cfg, reporter=reporter)
+    except JailUnavailableError as exc:
+        # The hardened exposure scan builds the run's policy, which creates the
+        # jail's HOME and refuses one it cannot make.
+        reporter.refuse(str(exc))
+        raise SessionRefused(2) from exc
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):
         reporter.note("aborted.")

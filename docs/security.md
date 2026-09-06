@@ -18,17 +18,23 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 **Holds**
 
 - No writes outside the workspace
-    - `sandbox.extra_write_paths` and the per-repo memory dir widen it, visibly in `config show`
+    - `sandbox.extra_write_paths` and the per-repo memory dir widen it, visibly in `config show`; so does the jail's persistent `HOME` (below), visible in `agent6 check boundaries`
 - No reads outside the workspace and a read-only system set for installed toolchains
     - `strict`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, a minimal `/etc` the launcher writes, a curated `/dev`
     - `hardened`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`
     - `sandbox.extra_read_paths` adds more; `agent6 check boundaries` prints the resolved set
 - `/tmp` is writable at every level
     - `strict`: a private tmpfs discarded with the run
-    - `hardened`: the host's `/tmp`; `HOME` is `/tmp/agent6-home` there, a path agent6 does not create (a shared name on a multi-user host; `strict` creates it inside the private tmpfs)
+    - `hardened`: the host's `/tmp`
+- `HOME` is a directory of agent6's own, never the operator's
+    - `strict`: `/tmp/agent6-home`, created inside the private tmpfs and gone with the run; `[sandbox].home = "cache"` swaps in the persistent dir below, bind-mounted read-write at its real path
+    - `hardened` and `none`: `$XDG_CACHE_HOME/agent6/home` (default `~/.cache/agent6/home`), created `0700` by agent6 and, under `hardened`, Landlock-granted read-write like the workspace; the rest of the operator's home stays ungranted
+    - a symlink, another user's directory, a mode open to group or others, or a path inside agent6's private dirs at that location refuses the run; the mode is checked on every run (a jailed command can `chmod` its own HOME) and the refusal names `chmod 700`, nothing restores it silently
+    - persistence is a cross-run channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias reaches the next jailed run, never the operator's own tools
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
     - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `strict`, and push needs egress
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary
+    - the exception is the jail's persistent `HOME` (`hardened`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run, and under `hardened` it is executable; the operator's own shell, tools, and dotfiles never read it
     - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
     - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable
     - `/tmp` allows exec (toolchain helpers)
@@ -105,7 +111,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 **Inside the jail**
 
-- Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths` and operator tool dirs at their real paths
+- Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
     - every mount keeps the path it has outside
 - Masked last, after every bind (`strict`): the config dir, the state base, `[sandbox].hide_paths`
     - a grant at or inside a private dir is refused at config load

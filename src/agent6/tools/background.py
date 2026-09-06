@@ -150,9 +150,9 @@ class BackgroundShells:
         shell_dir.mkdir(parents=True, exist_ok=True)
         log_fd = self._open_log(shell_id)
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
-        policy = policy_for(wrapped, (log_dir,))
         job: BackgroundJob | LocalJob | SessionJob
         try:
+            policy = policy_for(wrapped, (log_dir,))
             if session is None:
                 job = start_in_jail(policy, outcome_dir=shell_dir)
             else:

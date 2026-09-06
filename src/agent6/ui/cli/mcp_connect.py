@@ -28,6 +28,7 @@ from agent6.config import (
 from agent6.config.layer import load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.sandbox.detect import resolve_isolation
+from agent6.sandbox.jail import JailUnavailableError
 from agent6.tools.mcp_client import MCPError, MCPServerSpec, MCPToolDescriptor, _MCPServer
 from agent6.tools.mcp_http import HttpTransport
 
@@ -116,7 +117,7 @@ def _describe(spec: MCPServerSpec) -> str:
     return f"spawning {shlex.join(spec.command)}"
 
 
-def cmd_mcp_connect(
+def cmd_mcp_connect(  # noqa: PLR0911
     name: str,
     *,
     command: list[str],
@@ -145,13 +146,18 @@ def cmd_mcp_connect(
     entry = MCPServerEntry.model_validate(
         {"command": command, "url": url, "token_env": token_env, "pass_env": pass_env}
     )
+    try:
+        policy = None if url else mcp_server_policy(cfg, Path.cwd(), isolation, entry)
+    except JailUnavailableError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     spec = MCPServerSpec(
         name=name,
         command=tuple(command),
         startup_timeout_s=_CONNECT_TIMEOUT_S,
         call_timeout_s=_CONNECT_TIMEOUT_S,
         pass_env=tuple(pass_env),
-        policy=None if url else mcp_server_policy(cfg, Path.cwd(), isolation, entry),
+        policy=policy,
         http=HttpTransport(name=name, url=url, token_env=token_env) if url else None,
     )
     print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)

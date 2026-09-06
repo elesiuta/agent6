@@ -918,8 +918,8 @@ class ToolDispatcher:
         checkin = self._config.workflow.command_checkin_s
         if session is None or shells is None or checkin <= 0:
             return self._run_argv_in_jail(argv, label="run_command")
-        policy = self._jail_policy(argv)
         try:
+            policy = self._jail_policy(argv)
             outcome = session.run(
                 argv,
                 env=policy.env,
@@ -1212,8 +1212,8 @@ class ToolDispatcher:
         label: str,
         timeout_s: float | None = None,
     ) -> ExecResult:
-        policy = self._jail_policy(argv, timeout_s=timeout_s)
         try:
+            policy = self._jail_policy(argv, timeout_s=timeout_s)
             session = self._run_session()
             # No check-in: this is the operator's gate (verify, metric, the
             # baseline re-run) and the loop needs a verdict, not a handle.

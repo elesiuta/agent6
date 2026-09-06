@@ -19,6 +19,7 @@ from agent6.app.machine.run import machine_tool_policy_factory
 from agent6.config import Config
 from agent6.machine import MachineJournal, ToolState, drive, load_machine
 from agent6.machine.engine import LiveWorld, ToolExecResult
+from agent6.paths import jail_cache_home
 from agent6.types import NetworkMode
 from agent6.ui.cli.machine_cmds import (
     _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
@@ -257,13 +258,14 @@ def test_liveworld_grants_data_dir_rw_and_env(
     assert ("AGENT6_MACHINE_DATA_DIR", str(data)) in policy.env
 
 
-def test_liveworld_no_data_dir_grants_no_extra_rw(
+def test_liveworld_no_data_dir_grants_only_the_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _patch_jail(monkeypatch)
     world = _world(tmp_path, "hardened")
     world.run_tool(("true",), 5.0, network="none")
-    assert seen[-1].extra_rw_paths == ()
+    # hardened's persistent HOME is the only extra grant: no data dir, no data grant.
+    assert seen[-1].extra_rw_paths == (jail_cache_home(),)
     assert all(k != "AGENT6_MACHINE_DATA_DIR" for k, _ in seen[-1].env)
 
 
