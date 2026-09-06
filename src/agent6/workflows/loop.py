@@ -1407,7 +1407,7 @@ class Workflow:
                 sha="",
             )
             if turn.verify_just_passed:
-                turn.metric_plateau_finish = self.metric_plateau_summary(state.metric_history)
+                turn.metric_plateau_finish = self._plateau_finish(state.metric_history)
         if name in ("apply_edit", "apply_patch"):
             # An edit under the memory dir is a memory write, not workspace
             # work: both memory nudges stay quiet for the rest of the run and
@@ -1775,7 +1775,7 @@ class Workflow:
             return self._unexecutable_abort(
                 exc, iteration=turn.iteration, tool_calls=state.tool_calls
             )
-        turn.metric_plateau_finish = self.metric_plateau_summary(state.metric_history)
+        turn.metric_plateau_finish = self._plateau_finish(state.metric_history)
         return None
 
     def _report_auto_commit_failure(
@@ -3767,9 +3767,10 @@ class Workflow:
             sha=sha,
         )
 
-    def metric_plateau_summary(self, history: list[MetricSample]) -> str | None:
-        metric_cfg = self.config.workflow.metric
-        goal = metric_goal(metric_cfg)
+    def _plateau_finish(self, history: list[MetricSample]) -> str | None:
+        """The plateau summary for THIS run: the shared rule, plus the two
+        conditions only a run knows (run mode, a configured goal)."""
+        goal = metric_goal(self.config.workflow.metric)
         if self.mode != "run" or goal is None:
             return None
         return metric_plateau_summary(history, goal=goal)
