@@ -81,6 +81,7 @@ from agent6.tools.dispatch import (
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX
 from agent6.tools.results import AnswersResult, ExecResult, MetricResult, ToolResult
 from agent6.tools.schema import (
+    AskUserInput,
     FinishPlanningInput,
     FinishSessionInput,
     ReadBackgroundInput,
@@ -313,16 +314,19 @@ def _plan_is_title_only(plan_md: str) -> bool:
 
 
 def _last_assistant_prose(conversation: Conversation) -> str:
-    """The text of the newest assistant turn ("" when the last turn is not
-    the assistant's), for pairing a steer with the question it answers."""
-    turns = conversation.turns
-    if not turns or not isinstance(turns[-1], AssistantTurn):
-        return ""
-    return "".join(
-        str(b.get("text", ""))
-        for b in turns[-1].raw_content
-        if isinstance(b, dict) and b.get("type") == "text"
-    )
+    """The text of the newest assistant turn, for pairing a steer with the
+    question it answers. Harness notices after it (the question nudge) do
+    not hide it; a tool result does ("": the model went on working)."""
+    for turn in reversed(conversation.turns):
+        if isinstance(turn, AssistantTurn):
+            return "".join(
+                str(b.get("text", ""))
+                for b in turn.raw_content
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+        if any(isinstance(item, ToolResultItem) for item in turn.items):
+            return ""
+    return ""
 
 
 @dataclass
@@ -1388,10 +1392,12 @@ class Workflow:
         verify-pass presumes correctness, verify-red is the hard signal),
         manual metric samples, tree edits, and DAG mutations."""
         if name == "ask_user" and isinstance(result, AnswersResult):
-            questions = tool_input.get("questions") if isinstance(tool_input, dict) else None
-            for q, answer in zip(questions or [], result.answers, strict=False):
-                text = q.get("question", "") if isinstance(q, dict) else str(q)
-                self._record_decision(state, str(text), answer)
+            # Through the tool's own model: it also accepts one question flat
+            # (`{question, options}`), and a second parse of the raw dict
+            # missed exactly that shape.
+            asked = AskUserInput.model_validate(tool_input).questions
+            for q, answer in zip(asked, result.answers, strict=False):
+                self._record_decision(state, q.question, answer)
         if name == "run_verify_command" and isinstance(result, ExecResult):
             # The model's own gate overran its budget: the same scoped
             # follow-up the harness gate gets, whose verdict is the turn's

@@ -7230,3 +7230,66 @@ def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, g
     state = LoopState(original_task="t", tool_calls=0)
 
     assert _settles_at(off, repo2, state, gated=gated) == baseline
+
+
+def _ruling_wf(tmp_path: Path) -> Workflow:
+    """A run with a state dir (so a ruling lands in DECISIONS.md) whose steer
+    bridge always carries the answer "keep squash"."""
+
+    def steer_prompt() -> str | None:
+        return "keep squash"
+
+    return Workflow(
+        root=tmp_path,
+        config=Config(),
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+        logger=_silent,
+        mode="run",
+        state_dir=tmp_path / "state",
+        steer_requested=lambda: True,
+        steer_clear=lambda: None,
+        steer_prompt=steer_prompt,
+    )
+
+
+def test_a_flat_ask_user_call_records_its_ruling(tmp_path: Path) -> None:
+    """`AskUserInput` accepts one question flat (`{question, options}`) and
+    folds it into `questions`; the bookkeeping re-parsed the raw dict for
+    `questions` and recorded nothing for the shape the tool had accepted."""
+    from agent6.memory import decisions_path
+    from agent6.tools.results import AnswersResult
+
+    question = "Should the default merge strategy stay squash?"
+    wf = _ruling_wf(tmp_path)
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = TurnState(
+        iteration=1, resp=_resp(""), assistant=AssistantTurn(raw_content=(), tool_uses=())
+    )
+    flat = {"question": question, "options": ["yes", "no"]}
+
+    wf._note_tool_effects(state, turn, "ask_user", AnswersResult(answers=("yes",)), flat)  # pyright: ignore[reportPrivateUsage]
+
+    assert len(state.decisions_recorded) == 1
+    assert question in decisions_path(tmp_path / "state").read_text(encoding="utf-8")
+
+
+def test_a_steer_answering_a_prose_question_records_after_the_nudge(tmp_path: Path) -> None:
+    """Run mode nudges once when the model ends on a prose question, so the
+    conversation's last turn is the harness's notice, not the prose; the
+    pairing read "" there and the operator's answer was never recorded."""
+    from agent6.memory import decisions_path
+    from agent6.workflows._nudges import QUESTION_NUDGE
+
+    question = "Should the default merge strategy stay squash?"
+    wf = _ruling_wf(tmp_path)
+    conversation = Conversation()
+    conversation.notice("TASK: do the thing")
+    conversation.assistant([{"type": "text", "text": f"I need a ruling.\n{question}"}])
+    conversation.notice(QUESTION_NUDGE)
+    state = LoopState(original_task="t", tool_calls=0)
+
+    wf._maybe_handle_steer(conversation, 4, state)  # pyright: ignore[reportPrivateUsage]
+
+    assert len(state.decisions_recorded) == 1
+    assert question in decisions_path(tmp_path / "state").read_text(encoding="utf-8")
