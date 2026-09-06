@@ -102,12 +102,16 @@ def _list_drafts(agent6_dir: Path) -> list[Path]:
     return out
 
 
-def _discrete_log_line(evt: dict[str, object]) -> Text | None:
+def _discrete_log_line(evt: dict[str, object], *, in_flight: bool = False) -> Text | None:
     """A compact line for a non-streaming agent-log event (tool calls, role start),
-    or None to skip it. Thinking/text deltas are accumulated separately."""
+    or None to skip it. Thinking/text deltas are accumulated separately.
+
+    Only the turn still *in_flight* is marked "thinking…": the screen replays
+    the whole state log on open, and a finished turn's role.call read live."""
     t = evt.get("type")
     if t == "role.call":
-        return Text(f"  → {evt.get('role', '')}/{evt.get('model', '')} thinking…", style="cyan")
+        mark = " thinking…" if in_flight else ""
+        return Text(f"  → {evt.get('role', '')}/{evt.get('model', '')}{mark}", style="cyan")
     if t == "tool.call":
         args = json.dumps(evt.get("args", {}), default=str)
         if len(args) > 80:
@@ -429,13 +433,23 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         thinking/answer text in self._pending, write discrete events (tool
         calls) inline. The byte-offset cursor (partial trailing lines stay
         unconsumed) lives in MachineWatchCursor."""
+        batch: list[dict[str, object]] = []
         for raw in self._cursor.read_log_lines():
             try:
                 evt = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(evt, dict):
-                continue
+            if isinstance(evt, dict):
+                batch.append(evt)
+        # The last unclosed role.call in the batch is the only turn that can be
+        # in flight, and only on a live instance.
+        open_call = -1
+        for i, evt in enumerate(batch):
+            if evt.get("type") == "role.call":
+                open_call = i
+            elif evt.get("type") == "role.result":
+                open_call = -1
+        for i, evt in enumerate(batch):
             etype = evt.get("type")
             if etype in ("role.thinking_delta", "role.text_delta"):
                 self._pending += str(evt.get("text", ""))
@@ -445,7 +459,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
                 # phantom (was gated on `_ended` only, so a killed worker or a
                 # parked machine still ticked a live role.call line).
                 continue
-            discrete = _discrete_log_line(evt)
+            discrete = _discrete_log_line(evt, in_flight=live and i == open_call)
             if discrete is not None:
                 self._flush_pending()
                 log.write(discrete)

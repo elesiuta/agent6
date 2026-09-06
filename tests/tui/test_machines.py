@@ -926,3 +926,94 @@ def test_machine_run_confirm_backs_out_on_q(tmp_path: Path, monkeypatch: object)
             assert captured == []
 
     asyncio.run(scenario())
+
+
+def test_a_live_machine_marks_only_the_turn_in_flight(tmp_path: Path) -> None:
+    """The watch screen replays the whole state log on open and marked every
+    historical `role.call` as thinking, gated on the MACHINE being live: three
+    finished turns and one in flight read as four live markers."""
+    import json
+    import os
+    from typing import Any
+
+    from textual.app import ComposeResult
+    from textual.widgets import RichLog
+
+    from agent6.machine import load_machine
+    from agent6.machine.journal import MachineJournal
+
+    root = tmp_path / "hunt"
+    root.mkdir()
+    (root / "machine.asm.toml").write_text(
+        """machine = "hunt"
+version = 1
+initial = "work"
+
+[budget]
+max_usd = 1.0
+max_transitions = 100
+
+[schemas.verdict]
+approved = "bool"
+
+[vars.agent]
+verdict = { type = "verdict", default = {} }
+
+[states.work]
+kind = "agent"
+model = "m1"
+prompt = "do the thing"
+output_schema = "verdict"
+capture = { finish_json = "verdict" }
+timeout_secs = 600
+on = { ok = "done", failed = "done", budget_exhausted = "done", timeout = "done" }
+
+[states.done]
+kind = "terminal"
+status = "ok"
+reason = "done"
+""",
+        encoding="utf-8",
+    )
+    j = MachineJournal(root)
+    j.ensure_dirs()
+    j.begin(machine="hunt", version=1)
+    sd = root / "states" / "0000-work"
+    sd.mkdir(parents=True)
+    evs: list[dict[str, Any]] = []
+    for i in (1, 2, 3):  # three COMPLETED turns
+        evs += [
+            {"type": "role.call", "role": "worker", "model": "m1"},
+            {"type": "role.thinking_delta", "text": f"turn {i} reasoning. "},
+            {"type": "role.result", "role": "worker", "tokens_in": 10, "tokens_out": 5},
+        ]
+    evs.append({"type": "role.call", "role": "worker", "model": "m1"})  # in flight
+    (sd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    (root / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
+
+    class WatchApp(App[int]):
+        def compose(self) -> ComposeResult:
+            return iter(())
+
+        def on_mount(self) -> None:
+            self.push_screen(
+                machmod.MachineWatchScreen(root, load_machine(root / "machine.asm.toml"))
+            )
+
+    out: list[str] = []
+
+    async def scenario() -> None:
+        app = WatchApp()
+        async with app.run_test(size=(140, 40)) as pilot:
+            for _ in range(14):
+                await pilot.pause(0.25)
+            log = app.screen.query_one("#mw-log", RichLog)
+            out.append(
+                "\n".join(
+                    "".join(seg.text for seg in line._segments)  # pyright: ignore[reportPrivateUsage]
+                    for line in log.lines
+                )
+            )
+
+    asyncio.run(scenario())
+    assert out[0].count("thinking…") == 1, out[0]
