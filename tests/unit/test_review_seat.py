@@ -37,11 +37,20 @@ _BLOCK_JSON = (
 
 class _Resp:
     def __init__(
-        self, text: str, *, stop_reason: str = "end_turn", output_tokens: int = 10
+        self,
+        text: str,
+        *,
+        stop_reason: str = "end_turn",
+        output_tokens: int = 10,
+        thinking: str = "",
     ) -> None:
         self.text = text
         self.stop_reason = stop_reason
         self.output_tokens = output_tokens
+        # As the providers build it: reasoning rides as a thinking block in raw.
+        self.raw: dict[str, Any] = (
+            {"content": [{"type": "thinking", "thinking": thinking}]} if thinking else {}
+        )
 
 
 class _FakeProvider:
@@ -127,6 +136,19 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     assert "unparseable" not in v.error
     assert "returned no content" in v.error
     assert "stop_reason=error" in v.error and "16801" in v.error
+
+    # The sibling shape, observed on the same model: a clean stop, no content,
+    # and the whole answer spent in the reasoning channel. Reported as bare
+    # "no content" it read like the upstream error above, and the operator had
+    # no way to tell a broken call from a model that only ever thinks.
+    thinker = _FakeProvider("")
+    thought = _Resp("", stop_reason="stop", output_tokens=7160, thinking="t" * 30_175)
+    thinker.call = lambda **_kw: thought  # type: ignore[method-assign]
+
+    v2 = structured_review(cast(Provider, thinker), _ctx(), seat="s", model="kimi-k2.6")
+
+    assert v2.error is not None
+    assert "30,175 chars of it in the reasoning channel" in v2.error
 
 
 def test_coerce_findings_normalizes_bad_category_and_severity() -> None:

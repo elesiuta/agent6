@@ -148,10 +148,17 @@ def _no_verdict_error(resp: ProviderResponse) -> str:
     if not resp.text.strip():
         # No content at all: an upstream error, or a reasoning model that spent
         # its whole budget in the reasoning channel. Blaming the parser for an
-        # empty body hid both.
+        # empty body hid both; naming the reasoning it DID produce separates
+        # them, and a seat that only ever thinks is the operator's to re-route.
+        thought = sum(
+            len(str(block.get("thinking") or ""))
+            for block in (resp.raw.get("content") or [])
+            if isinstance(block, dict) and block.get("type") == "thinking"
+        )
+        channel = f", {thought:,} chars of it in the reasoning channel" if thought else ""
         return (
             f"the reviewer returned no content (stop_reason={resp.stop_reason},"
-            f" {resp.output_tokens} output tokens)"
+            f" {resp.output_tokens} output tokens{channel})"
         )
     return "unparseable reviewer output"
 
