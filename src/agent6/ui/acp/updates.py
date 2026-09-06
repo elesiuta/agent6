@@ -157,8 +157,8 @@ def _text(text: str) -> dict[str, Any]:
 
 def _tool_status(item: TranscriptItem) -> str:
     """ACP's status for the fold's item: a call in flight is `in_progress`,
-    or `pending` while it waits on an approval (the fold's mark in `detail`);
-    a settled one carries its verdict."""
+    or `pending` while it waits on an approval or an ask_user answer (the
+    fold's mark in `detail`); a settled one carries its verdict."""
     if item.ok is None:
         return "pending" if item.detail else "in_progress"
     return "completed" if item.ok else "failed"

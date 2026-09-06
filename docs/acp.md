@@ -22,7 +22,7 @@ ACP is a fourth projection of that fold, so an editor sees what `agent6 attach` 
 A tool call arrives twice, as ACP models it.
 
 - `tool_call` (`in_progress`) when the run dispatches it, `tool_call_update` (`completed` or `failed`, with the output) when its result lands
-- a call waiting on an approval is updated to `pending` while its prompt is open, and back to `in_progress` once answered
+- a call waiting on an approval or an `ask_user` answer is updated to `pending` while its prompt is open, and back to `in_progress` once answered
 - a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.end` is written (a worker killed without one leaves it in progress)
 
 ## Approvals

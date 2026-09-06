@@ -452,7 +452,10 @@ class TranscriptFold:
             # The dispatcher journals tool.call before the approval gate: the
             # newest call in flight is the one the prompt holds.
             return self._mark_newest_call("awaiting approval")
-        if etype == "approval.answer":
+        if etype == "question.prompt":
+            # Likewise ask_user: its call is in flight while the operator answers.
+            return self._mark_newest_call("awaiting answer")
+        if etype in ("approval.answer", "question.answer"):
             return self._mark_newest_call("")
         if etype == "verify.end":
             code = event.get("exit_code")

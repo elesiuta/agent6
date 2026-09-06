@@ -614,6 +614,33 @@ def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
     assert fold_transcript([prompt]) == []  # a prompt gating no call (a pre-run confirmation)
 
 
+def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
+    """ask_user's call is journaled before its prompt, so while the operator
+    answers the call is in flight: every surface read it as running (the
+    approval pair was marked, the question pair was not)."""
+    from agent6.viewmodel.transcript import TranscriptFold
+
+    call = {
+        "type": "tool.call",
+        "name": "ask_user",
+        "args": {"questions": ["which?"]},
+        "call_id": 1,
+    }
+    prompt = {"type": "question.prompt", "id": "question-1", "questions": ["which?"]}
+    answer = {"type": "question.answer", "id": "question-1", "answers": ["a"]}
+    fold = TranscriptFold()
+    fold.feed(call)
+    (waiting,) = fold.feed(prompt)
+    assert (waiting.ok, waiting.call_id, waiting.detail) == (None, "1", "awaiting answer")
+    (running,) = fold.feed(answer)
+    assert (running.ok, running.call_id, running.detail) == (None, "1", "")
+    (item,) = fold_transcript([call, prompt])
+    assert item.detail == "awaiting answer"
+    events = [{"type": "session.start", "user_task": "pick"}, call, prompt]
+    assert "[awaiting answer] ask_user" in restate(events)
+    assert fold_transcript([prompt]) == []  # a question gating no call (a machine's own ask)
+
+
 def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
     """A worker killed without a session.end leaves its last call open with no
     boundary to settle it; the reader that probes the worker settles it."""
