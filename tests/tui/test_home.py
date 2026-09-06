@@ -671,3 +671,51 @@ def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
             assert calls == [("prune", False), ("prune", True), ("asks", False)]
 
     asyncio.run(scenario())
+
+
+def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: Path) -> None:
+    """A fan-out is one row carrying its lane count; Space on it lists the
+    lanes under it (the row list stays 1:1 with the table), Space again folds
+    them."""
+    import asyncio
+
+    from textual.widgets import DataTable
+
+    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+
+    a6 = tmp_path / ".agent6"
+    start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
+    fan = _write_run(a6, "runs", "fan", [start])
+    (fan / "manifest.json").write_text(
+        json.dumps({"mode": "run", "fanout": {"lanes": 2, "spec": "2"}}), encoding="utf-8"
+    )
+    for lane in (1, 2):
+        d = _write_run(a6, "runs", f"fan-l{lane}", [start])
+        (d / "manifest.json").write_text(
+            json.dumps(
+                {"mode": "run", "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"}}
+            ),
+            encoding="utf-8",
+        )
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HomeScreen)
+            table = screen.query_one("#sessions", DataTable)
+            runs = screen._runs  # pyright: ignore[reportPrivateUsage]
+            assert table.row_count == 1 and [rd.name for rd in runs] == ["fan"]
+            assert "(2 lanes)" in str(table.get_row_at(0)[3])
+            screen.action_toggle_lanes()
+            await pilot.pause()
+            runs = screen._runs  # pyright: ignore[reportPrivateUsage]
+            assert [rd.name for rd in runs] == ["fan", "fan-l1", "fan-l2"]
+            assert "(2 lanes)" not in str(table.get_row_at(0)[3])
+            assert "└ fan-l1" in str(table.get_row_at(1)[3])
+            screen.action_toggle_lanes()
+            await pilot.pause()
+            assert table.row_count == 1
+
+    asyncio.run(scenario())

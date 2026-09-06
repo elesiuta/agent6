@@ -59,9 +59,12 @@ from agent6.viewmodel import (
 from agent6.viewmodel.format import (
     format_cost_cell,
     format_when,
+    lane_count,
+    lane_id_cell,
     listing_status_label,
     winner_id,
 )
+from agent6.viewmodel.listing import ListingRow, nested_rows
 
 # The hub re-asks on this cadence (matching the web hub's poll rate), so a
 # session that ends while you watch stops reading as running.
@@ -104,6 +107,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 # match the run views' View menus. There is no separate
                 # transcript viewer: Enter opens the run on its conversation.
                 MenuItem("View logs", "view_logs", "l"),
+                MenuItem("Fold/expand lanes", "toggle_lanes", "space"),
                 MenuItem("Theme…", "choose_theme"),
                 MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -121,6 +125,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         Binding("n", "new_work", "New run/plan/ask"),
         Binding("enter", "open_selected", "Open"),
         Binding("l", "view_logs", "View logs"),
+        Binding("space", "toggle_lanes", "Lanes"),
         Binding("m", "merge_selected", "Merge run"),
         Binding("d", "delete_selected", "Delete run"),
         Binding("r", "refresh", "Refresh"),
@@ -133,6 +138,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
     COMMANDS: ClassVar = Screen.COMMANDS | {MenuCommands}
     HELP_HINTS: ClassVar = (
         "Enter opens the selected run",
+        "Space folds or expands a fan-out's lanes",
         "Pickers: ↑↓ highlight · Space selects",
     )
 
@@ -148,6 +154,9 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # The rows the poll built, by run id: `check_action` reads them instead
         # of re-folding a session on every binding refresh.
         self._summaries: dict[str, SessionSummary] = {}
+        # The fan-outs listed (by coordinator id) and the ones the operator expanded.
+        self._fanouts: dict[str, ListingRow] = {}
+        self._expanded: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <path>"
@@ -190,20 +199,40 @@ class HomeScreen(ScreenChrome, Screen[None]):
         survivors: list[Path] = []
         rows: dict[str, SessionSummary] = {}
         tips = run_branch_tips(self.repo_cwd)
-        for rd in session_dirs(self.agent6_dir):
-            if not rd.is_dir():
-                continue  # vanished since the listing snapshot — skip it
-            s = summarize_session_dir(rd, branch_tips=tips)
+        # A dir that vanished since the listing snapshot is skipped.
+        dirs = {rd.name: rd for rd in session_dirs(self.agent6_dir) if rd.is_dir()}
+        listing = nested_rows(summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values())
+        self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
+
+        def add(s: SessionSummary, id_cell: str) -> None:
             # Text cells: task is model/user input and may carry markup brackets.
             table.add_row(
                 format_when(s.mtime),
                 _status_cell(s),
                 format_cost_cell(s.cost_usd, partial=s.usd_partial),
-                Text(winner_id(s.session_id, winner=is_winner(rd))),
+                Text(id_cell),
                 Text(task_snippet(s.task, max_chars=60)),
             )
-            survivors.append(rd)
-            rows[rd.name] = s
+            survivors.append(dirs[s.session_id])
+            rows[s.session_id] = s
+
+        def emit(row: ListingRow, depth: int) -> None:
+            s = row.summary
+            marked = winner_id(s.session_id, winner=is_winner(dirs[s.session_id]))
+            if depth:
+                add(s, lane_id_cell(marked, depth))
+                for lane in row.lanes:
+                    emit(lane, depth + 1)
+                return
+            expanded = s.session_id in self._expanded
+            folded = f" ({lane_count(len(row.lanes))})" if row.lanes and not expanded else ""
+            add(s, marked + folded)
+            if expanded:
+                for lane in row.lanes:
+                    emit(lane, 1)
+
+        for row in listing:
+            emit(row, 0)
         self._runs = survivors
         self._summaries = rows
         if selected:
@@ -213,7 +242,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # Useful context in the header sub-title rather than a duplicate hint bar.
         # "sessions", not "runs": this hub lists every bucket, so a hub of one
         # run, one plan and one ask announced "3 runs".
-        count = len(self._runs)
+        count = len(dirs)
         # The empty state says what to do next, as the CLI and the web do and as
         # the machines screen next door does: a blank table is not an answer.
         tally = (
@@ -224,6 +253,36 @@ class HomeScreen(ScreenChrome, Screen[None]):
         self.app.sub_title = f"{self.repo_cwd} · {tally}"
         # An empty table shouldn't paint a full-height focus cursor over its body.
         table.show_cursor = table.row_count > 0
+
+    def action_toggle_lanes(self) -> None:
+        """Expand or fold the selected fan-out's lanes; on a lane row, fold its
+        fan-out. The cursor stays on the fan-out's row."""
+        target = self._selected_fanout()
+        if target is None:
+            return
+        if target in self._expanded:
+            self._expanded.discard(target)
+        else:
+            self._expanded.add(target)
+        self.action_refresh()
+        table = self.query_one("#sessions", DataTable)
+        row = next((i for i, rd in enumerate(self._runs) if rd.name == target), None)
+        if row is not None:
+            table.move_cursor(row=row)
+
+    def _selected_fanout(self) -> str | None:
+        """The fan-out the cursor's row belongs to (its own row or a lane's),
+        None on any other row."""
+        rd = self._selected_dir()
+        if rd is None:
+            return None
+        sid = rd.name
+        while sid not in self._fanouts:
+            s = self._summaries.get(sid)
+            if s is None or not s.coordinator or s.coordinator == sid:
+                return None
+            sid = s.coordinator
+        return sid
 
     def action_open_selected(self) -> None:
         table = self.query_one("#sessions", DataTable)
@@ -277,6 +336,8 @@ class HomeScreen(ScreenChrome, Screen[None]):
         commits live only on its chain ref -- one the CLI merges fine.
         """
         del parameters
+        if action == "toggle_lanes":
+            return True if self._selected_fanout() is not None else None
         if action in ("merge_selected", "delete_selected"):
             rd = self._selected_dir()
             if rd is None:
