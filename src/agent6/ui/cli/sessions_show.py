@@ -165,7 +165,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "forked_from_turn": manifest.forked_from_turn,
                     "forked_from_sha": manifest.forked_from_sha,
                     "compare": compare_json,
-                    "run_branch": manifest.run_branch or None,
+                    # The branch is created at the first commit: null until it exists.
+                    "run_branch": manifest.run_branch
+                    if manifest.run_branch and branch_exists(Path.cwd(), manifest.run_branch)
+                    else None,
                     "base_branch": manifest.base_branch or None,
                     "merged_into": changes.merged_into or None,
                     "pins": list(scan.pins),
