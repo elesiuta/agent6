@@ -26,13 +26,13 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, NoReturn
 
 from agent6.child_env import without_provider_keys
 from agent6.paths import hidden_paths, mkdir_for_real_user
-from agent6.types import BackgroundHandoff, CommandResult, JailPolicy
+from agent6.types import BackgroundHandoff, ChildSnapshot, CommandResult, JailPolicy
 
 # Loaded at import, never between fork and exec: dlopen allocates, and another
 # thread mid-malloc at fork would deadlock a post-fork load.
@@ -477,8 +477,8 @@ _live_launchers: set[int] = set()
 # `/parallel` lane. They look exactly like an escapee -- a child of this process, different
 # session -- so without this the first background command's teardown SIGKILLs
 # them, destroying model work the operator has already paid for. Every detached
-# spawn from this process must register here; `agent6.ui.spawn` is the one
-# place that does it.
+# spawn from this process registers here: `agent6.ui.spawn` and the claude_code
+# provider's child.
 _own_detached: set[int] = set()
 
 
@@ -559,13 +559,14 @@ def _kill_escapees(exclude: frozenset[int]) -> frozenset[int]:
     with _sweep_lock:
         while True:
             children = _own_children()
-            # Prune the live-launcher set against reality first. A launcher we
-            # started is by definition our child, so a pid that is no longer
-            # one cannot be a live launcher -- and leaving it behind means the
-            # NEXT process to get that pid is skipped by the sweep. Derived
-            # rather than discarded per call site: every caller remembering to
-            # clean up is the bug, not the instance.
+            # Prune both exclusion sets against reality first. A pid we spare
+            # is by definition our child, so one that is no longer a child is
+            # not ours to spare, and leaving it behind means the next process
+            # to get that pid is skipped by the sweep. Derived rather than
+            # discarded per call site: every caller remembering to clean up is
+            # the bug, not the instance.
             _live_launchers.intersection_update(children)
+            _own_detached.intersection_update(children)
             escapees = {
                 pid
                 for pid, session in children.items()
@@ -592,11 +593,11 @@ class JailedProcess:
     JSON-RPC pipe -- not one it collects (`run_in_jail`) or serves many through
     (`JailSession`).
 
-    `close` bounds the child's whole lifetime. `hardened` has no PID namespace,
-    so the server sits in the launcher's process group and a setsid child
-    reparents onto the agent; signalling the launcher pid alone leaves both
-    running. Close signals the group, reaps it, then runs the same escapee sweep
-    the one-shot path does, excluding the own-children snapshot taken before the
+    `close` bounds the child's whole lifetime. Outside a PID namespace the
+    server sits in the launcher's process group and a setsid child reparents
+    onto the agent; signalling the launcher pid alone leaves both running.
+    Close signals the group, reaps it, then runs the same escapee sweep the
+    one-shot path does, excluding the own-children snapshot taken before the
     spawn.
     """
 
@@ -611,10 +612,11 @@ class JailedProcess:
         # launcher; construction time is the fallback for a direct caller.
         self._before = frozenset(_own_children()) if before is None else before
 
-    def close(self) -> None:
+    def close(self) -> frozenset[int]:
         """Best-effort and idempotent. Close stdin for a graceful exit, take the
         launcher's process group down, reap it, then sweep the escapees that
-        reparented onto the agent."""
+        reparented onto the agent. Returns the pids the sweep could not kill:
+        the caller says so."""
         proc = self.popen
         if proc.stdin is not None:
             with contextlib.suppress(OSError):
@@ -633,7 +635,7 @@ class JailedProcess:
                     proc.wait(timeout=1.0)
         with _sweep_lock:
             _live_launchers.discard(proc.pid)
-        _kill_escapees(self._before | {proc.pid})
+        return _kill_escapees(self._before | {proc.pid})
 
 
 def spawn_in_jail(
@@ -651,8 +653,8 @@ def spawn_in_jail(
     session rather than collects -- an MCP server and its JSON-RPC pipe. The
     same policy, the same launcher, the same layers. The handle's `close` bounds
     the child's lifetime: it takes the launcher's whole process group down and
-    sweeps the escapees a `hardened` server's setsid child leaves behind, which
-    signalling the launcher pid alone would miss.
+    sweeps the escapees a server's setsid child leaves behind, which signalling
+    the launcher pid alone would miss.
 
     The child's stdio is whatever the caller passes, straight through: fork,
     unshare, pivot_root, Landlock, seccomp and execve none of them touch the
@@ -947,8 +949,10 @@ def _write_stopped(outcome_dir: Path) -> None:
         result.write_text(json.dumps({"stopped": True}), encoding="utf-8")
 
 
-def _stop_detached(proc: subprocess.Popen[bytes], descendants: frozenset[int]) -> bool:
-    """Kill *proc*'s group and sweep what it left behind; True when it is gone.
+def _stop_detached(proc: subprocess.Popen[bytes], descendants: frozenset[int], what: str) -> str:
+    """Kill *proc*'s group and sweep what it left behind. Answers "" when the
+    process and everything it started are gone, else why not (the stop
+    contract every job's `stop` shares): *what* names the process.
 
     killpg only reaches the process's own group, so a child that called setsid()
     is missed exactly as it is for a foreground command -- and `run_in_jail`'s
@@ -963,8 +967,10 @@ def _stop_detached(proc: subprocess.Popen[bytes], descendants: frozenset[int]) -
             proc.wait(timeout=5.0)
     with _sweep_lock:
         _live_launchers.discard(proc.pid)
-    _kill_escapees(descendants)
-    return proc.poll() is not None
+    survivors = _kill_escapees(descendants)
+    stuck = f"{what} {proc.pid} did not exit after SIGKILL" if proc.poll() is None else ""
+    left = survivors_message(survivors) if survivors else ""
+    return "; ".join(part for part in (stuck, left) if part)
 
 
 class LocalJob:
@@ -1002,10 +1008,10 @@ class LocalJob:
         surface that prints "stopped" over a live process is stating the one
         thing an operator acts on, wrongly.
         """
-        if not _stop_detached(self._proc, self._descendants):
-            return f"the command {self._proc.pid} did not exit after SIGKILL"
-        self._settle(int(self._proc.returncode))
-        return ""
+        answer = _stop_detached(self._proc, self._descendants, "the command")
+        if self._proc.poll() is not None:
+            self._settle(int(self._proc.returncode))
+        return answer
 
     def _settle(self, returncode: int) -> BackgroundStatus:
         self._final = BackgroundStatus(running=False, returncode=returncode, error="")
@@ -1058,10 +1064,10 @@ class BackgroundJob:
         the ending is recorded here -- otherwise a surface in another process
         goes on reading a stopped command as maybe-still-running.
         """
-        if not _stop_detached(self._proc, self._descendants):
-            return f"the sandbox launcher {self._proc.pid} did not exit after SIGKILL"
-        _write_stopped(self._outcome_dir)
-        return ""
+        answer = _stop_detached(self._proc, self._descendants, "the sandbox launcher")
+        if self._proc.poll() is not None:
+            _write_stopped(self._outcome_dir)
+        return answer
 
     def _unregister(self) -> None:
         with _sweep_lock:
@@ -1076,11 +1082,23 @@ class SessionJob:
     command, asking again gets ECHILD, which is not "exit code unknown".
     """
 
-    def __init__(self, session: JailSession, pid: int, outcome_dir: Path) -> None:
+    def __init__(
+        self,
+        session: JailSession,
+        pid: int,
+        outcome_dir: Path,
+        *,
+        before: ChildSnapshot,
+    ) -> None:
         self._session = session
         self._pid = pid
         self._outcome_dir = outcome_dir
+        # Taken before the command started, so its own reparented daemon is
+        # not in it and a sibling's is: the session bounds this stop's sweep
+        # by it and by the next command's.
+        self._before = before
         self._final: BackgroundStatus | None = None
+        session.open_job(pid, before)
 
     def status(self) -> BackgroundStatus:
         if self._final is not None:
@@ -1095,17 +1113,20 @@ class SessionJob:
         return status
 
     def stop(self) -> str:
-        """Kill the command and its group. Idempotent. Answers "" when the
-        launcher confirmed it is gone, else what it said instead."""
-        if self._final is not None:
-            return ""
-        try:
-            code = self._session.stop_background(self._pid)
-        except JailUnavailableError as exc:
-            self._settle(BackgroundStatus(running=False, returncode=None, error=str(exc)))
-            return str(exc)
-        self._settle(BackgroundStatus(running=False, returncode=code, error=""))
-        return ""
+        """Kill the command and its group, then sweep what it left outside the
+        group. Idempotent: a command already reaped is not asked again, but its
+        escapees are swept on every stop. Answers "" when the launcher
+        confirmed the group is gone and the sweep killed the rest, else what
+        stands: the launcher's refusal, or the pids the sweep could not kill."""
+        if self._final is None:
+            try:
+                code = self._session.stop_background(self._pid)
+            except JailUnavailableError as exc:
+                self._settle(BackgroundStatus(running=False, returncode=None, error=str(exc)))
+                return str(exc)
+            self._settle(BackgroundStatus(running=False, returncode=code, error=""))
+        survivors = self._session.sweep_for(self._pid, self._before)
+        return survivors_message(survivors) if survivors else ""
 
     def _settle(self, status: BackgroundStatus) -> None:
         self._final = status
@@ -1225,10 +1246,14 @@ class JailSession:
     # surfaces it once; "" when setup was clean.
     startup_stderr: str = ""
     # What was already ours when the session opened. Without a PID namespace,
-    # anything beyond it at close is this session's escapee: a BACKGROUND
+    # anything beyond it at close is this session's escapee: a background
     # command's `setsid` daemon reparents here and the launcher's own
     # process-group kill never reaches it, so it outlived the run.
     _opened_with: frozenset[int] = frozenset()
+    # The start snapshot of every background command not yet stopped, by pid:
+    # what a stop sweeps ends where the next of these began.
+    _live_jobs: dict[int, ChildSnapshot] = field(default_factory=dict)
+    _snapshots: int = 0
 
     @classmethod
     def open(cls, policy: JailPolicy, *, session_net: SessionNetwork | None = None) -> JailSession:
@@ -1313,7 +1338,7 @@ class JailSession:
         check-in would have made it, and teardown stops it.
         """
         start = time.monotonic()
-        before = frozenset() if self._pid_namespaced else frozenset(_own_children())
+        before = self.child_snapshot()
         answer: dict[str, object] = {}
         survivors: frozenset[int] = frozenset()
         try:
@@ -1330,10 +1355,10 @@ class JailSession:
                 interrupted=interrupted,
             )
         finally:
-            # Only for a command that ENDED: one handed back is still running,
+            # Only for a command that ended: one handed back is still running,
             # and its own children are not escapees yet.
-            if not self._pid_namespaced and not answer.get("backgrounded"):
-                survivors = _kill_escapees(before | {self._proc.pid})
+            if not answer.get("backgrounded"):
+                survivors = self._sweep(before.pids)
         if survivors:
             raise JailUnavailableError(survivors_message(survivors))
         elapsed = time.monotonic() - start
@@ -1348,6 +1373,7 @@ class JailSession:
                 stdout=str(answer.get("stdout", "")),
                 stderr=str(answer.get("stderr", "")),
                 duration_s=elapsed,
+                before=before,
             )
         return _result_from_json(answer, argv, elapsed)
 
@@ -1463,10 +1489,37 @@ class JailSession:
                 os.killpg(self._proc.pid, signal.SIGKILL)
         with _sweep_lock:
             _live_launchers.discard(self._proc.pid)
-        if not self._pid_namespaced:
-            # A command's own escapees are swept as it ends; a BACKGROUND
-            # command outlives every one of those sweeps, and the launcher can
-            # only kill the process group it tracked. Whatever appeared since
-            # the session opened and is not ours goes here.
-            return _kill_escapees(self._opened_with | {self._proc.pid})
-        return frozenset()
+        return self._sweep(frozenset())
+
+    def child_snapshot(self) -> ChildSnapshot:
+        """The agent's children, taken before a command starts: what reparents
+        onto the agent (a subreaper) after this is that command's own until the
+        next command starts. Empty under a PID namespace, which bounds them."""
+        self._snapshots += 1
+        pids = frozenset() if self._pid_namespaced else frozenset(_own_children())
+        return ChildSnapshot(self._snapshots, pids)
+
+    def open_job(self, pid: int, before: ChildSnapshot) -> None:
+        """Record a background command's start snapshot until its stop."""
+        self._live_jobs[pid] = before
+
+    def sweep_for(self, pid: int, before: ChildSnapshot) -> frozenset[int]:
+        """Kill what the command *pid* left outside its process group: what
+        appeared after it started and before the next still-running command
+        did, whichever order the two stop in. A younger command's escapees are
+        its own stop's; the close sweeps whatever is left. Answers the pids the
+        sweep could not kill."""
+        self._live_jobs.pop(pid, None)
+        younger = [b for b in self._live_jobs.values() if b.seq > before.seq]
+        spare = before.pids
+        if younger:
+            spare |= frozenset(_own_children()) - min(younger, key=lambda b: b.seq).pids
+        return self._sweep(spare)
+
+    def _sweep(self, spare: frozenset[int]) -> frozenset[int]:
+        """Kill what the session's commands left outside their process groups,
+        sparing *spare*. Answers the pids it could not kill; nothing under a
+        PID namespace, which bounds them itself."""
+        if self._pid_namespaced:
+            return frozenset()
+        return _kill_escapees(self._opened_with | spare | {self._proc.pid})

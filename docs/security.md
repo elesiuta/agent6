@@ -42,7 +42,8 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - `/tmp` allows exec (toolchain helpers)
     - children write inside the jail's mount namespace (`strict`) or the Landlock write grants (`hardened`)
     - nothing a command starts outlives it: `strict`'s PID namespace takes the tree down; `hardened` holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command (a `setsid` daemon included)
-    - a survivor the sweep cannot kill fails the command; one still running when the run's jail session closes is recorded as a `jail.degraded` event
+    - a survivor the sweep cannot kill fails the command, and a background `stop` answers with its pids
+    - one still running when the run's jail session or a spawned MCP server closes is recorded as a `jail.degraded` event
 
 **Does not hold**
 

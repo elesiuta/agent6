@@ -950,7 +950,7 @@ class ToolDispatcher:
                 duration_s=outcome.duration_s,
                 exec_failed=outcome.exec_failed,
             )
-        view = shells.adopt(argv, outcome.pid, Path(outcome.log), session=session)
+        view = shells.adopt(outcome, session=session)
         self._emit("command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s)
         return ExecResult(
             returncode=None,

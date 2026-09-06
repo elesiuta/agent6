@@ -172,6 +172,16 @@ class CommandResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ChildSnapshot:
+    """The agent's children when a command started. `seq` orders the session's
+    commands by start, so a stop can tell what appeared after its own command
+    started and before the next one did."""
+
+    seq: int
+    pids: frozenset[int]
+
+
+@dataclass(frozen=True, slots=True)
 class BackgroundHandoff:
     """A command that outlived its check-in and is still running.
 
@@ -189,6 +199,8 @@ class BackgroundHandoff:
     stdout: str
     stderr: str
     duration_s: float
+    # The children the agent had when the command started: its stop's baseline.
+    before: ChildSnapshot
 
 
 @dataclass(frozen=True, slots=True)

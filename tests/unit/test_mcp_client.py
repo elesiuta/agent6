@@ -13,6 +13,7 @@ import contextlib
 import json
 import os
 import signal
+import subprocess
 import sys
 import textwrap
 import threading
@@ -657,6 +658,57 @@ def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) ->
     assert captured.get("start_new_session") is True
 
 
+def test_a_failed_starts_survivors_reach_the_managers_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A server whose handshake fails is closed by the manager's start, and
+    the pids that close's sweep could not kill were dropped there."""
+    from agent6.tools.mcp_client import MCPManager, MCPServerSpec
+
+    def sweep(exclude: frozenset[int]) -> frozenset[int]:
+        return frozenset({4321})
+
+    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="dead",
+                command=("/bin/sh", "-c", "exit 1"),
+                startup_timeout_s=2.0,
+                call_timeout_s=1.0,
+            )
+        ],
+        logger=lambda _m: None,
+    )
+    assert [f.name for f in mgr.failures] == ["dead"]
+    assert mgr.close() == frozenset({4321})
+
+
+def test_a_restarted_servers_survivors_accumulate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A server closed twice (a restart, then the teardown) hands back the
+    survivors of both closes, not the last one's."""
+    from agent6.sandbox.jail import JailedProcess
+    from agent6.tools.mcp_client import _MCPServer  # pyright: ignore[reportPrivateUsage]
+
+    pids = iter([4321, 4322])
+
+    def sweep(exclude: frozenset[int]) -> frozenset[int]:
+        return frozenset({next(pids)})
+
+    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
+    srv = _MCPServer(name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0)
+    procs = [subprocess.Popen(["sleep", "60"], start_new_session=True) for _ in range(2)]
+    try:
+        srv._proc = JailedProcess(procs[0])  # pyright: ignore[reportPrivateUsage]
+        assert srv.close() == frozenset({4321})
+        srv._proc = JailedProcess(procs[1])  # pyright: ignore[reportPrivateUsage]
+        assert srv.close() == frozenset({4321, 4322})
+    finally:
+        for proc in procs:
+            proc.kill()
+            proc.wait(timeout=5)
+
+
 def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
     """Two callers on one server (review seats share a dispatcher): A's
     timeout replaces the process under B's in-flight call. B does not time
@@ -698,3 +750,34 @@ def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
         assert server._generation == 1  # pyright: ignore[reportPrivateUsage]
     finally:
         mgr.close()
+
+
+def test_the_manager_hands_back_every_survivor_of_its_servers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A server's escapee the sweep could not kill was dropped on the floor by
+    the client's close; the leg records what the manager hands back as a jail
+    degradation, the way the run's own session close does. Driven through the
+    real client: a stand-in with a `close()` of its own pinned only the union."""
+    from agent6.sandbox.jail import JailedProcess
+    from agent6.tools.mcp_client import (
+        MCPManager,
+        _MCPServer,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    def sweep(exclude: frozenset[int]) -> frozenset[int]:
+        return frozenset({4321})
+
+    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
+    escapee = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    survived = _MCPServer(name="a", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0)
+    survived._proc = JailedProcess(escapee)  # pyright: ignore[reportPrivateUsage]
+    clean = _MCPServer(name="b", command=("x",), startup_timeout_s=1.0, call_timeout_s=1.0)
+    manager = MCPManager()
+    manager._servers = {"a": survived, "b": clean}  # pyright: ignore[reportPrivateUsage]
+    try:
+        assert manager.close() == frozenset({4321})
+        assert manager.close() == frozenset()  # idempotent: nothing left to close
+    finally:
+        escapee.kill()
+        escapee.wait(timeout=5)

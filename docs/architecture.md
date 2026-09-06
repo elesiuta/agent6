@@ -349,7 +349,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `btw.opened` / `.answered` | a `/btw` side question and its answer block |
 | `command.backgrounded` | a `run_command` handed back as a background job (`id`, argv) |
 | `metric.start` | the metric command about to run (argv) |
-| `jail.degraded` | the sandbox came up weaker than asked, with the reason |
+| `jail.degraded` | `detail`: the sandbox came up weaker than asked, or a process survived the sweep at the run's jail session or a spawned MCP server's close |
 | `mcp.server_unavailable` | a configured MCP server that did not start; the run continues without it |
 | `budget.update` | input/output token totals and the fallback cap, plus `usd_total`, `usd_partial`, `usd_cap`, `tokens_unmetered`, and the plan meter (`plan_used_percent`, `plan_consumed`, `plan_cap`, `plan_resets_at`) |
 | `approval.prompt` / `.answer` | `id`, `prompt`, `standing`, `call_id` (the gated tool call; null for a verify the harness runs itself) / `id`, `approved`, `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `session`, `headless`, `acp`) |

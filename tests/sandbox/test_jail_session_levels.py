@@ -142,6 +142,96 @@ def test_a_backgrounded_setsid_daemon_dies_with_the_session(
     assert not still
 
 
+@pytest.mark.parametrize("isolation", _NO_NAMESPACE_LEVELS)
+def test_a_backgrounded_setsid_daemon_dies_at_its_stop(
+    tmp_path: Path, isolation: IsolationLevel
+) -> None:
+    """`stop_background` took the launcher's tracked group down and answered
+    "stopped" while the command's `setsid` child kept running until the
+    session closed, for the rest of the run. With no PID namespace the stop
+    sweeps the session's escapees itself."""
+    from agent6.sandbox.jail import SessionJob
+
+    session = _session(tmp_path, isolation)
+    marker = tmp_path / "daemon.pid"
+    try:
+        # The baseline is taken before the command starts, as
+        # `BackgroundShells.start` takes it, so the daemon it leaves is this
+        # job's own and its stop sweeps it.
+        before = session.child_snapshot()
+        job = SessionJob(
+            session,
+            session.start_background(
+                ("/bin/sh", "-c", f"setsid sh -c 'echo $$ > {marker}; sleep 60' & sleep 0.4")
+            ),
+            tmp_path,
+            before=before,
+        )
+        time.sleep(1.0)
+        assert marker.exists(), "the daemon never started; the test proves nothing"
+        daemon = int(marker.read_text().strip())
+        assert _running(daemon)
+        assert job.stop() == ""
+        time.sleep(0.5)
+        still = _running(daemon)
+        if still:  # never leave one behind, even on failure
+            os.kill(daemon, signal.SIGKILL)
+        assert not still
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("isolation", _NO_NAMESPACE_LEVELS)
+@pytest.mark.parametrize("older_first", [False, True])
+def test_a_stop_spares_a_sibling_background_commands_daemon(
+    tmp_path: Path, isolation: IsolationLevel, older_first: bool
+) -> None:
+    """The stop-time sweep ran with the session-open snapshot, so stopping one
+    background command killed the `setsid` daemon another, still-running
+    command had left; a per-job baseline then spared only the older sibling.
+    A stop sweeps what appeared between its own command's start and the next
+    live command's, so the order the two stop in does not matter."""
+    from agent6.sandbox.jail import SessionJob
+
+    def daemonising(marker: Path) -> tuple[str, ...]:
+        # An inner shell that exits, so the daemon reparents onto the agent
+        # while the command itself keeps running.
+        inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
+        return ("/bin/sh", "-c", f"sh -c '{inner}'; sleep 60")
+
+    session = _session(tmp_path, isolation)
+    m1, m2 = tmp_path / "d1.pid", tmp_path / "d2.pid"
+    d1 = d2 = 0
+    try:
+        b1 = session.child_snapshot()
+        job1 = SessionJob(
+            session, session.start_background(daemonising(m1)), tmp_path / "j1", before=b1
+        )
+        time.sleep(1.0)
+        b2 = session.child_snapshot()
+        job2 = SessionJob(
+            session, session.start_background(daemonising(m2)), tmp_path / "j2", before=b2
+        )
+        time.sleep(1.0)
+        assert m1.exists() and m2.exists(), "a daemon never started; the test proves nothing"
+        d1, d2 = int(m1.read_text().strip()), int(m2.read_text().strip())
+        assert _running(d1) and _running(d2)
+        first, second = (job1, job2) if older_first else (job2, job1)
+        d_first, d_second = (d1, d2) if older_first else (d2, d1)
+        assert first.stop() == ""
+        time.sleep(0.5)
+        assert _running(d_second), "the sibling's daemon was swept by another command's stop"
+        assert not _running(d_first)
+        assert second.stop() == ""
+        time.sleep(0.5)
+        assert not _running(d_second)
+    finally:
+        session.close()
+        for pid in (d1, d2):
+            if pid and _running(pid):
+                os.kill(pid, signal.SIGKILL)
+
+
 def test_the_unconfined_level_says_so_on_startup(tmp_path: Path) -> None:
     """`none` reaches the launcher now, so "the launcher ran" no longer implies
     "confinement was applied". It is loud instead: the caller surfaces this as

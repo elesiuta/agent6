@@ -298,6 +298,9 @@ class _MCPServer:
     # The tail of this server's stderr, drained by a thread and read only to
     # explain a failure.
     _errors: list[bytes] = field(default_factory=list)
+    # Pids the sweep of each close could not kill: a restart's and a failed
+    # handshake's survivors reach the manager with the last close's.
+    _survivors: set[int] = field(default_factory=set)
     _next_id: int = 1
     _id_lock: threading.Lock = field(default_factory=threading.Lock)
     # Serializes stdin writes: concurrent tools/call threads (explore-review
@@ -513,8 +516,10 @@ class _MCPServer:
             raise MCPError(f"server {self.name!r} tool {tool_name!r} reported error: {detail}")
         return _bounded_result(result)
 
-    def close(self) -> None:
-        """Best-effort shutdown. Idempotent. Never raises.
+    def close(self) -> frozenset[int]:
+        """Best-effort shutdown. Idempotent. Never raises. Returns the pids the
+        escapee sweep of this and every earlier close could not kill: the
+        caller says so.
 
         An HTTP server is the operator's: agent6 did not start it and must not
         stop it. There is nothing to tear down but the connection, which each
@@ -527,12 +532,13 @@ class _MCPServer:
         proc = self._proc
         self._proc = None
         if proc is None:
-            return
+            return frozenset(self._survivors)
         try:
-            # The handle takes the whole process group down and sweeps a
-            # `hardened` server's setsid escapees, which signalling the launcher
-            # pid alone would miss.
-            proc.close()
+            # The handle takes the whole process group down and sweeps the
+            # server's setsid escapees, which signalling the launcher pid
+            # alone would miss.
+            self._survivors |= proc.close()
+            return frozenset(self._survivors)
         finally:
             # Wake any thread blocked on _pending_cv so it can exit
             # cleanly instead of hanging on a server this teardown just killed.
@@ -731,6 +737,8 @@ class MCPManager:
     """
 
     _servers: dict[str, _MCPServer] = field(default_factory=dict)
+    # A failed start's survivors, handed back by the next close.
+    _survivors: set[int] = field(default_factory=set)
     # Configured servers that did not start, in configuration order.
     failures: tuple[MCPStartFailure, ...] = ()
     # The network each started server got, by name: the RESOLVED word (`auto`
@@ -773,7 +781,7 @@ class MCPManager:
                 failures.append(MCPStartFailure(name=name, error=str(exc)))
                 if logger is not None:
                     logger(f"[mcp] failed to start {name!r}: {exc}")
-                srv.close()
+                mgr._survivors |= srv.close()
                 continue
             mgr._servers[name] = srv
             mgr.networks[name] = (
@@ -806,7 +814,12 @@ class MCPManager:
             raise MCPError(f"unknown MCP server: {server_name!r}")
         return srv.call_tool(tool_name, arguments)
 
-    def close(self) -> None:
+    def close(self) -> frozenset[int]:
+        """Close every server; the pids their sweeps could not kill come back,
+        a failed start's included, once."""
         for srv in self._servers.values():
-            srv.close()
+            self._survivors |= srv.close()
         self._servers.clear()
+        out = frozenset(self._survivors)
+        self._survivors.clear()
+        return out

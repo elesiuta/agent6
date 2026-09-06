@@ -50,7 +50,7 @@ from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import chain_ref_for
 from agent6.paths import chown_to_real_user
 from agent6.providers import TranscriptSink
-from agent6.sandbox.jail import SessionNetwork
+from agent6.sandbox.jail import SessionNetwork, survivors_message
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
     clear_compact_request,
@@ -398,8 +398,9 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             close_provider(prompt_reviser_provider)
         if dispatcher is not None:
             dispatcher.close()
-        if mcp_manager is not None:
-            mcp_manager.close()
+        if mcp_manager is not None and (survivors := mcp_manager.close()):
+            with contextlib.suppress(EventWriteError):  # a dead journal must not skip the rest
+                events.emit("jail.degraded", detail=survivors_message(survivors))
         if session_net is not None:
             # The last handles on the run's network: closing them is what lets
             # the kernel reclaim it.

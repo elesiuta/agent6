@@ -31,7 +31,7 @@ from agent6.sandbox.jail import (
     SessionJob,
     start_in_jail,
 )
-from agent6.types import JailPolicy
+from agent6.types import BackgroundHandoff, JailPolicy
 
 # The command's own output goes to a file both sides can read: the jail gets
 # the LOG directory read-write, and `exec` applies the redirect to the whole
@@ -156,9 +156,15 @@ class BackgroundShells:
             else:
                 # The session is already confined; only the env comes from the
                 # policy. Its grant of the log root is what makes the redirect
-                # land.
+                # land. The escapee baseline is taken BEFORE the command starts,
+                # so its own reparented daemon is this job's and a sibling's is
+                # not.
+                before = session.child_snapshot()
                 job = SessionJob(
-                    session, session.start_background(wrapped, env=policy.env), shell_dir
+                    session,
+                    session.start_background(wrapped, env=policy.env),
+                    shell_dir,
+                    before=before,
                 )
         except (JailUnavailableError, OSError) as exc:
             os.close(log_fd)
@@ -174,9 +180,7 @@ class BackgroundShells:
         self._shells[shell_id] = shell
         return self._view(shell)
 
-    def adopt(
-        self, argv: tuple[str, ...], pid: int, log: Path, *, session: JailSession
-    ) -> ShellView:
+    def adopt(self, handoff: BackgroundHandoff, *, session: JailSession) -> ShellView:
         """Register a command the launcher handed back: it is already running,
         and already writing the log the launcher created for it.
 
@@ -192,10 +196,10 @@ class BackgroundShells:
         # The launcher created this with O_EXCL|O_NOFOLLOW under a name no
         # command can predict (its own pid); this side never resolves it again.
         try:
-            log_fd = os.open(log, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            log_fd = os.open(handoff.log, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         except OSError as exc:
             raise BackgroundError(f"could not open the handed-back command's log: {exc}") from exc
-        command = shlex.join(argv)
+        command = shlex.join(handoff.argv)
         (shell_dir / _META_NAME).write_text(
             json.dumps({"id": shell_id, "command": command}), encoding="utf-8"
         )
@@ -203,7 +207,7 @@ class BackgroundShells:
             id=shell_id,
             command=command,
             dir=shell_dir,
-            job=SessionJob(session, pid, shell_dir),
+            job=SessionJob(session, handoff.pid, shell_dir, before=handoff.before),
             log_fd=log_fd,
         )
         self._shells[shell_id] = shell
