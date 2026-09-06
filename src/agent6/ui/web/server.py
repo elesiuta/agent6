@@ -466,6 +466,7 @@ class _Handler(BaseHTTPRequestHandler):
             pb = MachinePokeBody.model_validate(self._read_body())
             ok, msg = actions.machine_poke(self.cwd, name, data=pb.data, message=pb.message)
         elif verb == "stop":
+            self._read_body()  # drain the `{}` body (keep-alive framing)
             ok, msg = actions.machine_stop(self.cwd, name)
         elif verb == "steer":
             body = SteerBody.model_validate(self._read_body())

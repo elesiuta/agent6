@@ -600,6 +600,30 @@ def test_a_post_on_an_unknown_session_or_machine_is_404_like_its_get(
     assert (status, body["error"]) == (404, "no machine 'nope'")
 
 
+def test_two_posts_on_one_connection_stay_framed(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """Every verb drains its body, or the unread `{}` is parsed as the next
+    request line: the machine stop route did not, and a second POST on the same
+    keep-alive connection answered 501 and closed."""
+    _srv, port = server
+    _make_machine_with_state(tmp_path, "stoppable", "0000-review", running=True)
+    conn = HTTPConnection("127.0.0.1", port, timeout=10)
+    try:
+        for _ in range(2):
+            conn.request(
+                "POST",
+                "/api/machine/stoppable/stop",
+                json.dumps({}).encode(),
+                {"Content-Type": "application/json"},
+            )
+            resp = conn.getresponse()
+            body = json.loads(resp.read())
+            assert (resp.status, body["ok"]) == (200, True), body
+    finally:
+        conn.close()
+
+
 def _read_until(
     resp: Any, cond: Callable[[dict[str, object]], bool], *, deadline_s: float = 10.0
 ) -> dict[str, object]:
