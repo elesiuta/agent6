@@ -542,20 +542,28 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
                 if _line_is_session_end(line):
                     return 0  # run ended: stop, like the default follower
                 continue
-            # No new data: check for rotation and sleep briefly.
+            # No new data: check for rotation and sleep briefly. A vanished log
+            # is the tail's EOF only once the worker is dead: a live run
+            # recreates the path, dir included, on its next durable event.
             try:
                 new_ino = events_path.stat().st_ino
             except OSError:
-                time.sleep(0.5)
-                continue
+                if worker_is_alive(target):
+                    time.sleep(0.5)
+                    continue
+                print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
+                return 0
             if new_ino != current_ino:
                 with contextlib.suppress(OSError):
                     fh.close()
                 try:
                     fh = events_path.open("rb")
                 except OSError:
-                    time.sleep(0.5)
-                    continue
+                    if worker_is_alive(target):
+                        time.sleep(0.5)
+                        continue
+                    print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
+                    return 0
                 current_ino = new_ino
                 pending = b""
                 continue

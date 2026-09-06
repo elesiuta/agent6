@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -384,3 +385,25 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
     assert not t.is_alive(), "attach followed a finished run"
     assert result == [0]
     capsys.readouterr()
+
+
+def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The raw tail's docstring promises a return on EOF (run dir gone); it
+    polled the vanished path forever, treating every stat failure as a hiccup."""
+    import shutil
+    import threading
+
+    monkeypatch.chdir(tmp_path)
+    _make_run(tmp_path, "gone-run", [{"type": "session.start", "user_task": "t"}])
+    run_dir = state_dir(tmp_path) / "sessions" / "runs" / "gone-run"
+    rcs: list[int] = []
+    t = threading.Thread(target=lambda: rcs.append(main(["attach", "gone-run", "--raw"])))
+    t.daemon = True
+    t.start()
+    time.sleep(1.0)
+    shutil.rmtree(run_dir)
+    t.join(timeout=5)
+    assert not t.is_alive(), "the raw tail is still polling the deleted run dir"
+    assert rcs == [0]
