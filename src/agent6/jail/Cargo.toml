@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 libc = "0.2"
-nix = { version = "0.27", features = ["sched", "mount", "process", "fs", "user", "signal"] }
+nix = { version = "0.27", features = ["sched", "mount", "process", "fs", "user", "signal", "hostname"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 seccompiler = "0.4"

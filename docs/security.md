@@ -90,7 +90,7 @@ A diagnostic hands a server the repository to read and writes nothing but the co
 
 | Mode | Applies |
 |---|---|
-| `strict` | user + mount + PID + IPC + UTS + network namespaces, `pivot_root` rootfs, private `/proc` and `/tmp`, curated `/dev`, Landlock, seccomp, `NO_NEW_PRIVS`, capability drop, timeout |
+| `strict` | user + mount + PID + IPC + UTS namespaces (hostname `agent6`) + network namespace, `pivot_root` rootfs, private `/proc` and `/tmp`, curated `/dev`, Landlock, seccomp, `NO_NEW_PRIVS`, capability drop, timeout |
 | `hardened` | Landlock (ABI >= 3), seccomp, `NO_NEW_PRIVS`, capability drop, timeout. No namespaces, no rootfs |
 | `none` | Nothing. Timeout only |
 | `auto` *(default)* | The strongest of the three this host supports |

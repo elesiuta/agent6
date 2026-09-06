@@ -583,6 +583,19 @@ fn join_network(userns_fd: RawFd, netns_fd: RawFd) -> io::Result<()> {
     Ok(())
 }
 
+/// Name the jail's own UTS namespace. Unsharing one inherits the host's
+/// hostname, so `uname -n` read the operator's machine (on a cloud box, its
+/// project too) out to every jailed command and into the transcript. Not a
+/// boundary: a jail that cannot rename itself still runs, and says so.
+fn name_the_uts_namespace() {
+    if let Err(e) = nix::unistd::sethostname("agent6") {
+        eprintln!(
+            "[agent6-jail] warning: sethostname failed ({e}); jailed commands read the host's \
+             own hostname"
+        );
+    }
+}
+
 fn setup_namespaces(network: &str, join: Option<(RawFd, RawFd)>) -> io::Result<()> {
     let uid = getuid();
     let gid = getgid();
@@ -591,14 +604,15 @@ fn setup_namespaces(network: &str, join: Option<(RawFd, RawFd)>) -> io::Result<(
         join_network(userns_fd, netns_fd)?;
         // Everything else is still this child's alone; `lo` is already up in
         // the network we joined, and the user namespace is already mapped.
-        return unshare(
+        unshare(
             CloneFlags::CLONE_NEWNS
                 | CloneFlags::CLONE_NEWPID
                 | CloneFlags::CLONE_NEWIPC
                 | CloneFlags::CLONE_NEWUTS,
         )
-        .map_err(io_err)
-        .and_then(|()| make_mounts_private());
+        .map_err(io_err)?;
+        name_the_uts_namespace();
+        return make_mounts_private();
     }
 
     let mut flags = CloneFlags::CLONE_NEWUSER
@@ -623,6 +637,7 @@ fn setup_namespaces(network: &str, join: Option<(RawFd, RawFd)>) -> io::Result<(
         .map_err(|e| io::Error::other(format!("uid_map: {e}")))?;
     fs::write("/proc/self/gid_map", format!("0 {} 1\n", gid))
         .map_err(|e| io::Error::other(format!("gid_map: {e}")))?;
+    name_the_uts_namespace();
 
     if network != "host" {
         // An empty netns has `lo` DOWN, so nothing inside can reach even

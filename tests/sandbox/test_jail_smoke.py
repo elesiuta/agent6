@@ -798,6 +798,21 @@ def test_a_jailed_command_cannot_set_the_setuid_bit(
     assert not target.stat().st_mode & stat.S_ISGID
 
 
+def test_the_strict_jail_names_its_own_uts_namespace(jail_bin: Path, tmp_path: Path) -> None:
+    """Unsharing CLONE_NEWUTS inherits the host's name, so `uname -n` read the
+    operator's machine (on a cloud box, its project too) out to every jailed
+    command and into the transcript."""
+    res = run_in_jail(
+        JailPolicy(
+            cwd=tmp_path,
+            argv=("python3", "-c", "import os; print(os.uname().nodename)"),
+            isolation="strict",
+            timeout_s=20.0,
+        )
+    )
+    assert res.stdout.strip() == "agent6", res.stderr
+
+
 @pytest.mark.parametrize("isolation", ["strict", "hardened"])
 def test_the_setuid_block_covers_the_create_family(
     jail_bin: Path, tmp_path: Path, isolation: IsolationLevel
