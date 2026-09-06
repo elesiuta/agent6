@@ -476,3 +476,58 @@ def test_forward_leaves_no_connect_timeout_on_the_bridge(
         inside_server.close()
 
     assert handed == "None", f"the bridge carries the connect's {handed}s timeout"
+
+
+def test_forward_drops_a_connection_it_cannot_fork_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork() that fails (EAGAIN under a process cap, ENOMEM under memory
+    pressure) left the accept loop, which guarded only KeyboardInterrupt: the
+    whole bridge died as `ERROR: unexpected BlockingIOError`, exit 1, on the
+    first connection it could not fork for. One connection is dropped and the
+    bridge keeps accepting."""
+    import errno
+    import io
+    import socket
+    import threading
+    import time
+
+    from agent6.sessions.ipc import write_session_netns_pid
+    from agent6.ui.cli import net_cmds
+
+    layout = SessionLayout(state_dir=tmp_path, session_id="fwd")
+    layout.session_dir.mkdir(parents=True)
+    write_session_netns_pid(layout.session_dir, os.getpid())  # a live holder: us
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    forks = 0
+
+    def _no_fork() -> int:
+        nonlocal forks
+        forks += 1
+        raise BlockingIOError(errno.EAGAIN, "Resource temporarily unavailable")
+
+    monkeypatch.setattr(net_cmds.os, "fork", _no_fork)
+
+    def knock() -> None:
+        for _ in range(200):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=2):
+                    pass
+                break
+            except OSError:
+                time.sleep(0.02)
+        # The run ends, so the next 2 s accept timeout returns the loop.
+        (layout.session_dir / "netns.pid").unlink()
+
+    thread = threading.Thread(target=knock)
+    thread.start()
+    out = io.StringIO()
+    rc = net_cmds.forward(layout, 3000, port, out=out)
+    thread.join()
+    assert forks == 1
+    assert rc == 0
+    assert "could not fork" in out.getvalue()

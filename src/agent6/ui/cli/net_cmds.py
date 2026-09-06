@@ -152,6 +152,9 @@ def forward(
     )
     try:
         while True:
+            with contextlib.suppress(ChildProcessError):  # reap finished bridges
+                while os.waitpid(-1, os.WNOHANG)[0]:
+                    pass
             try:
                 conn, _ = listener.accept()
             except TimeoutError:
@@ -162,7 +165,14 @@ def forward(
                     )
                     return 0
                 continue
-            child = os.fork()
+            try:
+                child = os.fork()
+            except OSError as exc:
+                # A process cap or memory pressure on this machine, not a
+                # broken bridge: drop the one connection, keep accepting.
+                print(f"[agent6] could not fork a bridge for a connection: {exc}", file=out)
+                conn.close()
+                continue
             if child == 0:  # pragma: no cover - one process per connection
                 listener.close()
                 code = 0
@@ -177,9 +187,6 @@ def forward(
                     conn.close()
                 os._exit(code)
             conn.close()  # the child owns it now
-            with contextlib.suppress(ChildProcessError):  # reap finished bridges
-                while os.waitpid(-1, os.WNOHANG)[0]:
-                    pass
     except KeyboardInterrupt:
         return 0
     finally:
