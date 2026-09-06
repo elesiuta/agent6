@@ -218,24 +218,30 @@ def _resolve_network_refusal(  # noqa: PLR0911
 def _no_instance_hint(machine_id: str, cwd: Path) -> str:
     """A ' Did you mean ...' suffix for a missing-instance error.
 
-    `machine run` takes a FILE (`greet.asm.toml`); status/replay/poke/watch take
-    a machine ID (`greet-ok`). Passing the file where an id is expected otherwise
-    dead-ends at "no machine instance at .../greet.asm.toml". When the argument is
-    an `.asm.toml` file, read its `machine` name and suggest that instance id;
-    else offer the closest existing instance name."""
+    `machine run` takes a FILE (`greet.asm.toml`); status/replay/poke/stop and
+    `agent6 attach` take a machine ID (`greet-ok`). Passing the file where an
+    id is expected otherwise dead-ends at "no machine instance at
+    .../greet.asm.toml". When the argument is an `.asm.toml` file, read its
+    `machine` name and suggest that instance id (a file that does not parse
+    is still a file); else offer the closest existing instance name."""
     machines = machines_root(resolved_state_dir(cwd))
     existing = sorted(p.name for p in machines.iterdir() if p.is_dir()) if machines.is_dir() else []
     candidate = Path(machine_id)
     if machine_id.endswith(".asm.toml") or candidate.is_file():
+        name = ""
         with contextlib.suppress(MachineError, OSError):
             name = load_machine(candidate).machine
-            if name in existing:
-                return (
-                    f" Did you mean the instance id {name!r}?"
-                    " (`machine run` takes the FILE; status/replay/poke and"
-                    " `agent6 attach` take the ID.)"
-                )
+        if name in existing:
+            return (
+                f" Did you mean the instance id {name!r}?"
+                " (`machine run` takes the FILE; status/replay/poke/stop and"
+                " `agent6 attach` take the ID.)"
+            )
+        if name:
             return f" That is a machine file; run it first with `agent6 machine run {machine_id}`."
+        return (
+            f" That is a machine file that does not load; see `agent6 machine check {machine_id}`."
+        )
     close = difflib.get_close_matches(candidate.name, existing, n=1)
     return f" Did you mean {close[0]!r}?" if close else ""
 

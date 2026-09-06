@@ -322,6 +322,20 @@ def test_status_asm_file_path_hints_the_instance_id(
     assert "waiter_delayed" in err  # the did-you-mean names the real instance id
 
 
+def test_status_on_an_invalid_machine_file_names_it_as_a_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unparsable .asm.toml where an id belongs is still a file, and the
+    hint says so; the load failure fell through to the near-miss id search."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "bad.asm.toml").write_text('machine = "bad"\n', encoding="utf-8")
+    assert main(["machine", "status", "bad.asm.toml"]) == 2
+    err = capsys.readouterr().err
+    assert "no machine instance" in err
+    assert "machine file" in err, err
+    assert "agent6 machine check bad.asm.toml" in err, err  # `machine run` would refuse it too
+
+
 # A no-I/O machine that reaches a terminal immediately (branch -> terminal), so
 # `agent6 attach` on it takes the finished path (overview + end) without blocking
 # in the follow loop and without needing a model or the jail.
