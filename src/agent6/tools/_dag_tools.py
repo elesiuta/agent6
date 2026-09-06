@@ -60,6 +60,10 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
         raise ToolError("DAG curator not available in this run")
     args = DagUpdateTaskInput.model_validate(raw)
     node = None
+    if args.note and args.status is None:
+        # The graph records a note on a status change only; a note sent alone
+        # or beside depends_on was dropped without a word.
+        raise ToolError("update_task: a note rides along with a status; pass status too")
     if args.status is not None:
         if args.status in ("skipped", "obsolete"):
             current = curator.get(args.id)
@@ -83,7 +87,7 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     for dep in args.depends_on:
         node = curator.add_dependency(AddDependencyIntent(id=args.id, depends_on=dep))
     if node is None:
-        raise ToolError("pass status and/or depends_on")
+        raise ToolError("update_task: pass status and/or depends_on")
     return UpdateTaskResult(
         id=node.id, status=node.status, title=node.title, depends_on=tuple(node.depends_on)
     )

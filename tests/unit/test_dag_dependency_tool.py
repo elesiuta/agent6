@@ -230,3 +230,19 @@ def test_dag_prompt_blocks_teach_depends_on_not_a_tool() -> None:
     for block in (DAG_RULES_OPTIONAL, DAG_RULES_DECOMPOSE):
         assert "depends_on" in block
         assert "add_dependency" not in block
+
+
+def test_update_task_refuses_a_note_without_a_status(tmp_path: Path) -> None:
+    """The graph records a note on a status change only; the description
+    listed `note` as a third updatable field, and a note sent alone or beside
+    depends_on was dropped without a word."""
+    from agent6.tools._dag_tools import update_task
+
+    curator = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
+    root = curator.add_subtask(
+        AddSubtaskIntent(
+            parent_id=None, draft=TaskNodeDraft(title="root", depends_on=(), created_by="planner")
+        )
+    )
+    with pytest.raises(ToolError, match="a note rides along with a status"):
+        update_task(curator, {"id": root.id, "note": "worth remembering"})
