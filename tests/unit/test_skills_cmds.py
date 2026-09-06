@@ -539,3 +539,31 @@ def test_a_remote_skill_is_capped_while_it_arrives_not_after() -> None:
         httpd.shutdown()
     assert peak < 4 << 20, f"buffered {peak} bytes of an 8 MiB body"
     assert seen["accept-encoding"] == "identity", "a decoded stream expands past the cap"
+
+
+def test_a_config_defect_reaches_the_crash_path_and_an_unreadable_config_degrades(
+    env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Both config reads caught every exception: a defect inside the config
+    subsystem read as "config unreadable" (or as nothing at all, and `skills
+    install` closed with "Enabled and active now"). Only a ConfigError is the
+    unreadable case; anything else is a bug for the crash reporter."""
+    from agent6.config import ConfigError
+    from agent6.ui.cli.skills_cmds import _state_map  # pyright: ignore[reportPrivateUsage]
+
+    def broken(*_a: object, **_k: object) -> object:
+        raise AttributeError("a defect in the config subsystem")
+
+    monkeypatch.setattr("agent6.ui.cli.skills_cmds.load_effective", broken)
+    with pytest.raises(AttributeError):
+        _state_map(None)
+    with pytest.raises(AttributeError):
+        _cmd_skills_list()
+
+    def unreadable(*_a: object, **_k: object) -> object:
+        raise ConfigError("bad toml")
+
+    monkeypatch.setattr("agent6.ui.cli.skills_cmds.load_effective", unreadable)
+    assert _state_map(None) == {}
+    assert _cmd_skills_list() == 0
+    assert "config unreadable" in capsys.readouterr().err

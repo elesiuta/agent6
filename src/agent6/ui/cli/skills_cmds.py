@@ -23,6 +23,7 @@ from pathlib import Path
 
 import httpx2
 
+from agent6.config import ConfigError
 from agent6.config.io import remove_toml_leaf, upsert_toml_leaf
 from agent6.config.layer import load_effective
 from agent6.errors import OperatorError, read_operator_file
@@ -373,7 +374,7 @@ def _state_map(config_path: Path | None) -> dict[str, str]:
     already done."""
     try:
         return dict(load_effective(Path.cwd(), config_path).config.skills.state)
-    except Exception:
+    except ConfigError:
         return {}
 
 
@@ -475,7 +476,7 @@ def _cmd_skills_list(config_path: Path | None = None) -> int:
     repo_root = Path.cwd()
     try:
         cfg = load_effective(repo_root, config_path).config
-    except Exception as exc:
+    except ConfigError as exc:
         print(f"(config unreadable, showing installed dir only: {exc})", file=sys.stderr)
         cfg = None
     dirs = (
