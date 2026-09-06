@@ -918,3 +918,38 @@ def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
     assert merged.is_dir(), "a dirty worktree was deleted"
     assert (merged / "notes.md").exists()
     assert "no commit has" in out
+
+
+def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A squash stamp is only evidence while the branch it names still holds
+    the content. The branch path checks that; the chain-ref path did not, and a
+    chain ref has no reflog, so the run's only anchor went."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "branch", "feature")
+    _make_branch(tmp_path, "gonebase1", "a.txt")
+    tip = _git(tmp_path, "rev-parse", "agent6/gonebase1")
+    _git(tmp_path, "update-ref", chain_ref_for("gonebase1"), tip)
+    _git(tmp_path, "branch", "-D", "agent6/gonebase1")  # the squash-merge shape
+    _manifest(tmp_path, "gonebase1", base, merged=True, merged_tip=tip)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="gonebase1")
+    data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    data["merged"]["into"] = "feature"
+    layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+    _git(tmp_path, "branch", "-D", "feature")  # the base the stamp names is gone
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+
+    out = capsys.readouterr().out
+    assert _git(tmp_path, "rev-parse", "--verify", "--quiet", chain_ref_for("gonebase1")), (
+        "the run's only anchor was deleted over a base that no longer exists"
+    )
+    assert "deleted refs/agent6" not in out

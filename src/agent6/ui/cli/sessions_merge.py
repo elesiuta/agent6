@@ -470,7 +470,11 @@ def _prune_chain_refs(
             delete_ref(cwd, ref)
             refs_deleted += 1
             print(f"[agent6] deleted {ref} (merged into {into})")
-        elif delete_squashed and manifest.merged.tip == sha:
+        elif delete_squashed and branch_exists(cwd, into) and manifest.merged.tip == sha:
+            # The branch path above requires the base to still exist before it
+            # trusts a squash stamp; so does this one. A chain ref gets no
+            # reflog, so deleting it over a base the operator has since removed
+            # strands the run's only anchor.
             delete_ref(cwd, ref)
             refs_deleted += 1
             print(f"[agent6] deleted {ref} (squash-merged into {into})")
