@@ -108,3 +108,25 @@ def test_prompt_show_prints_the_tools_and_the_first_message(
     assert "apply_edit" not in names and "finish_session" not in names  # ask has no edit/finish
     assert set(exchange) == {"mode", "system", "tools", "first_message", "mcp_tools_pending"}
     assert all("input_schema" in t and "description" in t for t in exchange["tools"])
+
+
+def test_prompt_show_infers_the_gate_a_run_would_infer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run infers its gate before assembling the prompt, and the gate decides
+    the `<verify-command>` block, the commit rule and whether
+    `run_verify_command` is offered. Skipping it printed "this run has no
+    verify command" for every repo whose gate is inferred."""
+    repo = _git_repo(tmp_path)
+    (repo / "AGENTS.md").write_text(
+        "# agents\n\nbe terse here\n\n## Verify command\n\n```bash\npytest -q\n```\n",
+        encoding="utf-8",
+    )
+    _isolate(tmp_path, monkeypatch, repo)
+
+    assert _cmd_prompt_show(None, mode="run") == 0
+
+    out = capsys.readouterr().out
+    assert "pytest -q" in out
+    assert "no verify command" not in out
+    assert "run_verify_command" in out

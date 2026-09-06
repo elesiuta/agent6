@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.verify_infer import infer_verify_command, read_agents_md
 from agent6.workflows import ModelExchange, model_exchange_for
 
 
@@ -26,7 +27,18 @@ def _cmd_prompt_show(
     around the task. `--json` prints the same as one object."""
     cwd = Path.cwd()
     eff = load_effective(cwd, config_path)
-    exchange = model_exchange_for(eff.config, cwd, mode, state_dir=resolved_state_dir(cwd))
+    cfg = eff.config
+    if mode in ("run", "plan") and not cfg.workflow.verify_command and cfg.workflow.verify_infer:
+        # A run infers its gate before assembling the prompt, and the gate
+        # decides the `<verify-command>` block, the commit rule and whether
+        # `run_verify_command` is offered at all. Without this the audit
+        # surface printed "this run has no verify command" for every repo whose
+        # gate is inferred -- most of them. The LLM tier is a run's own call
+        # (it spends), so only the deterministic ones run here.
+        inferred = infer_verify_command(cwd, read_agents_md(cwd), llm_call=None)
+        if inferred is not None:
+            cfg = cfg.with_verify_command(inferred.argv)
+    exchange = model_exchange_for(cfg, cwd, mode, state_dir=resolved_state_dir(cwd))
     print(_as_json(exchange) if as_json else _as_text(exchange))
     return 0
 

@@ -35,8 +35,8 @@ class ReadFileInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a UTF-8 text file. `path` is repo-root-relative (absolute only"
         " inside granted directories). start_line (1-based) and limit select a"
-        " range; very large files truncate (truncated: true). outline shows"
-        " structure without content."
+        " range; very large files truncate (truncated: true). The `outline`"
+        " tool shows a file's structure without its content."
     )
 
     path: str = Field(min_length=1)

@@ -104,11 +104,18 @@ def elision_placeholder(tool_name: str, tool_input: Any) -> str:
     if not tool_name or not isinstance(tool_input, dict):
         return ELISION_PLACEHOLDER
     described = call_label(tool_name, tool_input)
+    # Only read_file takes a range, so only it can be told to re-read one:
+    # naming start_line/limit for a run_command result left the model with no
+    # legal move next to "do not re-issue the identical call".
+    retry = (
+        "re-read only the part you need (read_file with a targeted start_line/limit)"
+        if tool_name == "read_file"
+        else "re-run it with a narrower scope"
+    )
     return (
         f"{ELISION_PREFIX}: the result of {described} was replaced with this "
         f"short marker to keep the loop's cumulative input bounded. If you "
-        f"still need it, re-read only the part you need ({tool_name} with a "
-        f"targeted start_line/limit); do not re-issue the identical call.>"
+        f"still need it, {retry}; do not re-issue the identical call.>"
     )
 
 

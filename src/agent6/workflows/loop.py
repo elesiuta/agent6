@@ -1525,8 +1525,7 @@ class Workflow:
             Notice(
                 "[harness] The repo now has a recognizable project, so a verify"
                 f" command was adopted and gates the rest of this run: `{cmd}`."
-                " Run run_verify_command to check your work; auto-commits now"
-                " require a green verify."
+                " Run run_verify_command to check your work."
             )
         )
 
