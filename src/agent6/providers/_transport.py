@@ -269,15 +269,17 @@ class ProviderCall:
                 raise ProviderError(
                     f"HTTP error calling {self.url} ({self.api_format} format): {exc}"
                 ) from exc
+            recorded = False
             if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
                 # Record BEFORE refreshing: this 401/403 hit the wire, and the
-                # transcript contract is one file per round-trip (the streaming
-                # path already records it; only this branch dropped it).
+                # transcript contract is one file per round-trip.
                 self.record(headers, resp.status_code, resp.text[:8192])
+                recorded = True
                 if cred.invalidate(resp.status_code):
                     continue
             if resp.status_code >= 400:
-                self.record(headers, resp.status_code, resp.text[:8192])
+                if not recorded:
+                    self.record(headers, resp.status_code, resp.text[:8192])
                 if attempt + 1 < max_attempts and self.adapt_400(
                     resp.status_code, resp.text, self.body
                 ):
