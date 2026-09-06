@@ -106,10 +106,16 @@ class BudgetOverrides:
             out += ["--max-usd", str(self.max_usd)]
         if self.max_tokens_fallback is not None:
             out += ["--max-tokens-fallback", str(self.max_tokens_fallback)]
+        if self.max_percent is not None:
+            out += ["--max-percent", str(self.max_percent)]
         return out
 
     def _flag_error(self, exc: ValidationError) -> str:
-        flags = {"max_usd": "--max-usd", "max_tokens_fallback": "--max-tokens-fallback"}
+        flags = {
+            "max_usd": "--max-usd",
+            "max_tokens_fallback": "--max-tokens-fallback",
+            "max_percent": "--max-percent",
+        }
         parts: list[str] = []
         for err in exc.errors():
             field = str(err["loc"][-1]) if err["loc"] else ""

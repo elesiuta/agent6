@@ -54,3 +54,19 @@ def test_both_lifecycles_detach_under_the_invocations_flags() -> None:
 def test_both_lifecycles_hand_a_detach_to_the_one_helper() -> None:
     assert _calls(agent6.app.run, "detach_to_background") == 1
     assert _calls(agent6.app.resume, "detach_to_background") == 1
+
+
+def test_every_budget_override_survives_a_detach() -> None:
+    """A detached leg re-reads config for anything the flags do not carry, so a
+    dropped flag silently restores the config default: `--max-percent` was
+    missing, and its default is -1 (unlimited)."""
+    import argparse
+
+    from agent6.app._setup import BudgetOverrides
+
+    args = argparse.Namespace(max_usd=2.0, max_tokens_fallback=1000, max_percent=5.0)
+    overrides = BudgetOverrides.from_args(args)
+    argv = overrides.argv()
+    for field in ("max_usd", "max_tokens_fallback", "max_percent"):
+        assert getattr(overrides, field) is not None
+        assert f"--{field.replace('_', '-')}" in argv, field
