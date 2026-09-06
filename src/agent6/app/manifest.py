@@ -191,6 +191,23 @@ def stamp_preset(session_dir: Path, name: str) -> None:
     write_manifest(session_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))
 
 
+def stamp_fork_task(session_dir: Path, steer: str) -> None:
+    """Record the steer a fork was resumed with as the fork's own task.
+
+    A fork starts life with its source's `user_task`, which is the truth until
+    the operator sends it somewhere else; from then on that steer is what the
+    fork's listing row shows and what its squashed merge is titled. The source
+    task stays reachable through `parent_session_id`.
+    """
+    m = read_manifest(session_dir)
+    if m.parent_session_id is None:
+        return
+    write_manifest(
+        session_dir / "manifest.json",
+        m.model_copy(update={"user_task": operator_task_text(steer)[:4000]}),
+    )
+
+
 def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:
     """Pin the gate this run is judged by, and where it came from.
 

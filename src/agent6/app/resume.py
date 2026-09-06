@@ -30,7 +30,7 @@ from agent6.app.frontend import (
     apply_spawned_away_default,
     approval_scopes,
 )
-from agent6.app.manifest import pin_gate, stamp_preset
+from agent6.app.manifest import pin_gate, stamp_fork_task, stamp_preset
 from agent6.app.preflight import (
     SessionRefused,
     drop_gate_if_unrunnable,
@@ -333,6 +333,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # instruction. Seeded AFTER the stale-state clear (which drops steer
         # files), so the loop's steer poll injects it at its first boundary.
         submit_steer(layout.session_dir, steer.strip())
+        # On a fork, that instruction is the work: it names the fork's row and
+        # titles its squashed merge, which otherwise carry the source's task.
+        stamp_fork_task(layout.session_dir, steer.strip())
 
     detach_requested = False
     cfg: Config | None = None  # bound below; the finally reads it (detach away-mode)

@@ -1275,3 +1275,45 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
     err = capsys.readouterr().err
     assert f"its commits are on {chain_ref_for('child-BBBB22')}" in err
     assert "merged into main" not in err
+
+
+def test_a_steered_fork_takes_the_steer_as_its_own_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork carries its source's task until the operator sends it elsewhere.
+
+    Left as the source's, the steer's work merged under the source's subject
+    and `sessions list` showed the fork under a task it was never given.
+    """
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
+
+    # No providers configured, so the leg never starts; the steer is queued and
+    # the task stamped before that refusal, as they are for a normal resume.
+    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
+
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["user_task"] == "create README.md only"
+    assert manifest["parent_session_id"] == "sunny-otter-AAAA11", "lineage still names the source"
+
+
+def test_a_steered_ordinary_run_keeps_its_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`resume --steer` on a run of its own is a follow-up within that task,
+    not a new one: the headline it has carried all along stays."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+
+    assert _cmd_resume(None, "sunny-otter-AAAA11", force=False, steer="and add tests") == 2
+
+    assert json.loads(src.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
