@@ -6,7 +6,6 @@ One fold each, so the two never disagree."""
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +15,6 @@ from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.viewmodel.format import format_branch, format_compare, format_lineage, format_usd
-from agent6.viewmodel.listing import session_compare
 from agent6.viewmodel.machine_state import (
     fold_machine,
     machine_spend,
@@ -71,6 +69,11 @@ def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[st
         manifest = read_manifest(session_dir)
     except ManifestError:
         return {}
+    return branch_facts(manifest, repo)
+
+
+def branch_facts(manifest: SessionManifest, repo: Path | None) -> dict[str, str]:
+    """`manifest_branches` for a manifest already read."""
     out: dict[str, str] = {}
     run_branch = existing_run_branch(manifest, repo)
     if run_branch:
@@ -102,21 +105,22 @@ def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str,
     the branch facts, the fork lineage (`forked_from`, one wording), and the
     fan-out compare outcome (rank/winner/rationale). Merged into every session
     snapshot (one-shot and streamed) so the header a page paints from cannot
-    drift. Empty for a run with no (readable) manifest."""
-    header: dict[str, Any] = dict(manifest_branches(session_dir, repo=repo))
-    with contextlib.suppress(ManifestError):
+    drift. Empty for a run with no (readable) manifest, read once."""
+    try:
         m = read_manifest(session_dir)
-        header["git_control"] = m.git_control
-        header["base_sha"] = m.base_sha
-        lineage = format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
-        if lineage:
-            header["forked_from"] = lineage
-        if m.worktree is not None:
-            header["worktree"] = str(m.worktree)
-    compare = session_compare(session_dir)
-    if compare is not None:
-        header["compare"] = compare.model_dump(mode="json")
-        line, _rationale = format_compare(compare) or ("", "")
+    except ManifestError:
+        return {}
+    header: dict[str, Any] = dict(branch_facts(m, repo))
+    header["git_control"] = m.git_control
+    header["base_sha"] = m.base_sha
+    lineage = format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
+    if lineage:
+        header["forked_from"] = lineage
+    if m.worktree is not None:
+        header["worktree"] = str(m.worktree)
+    if m.compare is not None:
+        header["compare"] = m.compare.model_dump(mode="json")
+        line, _rationale = format_compare(m.compare) or ("", "")
         header["compare"]["line"] = line
     return header
 

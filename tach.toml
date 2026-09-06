@@ -277,6 +277,7 @@ depends_on = [
 path = "agent6.viewmodel"
 depends_on = [
   "agent6.tools",
+  "agent6.providers",  # a transcript is provider-wire shaped; its one content-to-text reader lives there
   "agent6.models.registry",
   "agent6.sessions.layout",
   "agent6.types",

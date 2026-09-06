@@ -152,6 +152,10 @@ def tool_use_ids(message: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def result_text(content: Any) -> str:
+    """A tool result's content as text: a string as is, a block list's text
+    joined, an absent content "", anything else its JSON."""
+    if content is None:
+        return ""
     if isinstance(content, str):
         return content
     if isinstance(content, list):

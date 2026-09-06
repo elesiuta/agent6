@@ -101,6 +101,11 @@ class MachineState:
     ended: MachineResult | None
     notifications: tuple[NotificationView, ...]  # recent machine.notify, oldest first
 
+    @property
+    def current_kind(self) -> str | None:
+        """The current state's kind ("wait" parks the machine), None at the end."""
+        return next((s.kind for s in self.states if s.is_current), None)
+
 
 def _transition_view(s: StepEvent) -> TransitionView:
     detail = _fact_detail(s)
@@ -187,8 +192,7 @@ def machine_status_word(
     if alive:
         if blocked:
             return "waiting"
-        current_kind = next((s.kind for s in ms.states if s.is_current), None)
-        return "waiting" if current_kind == "wait" else "running"
+        return "waiting" if ms.current_kind == "wait" else "running"
     return "stopped"
 
 
@@ -491,7 +495,7 @@ def _in_wait_state(machine_dir: Path, events: Sequence[object]) -> bool:
     except MachineError:
         return False
     ms = fold_machine(spec, events)
-    return next((st.kind for st in ms.states if st.is_current), None) == "wait"
+    return ms.current_kind == "wait"
 
 
 def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:
@@ -632,11 +636,10 @@ def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> 
         # and live-but-blocked). Fed from THIS fold and these probes: asking
         # `machine_verb_refusals` would read the journal and fold it again,
         # doubling the work of every SSE frame.
-        current_kind = next((s.kind for s in ms.states if s.is_current), None)
         d["refusals"] = verb_refusals(
             machine_dir.name,
             ended=ms.ended,
             alive=alive,
-            waiting=parked or current_kind == "wait",
+            waiting=parked or ms.current_kind == "wait",
         )
     return d

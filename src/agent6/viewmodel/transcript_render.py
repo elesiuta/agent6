@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent6.providers import result_text
+
 # Matches ELISION_PREFIX in workflows/_compaction.py -- duplicated so the
 # read-model needs no runtime import of the engine; a test pins the equality
 # and the placeholder bytes themselves are pinned in the compaction tests.
@@ -243,10 +245,10 @@ def _anthropic_turns(m: dict[str, Any], names: dict[str, str]) -> list[Turn]:
                 if b.get("id"):
                     names[str(b["id"])] = nm
             case "tool_result":
-                raw = b.get("content")
-                txt = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
                 nm = names.get(str(b.get("tool_use_id", "")), "")
-                tool_results.append(Turn(role="tool", text=txt, tool_name=nm))
+                tool_results.append(
+                    Turn(role="tool", text=result_text(b.get("content")), tool_name=nm)
+                )
             case _:
                 pass
     if role == "assistant":
