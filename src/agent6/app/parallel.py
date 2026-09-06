@@ -59,7 +59,7 @@ from agent6.git_ops import (
     run_branch_for,
 )
 from agent6.git_ops import status as git_status
-from agent6.memory import merge_decisions
+from agent6.memory import merge_decisions, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, repo_id, state_dir
 from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
@@ -335,7 +335,12 @@ def bridge_spawner(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
     config_path = _write_lane_config(cfg, spec)
-    lane_runs = bucket_dir(state_dir(spec.workdir, cfg.agent6.state_dir), "runs")
+    lane_state = state_dir(spec.workdir, cfg.agent6.state_dir)
+    # The clone is a repo of its own, so the lane's state dir is empty: without
+    # this the lanes run blind to the memory and rulings the origin's own runs
+    # are given. New rulings come back with `merge_decisions` at import.
+    seed_store(state_dir(origin, cfg.agent6.state_dir), lane_state)
+    lane_runs = bucket_dir(lane_state, "runs")
 
     def list_dirs() -> list[Path]:
         if not lane_runs.is_dir():

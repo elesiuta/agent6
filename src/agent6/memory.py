@@ -13,6 +13,7 @@ memory across repos is the operator copying it.
 from __future__ import annotations
 
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -111,6 +112,31 @@ def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]
                 fh.write("\n")
             fh.write("\n".join(fresh) + "\n")
     return len(fresh), len(entries) - len(fresh)
+
+
+def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
+    """Copy the repo's memory (index, facts, recorded rulings) into a fresh
+    state dir, leaving anything already there. Returns the files copied.
+
+    A `--parallel` lane clones the repo into a workspace of its own, so its
+    state dir is new and its memory empty: the lanes ran blind to the facts and
+    rulings every other run on that repo is given. Copies, never a link: a lane
+    must not write the origin's store mid-run, and `merge_decisions` carries its
+    new rulings back at import.
+    """
+    src = memory_dir(src_state_dir)
+    if not src.is_dir():
+        return 0
+    copied = 0
+    dst = memory_dir(dst_state_dir)
+    dst.mkdir(parents=True, exist_ok=True)
+    for path in sorted(src.iterdir()):
+        target = dst / path.name
+        if not path.is_file() or target.exists():
+            continue
+        shutil.copyfile(path, target)
+        copied += 1
+    return copied
 
 
 def decisions_text(state_dir: Path) -> str:

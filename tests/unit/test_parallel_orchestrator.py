@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6 import memory
 from agent6.app import parallel
 from agent6.app.compare import RankOutcome
 from agent6.app.parallel import (
@@ -30,6 +31,8 @@ from agent6.app.parallel import (
 from agent6.config import Config
 from agent6.directive import DirectiveError
 from agent6.git_ops import branch_exists, commit_all, create_branch
+from agent6.memory import decisions_text, record_decision
+from agent6.paths import state_dir
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli.parallel import lane_runtime
 from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask, clone_workspace
@@ -435,6 +438,31 @@ def test_bridge_spawner_argv_ends_options_before_task(
     dd = argv.index("--")
     assert {"--session-id", "--config", "--max-usd"} <= set(argv[:dd])  # flags precede `--`
     assert argv[dd + 1 :] == ["--allow-root pwn"]  # task is the sole element after
+
+
+def test_a_lane_is_seeded_with_the_repos_memory(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """A lane clones the repo, so its state dir is new and its memory empty: the
+    lanes ran blind to the facts and rulings every other run on that repo gets."""
+    cfg = Config()
+    origin_state = state_dir(origin, cfg.agent6.state_dir)
+    memory.add(origin_state, "house-style", "Docstrings end in a period.")
+    record_decision(origin_state, question="Ship the rename?", answer="yes", session="s", when=0.0)
+
+    def fake_spawn(_argv: list[str], workdir: Path, **_k: object) -> tuple[Path, str]:
+        return workdir, ""
+
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", model=None)
+    parallel.bridge_spawner(
+        spec, "task", cfg=cfg, origin=origin, max_usd=None,
+        fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
+    )  # fmt: skip
+
+    lane_state = state_dir(spec.workdir, cfg.agent6.state_dir)
+    assert "house-style" in memory.index_text(lane_state)
+    assert "Docstrings end in a period." in memory.show(lane_state, "house-style")
+    assert "Ship the rename?" in decisions_text(lane_state)
 
 
 def test_bridge_spawner_argv_includes_auto_approve_when_set(
