@@ -52,12 +52,20 @@ async function renderMachine(name, gen) {
   msgBtn.onclick = async () => {
     try { await postJSON(base + '/poke', { message: din.value }); toast('message sent'); din.value = ''; } catch (e) { toast(e.message, true); }
   };
-  drow.appendChild(din); drow.appendChild(steerBtn); drow.appendChild(msgBtn);
+  // Stop, as the CLI (`agent6 machine stop`) and the TUI (x) have: the machine
+  // parks at its next transition and `machine run` resumes it.
+  const stopBtn = el('button', 'danger', 'Stop');
+  stopBtn.onclick = async () => {
+    if (!confirm('Stop this machine at its next transition? `agent6 machine run` resumes it.')) return;
+    try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stop requested'); }
+    catch (e) { toast(e.message, true); }
+  };
+  drow.appendChild(din); drow.appendChild(steerBtn); drow.appendChild(msgBtn); drow.appendChild(stopBtn);
   dock.appendChild(growGrip(din));
   dock.appendChild(drow);
   dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it)'));
   view.appendChild(dock);
-  cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; // paintMachine gates these
+  cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; cards._stop_btn = stopBtn; // paintMachine gates these
 
   // Notification de-dup across repaints: seed with history on the first frame so
   // opening a machine does not replay every past notification; banner + OS-notify
@@ -177,6 +185,10 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (cards._msg_btn) {
     cards._msg_btn.disabled = !!refusals.poke;
     cards._msg_btn.title = refusals.poke || 'wake a waiting machine; its next tool reads the message';
+  }
+  if (cards._stop_btn) {
+    cards._stop_btn.disabled = !!refusals.stop;
+    cards._stop_btn.title = refusals.stop || 'park the machine at its next transition';
   }
 
   // The current state's conversation: live turn from this frame, completed

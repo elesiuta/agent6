@@ -70,3 +70,14 @@ def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
     assert "setTimeout" in body, "a confirmation still clears itself"
     assert "if (bad)" in body and "t.remove()" in body, "a failure has no dismiss"
     assert "#toasts" in PAGE_HTML, "the stack has no container style"
+
+
+def test_the_machine_page_offers_stop() -> None:
+    """`agent6 machine stop` and the TUI's `x` park a machine at its next
+    transition; the page had no way to ask, though its route was there."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("async function renderMachine")
+    body = js[start : js.index("function paintMachine(", start)]
+    assert "'/stop'" in body or "+ '/stop'" in body
+    assert "cards._stop_btn" in js
