@@ -788,3 +788,34 @@ def test_resume_refuses_a_fan_out_coordinator(
     assert _cmd_resume(None, "fan-AAAA11", force=False, steer="") == 2
     err = capsys.readouterr().err
     assert "fan-out coordinator is not resumable" in err and "sessions show fan-AAAA11" in err
+
+
+def test_a_declined_unconfined_confirm_is_the_operators_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The operator answering no at the unconfined-autorun confirm exited 1,
+    the code the exit table gives a broken run; every other declined startup
+    confirm and refusal exits 2, the operator's own code."""
+    from agent6.app._session import select_isolation
+    from agent6.app.preflight import SessionRefused
+    from agent6.app.reporter import Reporter
+    from agent6.config import Config
+
+    def _none(*_a: object, **_k: object) -> None:
+        return None
+
+    def _unconfined(*_a: object, **_k: object) -> str:
+        return "none"
+
+    monkeypatch.setattr(session_mod, "detect_env", object)
+    monkeypatch.setattr(session_mod, "resolve_isolation", _unconfined)
+    monkeypatch.setattr(session_mod, "warn_sandbox_gaps", _none)
+    err: list[str] = []
+    with pytest.raises(SessionRefused) as refusal:
+        select_isolation(
+            Config.model_validate({"sandbox": {"isolation": "none"}}),
+            cwd=tmp_path,
+            confirm_unconfined=lambda _level, _cfg: False,
+            reporter=Reporter(out=lambda _m: None, err=err.append),
+        )
+    assert refusal.value.rc == 2 and "[agent6] aborted." in err

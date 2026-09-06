@@ -109,7 +109,7 @@ def select_isolation(
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):
         reporter.note("aborted.")
-        raise SessionRefused(1)
+        raise SessionRefused(2)
     net_err = check_network_support(cfg, selected)
     if net_err is not None:
         reporter.refuse(net_err)
