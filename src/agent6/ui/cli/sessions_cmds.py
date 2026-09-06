@@ -45,9 +45,9 @@ from agent6.sessions.manifest import (
 )
 from agent6.types import SESSION_KINDS
 from agent6.ui.cli._common import (
-    NOTHING_YET,
     _runs_dir,
     error,
+    nothing_yet,
     print_nothing_yet,
     refuse,
     resolve_or_newest_layout,
@@ -84,7 +84,7 @@ def _cmd_list(*, as_json: bool = False) -> int:
     cwd = Path.cwd()
     dirs = session_dirs(resolved_state_dir(cwd), SESSION_BUCKETS)
     if not dirs:
-        print("[]" if as_json else NOTHING_YET)  # the empty listing is output, not an error
+        print("[]" if as_json else nothing_yet())  # the empty listing is output, not an error
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
     tips = run_branch_tips(cwd)

@@ -24,11 +24,11 @@ from agent6.sessions.layout import machines_root
 from agent6.ui.cli._common import (
     _runs_dir,
     error,
-    print_no_session_match,
     resolve_session_layout,
+    resolve_target,
 )
 from agent6.ui.cli.machine_cmds import _cmd_machine_watch
-from agent6.ui.cli.plan_watch import _cmd_watch, _resolve_session_dir
+from agent6.ui.cli.plan_watch import _cmd_watch
 from agent6.viewmodel import (
     machine_snapshot,
     session_snapshot,
@@ -109,10 +109,10 @@ def _cmd_watch_target(  # noqa: PLR0911
     if is_run:
         if not json_out:
             return _cmd_watch(target, tui=tui, since=since, raw=raw, config_path=config_path)
-        session_dir = _resolve_session_dir(cwd, target)
-        if session_dir is None or not session_dir.is_dir():
-            print_no_session_match(target, runs_dir.parent)
+        layout = resolve_target(target)
+        if layout is None:
             return 2
+        session_dir = layout.session_dir
         # The wire form the web serves, the merged claim checked against the repo.
         print(json.dumps(session_snapshot(session_dir, repo=cwd)))
         return 0

@@ -14,7 +14,6 @@ import tempfile
 import traceback
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import argcomplete
 
@@ -22,9 +21,6 @@ from agent6.errors import OperatorError
 from agent6.events import EventWriteError
 from agent6.ui.cli._common import _enforce_root_policy, error, refuse
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
-
-if TYPE_CHECKING:
-    from agent6.sessions.layout import SessionLayout
 
 
 def _first_markdown_line(text: str, max_len: int = 80) -> str:
@@ -334,28 +330,6 @@ def _dispatch_answer(args: argparse.Namespace) -> int:
     return _cmd_answer(args.target, tuple(args.answers))
 
 
-def _resolve_target(target: str) -> SessionLayout | None:
-    """The named session, or the newest when the operator omitted one, through
-    the resolution `attach` and the `sessions` verbs use -- so an ambiguous
-    prefix reads as ambiguous here too, and a husk names itself. Prints the
-    reason and returns None when there is nothing to act on."""
-    from agent6.config.layer import resolved_state_dir  # noqa: PLC0415
-    from agent6.sessions.id import SessionIdError  # noqa: PLC0415
-    from agent6.ui.cli._common import (  # noqa: PLC0415
-        print_no_session_match,
-        resolve_or_newest_layout,
-    )
-
-    try:
-        layout = resolve_or_newest_layout(Path.cwd(), target)
-    except SessionIdError as exc:
-        error(f"{exc}")
-        return None
-    if layout is None:
-        print_no_session_match(target, resolved_state_dir(Path.cwd()))
-    return layout
-
-
 def _dispatch_exec(args: argparse.Namespace) -> int:
     from agent6.config import ConfigError  # noqa: PLC0415
     from agent6.config.layer import load_effective  # noqa: PLC0415
@@ -379,7 +353,9 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
     if not argv:
         error("give a command (after `--` when naming a session).")
         return 2
-    layout = _resolve_target(target)
+    from agent6.ui.cli._common import resolve_target  # noqa: PLC0415
+
+    layout = resolve_target(target)
     if layout is None:
         return 2
     try:
@@ -399,7 +375,9 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
         # `forward 8000` means "port 8000 of the newest session": a bare number
         # is a port (the help says so; a numeric session id needs both args).
         target, port = "", int(target)
-    layout = _resolve_target(target)
+    from agent6.ui.cli._common import resolve_target  # noqa: PLC0415
+
+    layout = resolve_target(target)
     if layout is None:
         return 2
     if port is None:

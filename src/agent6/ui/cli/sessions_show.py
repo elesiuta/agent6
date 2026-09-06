@@ -11,7 +11,6 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import (
     branch_exists,
     chain_ref_for,
@@ -19,11 +18,10 @@ from agent6.git_ops import (
     merge_stamp_holds,
     run_branch_tips,
 )
-from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
-from agent6.ui.cli._common import error, print_no_session_match, resolve_or_newest_layout
+from agent6.ui.cli._common import resolve_target
 from agent6.viewmodel import (
     LogScan,
     existing_run_branch,
@@ -141,18 +139,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     last event, current iteration, and elapsed time from logs.jsonl. For a quick
     or scripted check; `agent6 attach` is the live follower.
     """
-    try:
-        layout = resolve_or_newest_layout(Path.cwd(), session_id)
-    except SessionIdError as exc:
-        # An ambiguous prefix names its candidates (as attach and runs stop do);
-        # swallowing it printed "no session matches <id>", which is false when
-        # several do.
-        error(f"{exc}")
+    layout = resolve_target(session_id)
+    if layout is None:
         return 2
-    target = layout.session_dir if layout is not None else None
-    if target is None or not target.is_dir():
-        print_no_session_match(session_id, resolved_state_dir(Path.cwd()))
-        return 2
+    target = layout.session_dir
 
     loaded: SessionManifest | None = None
     with contextlib.suppress(ManifestError):

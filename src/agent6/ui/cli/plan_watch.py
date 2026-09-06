@@ -166,20 +166,6 @@ def _cmd_watch(
     return run_tui(target, config_path=config_path)
 
 
-def _resolve_session_dir(repo_root: Path, session_id: str) -> Path | None:
-    """Resolve a run id (or the most-recent run when empty) to its run dir.
-
-    An explicit id resolves across every run-style bucket (runs/, asks/,
-    sessions/machines/): anything `agent6 sessions` lists must also be inspectable
-    by id. The empty (most-recent) case also spans every bucket, so a bare
-    `attach` right after an `ask` finds that ask."""
-    try:
-        layout = resolve_or_newest_layout(repo_root, session_id)
-    except SessionIdError:
-        return None
-    return layout.session_dir if layout is not None else None
-
-
 def _cmd_tui(config_path: Path | None = None) -> int:
     """The TUI hub (`agent6 tui`): browse runs and start new work. Loops between
     the home screen and the run view (the conversation; Ctrl+D toggles the

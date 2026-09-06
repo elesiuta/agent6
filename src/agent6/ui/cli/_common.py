@@ -167,8 +167,6 @@ def nothing_yet(what: str = "sessions") -> str:
     return f'no {what} yet. Start one with `agent6 run "<task>"`.'
 
 
-NOTHING_YET = nothing_yet()
-
 # The stderr conventions belong to app.reporter (REFUSING:, ERROR:, [agent6]
 # WARNING:); every CLI message goes through these, so the wording has one owner.
 error = STDIO_REPORTER.error
@@ -250,6 +248,20 @@ def resolve_session_layout(
     return layout
 
 
+def resolve_target(target: str) -> SessionLayout | None:
+    """The named session, or the newest when the operator omitted one, for a
+    verb run from the checkout: an ambiguous prefix reads as ambiguous, a husk
+    names itself, and nothing to act on prints why and returns None."""
+    try:
+        layout = resolve_or_newest_layout(Path.cwd(), target)
+    except SessionIdError as exc:
+        error(f"{exc}")
+        return None
+    if layout is None:
+        print_no_session_match(target, resolved_state_dir(Path.cwd()))
+    return layout
+
+
 def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
     """The newest session across every bucket whose dir holds *child*.
 
@@ -258,13 +270,7 @@ def newest_layout_holding(repo_root: Path, child: str) -> SessionLayout | None:
     invisible and, if named explicitly, resolved to a directory that does not
     exist.
     """
-    candidates = [
-        d
-        for bucket in session_bucket_dirs(repo_root)
-        if bucket.is_dir()
-        for d in bucket.iterdir()
-        if d.is_dir() and (d / child).is_dir()
-    ]
+    candidates = [d for d in all_session_dirs(repo_root) if (d / child).is_dir()]
     if not candidates:
         return None
     from agent6.viewmodel import session_mtime  # noqa: PLC0415

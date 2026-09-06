@@ -25,7 +25,7 @@ from agent6.config.layer import (
 )
 from agent6.ui.cli._common import (
     _plans_dir,
-    session_bucket_dirs,
+    all_session_dirs,
 )
 from agent6.viewmodel.listing import session_is_live
 
@@ -259,12 +259,7 @@ def _complete_model_provider(
 def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: ids across every session bucket (runs, asks, machine
     drafts). Offers exactly what `--from` accepts, so the two cannot drift."""
-    out: list[str] = []
-    for bucket in session_bucket_dirs(Path.cwd()):
-        if not bucket.is_dir():
-            continue
-        out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]
-    return sorted(out)
+    return sorted(d.name for d in all_session_dirs(Path.cwd()) if d.name.startswith(prefix))
 
 
 @_never_raises
@@ -309,16 +304,11 @@ def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
     that reach a running one (steer, answer, exec, forward, sessions stop).
     `session_is_live` is those verbs' own gate: a finished run whose worker
     pid is still up in its teardown window is refused, so it is not offered."""
-    out: list[str] = []
-    for bucket in session_bucket_dirs(Path.cwd()):
-        if not bucket.is_dir():
-            continue
-        out += [
-            d.name
-            for d in bucket.iterdir()
-            if d.is_dir() and d.name.startswith(prefix) and session_is_live(d)
-        ]
-    return sorted(out)
+    return sorted(
+        d.name
+        for d in all_session_dirs(Path.cwd())
+        if d.name.startswith(prefix) and session_is_live(d)
+    )
 
 
 @_never_raises
