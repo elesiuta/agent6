@@ -875,6 +875,13 @@ def create_fork(
     except _ForkRefused as refused:
         return "", refused.rc
     added = worktree and plan.mode == "run"
+    if added and plan.cfg.git.control == "model":
+        reporter.error(
+            "a fork runs in a linked worktree whose .git is read-only in the jail; under"
+            ' [git].control = "model" the model could not commit there. Set control ='
+            ' "agent6" for the fork, or take the run back with /undo in its checkout.'
+        )
+        return "", 2
     if added:
         path = subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:

@@ -1466,3 +1466,28 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
 
     assert chain_tip(repo, chain_ref_for("brave-yak-BBBB22")) == anchor
+
+
+def test_fork_refuses_a_run_the_model_controls_git_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fork runs in a linked worktree whose `.git` the jail grants read-only;
+    under `[git].control = "model"` the prompt would tell the model to commit
+    and the sandbox would refuse every commit. The fork refuses up front, with
+    nothing materialized."""
+    import os
+
+    Path(os.environ["AGENT6_CONFIG_HOME"], "config.toml").write_text(
+        '[git]\ncontrol = "model"\n[sandbox]\nprotect_git = false\n', encoding="utf-8"
+    )
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    _seed_source_run(state_dir, "src-MOD11", head_sha=head, turns=(1,))
+
+    rc = _cmd_fork(None, "src-MOD11", new_session_id="child-MOD22", no_run=True)
+
+    assert rc == 2
+    assert 'control = "model"' in capsys.readouterr().err
+    assert not SessionLayout(state_dir=state_dir, session_id="child-MOD22").manifest_path.exists()
