@@ -796,3 +796,34 @@ Read: test-first does NOT ship as a default on this evidence (a null on
 resolves, n=1 per side). The empty-conversion signal (12 -> 8, with 3
 direct DNF-to-resolve flips) says the wall, not the anchor, is the
 binding constraint: the deadline-steer arm tests that lever directly.
+
+### Deadline-steer on the rebench 110, and what the wall empties actually are (2026-08-24)
+
+One run, same gate-on config, `AGENT6_SB_DEADLINE_STEER=120` (an in-container
+`agent6 steer` at T-120s: "land your best fix now"). Scores are real
+(110/110, no pull failures, empties the leg's own).
+
+| metric (gate-on -> deadline-steer) | gate-on | deadline | better |
+|---|---|---|---|
+| resolved | 53/110 | 54/110 | within single-run noise |
+| empty patches | 12 | 11 | within noise |
+
+The arm under-exposed its own treatment: the steer FIRED in only 3 of 110
+legs. Digging into why reattributed the empties themselves: 19 legs across
+the three fleets (gate-on, test-first, deadline) show "parked: an approval
+awaits a front-end" and then the wall - the recurring empty ids of every
+arm (sqlglot 7457/7479, pygmt-4463, pandas 64796/64797, rapid-mlx 227/228,
+scikit-learn-33565, azure-3025, ...). The prompt is the off-list `fetch`
+gate (the model hunting the upstream issue: `Allow fetch: api.github.com
+/search/issues?...`, standing=false); in a TTY-less container with no
+away-mode the approver chooses wait-forever, the leg blocks with no
+iteration boundary (so no steer pickup either), and dies at the wall.
+
+Reads:
+- the "model-side reasoning latency" DNF autopsy was partly wrong: a large
+  fraction of the recurring wall empties are approval hangs, deterministic
+  per instance, identical across arms;
+- both arms' resolve nulls stand (52..54 across three gate-on-class runs
+  is the single-run noise band);
+- the real empty-killer candidate is the approver fix (headless no-away
+  parks -> deny loudly, the questioner's shape), not either arm.
