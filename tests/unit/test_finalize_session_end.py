@@ -172,6 +172,28 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
     assert "it proposes: pytest -q tests/" in out
 
 
+def test_the_stale_gate_remedy_is_a_command_that_installs_that_gate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`workflow.verify_command` is argv and takes no shell, so a proposal with
+    a pipeline wraps as `sh -c`. Splitting it word by word printed a command
+    that installs a gate handing `&& ruff check` to pytest as arguments -- and
+    `config set` accepts it silently."""
+    result = SessionResult(
+        completed=True,
+        reason="gate_stale",
+        summary="",
+        iterations=1,
+        tool_calls=1,
+        stale_gate="pytest -q tests/ && ruff check",
+        verified="failed",
+    )
+
+    out = _end_output(tmp_path, "r-stale2", result, capsys)
+
+    assert '\'["sh", "-c", "pytest -q tests/ && ruff check"]\'' in out
+
+
 def test_end_banner_does_not_claim_merged_from_a_prior_legs_stamp(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -775,3 +797,66 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
     assert "could not check the working tree" in out
     assert "no changes were committed" not in out
     assert "WARNING: the run finished with no commit on" not in out
+
+
+def test_a_failed_run_keeps_its_reason_on_the_console_stream(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The live done line carries the finish summary only for a clean finish,
+    and session.end carries no message, so suppressing `result.summary` under
+    `console_stream` left a foreground operator with "● provider error" and no
+    URL, no errno, no status."""
+    layout = _layout(
+        tmp_path,
+        "r-fail",
+        [
+            {"type": "session.start", "session_id": "r-fail", "user_task": "t"},
+            {"type": "session.end", "reason": "provider_error", "all_passed": None},
+        ],
+    )
+    result = SessionResult(
+        completed=False,
+        reason="provider_error",
+        summary="provider error at iter 1: HTTP error calling http://127.0.0.1:9/v1 (openai)",
+        iterations=1,
+        tool_calls=0,
+    )
+
+    print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=True,
+        reporter=STDIO_REPORTER,
+    )
+
+    out = capsys.readouterr().out
+    assert "HTTP error calling http://127.0.0.1:9/v1" in out
+
+
+def test_a_clean_finish_does_not_repeat_the_summary_the_stream_showed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    layout = _layout(
+        tmp_path,
+        "r-ok",
+        [
+            {"type": "session.start", "session_id": "r-ok", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    result = SessionResult(
+        completed=True, reason="finish_session", summary="fixed it", iterations=1, tool_calls=1
+    )
+
+    print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=True,
+        reporter=STDIO_REPORTER,
+    )
+
+    assert "fixed it" not in capsys.readouterr().out

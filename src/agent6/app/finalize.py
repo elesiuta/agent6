@@ -38,6 +38,7 @@ from agent6.git_ops import (
 )
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, read_untracked_at_start
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
+from agent6.verify_infer import line_to_argv
 from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
 from agent6.viewmodel.format import format_cost
 from agent6.workflows.loop import SessionResult
@@ -221,8 +222,11 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     reporter.out(f"  it proposes: {result.stale_gate}")
     reporter.out("  nothing changed. To adopt it:")
     # `verify_command` is argv, so `config set` takes a JSON array: the shell
-    # string the worker proposes is rejected as "not a valid tuple".
-    argv = json.dumps(shlex.split(result.stale_gate))
+    # string the worker proposes is rejected as "not a valid tuple". Tokenised
+    # by the one owner the inference uses, so a proposal with a pipeline or an
+    # `&&` becomes `sh -c "..."` -- splitting it word by word printed a command
+    # that installs a gate handing `&& ruff check` to pytest as arguments.
+    argv = json.dumps(list(line_to_argv(result.stale_gate) or ()))
     reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(argv)}")
 
 
@@ -255,6 +259,12 @@ def print_session_end(
         reporter.out(f"\n{headline}")
         if result.summary:
             reporter.out(f"  {result.summary}")
+    elif result.summary and result.reason not in ("finish_session", "finish_planning"):
+        # The stream's done line carries the finish summary only for a clean
+        # finish (pairing an earlier finish's text with a failure would read as
+        # success), and session.end carries no message, so a failure's reason --
+        # the URL, the errno, the budget line -- reaches the operator only here.
+        reporter.out(f"  {result.summary}")
     reporter.out("")
     for binary in _sandbox_unreachable_tools(layout):
         reporter.out(

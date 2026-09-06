@@ -51,7 +51,7 @@ class InferredVerify:
     source: str  # "agents_md" | "package.json" | "Makefile:test" | "pyproject" | ... | "llm"
 
 
-def _line_to_argv(cmd: str) -> tuple[str, ...] | None:
+def line_to_argv(cmd: str) -> tuple[str, ...] | None:
     """A single logical command line -> argv, wrapping a shell pipeline in sh -c."""
     cmd = cmd.strip()
     if not cmd:
@@ -78,7 +78,7 @@ def _block_to_argv(block: list[str]) -> tuple[str, ...] | None:
     if not logical:
         return None
     joined = " ".join(part.rstrip("\\").strip() for part in logical).strip()
-    return _line_to_argv(joined)
+    return line_to_argv(joined)
 
 
 def _first_fenced_block(lines: list[str], start: int) -> list[str] | None:
@@ -124,7 +124,7 @@ def verify_from_agents_md(agents_md: str) -> tuple[str, ...] | None:
                 return argv
     for line in lines:
         m = _INLINE_VERIFY.match(line)
-        if m and (argv := _line_to_argv(m.group(1))) is not None:
+        if m and (argv := line_to_argv(m.group(1))) is not None:
             return argv
     return None
 
