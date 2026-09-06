@@ -99,6 +99,7 @@ from agent6.viewmodel.state import (
     session_state_as_dict,
     session_status_label,
     status_facts,
+    task_tree_views,
 )
 from agent6.viewmodel.tail import LogTail, tail_events
 from agent6.viewmodel.transcript import (
@@ -189,5 +190,6 @@ __all__ = [
     "summary_row",
     "tail_events",
     "task_snippet",
+    "task_tree_views",
     "worker_models",
 ]

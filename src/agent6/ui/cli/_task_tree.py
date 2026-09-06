@@ -9,6 +9,7 @@ run that never opened the TUI #plan pane)."""
 from __future__ import annotations
 
 from agent6.graph.models import TaskNode
+from agent6.viewmodel import task_tree_views
 from agent6.viewmodel.format import TASK_STATUS_GLYPH
 
 
@@ -17,30 +18,11 @@ def tree_lines_from_event_nodes(nodes: dict[str, object], cursor: str | None = N
     parent_id / children) rather than TaskNode models. Used by the live CLI
     stream, which folds events, not the persisted graph. The focus task is
     marked with the in-progress glyph regardless of its stored status."""
-    out: list[str] = []
-    seen: set[str] = set()
-
-    def visit(nid: str, depth: int) -> None:
-        node = nodes.get(nid)
-        if not isinstance(node, dict) or nid in seen:
-            return
-        seen.add(nid)
-        status = "in_progress" if nid == cursor else str(node.get("status", "pending"))
-        glyph = TASK_STATUS_GLYPH.get(status, "·")
-        out.append(f"{'  ' * depth}{glyph} {node.get('title', '')}")
-        for child in node.get("children", ()) or ():
-            visit(str(child), depth + 1)
-
-    roots = [
-        nid
-        for nid, n in nodes.items()
-        if not isinstance(n, dict) or n.get("parent_id") is None or n.get("parent_id") not in nodes
+    return [
+        f"{'  ' * v.depth}{TASK_STATUS_GLYPH.get('in_progress' if v.is_cursor else v.status, '·')}"
+        f" {v.title}"
+        for v in task_tree_views(nodes, cursor)
     ]
-    for nid in roots:
-        visit(nid, 0)
-    for nid in nodes:  # any node unreachable from a root still shows
-        visit(nid, 0)
-    return out
 
 
 def task_tree_lines(nodes: dict[str, TaskNode], *, show_commit: bool = False) -> list[str]:

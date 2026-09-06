@@ -352,7 +352,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
         case events.GraphUpdate(nodes=nodes, cursor=cursor):
             return replace(
                 state,
-                tasks=_build_task_tree(nodes, cursor),
+                tasks=task_tree_views(nodes, cursor),
                 cursor_task_id=cursor,
             )
 
@@ -586,7 +586,7 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
             return state
 
 
-def _build_task_tree(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNodeView, ...]:
+def task_tree_views(nodes: dict[str, Any], cursor: str | None) -> tuple[TaskNodeView, ...]:
     """Flatten the curator's node map into a DFS pre-order list with depths, so
     the TUI can render the DAG as an indented tree. Roots are nodes with no
     parent (or whose parent is missing); children follow their parent's recorded
