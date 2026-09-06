@@ -42,8 +42,9 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6.app.fork import create_fork, undo_fork
+from agent6.app.fork import create_fork
 from agent6.app.reporter import Reporter
+from agent6.app.undo import undo_fork
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_btw, parse_compact, parse_now
 from agent6.paths import mkdir_for_real_user

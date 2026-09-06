@@ -18,8 +18,9 @@ import os
 from pathlib import Path
 from typing import Any
 
-from agent6.app.fork import create_fork, undo_fork
+from agent6.app.fork import create_fork
 from agent6.app.reporter import Reporter
+from agent6.app.undo import undo_fork
 from agent6.config.write import ConfigLeafValue, set_config_table
 from agent6.directive import parse_btw, parse_compact, parse_now
 from agent6.errors import OperatorError

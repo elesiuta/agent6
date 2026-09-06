@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
+from agent6.app.undo import undo_fork
 from agent6.git_ops import chain_commit, chain_ref_for, chain_tip
 from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout, write_untracked_at_start

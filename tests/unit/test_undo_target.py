@@ -9,8 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from agent6.app.fork import undo_target
 from agent6.app.manifest import write_session_manifest
+from agent6.app.undo import undo_target
 from agent6.config import Config
 from agent6.sessions.layout import SessionLayout
 from agent6.workflows._session_state import SessionSnapshot

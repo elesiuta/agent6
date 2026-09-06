@@ -650,7 +650,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         def _undo_forker() -> tuple[str, str] | None:
             # Lazy: app.fork imports this module (see run.py's twin).
-            from agent6.app.fork import undo_fork  # noqa: PLC0415
+            from agent6.app.undo import undo_fork  # noqa: PLC0415
 
             return undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
 

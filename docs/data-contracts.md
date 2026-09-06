@@ -56,7 +56,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 | `fanout` | `FanoutStamp | None` | `None` |
 
 - **Written by:** app/manifest
-- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{app, dashboard}, ui/web/{actions, model}, viewmodel/{format, listing, policy, snapshot, state}
+- **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run, undo}, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{app, dashboard}, ui/web/{actions, model}, viewmodel/{format, listing, policy, snapshot, state}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (14 test files exercise it)
 
 ## SessionSnapshot
@@ -95,7 +95,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 | `graph_version` | `int` | `0` |
 
 - **Written by:** workflows/loop
-- **Read by:** app/{_leg, fork, resume}, workflows/_loop_state
+- **Read by:** app/{_leg, fork, resume, undo}, workflows/_loop_state
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (17 test files exercise it)
 
 ## ToolResult family

@@ -496,7 +496,7 @@ class Workflow:
     lane_spawner: GroupLaneSpawner | None = None
     # `/undo`: commits the tree as it stands onto this session's ref, forks
     # the session at the state before its last operator message, and puts the
-    # checkout back to that state's tree (app.fork.undo_fork, injected:
+    # checkout back to that state's tree (app.undo.undo_fork, injected:
     # workflows never import app); returns (new_session_id, undone_text), or
     # None with the reason printed.
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
