@@ -689,6 +689,9 @@ def status_facts(state: SessionState) -> StatusFacts:
         finished=state.finished,
         all_passed=state.all_passed,
         verify_scoped=state.verify_scoped,
+        gate_red=state.last_verify is not None
+        and state.last_verify.exit_code is not None
+        and state.last_verify.exit_code != 0,
         end_reason=state.end_reason,
         operator_blocked=bool(pending),
         blocked_kind=oldest[0] if oldest else "",
@@ -782,6 +785,7 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
             all_passed=state.all_passed,
             end_reason=state.end_reason,
             scoped=state.verify_scoped,
+            gate_red=status_facts(state).gate_red,
         )
     # The raw status WORD, not only the human label, so a client can branch on it
     # -- e.g. render the waiting line instead of the "working" heartbeat when the

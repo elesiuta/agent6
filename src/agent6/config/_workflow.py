@@ -190,9 +190,9 @@ class WorkflowConfig(BaseModel):
         default=2,
         description=(
             "How many times a red finish certification returns to the model with the gate's "
-            "output before the finish stands and the run is reported as finished, never passed. "
-            "`0`: the first red ends the run. A gate that was red before the run touched anything "
-            "is not returned."
+            "output before the finish stands and the run reads `finished · gate red`, never "
+            "passed. `0`: the first red ends the run. A gate that was red before the run touched "
+            "anything is not returned."
         ),
     )
     metric: MetricConfig | None = Field(

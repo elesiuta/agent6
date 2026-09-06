@@ -296,7 +296,12 @@ def summary_row(
 
 
 def status_word(
-    *, finished: bool, all_passed: bool | None, end_reason: str, scoped: bool = False
+    *,
+    finished: bool,
+    all_passed: bool | None,
+    end_reason: str,
+    scoped: bool = False,
+    gate_red: bool = False,
 ) -> tuple[str, str]:
     """Map an end state to `(word, reason-detail)`.
 
@@ -306,8 +311,10 @@ def status_word(
     own acts (a stop, an /undo), not failures; "planned" and "answered" are
     the no-verify clean exits (a plan pass / an ask, where "passed" would
     mislead); "passed" means all verify gates green, "finished" is a
-    deliberate finish without all-passed, and anything else is "failed" with
-    the reason (provider_error, went_quiet, ...).
+    deliberate finish without all-passed (over an observed red gate,
+    `gate_red`, it reads "finished · gate red"; over a tree nothing certified,
+    "finished · unverified"), and anything else is "failed" with the reason
+    (provider_error, went_quiet, ...).
 
     `all_passed` is the wire's verify tri-state: True = the final tree was
     observed verify-green, False = it was not (red, stale, or an error end),
@@ -315,7 +322,9 @@ def status_word(
     whatever the reason: an ungated end never claims "passed" and never
     reads "failed". `scoped` qualifies a pass: the gate that certified the
     tree ran scoped to the tests nearest the run's diff, so it reads
-    "passed · scoped gate", never a bare "passed".
+    "passed · scoped gate", never a bare "passed". `gate_red` is the
+    observation itself (this leg's last verify ran and failed): False also
+    covers a stale green and a gate nothing ever ran, which are not red.
     """
     if not finished:
         return "running", ""
@@ -340,10 +349,12 @@ def status_word(
         return no_verify[end_reason]
     if all_passed:
         return "passed", "scoped gate" if scoped else ""
-    # Only an OBSERVED not-green (False) can word "failed"; the ungated None
-    # falls through to "finished" whatever the reason.
-    if all_passed is False and end_reason and end_reason != "finish_session":
-        return "failed", end_reason
+    # Only an OBSERVED not-green (False) can word "failed"; a deliberate finish
+    # over one is the agent's own act, so "finished" with what the gate said.
+    # The ungated None falls through to a bare "finished" whatever the reason.
+    if all_passed is False and end_reason:
+        detail = "gate red" if gate_red else "unverified"
+        return ("finished", detail) if end_reason == "finish_session" else ("failed", end_reason)
     return "finished", ""
 
 
@@ -372,6 +383,7 @@ class StatusFacts:
     finished: bool = False
     all_passed: bool | None = False  # None = the end was ungated (no verify command)
     verify_scoped: bool = False  # the judging gate ran scoped (qualifies a pass)
+    gate_red: bool = False  # this leg's last verify ran and failed (an observed red)
     end_reason: str = ""
     operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
     blocked_kind: str = ""  # "approval" | "question" | "" (oldest unanswered prompt)
@@ -401,6 +413,7 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
             all_passed=facts.all_passed,
             end_reason=facts.end_reason,
             scoped=facts.verify_scoped,
+            gate_red=facts.gate_red,
         )
     if facts.operator_blocked and worker_is_alive(session_dir):
         # Before session.start too: a run asks about the working tree's
@@ -549,6 +562,7 @@ class LogScan:
             finished=self.finished,
             all_passed=self.all_passed,
             verify_scoped=self.verify_scoped,
+            gate_red=self.last_verify_rc is not None and self.last_verify_rc != 0,
             end_reason=self.end_reason,
             operator_blocked=self.operator_blocked,
             blocked_kind=self.blocked_kind,
@@ -574,12 +588,13 @@ def finished_needs_new_work(session_dir: Path) -> bool:
     """Whether resuming this run would have nothing to do.
 
     True only when the agent ENDED it by calling `finish_session` over a tree
-    no gate observed red: the resumed leg spends a call, answers in prose
-    with no tool use, records a silent_finish, and leaves a run that passed
-    reading as failed for a tree nobody touched. Every other ending --
-    budget_exhausted, provider_error, steer_abort, a finish over a red
-    verify -- is exactly what resume is for. Read through the same fold the
-    listing uses, so a refusal and the status it contradicts cannot disagree.
+    the gate certified green, or with no gate at all: the resumed leg spends
+    a call, answers in prose with no tool use, records a silent_finish, and
+    leaves a run that passed reading as failed for a tree nobody touched.
+    Every other ending -- budget_exhausted, provider_error, steer_abort, a
+    finish the gate did not certify (red, stale, or never run) -- is exactly
+    what resume is for. Read through the same fold the listing uses, so a
+    refusal and the status it contradicts cannot disagree.
     """
     scan = scan_session_log(session_dir / LOGS_NAME)
     return scan.finished and scan.end_reason == "finish_session" and scan.all_passed is not False

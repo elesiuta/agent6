@@ -152,8 +152,12 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
         finished=True, all_passed=True, end_reason="finish_session", scoped=True
     ) == ("passed", "scoped gate")
     assert status_word(
-        finished=True, all_passed=False, end_reason="finish_session", scoped=True
-    ) == ("finished", "")
+        finished=True, all_passed=False, end_reason="finish_session", scoped=True, gate_red=True
+    ) == ("finished", "gate red")
+    assert status_word(finished=True, all_passed=False, end_reason="finish_session") == (
+        "finished",
+        "unverified",
+    )
 
 
 def test_plan_and_ask_are_never_gated_on_verify() -> None:

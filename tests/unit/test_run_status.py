@@ -245,11 +245,12 @@ def test_status_finish_without_all_passed_reads_finished(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
+            {"ts": _ts(2), "type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
             {"ts": _ts(1), "type": "session.end", "reason": "finish_session", "all_passed": False},
         ],
     )
     _cmd_status("winsome-dawn-YWH5ZS")
-    assert "finished (finish_session)" in capsys.readouterr().out
+    assert "finished · gate red (finish_session)" in capsys.readouterr().out
 
 
 def test_status_error_reason_reads_failed(

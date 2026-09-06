@@ -512,14 +512,29 @@ def test_run_state_as_dict_flags_operator_blocked() -> None:
 def test_run_status_label_distinguishes_stop_finish_error() -> None:
     # All of these set finished=True; the reason is what a user needs to tell them
     # apart. A stopped run must never read as a bare "finished" (looks completed).
-    def end(reason: str, all_passed: bool) -> SessionState:
+    def end(reason: str, all_passed: bool, *, verify_rc: int | None = None) -> SessionState:
         s = apply_event(initial_state(), {"type": "session.start", "user_task": "t"})
+        if verify_rc is not None:
+            verify = {"cmd": ["pytest"], "exit_code": verify_rc, "duration_s": 1.0}
+            s = apply_event(
+                s, {"type": "verify.end", "stdout_tail": "", "stderr_tail": "", **verify}
+            )
         return apply_event(s, {"type": "session.end", "reason": reason, "all_passed": all_passed})
 
     assert session_state_as_dict(initial_state())["status_label"] == "running"
     assert session_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
     assert session_state_as_dict(end("finish_session", True))["status_label"] == "passed"
-    assert session_state_as_dict(end("finish_session", False))["status_label"] == "finished"
+    # all_passed False is "not certified green": an observed red names the gate,
+    # a stale green or a gate nothing ran reads unverified.
+    assert session_state_as_dict(end("finish_session", False, verify_rc=1))["status_label"] == (
+        "finished · gate red"
+    )
+    assert session_state_as_dict(end("finish_session", False))["status_label"] == (
+        "finished · unverified"
+    )
+    assert session_state_as_dict(end("finish_session", False, verify_rc=0))["status_label"] == (
+        "finished · unverified"
+    )
     assert (
         session_state_as_dict(end("provider_error", False))["status_label"]
         == "failed · provider error"
