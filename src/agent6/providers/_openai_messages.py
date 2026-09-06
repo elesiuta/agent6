@@ -16,6 +16,19 @@ from typing import Any
 from agent6.providers.types import ToolDefinition
 
 
+def tool_result_text(tr_content: Any) -> str:
+    """A tool_result's content as the one string the OpenAI-style wires carry:
+    the text blocks joined, else the content as JSON, else as text."""
+    if isinstance(tr_content, list):
+        parts = [
+            str(b.get("text", ""))
+            for b in tr_content
+            if isinstance(b, dict) and b.get("type") == "text"
+        ]
+        return "".join(parts) if parts else json.dumps(tr_content)
+    return str(tr_content)
+
+
 def anthropic_to_openai_messages(  # noqa: PLR0912
     system: str, anthropic_msgs: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -89,16 +102,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
                 # blocks; OpenAI accepts either string or its own
                 # content-blocks shape. Flatten to string for the
                 # broadest compatibility (Ollama, Kimi, etc).
-                tr_content = block.get("content", "")
-                if isinstance(tr_content, list):
-                    parts = [
-                        str(b.get("text", ""))
-                        for b in tr_content
-                        if isinstance(b, dict) and b.get("type") == "text"
-                    ]
-                    tr_text = "".join(parts) if parts else json.dumps(tr_content)
-                else:
-                    tr_text = str(tr_content)
+                tr_text = tool_result_text(block.get("content", ""))
                 tool_results.append(
                     {
                         "role": "tool",

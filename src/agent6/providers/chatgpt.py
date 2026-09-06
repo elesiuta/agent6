@@ -31,6 +31,7 @@ from typing import Any
 import httpx2
 
 from agent6.budget import BudgetTracker, PlanUsage, PlanWindow
+from agent6.providers._openai_messages import tool_result_text
 from agent6.providers._openai_recovery import lenient_json_object
 from agent6.providers._stream import SseCall, StreamClock, bounded_lines, record_billed_usage
 from agent6.providers._transport import ProviderCall
@@ -135,7 +136,7 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
                 {
                     "type": "function_call_output",
                     "call_id": str(block.get("tool_use_id", "")),
-                    "output": _tool_result_text(block.get("content", "")),
+                    "output": tool_result_text(block.get("content", "")),
                 }
             )
     flush()
@@ -146,18 +147,6 @@ def _content_items(role: str, blocks: list[Any], dropped_ids: set[str]) -> list[
 def _message_item(role: str, text: str) -> dict[str, Any]:
     kind = "output_text" if role == "assistant" else "input_text"
     return {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}
-
-
-def _tool_result_text(tr_content: Any) -> str:
-    """Flatten a tool_result's content to the string the wire wants."""
-    if isinstance(tr_content, list):
-        parts = [
-            str(b.get("text", ""))
-            for b in tr_content
-            if isinstance(b, dict) and b.get("type") == "text"
-        ]
-        return "".join(parts) if parts else json.dumps(tr_content)
-    return str(tr_content)
 
 
 def tools_to_responses(tools: list[ToolDefinition]) -> list[dict[str, Any]]:

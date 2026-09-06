@@ -93,13 +93,13 @@ def http_stream(
 
 
 def bounded_lines(resp: httpx2.Response, *, max_line_bytes: int = 8 * 1024 * 1024):
-    """`resp.iter_lines()` with a per-line ceiling: one endless line from a
-    broken endpoint buffers unbounded inside iter_lines otherwise (the
-    non-streaming path already caps its whole body). Exceeding it raises a
-    retryable ProviderError. Both providers' consume loops read through
-    this."""
+    """`resp.iter_lines()` with a per-line ceiling on what is handed
+    downstream: a line over it raises a retryable ProviderError instead of
+    being parsed (the non-streaming path caps its whole body). A line that
+    never ends is bounded by the watchdog, since iter_lines materializes it
+    first. Both providers' consume loops read through this."""
     for line in resp.iter_lines():
-        if len(line) > max_line_bytes:
+        if len(line) * 4 > max_line_bytes and len(line.encode("utf-8")) > max_line_bytes:
             raise ProviderError(
                 f"stream frame exceeded {max_line_bytes} bytes; refusing to buffer it"
             )
@@ -130,9 +130,6 @@ class StreamClock:
 
     def mark_output(self) -> None:
         self._seen_output.set()
-
-    def seen_output(self) -> bool:
-        return self._seen_output.is_set()
 
     def enter_thinking(self) -> None:
         self._in_thinking.set()

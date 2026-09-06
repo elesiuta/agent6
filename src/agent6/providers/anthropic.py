@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -264,31 +263,6 @@ class AnthropicProvider:
         for k, v in self.extra_headers:
             headers[k.lower()] = v
         return headers
-
-    @classmethod
-    def from_env(
-        cls,
-        *,
-        model: str,
-        env_var: str,
-        prompt_caching: bool = True,
-        timeout_s: float = 120.0,
-        transcript_sink: TranscriptRecorder | None = None,
-        budget: BudgetTracker | None = None,
-        effort: str | None = None,
-    ) -> AnthropicProvider:
-        key = os.environ.get(env_var, "").strip()
-        if not key:
-            raise ProviderError(f"Environment variable {env_var!r} is empty or unset")
-        return cls(
-            api_key=key,
-            model=model,
-            prompt_caching=prompt_caching,
-            timeout_s=timeout_s,
-            transcript_sink=transcript_sink,
-            budget=budget,
-            effort=effort,
-        )
 
     def call(  # noqa: PLR0912
         self,
