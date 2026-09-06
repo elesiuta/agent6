@@ -1,4 +1,8 @@
-# Editor integration (ACP)
+# Editor integration
+
+Two ways in, both spawned by the editor over stdio: ACP drives whole runs, and `agent6 mcp serve` exposes a few tools to another agent (see [As an MCP server](#as-an-mcp-server)).
+
+## Agent Client Protocol
 
 `agent6 acp` runs agent6 as an [Agent Client Protocol](https://agentclientprotocol.com/) agent: an editor spawns it, sends prompts, and renders the run as it happens.
 It uses the same engine, config, and jail as `agent6 run`.
@@ -67,3 +71,33 @@ One session is one directory, one conversation.
 - stdout is the protocol stream: nothing but JSON-RPC
 - everything agent6 would print goes to stderr (the editor's agent logs)
 - a wrapper echoing to stdout before exec'ing `agent6` breaks the connection irrecoverably; write to stderr
+
+## As an MCP server
+
+`agent6 mcp serve` speaks MCP over stdio, so another agent (an editor's own, or a second agent6 with `[mcp.servers]`) can use agent6's jail and run state.
+It is the inverse of `[mcp]` in the config, which is agent6 as an MCP CLIENT.
+The cwd's config decides everything: the sandbox the commands run in, and which tools exist at all.
+
+Five tools, of which a default config publishes two:
+
+| Tool | Withheld when |
+| --- | --- |
+| `query_dag` (a run's task graph) | never |
+| `list_sessions` (this repository's sessions) | never |
+| `run_verify` (the configured gate, jailed) | no `[workflow] verify_command`, or `[sandbox] run_commands` is not `yes` |
+| `run_in_sandbox` (an argv, jailed) | `[sandbox] run_commands` is not `yes` |
+| `apply_patch_in_sandbox` (a patch, then the gate) | either of the two above |
+
+`run_commands = "ask"` withholds the command tools rather than offering ones that would refuse: the MCP boundary has no operator to prompt.
+A client that calls a withheld tool by name is told which setting withheld it.
+
+```jsonc
+// Zed: settings.json -- agent6's jail as another agent's tool surface
+{
+  "context_servers": {
+    "agent6": { "command": { "path": "agent6", "args": ["mcp", "serve"] } }
+  }
+}
+```
+
+The tools reach the repository the server was started in, under that repository's sandbox policy; `list_sessions` and `query_dag` read its state dir and nothing else.

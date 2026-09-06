@@ -418,6 +418,8 @@ A live run dispatches lanes the same way via the `/parallel` steer directive (de
 
 ## `[mcp]` and `[mcp.servers.<name>]` (optional)
 
+agent6 as an MCP CLIENT; for the other direction (`agent6 mcp serve`, agent6 as a server) see [Editor integration](acp.md#as-an-mcp-server).
+
 MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>` in run mode only (plan, ask, machine and agent sessions never offer them: agent6 cannot classify an external tool as read-only).
 A spawned server runs as a jailed child by default (its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) with a curated env (never your provider keys; `pass_env` adds named vars); a `url` server is a process you run and confine yourself.
 The model chooses the arguments, so each call is approved like a command (`approve`); audit each server like a `run_command` allow-list.

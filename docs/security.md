@@ -282,6 +282,7 @@ Under `none` isolation nothing is enforced or refused.
 - `isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue?
   [y/N]` interactively, a warning in CI and `machine run`.
 - A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every scope); an unattended machine auto-denies.
+- `agent6 mcp serve` has no operator at all, so the tools that would prompt are not published: under `run_commands = "ask"` or `"no"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
 
 ### 7. Git
 
