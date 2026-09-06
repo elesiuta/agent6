@@ -465,6 +465,42 @@ def test_run_snapshot_labels_a_parked_submission(tmp_path: Path) -> None:
     assert hub_row["status"] == "parked"  # the two surfaces lead with one word
 
 
+def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: Path) -> None:
+    """A fresh manifest carried the configured verify command with no origin
+    (the leg's pin fills it in), so a run parked before its leg read
+    `python3 -m pytest -q (unknown origin)` in every header."""
+    from agent6.app.manifest import stamp_parked, write_session_manifest
+    from agent6.config import Config
+    from agent6.sessions.layout import SessionLayout
+
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="parked-two-AAAAAA")
+    layout.ensure()
+    write_session_manifest(
+        layout,
+        session_id=layout.session_id,
+        user_task="t",
+        base_sha="0" * 40,
+        base_branch="main",
+        run_branch=None,
+        cfg=Config.model_validate({"workflow": {"verify_command": ["python3", "-m", "pytest"]}}),
+    )
+    stamp_parked(layout.session_dir, task="t", reason="checkout busy")
+    snap = session_snapshot(layout.session_dir)
+    assert snap["status_label"] == "parked · checkout busy"
+    assert snap["policy"].endswith("python3 -m pytest (configured)")
+    # A gateless config stays gateless until the leg infers or adopts one.
+    write_session_manifest(
+        layout,
+        session_id=layout.session_id,
+        user_task="t",
+        base_sha="0" * 40,
+        base_branch="main",
+        run_branch=None,
+        cfg=Config(),
+    )
+    assert session_snapshot(layout.session_dir)["policy"].endswith("no verify gate")
+
+
 def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: Path) -> None:
     """A run whose recorded worker is gone and that never logged session.end folds to
     "running". The hub calls it stale off the same pid probe; the one-shot payload

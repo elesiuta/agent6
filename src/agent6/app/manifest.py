@@ -96,6 +96,13 @@ def write_session_manifest(
     git dir it points into (see `SessionManifest.worktree`).
     """
     lineage = _parallel_lineage()
+    # A fork passes the source's pin; a fresh run carries the configured gate
+    # as such (a parked run keeps this stamp, no leg having run) until
+    # `pin_gate` stamps the pair the leg resolved.
+    verify_command, verify_origin = gate or (
+        cfg.workflow.verify_command,
+        "configured" if cfg.workflow.verify_command else "",
+    )
     m = SessionManifest(
         agent6_version=__version__,
         session_id=session_id,
@@ -125,10 +132,8 @@ def write_session_manifest(
             # replayed as an override on resume (see WorkflowStamp.replay_preset).
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
-            # A fork passes the source's pin; a fresh run has only what config
-            # carries, and `pin_gate` stamps the resolved pair moments later.
-            verify_command=tuple(gate[0] if gate else cfg.workflow.verify_command),
-            verify_origin=gate[1] if gate else "",
+            verify_command=tuple(verify_command),
+            verify_origin=verify_origin,
         ),
         policy=PolicyStamp(
             run_commands=cfg.sandbox.run_commands,
