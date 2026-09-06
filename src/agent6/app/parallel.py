@@ -540,7 +540,7 @@ def build_lane_spawner(
     seats), imports each into *origin* (serialized by a shared lock), and returns
     per-lane LaneResults in dispatch order. Lane run ids are
     `<coordinator_session_id>-<group>-l<i>`; lane workspaces live under the same
-    per-repo `[parallel].workdir` cache the fan-out uses, in a `<group>` subdir. The bridge
+    per-repo `[parallel].workdir` cache the fan-out uses, in a dir of that name. The bridge
     spawner tags each lane `AGENT6_SUBRUN=1`, so a lane can never itself dispatch
     (depth 1 by construction). `auto_approve` forwards the coordinator's own
     `--auto-approve` to every lane, same as `max_usd`."""
@@ -565,11 +565,17 @@ def build_lane_spawner(
             raise ParallelError(refusal_message(verdict, directive=True))
         if verdict.warned:
             reporter.warn(warning_message(verdict))
-        workdir_root = subordinate_workdir_root(cfg, origin, coordinator_session_id) / group
+        # ONE name for this group: the workdir dir, the lane ids and the
+        # lineage each lane's manifest records. A group whose clones sit a level
+        # deeper than the name they are stamped with is invisible to
+        # `adopt_orphan_lane` and to `sweep_fanout_clones`, which both derive
+        # the clone as `subordinate_workdir_root(...) / lane-<n>`.
+        group_id = f"{coordinator_session_id}-{group}"
+        workdir_root = subordinate_workdir_root(cfg, origin, group_id)
         specs = [
             LaneSpec(
                 lane=i,
-                session_id=f"{coordinator_session_id}-{group}-l{i}",
+                session_id=f"{group_id}-l{i}",
                 workdir=workdir_root / f"lane-{i}",
                 model=lane.model,
             )
@@ -598,7 +604,7 @@ def build_lane_spawner(
                 cfg=cfg,
                 origin=origin,
                 origin_state=origin_state,
-                group=group,
+                group=group_id,
                 runtime=runtime,
                 max_usd=max_usd,
                 auto_approve=auto_approve,

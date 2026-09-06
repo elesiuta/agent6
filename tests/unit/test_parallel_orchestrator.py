@@ -1421,8 +1421,15 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     assert [r.spec.session_id for r in results] == ["co-p2-l1", "co-p2-l2"]
     assert [r.spec.model for r in results] == ["kimi", None]  # per-lane model threaded through
     assert sorted(s[0] for s in seen) == [1, 2]  # every lane ran once
-    assert all(group == "p2" for (_l, _r, _t, group, _w) in seen)
-    assert all(f"{os.sep}p2{os.sep}lane-" in workdir for (*_rest, workdir) in seen)
+    # One name for the group: `adopt_orphan_lane` and the clone sweep both
+    # derive a lane's clone from the lineage its manifest recorded, so the dir
+    # has to be exactly that. A bare "p2" put the clones a level deeper, and an
+    # orphaned lane was never adopted.
+    assert all(group == "co-p2" for (_l, _r, _t, group, _w) in seen)
+    assert all(
+        str(parallel.subordinate_workdir_root(cfg, origin, group) / f"lane-{lane}") == workdir
+        for (lane, _r, _t, group, workdir) in seen
+    )
 
 
 def test_build_lane_spawner_forwards_auto_approve(
