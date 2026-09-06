@@ -38,13 +38,14 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 class SessionIdError(Exception):
-    """Raised when a user-supplied run id cannot be resolved. `ambiguous` is
-    True when the query matched more than one run (vs no match), so a caller can
-    surface the disambiguation instead of treating it as 'not found'."""
+    """Raised when a user-supplied run id cannot be resolved. `no_match` is
+    True only when nothing matched the query: a caller with somewhere else to
+    look (`attach` tries machine names next) falls through on that alone, and
+    every other refusal (an ambiguous prefix, a husk) reaches the operator."""
 
-    def __init__(self, message: str, *, ambiguous: bool = False) -> None:
+    def __init__(self, message: str, *, no_match: bool = False) -> None:
         super().__init__(message)
-        self.ambiguous = ambiguous
+        self.no_match = no_match
 
 
 def validate_explicit_session_id(session_id: str) -> str:
@@ -129,17 +130,16 @@ def resolve_session(
 ) -> SessionLayout:
     """The one session *query* names (an id, or a prefix of exactly one id) in
     *buckets* (every bucket by default). Raises SessionIdError otherwise,
-    `ambiguous` set when the prefix names several: every surface words a bad
-    id the same way, and an ambiguous prefix never reads as "no such session"."""
+    `no_match` set only when nothing matched: every surface words a bad id the
+    same way, and an ambiguous prefix never reads as "no such session"."""
     if not query:
         raise SessionIdError("empty run id")
     matches = session_matches(state_dir, query, buckets=buckets)
     if len(matches) > 1:
         preview = ", ".join(f"{m.subdir}/{m.session_id}" for m in matches[:5])
-        raise SessionIdError(
-            f"run id {query!r} is ambiguous ({len(matches)} matches): {preview}",
-            ambiguous=True,
-        )
+        raise SessionIdError(f"run id {query!r} is ambiguous ({len(matches)} matches): {preview}")
     if not matches:
-        raise SessionIdError(f"no session matches {query!r} (looked under {state_dir})")
+        raise SessionIdError(
+            f"no session matches {query!r} (looked under {state_dir})", no_match=True
+        )
     return matches[0]

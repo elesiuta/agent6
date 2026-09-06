@@ -407,3 +407,19 @@ def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
     t.join(timeout=5)
     assert not t.is_alive(), "the raw tail is still polling the deleted run dir"
     assert rcs == [0]
+
+
+def test_attach_to_a_husk_names_the_crash_not_a_missing_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A husk (no manifest, no log, no live worker) resolves to a real session
+    directory, so attach must say why it refuses. It reported "no run or
+    machine matches", the wording for an id that does not exist, while
+    `sessions show` on the same id named the crash and the `sessions rm` remedy."""
+    monkeypatch.chdir(tmp_path)
+    (state_dir(tmp_path) / "sessions" / "runs" / "husky-one-AAAAAA").mkdir(parents=True)
+    assert main(["attach", "husky-one-AAAAAA"]) == 2
+    err = capsys.readouterr().err
+    assert "crashed before it ever started" in err
+    assert "sessions rm husky-one-AAAAAA" in err
+    assert "no run or machine matches" not in err

@@ -297,7 +297,7 @@ def resolve_or_newest_layout(
 
     Returns the resolved `SessionLayout`. Returns None only for the empty-*session_id*
     "no sessions exist" case, so the caller phrases its own 'none yet' message. Raises
-    `SessionIdError` (`.ambiguous` set for a prefix clash) when an explicit id has
+    `SessionIdError` (`.no_match` set only when nothing matched) when an explicit id has
     no or many matches. The one 'a run by id, or the latest' resolution behind
     `attach` / `sessions stop` / `sessions show`: a new such command resolves the
     same way instead of re-deriving the id-or-newest glue.

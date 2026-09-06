@@ -36,14 +36,14 @@ from agent6.viewmodel import (
 
 def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
     """Resolve *target* against the run-style buckets (sessions/runs, /plans, /asks, /machines).
-    Returns (is_run, ambiguity_error): (True, None) it resolves; (False, None) no
-    match, so the caller may try a machine; (False, msg) it is an ambiguous
-    prefix, a run-intent error the caller should surface rather than fall
+    Returns (is_run, run_error): (True, None) it resolves; (False, None) no
+    match, so the caller may try a machine; (False, msg) an ambiguous prefix
+    or a husk, a run-intent error the caller surfaces rather than falling
     through to machine lookup."""
     try:
         resolve_session_layout(repo_root, target)
     except SessionIdError as exc:
-        return (False, str(exc)) if exc.ambiguous else (False, None)
+        return (False, None) if exc.no_match else (False, str(exc))
     return (True, None)
 
 
@@ -96,11 +96,11 @@ def _cmd_watch_target(  # noqa: PLR0911
     cwd = Path.cwd()
     machines_dir = machines_root(state_dir(cwd))
 
-    # An ambiguous run prefix is a run-intent error: surface the disambiguation
+    # An ambiguous run prefix or a husk is a run-intent error: surface it
     # rather than falling through to machine lookup and printing "no match".
-    is_run, ambiguous = (True, None) if not target else _run_intent(cwd, target)
-    if ambiguous is not None:
-        error(f"{ambiguous}")
+    is_run, run_error = (True, None) if not target else _run_intent(cwd, target)
+    if run_error is not None:
+        error(f"{run_error}")
         return 2
 
     # Empty target, or one that resolves to a run id: watch the run.

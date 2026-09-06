@@ -67,7 +67,7 @@ def test_prefix_must_be_unique_across_runs_and_asks(tmp_path: Path) -> None:
 
     with pytest.raises(SessionIdError) as exc:
         resolve_session_layout(repo, "same-")
-    assert exc.value.ambiguous
+    assert not exc.value.no_match  # an ambiguous prefix is not "no such session"
     assert "runs/same-run" in str(exc.value)
     assert "asks/same-ask" in str(exc.value)
 
