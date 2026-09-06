@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config import ConfigError, load_config
+from agent6.config import ConfigError, OpenAIProviderEntry, load_config
 from agent6.config.layer import (
     load_effective,
     materialize,
@@ -429,7 +429,9 @@ def test_materialize_roundtrips_nested_objects_in_arrays(repo: Path, tmp_path: P
     out = tmp_path / "full.toml"
     out.write_text(materialize(eff.config), encoding="utf-8")
     reloaded = load_config(out)
-    body = reloaded.providers["gw"].extra_body
+    gw = reloaded.providers["gw"]
+    assert isinstance(gw, OpenAIProviderEntry)
+    body = gw.extra_body
     assert body["models"] == [
         {"name": "a", "options": {"weight": 2, "tags": ["x"]}},
         {"name": "b"},

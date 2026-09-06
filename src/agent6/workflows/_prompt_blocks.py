@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from agent6.config import Config
+from agent6.config import Config, plan_metered
 from agent6.memory import INDEX_INJECT_CAP
 from agent6.prompts.loop import (
     AGENT_SYSTEM_PROMPT_BASE,
@@ -223,12 +223,8 @@ def _plan_budget_line(config: Config) -> str:
     """The plan-percent sentence when any role rides a subscription
     provider; empty otherwise (a line about a meter that cannot bind
     would misdirect)."""
-    formats = {
-        getattr(config.providers.get(rm.provider), "api_format", "")
-        for rm in (config.models.worker, config.models.reviewer, config.models.planner)
-        if rm is not None
-    }
-    if "chatgpt" not in formats:
+    roles = (config.models.worker, config.models.reviewer, config.models.planner)
+    if not any(plan_metered(config.providers.get(rm.provider)) for rm in roles if rm is not None):
         return ""
     cap = (
         "uncapped per run"

@@ -427,6 +427,45 @@ def test_chatgpt_provider_defaults_and_refusals(tmp_path: Path) -> None:
         assert named in str(exc.value)
 
 
+def test_claude_code_provider_entry_has_no_transport_fields(tmp_path: Path) -> None:
+    """A bare api_format = "claude_code" entry validates with binary "claude";
+    the HTTP transport and auth knobs do not exist on it, so each is refused
+    by name rather than accepted as dead config."""
+    body = _VALID_TOML.replace(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
+        '[providers.claude]\napi_format = "claude_code"\n',
+    )
+    body = body.replace('provider = "anthropic"', 'provider = "claude"')
+    cfg = load_config(_write(tmp_path, body))
+    from agent6.config import ClaudeCodeProviderEntry, plan_metered
+
+    entry = cfg.providers["claude"]
+    assert isinstance(entry, ClaudeCodeProviderEntry)
+    assert entry.binary == "claude"
+    assert plan_metered(entry)
+    assert not hasattr(entry, "base_url")
+    assert cfg.cleartext_credential_endpoints() == ()
+
+    for extra, named in (
+        ('base_url = "https://x.example/v1"\n', "base_url"),
+        ('api_key_env = "ANTHROPIC_API_KEY"\n', "api_key_env"),
+        ('auth_style = "none"\n', "auth_style"),
+        ('deployment = "vertex"\n', "deployment"),
+        ('token_command = ["mint"]\n', "token_command"),
+        ('extra_headers = { x = "y" }\n', "extra_headers"),
+        ("http_timeout_s = 5.0\n", "http_timeout_s"),
+        ('binary = ""\n', "binary"),
+    ):
+        bad = body.replace(
+            '[providers.claude]\napi_format = "claude_code"\n',
+            '[providers.claude]\napi_format = "claude_code"\n' + extra,
+        )
+        with pytest.raises(ConfigError) as exc:
+            load_config(_write(tmp_path, bad))
+        assert named in str(exc.value)
+
+
 def test_multiple_openai_providers_load(tmp_path: Path) -> None:
     """Both OpenAI and OpenRouter side-by-side, distinct keys, routed per role."""
     body = _VALID_TOML.replace(
@@ -743,9 +782,10 @@ _VERTEX_CLAUDE = (
 def test_deployment_and_auth_defaults(tmp_path: Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     a = cfg.providers["anthropic"]
+    assert isinstance(a, AnthropicProviderEntry)
     assert a.deployment == "direct"
-    assert a.auth_style == "x_api_key"  # type: ignore[union-attr]
-    assert a.base_url == "https://api.anthropic.com/v1"  # type: ignore[union-attr]
+    assert a.auth_style == "x_api_key"
+    assert a.base_url == "https://api.anthropic.com/v1"
 
 
 def test_vertex_anthropic_defaults_bearer(tmp_path: Path) -> None:
@@ -754,8 +794,10 @@ def test_vertex_anthropic_defaults_bearer(tmp_path: Path) -> None:
         f'base_url = "{_VERTEX_CLAUDE}"'
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.providers["v"].deployment == "vertex"
-    assert cfg.providers["v"].auth_style == "bearer"  # type: ignore[union-attr]
+    v = cfg.providers["v"]
+    assert isinstance(v, AnthropicProviderEntry)
+    assert v.deployment == "vertex"
+    assert v.auth_style == "bearer"
 
 
 def test_non_direct_deployment_requires_base_url(tmp_path: Path) -> None:
@@ -919,7 +961,7 @@ def test_a_provider_block_without_api_format_names_the_key(tmp_path: Path) -> No
     cfg.write_text('[providers.anthropic]\napi_key_env = "K"\n', encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
         load_config(cfg)
-    assert 'set api_format = "anthropic", "openai", or "chatgpt"' in str(exc.value)
+    assert 'set api_format = "anthropic", "openai", "chatgpt", or "claude_code"' in str(exc.value)
 
 
 def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:

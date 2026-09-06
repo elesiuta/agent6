@@ -12,7 +12,7 @@ from pydantic import BaseModel, Discriminator, Field, field_validator, model_val
 from agent6.config._base import MODEL_CONFIG
 from agent6.config._sandbox import is_cleartext_url, is_loopback_url
 
-ApiFormat = Literal["anthropic", "openai", "chatgpt"]
+ApiFormat = Literal["anthropic", "openai", "chatgpt", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
@@ -71,8 +71,9 @@ def _default_auth_style(api_format: str, deployment: str) -> str:
 
 _API_FORMAT_DESCRIPTION = (
     "The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, "
-    "OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), or `chatgpt` "
-    "(the ChatGPT-subscription Codex backend, Responses API)."
+    "OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` "
+    "(the ChatGPT-subscription Codex backend, Responses API), or `claude_code` (the installed, "
+    "signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key)."
 )
 
 
@@ -355,7 +356,32 @@ class ChatGPTProviderEntry(_ProviderBase):
         return self
 
 
+class ClaudeCodeProviderEntry(BaseModel):
+    """`api_format = "claude_code"` -- the operator's installed Claude Code binary.
+
+    Not a `_ProviderBase`: it dials no endpoint and holds no credential, so the
+    transport and auth fields do not exist on it (`extra="forbid"` refuses each
+    by name). The binary carries the operator's own Claude login; usage draws
+    on that subscription's plan windows.
+    """
+
+    model_config = MODEL_CONFIG
+
+    api_format: Literal["claude_code"] = Field(description=_API_FORMAT_DESCRIPTION)
+    binary: str = Field(
+        default="claude",
+        min_length=1,
+        description="The Claude Code executable: a name on PATH or an absolute path.",
+    )
+
+
 ProviderEntry = Annotated[
-    AnthropicProviderEntry | OpenAIProviderEntry | ChatGPTProviderEntry,
+    AnthropicProviderEntry | OpenAIProviderEntry | ChatGPTProviderEntry | ClaudeCodeProviderEntry,
     Discriminator("api_format"),
 ]
+
+
+def plan_metered(entry: object) -> bool:
+    """Whether calls through *entry* draw on a subscription plan: metered in
+    plan percent with an authoritative $0, never priced per token."""
+    return isinstance(entry, (ChatGPTProviderEntry, ClaudeCodeProviderEntry))

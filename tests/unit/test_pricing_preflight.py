@@ -182,7 +182,7 @@ def test_plan_metered_routes_skip_the_fallback_note(
     assert budget_preflight(cfg) is None
     out = capsys.readouterr().err
     assert "fallback tokens" not in out
-    assert "draws on the ChatGPT plan" in out
+    assert "draws on a subscription plan" in out
 
     refused = Config.model_validate(
         {
@@ -193,6 +193,37 @@ def test_plan_metered_routes_skip_the_fallback_note(
     )
     err = budget_preflight(refused)
     assert err is not None and "max_percent is 0" in err
+
+
+def test_claude_code_routes_are_plan_metered(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A model routed through a claude_code provider is percent-metered like a
+    chatgpt one: the plan note, the max_percent = 0 refusal, and no OpenRouter
+    catalog refresh for its bare claude-* id (an authoritative $0 needs no price)."""
+    from agent6.app.preflight import budget_preflight
+
+    cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code"}})
+    assert budget_preflight(cfg) is None
+    out = capsys.readouterr().err
+    assert "fallback tokens" not in out
+    assert "'claude-haiku-4-5' draws on a subscription plan" in out
+
+    refused = Config.model_validate(
+        {
+            "providers": {"claude": {"api_format": "claude_code"}},
+            "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
+            "budget": {"max_percent": 0},
+        }
+    )
+    err = budget_preflight(refused)
+    assert err is not None and "max_percent is 0" in err and "claude-haiku-4-5" in err
+
+    called: list[bool] = []
+    monkeypatch.setattr(_setup, "refresh_pricing_catalog", lambda: called.append(True))
+    monkeypatch.setattr(_setup, "load_secrets", dict)
+    assert _setup.check_provider_keys(cfg) is None
+    assert called == []
 
 
 def test_machine_pins_carry_their_provider_into_the_notes(
@@ -209,5 +240,5 @@ def test_machine_pins_carry_their_provider_into_the_notes(
     )
     assert budget_preflight(cfg, extra_routes=[("chatgpt", "gpt-5.6-sol")]) is None
     err = capsys.readouterr().err
-    assert "'gpt-5.6-sol' draws on the ChatGPT plan" in err
+    assert "'gpt-5.6-sol' draws on a subscription plan" in err
     assert "gpt-5.6-sol' ha" not in err.replace("draws on", "")  # not in the fallback note

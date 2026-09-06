@@ -17,6 +17,7 @@ import pytest
 from textual.app import App
 from textual.widgets import DataTable, Input, OptionList
 
+from agent6.config import OpenAIProviderEntry
 from agent6.config.layer import load_effective
 from agent6.ui.tui.config_page import ConfigScreen, EditModal
 from agent6.ui.tui.menubar import HelpScreen, MenuBar
@@ -886,7 +887,9 @@ def test_add_provider_via_form_persists(repo: Path) -> None:
             assert isinstance(app.screen, ConfigScreen)  # closed on success
             cfg = load_effective(repo).config
             assert "openrouter" in cfg.providers
-            assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
+            entry = cfg.providers["openrouter"]
+            assert isinstance(entry, OpenAIProviderEntry)
+            assert entry.base_url == "https://openrouter.ai/api/v1"
 
     asyncio.run(scenario())
 
@@ -920,7 +923,9 @@ def test_add_provider_prefills_known_preset_base_url(repo: Path) -> None:
             await pilot.pause()
             assert isinstance(app.screen, ConfigScreen)  # written + validated, modal closed
             cfg = load_effective(repo).config
-            assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
+            entry = cfg.providers["openrouter"]
+            assert isinstance(entry, OpenAIProviderEntry)
+            assert entry.base_url == "https://openrouter.ai/api/v1"
 
     asyncio.run(scenario())
 
@@ -989,7 +994,9 @@ def test_edit_base_url_prefills_preset_for_known_provider(repo: Path) -> None:
             modal.action_save()
             await pilot.pause()
             cfg = load_effective(repo).config
-            assert cfg.providers["openrouter"].base_url == "https://openrouter.ai/api/v1"
+            entry = cfg.providers["openrouter"]
+            assert isinstance(entry, OpenAIProviderEntry)
+            assert entry.base_url == "https://openrouter.ai/api/v1"
 
     asyncio.run(scenario())
 

@@ -18,9 +18,11 @@ from agent6.child_env import curated_env
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
+    ClaudeCodeProviderEntry,
     Config,
     ConfigError,
     MCPServerEntry,
+    plan_metered,
 )
 from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.events import EventSink
@@ -173,7 +175,11 @@ def apply_git_ops_policy(cfg: Config) -> None:
     """
     set_repo_hook_policy(cfg.git.run_repo_hooks)
     set_repo_filter_policy(cfg.git.run_repo_filters)
-    set_provider_key_env(p.api_key_env for p in cfg.providers.values() if p.api_key_env)
+    set_provider_key_env(
+        p.api_key_env
+        for p in cfg.providers.values()
+        if not isinstance(p, ClaudeCodeProviderEntry) and p.api_key_env
+    )
 
 
 def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:
@@ -249,9 +255,10 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
             " (a role, a review seat, or a machine state pin). Add the provider"
             " or fix the reference."
         )
-    for name, entry in cfg.providers.items():
-        if name not in needed:
-            continue
+    for name in sorted(needed):
+        entry = cfg.providers[name]
+        if isinstance(entry, ClaudeCodeProviderEntry):
+            continue  # no key: the binary carries the operator's own login
         if isinstance(entry, ChatGPTProviderEntry):
             if load_oauth_tokens(name, secrets=secrets) is None:
                 return (
@@ -282,13 +289,16 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
         # clearly expects one; local endpoints legitimately need none, so we
         # do not block here.
     if "openrouter" not in needed and any(
-        rm.model.startswith("claude-") and "/" not in rm.model
+        rm.model.startswith("claude-")
+        and "/" not in rm.model
+        and not plan_metered(cfg.providers.get(rm.provider))
         for rm in cfg.models.configured().values()
     ):
         # Bare claude-* ids price through the OpenRouter catalog (pricing's
         # alias); with no openrouter provider configured nothing above
         # fetched it, and the $ cap would run honestly-but-needlessly
-        # unpriced on a cold cache.
+        # unpriced on a cold cache. A plan-metered route is an authoritative
+        # $0 and needs no price.
         refresh_pricing_catalog()
     return None
 

@@ -40,7 +40,7 @@ from pydantic import (
 
 from agent6.config._base import MODEL_CONFIG
 from agent6.config._git import GitConfig
-from agent6.config._providers import ProviderEntry
+from agent6.config._providers import ClaudeCodeProviderEntry, ProviderEntry
 from agent6.config._sandbox import MCPConfig, SandboxConfig, is_cleartext_url, is_loopback_url
 from agent6.config._surfaces import (
     MachineConfig,
@@ -308,7 +308,11 @@ class Config(BaseModel):
         The invariant lives here so a direct config edit cannot bypass it (mcp
         connect pre-checks the same rule for a friendlier early refusal).
         """
-        keys = {e.api_key_env for e in self.providers.values() if e.api_key_env}
+        keys = {
+            e.api_key_env
+            for e in self.providers.values()
+            if not isinstance(e, ClaudeCodeProviderEntry) and e.api_key_env
+        }
         for name, srv in self.mcp.servers.items():
             leaked = sorted(keys.intersection(srv.pass_env))
             if leaked:
@@ -429,7 +433,8 @@ class Config(BaseModel):
         out: list[str] = []
         for name, entry in sorted(self.providers.items()):
             if (
-                is_cleartext_url(entry.base_url)
+                not isinstance(entry, ClaudeCodeProviderEntry)
+                and is_cleartext_url(entry.base_url)
                 and entry.auth_style != "none"
                 and not is_loopback_url(entry.base_url)
             ):
@@ -499,7 +504,9 @@ class Config(BaseModel):
 # pydantic reports a provider block with no `api_format` as
 # "Unable to extract tag using discriminator", which names neither the key to
 # add nor its two values. A hand-written block is a documented way in.
-_MISSING_API_FORMAT = 'set api_format = "anthropic", "openai", or "chatgpt" (see docs/config.md)'
+_MISSING_API_FORMAT = (
+    'set api_format = "anthropic", "openai", "chatgpt", or "claude_code" (see docs/config.md)'
+)
 
 
 def _format_validation_error(

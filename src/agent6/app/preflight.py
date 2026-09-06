@@ -21,7 +21,7 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
-from agent6.config import ChatGPTProviderEntry, Config
+from agent6.config import Config, plan_metered
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -74,19 +74,16 @@ def budget_preflight(cfg: Config, extra_routes: Iterable[tuple[str, str]] = ()) 
             routes.add((seat_provider, seat_model))
     routes.update((prov, m) for prov, m in extra_routes if m)
 
-    def _plan_metered(provider: str) -> bool:
-        return isinstance(cfg.providers.get(provider), ChatGPTProviderEntry)
-
-    # Plan-metered routes (ChatGPT subscription) live in the percent ledger:
-    # they are never "unpriced fallback" spend, and their own zero-refusal
-    # mirrors the siblings below.
-    plan_models = sorted({m for prov, m in routes if _plan_metered(prov)})
-    models = {m for prov, m in routes if not _plan_metered(prov)}
+    # Plan-metered routes (a ChatGPT or Claude subscription) live in the
+    # percent ledger: they are never "unpriced fallback" spend, and their own
+    # zero-refusal mirrors the siblings below.
+    plan_models = sorted({m for prov, m in routes if plan_metered(cfg.providers.get(prov))})
+    models = {m for prov, m in routes if not plan_metered(cfg.providers.get(prov))}
     if cfg.budget.max_percent == 0.0 and plan_models:
         return (
             "[budget].max_percent is 0 (plan-metered calls refused), but "
             f"{', '.join(repr(m) for m in plan_models)} route"
-            f"{'s' if len(plan_models) == 1 else ''} through a ChatGPT plan."
+            f"{'s' if len(plan_models) == 1 else ''} through a subscription plan."
             " Raise max_percent or reroute those roles."
         )
     unpriced = sorted(m for m in models if lookup_price(m) is None)
@@ -117,7 +114,7 @@ def budget_preflight(cfg: Config, extra_routes: Iterable[tuple[str, str]] = ()) 
         bound = "the plan itself" if pct == -1 else f"max_percent {pct:g} points per run"
         print(
             f"[agent6] NOTE: {', '.join(repr(m) for m in plan_models)} draw"
-            f"{'s' if len(plan_models) == 1 else ''} on the ChatGPT plan"
+            f"{'s' if len(plan_models) == 1 else ''} on a subscription plan"
             f" (no dollars; bounded by {bound}).",
             file=sys.stderr,
         )

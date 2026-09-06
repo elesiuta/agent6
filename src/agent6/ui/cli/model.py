@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import cast
 
 from agent6.config import (
+    ClaudeCodeProviderEntry,
     ConfigError,
     RoleName,
 )
@@ -133,6 +134,8 @@ def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
             file=sys.stderr,
         )
         return
+    if isinstance(entry, ClaudeCodeProviderEntry):
+        return  # no key: the binary carries the operator's own login
     if entry.auth_style == "none" or entry.token_command:
         return
     if entry.api_format == "chatgpt":

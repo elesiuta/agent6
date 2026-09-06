@@ -558,17 +558,19 @@ class BudgetConfig(BaseModel):
         ),
     )
 
-    # Purchased Codex credits are real money after the included window; a
-    # chatgpt call that would draw on them refuses unless this is set.
+    # Purchased Codex credits and Claude extra usage are real money after the
+    # included window; a plan-metered call that would draw on them refuses
+    # unless this is set.
     allow_paid_credits: bool = Field(
         default=False,
         description=(
-            "Allow chatgpt calls to spend PURCHASED credits once the included plan window "
-            "is exhausted (auto top-up can buy more with the saved payment method). "
-            "`false` is a circuit breaker, not a guarantee: a usage preflight before the "
-            "first call and every response's headers report the account's windows and "
-            "credits, and once a window is exhausted with credits present the run stops "
-            "at its next boundary; a call already in flight completes. `true`: the credit "
+            "Allow plan-metered calls (`chatgpt`, `claude_code`) to spend PURCHASED credits or "
+            "extra usage once the included plan window is exhausted (auto top-up can buy more "
+            "with the saved payment method). `false` is a circuit breaker, not a guarantee: "
+            "the backend's usage readings (a chatgpt preflight and every response's headers, "
+            "every claude_code round's rate-limit event) report the account's windows and "
+            "credit state, and once a window is exhausted with credits present the run stops "
+            "at its next boundary; a call already in flight completes. `true`: a chatgpt credit "
             "balance's drop across the run is read as dollars and meters against `max_usd`. "
             "Included-plan usage is unaffected."
         ),

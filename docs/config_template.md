@@ -99,6 +99,33 @@ agent6 model worker chatgpt gpt-5-codex
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
 - Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show `plan usage: N% of the 7-day window`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run). Dollar figures stay an authoritative $0.
 
+### Claude Code subscription (`api_format = "claude_code"`)
+
+Runs the worker inside the installed, signed-in Claude Code binary: a Claude subscription (Pro/Max) instead of an API key.
+
+```bash
+claude auth login                        # once, in Claude Code itself
+agent6 connect claude                    # checks the sign-in, writes [providers.claude]
+agent6 model worker claude claude-sonnet-4-5
+```
+
+- agent6's own loop, tools, jail, verify gate, and approvals drive the run; the binary supplies the model.
+  Inside it every Claude Code capability is off: built-in tools, hooks, settings, CLAUDE.md, MCP servers, skills, slash commands, session files, auto-memory, auto-compaction.
+- `binary` names the executable (default `claude`, resolved on PATH).
+  agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
+- Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows, surfaces show the fuller one as `plan usage: N% of the 7-day window (seven_day)`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
+  Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
+- Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
+  Refused: `effort = "off"` (`--effort` has no off value; use `low`).
+- Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude claude-haiku-4-5`).
+  Each side call is one short-lived `claude` process.
+- One `claude` process serves a worker leg.
+  It restarts, replaying the conversation as one text message, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
+  Tier-1 compaction shrinks the model's context at that next restart, not before.
+- Claude Code appends the account email to every system prompt it sends; agent6 replaces it with `<operator-email>` in the model's returned text.
+- Use a full model id (`claude-sonnet-4-5`, not `sonnet`) so the context window is known for compaction sizing.
+- `agent6 connect claude --logout` is refused: agent6 stores no Claude Code credentials; `claude auth logout` signs out.
+
 ### OpenRouter routing and caching (`extra_body`)
 
 OpenRouter's default routing is not deterministic, so prompt caching may or may not engage call-to-call.

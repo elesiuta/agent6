@@ -32,6 +32,7 @@ import httpx2
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
+    ClaudeCodeProviderEntry,
     OpenAIProviderEntry,
     ProviderEntry,
 )
@@ -167,7 +168,9 @@ def _parse_context(payload: object) -> dict[str, int]:
     return out
 
 
-def _models_endpoint(entry: ProviderEntry, api_key: str | None) -> tuple[str, dict[str, str]]:
+def _models_endpoint(
+    entry: AnthropicProviderEntry | OpenAIProviderEntry, api_key: str | None
+) -> tuple[str, dict[str, str]]:
     """The (url, headers) for *entry*'s `/models` listing, auth included.
 
     Shared by the cache fetch and the `connect` key probe so both hit the
@@ -242,6 +245,8 @@ def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:
 def _fetch(
     provider_name: str, entry: ProviderEntry, api_key: str | None, timeout_s: float
 ) -> tuple[list[str], dict[str, tuple[float, float]], dict[str, int]]:
+    if isinstance(entry, ClaudeCodeProviderEntry):
+        return [], {}, {}  # no endpoint: the binary resolves model names itself
     if isinstance(entry, ChatGPTProviderEntry):
         url, headers = _chatgpt_models_endpoint(provider_name, entry)
         resp = httpx2.get(url, headers=headers, timeout=timeout_s)
@@ -284,14 +289,15 @@ def probe_provider_key(
     (auth_failed) is the trustworthy signal.
     """
     if (
-        isinstance(entry, ChatGPTProviderEntry)
-        or getattr(entry, "deployment", "direct") != "direct"
+        isinstance(entry, (ChatGPTProviderEntry, ClaudeCodeProviderEntry))
+        or entry.deployment != "direct"
     ):
-        detail = (
-            "ChatGPT signs in via OAuth, not a key"
-            if isinstance(entry, ChatGPTProviderEntry)
-            else "no /models listing for this deployment"
-        )
+        if isinstance(entry, ChatGPTProviderEntry):
+            detail = "ChatGPT signs in via OAuth, not a key"
+        elif isinstance(entry, ClaudeCodeProviderEntry):
+            detail = "Claude Code signs in with its own login, not a key"
+        else:
+            detail = "no /models listing for this deployment"
         return KeyProbeResult(ok=True, status="unsupported", detail=detail)
     try:
         url, headers = _models_endpoint(entry, api_key)

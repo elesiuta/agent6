@@ -11,8 +11,10 @@ from agent6.config._git import GitCommitConfig, GitConfig
 from agent6.config._providers import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
+    ClaudeCodeProviderEntry,
     OpenAIProviderEntry,
     ProviderEntry,
+    plan_metered,
     validate_base_url,
 )
 from agent6.config._sandbox import (
@@ -57,6 +59,7 @@ __all__ = [
     "AnthropicProviderEntry",
     "BudgetConfig",
     "ChatGPTProviderEntry",
+    "ClaudeCodeProviderEntry",
     "Config",
     "ConfigError",
     "ContextConfig",
@@ -86,6 +89,7 @@ __all__ = [
     "is_loopback_url",
     "load_config",
     "mcp_server_name_refusal",
+    "plan_metered",
     "validate_base_url",
     "validate_config",
 ]

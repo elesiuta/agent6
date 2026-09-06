@@ -53,7 +53,7 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `api_format` | *(required)* | The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), or `chatgpt` (the ChatGPT-subscription Codex backend, Responses API). |
+| `api_format` | *(required)* | The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` (the ChatGPT-subscription Codex backend, Responses API), or `claude_code` (the installed, signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key). |
 | `deployment` | `"direct"` | `direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format only): the URL shape and where the model name and API version go. |
 | `base_url` | per (format, deployment) | The endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `vertex` and `azure`. Its host is the only network destination the agent dials for this provider. |
 | `auth_style` | per (format, deployment) | How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local endpoint). `agent6 connect` sets it. |
@@ -65,6 +65,7 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is bounded at 20 s regardless. |
 | `prompt_caching` | `true` | Anthropic prompt caching: the system prompt, the tools, and the growing conversation are re-read at 0.1x the input price. `anthropic` format only. |
+| `binary` | `"claude"` | The Claude Code executable: a name on PATH or an absolute path. |
 
 ### Deployments
 
@@ -115,6 +116,33 @@ agent6 model worker chatgpt gpt-5-codex
 - Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs, never a static list), and its context windows size compaction.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
 - Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show `plan usage: N% of the 7-day window`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run). Dollar figures stay an authoritative $0.
+
+### Claude Code subscription (`api_format = "claude_code"`)
+
+Runs the worker inside the installed, signed-in Claude Code binary: a Claude subscription (Pro/Max) instead of an API key.
+
+```bash
+claude auth login                        # once, in Claude Code itself
+agent6 connect claude                    # checks the sign-in, writes [providers.claude]
+agent6 model worker claude claude-sonnet-4-5
+```
+
+- agent6's own loop, tools, jail, verify gate, and approvals drive the run; the binary supplies the model.
+  Inside it every Claude Code capability is off: built-in tools, hooks, settings, CLAUDE.md, MCP servers, skills, slash commands, session files, auto-memory, auto-compaction.
+- `binary` names the executable (default `claude`, resolved on PATH).
+  agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
+- Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows, surfaces show the fuller one as `plan usage: N% of the 7-day window (seven_day)`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
+  Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
+- Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
+  Refused: `effort = "off"` (`--effort` has no off value; use `low`).
+- Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude claude-haiku-4-5`).
+  Each side call is one short-lived `claude` process.
+- One `claude` process serves a worker leg.
+  It restarts, replaying the conversation as one text message, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
+  Tier-1 compaction shrinks the model's context at that next restart, not before.
+- Claude Code appends the account email to every system prompt it sends; agent6 replaces it with `<operator-email>` in the model's returned text.
+- Use a full model id (`claude-sonnet-4-5`, not `sonnet`) so the context window is known for compaction sizing.
+- `agent6 connect claude --logout` is refused: agent6 stores no Claude Code credentials; `claude auth logout` signs out.
 
 ### OpenRouter routing and caching (`extra_body`)
 
@@ -330,7 +358,7 @@ Both: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 | `max_usd` | `10.0` | Cap on the metered spend of one run (provider-reported cost, else price times tokens at the model's fetched rates, cache-aware). Hitting it ends the run resumably (`budget_exhausted`); each resumed leg gets a fresh budget. `-1`: unlimited; `0`: refuse every metered call. `--max-usd` overrides per run. |
 | `max_tokens_fallback` | `2000000` | Token cap (input plus output) for the calls the run cannot price: local models, a model with no price data. `-1`: unlimited; `0`: never run an unmeterable model. `--max-tokens-fallback` overrides per run. |
 | `max_percent` | `-1` | Cap on the plan percentage points one run may consume on a subscription provider (the rise in the account's reported used-percent across the run, accumulated across window resets, so values above 100 are meaningful; with several windows, the one that moved most). The reading is account-global: a concurrent run's spend counts toward whichever run observes it next. `-1`: unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per run. |
-| `allow_paid_credits` | `false` | Allow chatgpt calls to spend PURCHASED credits once the included plan window is exhausted (auto top-up can buy more with the saved payment method). `false` is a circuit breaker, not a guarantee: a usage preflight before the first call and every response's headers report the account's windows and credits, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes. `true`: the credit balance's drop across the run is read as dollars and meters against `max_usd`. Included-plan usage is unaffected. |
+| `allow_paid_credits` | `false` | Allow plan-metered calls (`chatgpt`, `claude_code`) to spend PURCHASED credits or extra usage once the included plan window is exhausted (auto top-up can buy more with the saved payment method). `false` is a circuit breaker, not a guarantee: the backend's usage readings (a chatgpt preflight and every response's headers, every claude_code round's rate-limit event) report the account's windows and credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes. `true`: a chatgpt credit balance's drop across the run is read as dollars and meters against `max_usd`. Included-plan usage is unaffected. |
 
 `--max-usd` / `--max-tokens-fallback` override per run; an explicit `--max-usd` refuses to start when the worker has no price data.
 Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.

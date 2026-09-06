@@ -33,7 +33,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.config import Config, ConfigError, RoleName
+from agent6.config import ClaudeCodeProviderEntry, Config, ConfigError, RoleName
 from agent6.config.layer import load_effective
 from agent6.directive import DirectiveError, Segment, parse_spec
 from agent6.models.cache import cached_models, fetch_models_live
@@ -97,8 +97,8 @@ def _fresh_listing(cfg: Config, provider_name: str) -> list[str] | None:
     freshen. Keyless (local) providers list without auth; a secrets problem
     just means an unauthenticated attempt."""
     entry = cfg.providers.get(provider_name)
-    if entry is None:
-        return None
+    if entry is None or isinstance(entry, ClaudeCodeProviderEntry):
+        return None  # no listing: the binary resolves model names itself
     try:
         secrets = load_secrets()
     except SecretsError:
