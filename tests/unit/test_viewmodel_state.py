@@ -861,3 +861,7 @@ def test_fold_until_commit_stops_at_that_step() -> None:
     assert at is not None and [s.iteration for s in at.steps] == [1]
     assert [s.iteration for s in fold_session(events).steps] == [1, 2]
     assert fold_until_commit(events, "c" * 40) is None
+    # A prefix of at least seven hex digits names the step, like `/diff?sha=`.
+    by_prefix = fold_until_commit(events, "b" * 7)
+    assert by_prefix is not None and [s.iteration for s in by_prefix.steps] == [1, 2]
+    assert fold_until_commit(events, "b" * 6) is None

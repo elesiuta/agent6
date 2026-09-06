@@ -645,11 +645,15 @@ def fold_session(events: Iterable[dict[str, Any]]) -> SessionState:
 def fold_until_commit(events: Iterable[dict[str, Any]], sha: str) -> SessionState | None:
     """The state as of one of the run's commits: every event up to and
     including its loop.auto_commit folded, later ones dropped (the details a
-    step selector time-travels to). None when no commit has that sha."""
+    step selector time-travels to). *sha* is the full sha or a prefix of at
+    least 7 hex digits (the first commit it matches wins). None when no
+    commit has it."""
+    if len(sha) < 7:
+        return None
     state = initial_state()
     for event in events:
         state = apply_event(state, event)
-        if state.steps and state.steps[-1].sha == sha:
+        if state.steps and state.steps[-1].sha.startswith(sha):
             return state
     return None
 
