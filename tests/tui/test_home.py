@@ -612,3 +612,14 @@ def test_delete_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
             assert app.screen.check_action("delete_selected", ()) is None
 
     asyncio.run(scenario())
+
+
+def test_delete_is_on_the_hubs_file_menu_like_its_sibling_verbs() -> None:
+    """`d` deleted the selected run from the footer only; the File menu
+    offered New, Open, Merge, Refresh and Quit, so the one destructive verb
+    was the one a menu reader could not find."""
+    from agent6.ui.tui.home import HomeScreen
+
+    file_menu = HomeScreen.MENUS[0]
+    assert file_menu.title == "File"
+    assert "delete_selected" in {item.action for item in file_menu.items}

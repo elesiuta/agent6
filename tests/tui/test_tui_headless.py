@@ -1527,3 +1527,52 @@ def test_the_approval_modal_offers_every_answer_and_focuses_the_safe_one() -> No
             assert app.screen is not modal, "'x' answered nothing"
 
     asyncio.run(scenario())
+
+
+def test_the_hidden_detail_level_says_what_it_hides(tmp_path: Path) -> None:
+    """At detail "hidden" every thinking and tool item renders no line, and the
+    view painted the empty-conversation placeholder ("no conversation yet")
+    over a run in its first minutes of reasoning and tool calls; the note names
+    what is hidden and the key that shows it."""
+    import json
+
+    from agent6.ui.tui.conversation import ConversationScreen
+
+    events = [
+        {"type": "session.start", "mode": "run", "user_task": "look"},
+        {"type": "role.thinking_delta", "text": "let me look"},
+        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "40 lines"},
+    ]
+    (tmp_path / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
+    )
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(ConversationScreen(tmp_path / "logs.jsonl", title=lambda ctx: ctx))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, ConversationScreen)
+            screen._detail = "hidden"
+            screen._reload()
+            await pilot.pause()
+            tail = str(screen._tail_widget().render())
+            assert "no conversation" not in tail
+            assert "hidden at this detail level" in tail and "Ctrl+T" in tail
+            # A call still in flight renders no sealed line at ANY level: the
+            # note is for the hidden level alone, or it would promise Ctrl+T
+            # shows a call that is simply still running.
+            (tmp_path / "logs.jsonl").write_text(
+                json.dumps(events[0]) + "\n" + json.dumps(events[2]) + "\n", encoding="utf-8"
+            )
+            screen._detail = "collapsed"
+            screen._reload()
+            await pilot.pause()
+            assert "hidden at this detail level" not in str(screen._tail_widget().render())
+
+    asyncio.run(scenario())

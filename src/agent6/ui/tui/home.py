@@ -87,6 +87,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 MenuItem("New task", "new_work", "n"),
                 MenuItem("Open selected", "open_selected", "enter"),
                 MenuItem("Merge selected run", "merge_selected", "m"),
+                MenuItem("Delete selected run…", "delete_selected", "d"),
                 MenuItem("Refresh", "refresh", "r"),
                 MenuItem("Quit", "quit", "q"),
             ),

@@ -641,12 +641,21 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         self._live_text.clear()
         self._live = False
         wrote = False
+        items = 0
         for event in self._tail.read():
             self._track_live(event)
             for item in self._fold.feed(event):
+                items += 1
                 wrote = self._append(item) or wrote
         if wrote:
             self._flush_tail()
+        elif items and self._detail == "hidden":
+            # A conversation of reasoning and tool calls alone renders no line at
+            # the "hidden" level; the placeholder for an EMPTY conversation would
+            # lie over it. (A call still in flight renders no sealed line at any
+            # level and shows in the live pane.)
+            note = "(reasoning and tool calls are hidden at this detail level; Ctrl+T shows them)"
+            self._tail_widget().update(Text(note, style="dim italic"))
         else:
             # Past tense only when the host POSITIVELY knows the session ended.
             # `_host_live`'s event-derived fallback is False before the first

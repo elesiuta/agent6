@@ -584,16 +584,13 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         self.notify("steering requested: type an instruction and press Enter")
 
     def action_compact(self) -> None:
-        """Ask the run to compact its context now: drop the compact.request
-        marker (the same file-bridge pattern as steer); the loop honors it at
-        its next safe boundary by forcing a summarise-and-restart."""
+        """Run > Compact context now: the composer's `/compact`, behind the
+        liveness check (the composer resumes a finished session with its
+        text; a compact has nothing to resume)."""
         if not self.session_controllable():
             self.notify("nothing to compact: the session is not live", severity="warning")
             return
-        if request_compact(self.session_dir):
-            self.notify("compaction requested; applies at the next safe boundary")
-        else:
-            self.notify("could not write the compaction request", severity="warning")
+        self.submit_instruction("/compact")
 
     def action_stop_now(self) -> None:
         """Stop the run immediately: confirm, then write the abort answer over
