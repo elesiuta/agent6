@@ -64,14 +64,24 @@ def _candidates_for(rel: Path) -> list[Path]:
     return out
 
 
-def _scan_test_dirs(root: Path, stems: set[str]) -> list[Path]:
-    """Name-matched test files anywhere under the repo's test dirs, bounded:
-    catches layouts the conventions above miss (tests/unit/test_mod.py).
+def _scan_test_dirs(root: Path, sources: list[Path]) -> list[Path]:
+    """Name-matched test files under any test dir beside the changed sources
+    or their ancestors (pandas keeps tests at pandas/tests, not the root),
+    bounded: catches layouts the conventions above miss, dropped path
+    segments included (pandas/tests/indexes for pandas/core/indexes).
     Scans at most _SCAN_CAP entries; a larger tree yields what was seen."""
     hits: list[Path] = []
     budget = _SCAN_CAP
+    stems = {s.stem for s in sources}
     wanted = {f"test_{s}.py" for s in stems} | {f"{s}_test.py" for s in stems}
-    stack = [p for n in _TEST_DIR_NAMES if (p := root / n).is_dir()]
+    scan_roots: dict[Path, None] = {}
+    for src in sources:
+        for anc in [src.parent, *src.parent.parents]:
+            for n in _TEST_DIR_NAMES:
+                p = root / anc / n if anc != Path() else root / n
+                if p.is_dir():
+                    scan_roots.setdefault(p, None)
+    stack = list(scan_roots)
     while stack and budget > 0:
         d = stack.pop()
         try:
@@ -115,6 +125,6 @@ def nearest_test_paths(root: Path, changed: tuple[str, ...], *, cap: int = 20) -
             if (root / cand).is_file():
                 picked.setdefault(cand.as_posix(), None)
     if sources:
-        for hit in _scan_test_dirs(root, {s.stem for s in sources}):
+        for hit in _scan_test_dirs(root, sources):
             picked.setdefault(hit.as_posix(), None)
     return tuple(picked)[:cap]

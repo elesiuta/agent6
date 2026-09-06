@@ -107,3 +107,13 @@ def test_the_scan_examines_every_entry_within_its_cap(tmp_path: Path, monkeypatc
     monkeypatch.setattr("agent6.workflows._nearest_tests._SCAN_CAP", 3)
     _touch(tmp_path, "pkg/mod.py", "tests/test_a.py", "tests/unit/test_mod.py")
     assert nearest_test_paths(tmp_path, ("pkg/mod.py",)) == ("tests/unit/test_mod.py",)
+
+
+def test_package_level_test_dirs_are_scanned(tmp_path: Path) -> None:
+    """pandas-layout repos keep tests under the package (pandas/tests), often
+    dropping path segments (core/): the scan covers test dirs beside every
+    source ancestor, not only the repo root. A pilot leg's 240s-timed-out
+    gate found nothing to scope to on exactly this layout."""
+    _touch(tmp_path, "pkg/core/indexes/base.py", "pkg/tests/indexes/test_base.py")
+    got = nearest_test_paths(tmp_path, ("pkg/core/indexes/base.py",))
+    assert got == ("pkg/tests/indexes/test_base.py",)
