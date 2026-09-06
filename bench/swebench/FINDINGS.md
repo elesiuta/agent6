@@ -1036,3 +1036,19 @@ the honest comparable is a fresh full-110 under one config, which is the
 sequencer's final stage (scoped wheel + prompt v2). The stable-fail
 near-miss block (11/14 identical failure sets across independent runs)
 stands: those ids convert in neither run.
+
+### P3 mechanism probe: chattr infeasible, the notice untriggered (2026-08-26)
+
+The 8 broke-P2P ids on the test-edit-notice wheel with chattr +i over
+existing test files: 1/8 resolved (anyio, the variance-flagged id).
+Neither mechanism was actually exercised: chattr +i is unsupported on
+the images' overlayfs, so the degrade warning fired and test files
+stayed writable in every leg (the bench-side immutability option is
+dead for this harness); and the notice's trigger (a red gate flipped
+green after edits touching only test files) occurred in none of the 8
+legs this attempt (isort, for one, died on six consecutive reds), so
+the notice fired zero times. Untriggered is not refuted: the trigger
+demonstrably occurs in other attempts (click's original leg). The
+class's remaining live candidates are the product notice (needs
+exposure to judge) and the literal-contract mechanism from the
+stable-fail analysis (unbuilt).
