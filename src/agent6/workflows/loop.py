@@ -1696,6 +1696,10 @@ class Workflow:
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
         if self.mode != "run" or not (verified_commit or unjudged_changed):
             return None
+        if unjudged_changed:
+            # Seed the idle-stop net for runs where no green verify fires per
+            # step (see the verify-settled bookkeeping), commits or not.
+            state.gateless_ever_edited = True
         if not self.commit_per_step:
             # `commit_per_step` governs the COMMIT. The metric is measurement:
             # the prompt promises a [harness metric] block after every verified
@@ -1717,10 +1721,6 @@ class Workflow:
                     "loop.auto_commit", iteration=turn.iteration, sha=sha, subject=commit_subject
                 )
             turn.committed = bool(sha)
-            if unjudged_changed and sha:
-                # Seed the idle-stop net for runs where no green verify
-                # fires per step; see the verify-settled bookkeeping.
-                state.gateless_ever_committed = True
             if gateless and sha:
                 self._maybe_adopt_verify(state, turn)
             if sha:
@@ -2310,8 +2310,8 @@ class Workflow:
 
         "Progress" is any forward motion the prompt encourages, so a
         legitimately-working run is never truncated: an apply_edit/apply_patch,
-        a new commit, or an uncommitted worktree change (an edit made via
-        run_command). A verify RUN itself (re-verifying between reads is active
+        a new commit, or a changed tree (an edit made via run_command). A
+        verify RUN itself (re-verifying between reads is active
         work, not idle) is held neutral so it neither resets nor accrues. Only
         the pathology, spinning on read-only commands with a clean,
         already-committed tree, accrues idle.
@@ -2321,14 +2321,19 @@ class Workflow:
         plateau/ceiling logic (which deliberately keep going while budget
         remains); measure/analyse/read iterations there legitimately make no
         commit, so the settled detector must defer to them. (Gating the
-        bookkeeping here also keeps the worktree-dirty git check off the
-        metric hot path.)"""
+        bookkeeping here also keeps the tree hash off the metric hot path.)
+
+        Progress is a changed TREE, not a dirty worktree: with nothing
+        committing between steps (`commit_per_step = false`) the chain never
+        advances and the worktree reads dirty for the rest of the run."""
         non_metric_run = self.mode == "run" and metric_goal(self.config.workflow.metric) is None
         # "Settled" once the run reached a good state: a green verify, or (on a
-        # gateless run, where verify never fires) a committed edit.
-        settled_seeded = state.verify.ever_passed or state.gateless_ever_committed
+        # gateless run, where verify never fires) an editing step.
+        settled_seeded = state.verify.ever_passed or state.gateless_ever_edited
         if non_metric_run and settled_seeded:
-            made_progress = turn.committed or turn.edited or self._worktree_dirty()
+            tree = self._worktree_tree_sha()
+            made_progress = turn.committed or turn.edited or tree != state.settled_tree
+            state.settled_tree = tree
             if made_progress:
                 state.verify_settled_idle = 0
                 state.verify_settled_nudged = False  # a fresh idle streak may re-nudge
@@ -3645,7 +3650,7 @@ class Workflow:
             verify_command=self.config.workflow.verify_command,
             review_rejections_total=state.review_rejections_total,
             verify_ever_passed=state.verify.ever_passed,
-            gateless_ever_committed=state.gateless_ever_committed,
+            gateless_ever_edited=state.gateless_ever_edited,
             parallel_groups_dispatched=state.parallel_groups_dispatched,
             pins=tuple(state.pins),
             metric_best_score=best.score if best is not None else None,

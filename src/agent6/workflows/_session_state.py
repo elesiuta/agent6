@@ -179,7 +179,7 @@ class SessionSnapshot(BaseModel):
     # plateau seed need. review_rejections_total keeps the anti-stall gate-disarm.
     review_rejections_total: int = 0
     verify_ever_passed: bool = False
-    gateless_ever_committed: bool = False
+    gateless_ever_edited: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
     # The last verify observation, so a resumed leg is not born amnesiac:

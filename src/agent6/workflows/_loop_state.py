@@ -54,6 +54,9 @@ class LoopState:
     # The worktree tree the metric was last sampled on: one reading per state
     # of the tree, whether or not the harness commits between them.
     metric_tree: str = ""
+    # The tree the verify-settled detector last saw: an unchanged tree is an
+    # idle turn. Leg-local, so a resumed leg re-measures on its first turn.
+    settled_tree: str = ""
     # Consecutive before_finish review rejections, so a stubborn worker can't
     # burn the budget bouncing off the panel.
     consecutive_review_rejections: int = 0
@@ -105,9 +108,9 @@ class LoopState:
     # accepted so a model that ignores the nudge cannot loop the run.
     question_nudged: bool = False
     # verify-settled completion (run mode): once verify has passed -- or, on a
-    # gateless run, once an edit has been committed -- count no-progress
+    # gateless run, once an editing step happened -- count no-progress
     # iterations; nudge then stop a worker that spins after success.
-    gateless_ever_committed: bool = False
+    gateless_ever_edited: bool = False
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
     # Standing-goal re-entry bookkeeping: `ok_tool_calls` at the last
@@ -159,7 +162,7 @@ def restore_completion_state(state: LoopState, snap: SessionSnapshot) -> None:
     state.review_rejections_total = snap.review_rejections_total
     state.verify.ever_passed = snap.verify_ever_passed
     state.verify.scoped = snap.verify_scoped
-    state.gateless_ever_committed = snap.gateless_ever_committed
+    state.gateless_ever_edited = snap.gateless_ever_edited
     state.parallel_groups_dispatched = snap.parallel_groups_dispatched
     state.pins = list(snap.pins)
     if snap.metric_at_ceiling or snap.metric_best_score is not None:

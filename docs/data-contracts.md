@@ -79,7 +79,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 | `verify_command` | `tuple[str, ...]` | required |
 | `review_rejections_total` | `int` | `0` |
 | `verify_ever_passed` | `bool` | `False` |
-| `gateless_ever_committed` | `bool` | `False` |
+| `gateless_ever_edited` | `bool` | `False` |
 | `metric_best_score` | `float | None` | `None` |
 | `metric_at_ceiling` | `bool` | `False` |
 | `last_verify_ok` | `bool | None` | `None` |

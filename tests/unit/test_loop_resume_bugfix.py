@@ -82,7 +82,7 @@ def _git_repo(path: Path) -> None:
 
 
 def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
-    """verify_ever_passed / gateless_ever_committed / metric summary are written
+    """verify_ever_passed / gateless_ever_edited / metric summary are written
     and load back, instead of resetting to their fresh-run defaults."""
     snap = tmp_path / "loop_state.json"
     config = SimpleNamespace(
@@ -100,7 +100,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     state = LoopState(original_task="t", tool_calls=2)
     state.verify.ever_passed = True
     state.verify.scoped = True
-    state.gateless_ever_committed = True
+    state.gateless_ever_edited = True
     state.metric_history.append(_MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True))
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=2, next_iteration=4, root_task_id=None, state=state
@@ -108,7 +108,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
     loaded = load_session_snapshot(snap)
     assert loaded.verify_ever_passed is True
     assert loaded.verify_scoped is True
-    assert loaded.gateless_ever_committed is True
+    assert loaded.gateless_ever_edited is True
     assert loaded.metric_best_score == 27.0
     assert loaded.metric_at_ceiling is True
 

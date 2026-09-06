@@ -4394,7 +4394,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: Path) -> None:
         def call(self, **kwargs: Any) -> ProviderResponse:
             self.calls += 1
             if self.calls == 1:
-                # an edit -> gateless auto-commit -> seeds gateless_ever_committed
+                # an edit -> gateless auto-commit -> seeds gateless_ever_edited
                 return _tool_resp("apply_edit", {"path": "x", "edits": []}, tool_id="e1")
             # then spin on read-only commands (no edit, no commit)
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
@@ -7172,3 +7172,61 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: Path) -> Non
 
     assert [s.score for s in state.metric_history] == [42.0, 43.0, 44.0]
     assert plateaus == []
+
+
+def _settles_at(wf: Workflow, repo: Path, state: LoopState, *, gated: bool) -> int | None:
+    """The iteration the verify-settled stop fires at, or None within a
+    generous window: one editing turn, then read-only turns."""
+    from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
+
+    (repo / "x.txt").write_text("the worker's finished work\n", encoding="utf-8")
+    first = _edited_turn(1)
+    if gated:
+        state.verify.note_pass()
+        first.verify_just_passed = True
+    wf._turn_auto_commit_and_metric(state, first)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_verify_settled(state, first)  # pyright: ignore[reportPrivateUsage]
+    for i in range(2, VERIFY_SETTLED_STOP_AFTER * 3):
+        turn = TurnState(
+            iteration=i, resp=_resp(""), assistant=AssistantTurn(raw_content=(), tool_uses=())
+        )
+        wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
+        wf._turn_verify_settled(state, turn)  # pyright: ignore[reportPrivateUsage]
+        if turn.verify_settled_stop:
+            return i
+    return None
+
+
+@pytest.mark.parametrize("gated", [True, False])
+def test_the_settled_stop_still_fires_without_per_step_commits(tmp_path: Path, gated: bool) -> None:
+    """With `[git].commit_per_step = false` the chain never advances, so the
+    worktree read dirty for the rest of the run and every turn counted as
+    progress; a gateless run also never seeded the detector, whose seed sat
+    after the commit early return. The run spun on read-only calls to its
+    iteration cap. Progress is a changed tree, and an editing step seeds."""
+
+    def wf_for(repo: Path, base: str, *, commit_per_step: bool) -> Workflow:
+        return Workflow(
+            root=repo,
+            config=Config.model_validate(
+                {"workflow": {"verify_command": ["true"] if gated else []}}
+            ),
+            provider=MagicMock(),
+            dispatcher=MagicMock(),
+            logger=_silent,
+            mode="run",
+            chain_ref="refs/agent6/settled-run/head",
+            chain_fallback_parent=base,
+            commit_per_step=commit_per_step,
+        )
+
+    repo = tmp_path / "repo"
+    on = wf_for(repo, _metric_repo(repo), commit_per_step=True)
+    baseline = _settles_at(on, repo, LoopState(original_task="t", tool_calls=0), gated=gated)
+    assert baseline is not None
+
+    repo2 = tmp_path / "repo2"
+    off = wf_for(repo2, _metric_repo(repo2), commit_per_step=False)
+    state = LoopState(original_task="t", tool_calls=0)
+
+    assert _settles_at(off, repo2, state, gated=gated) == baseline

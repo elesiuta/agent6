@@ -410,7 +410,7 @@ def _settled_state() -> Any:
     from agent6.workflows.loop import LoopState
 
     state = LoopState(original_task="t", tool_calls=0)
-    state.gateless_ever_committed = True
+    state.gateless_ever_edited = True
     state.verify_settled_idle = VERIFY_SETTLED_STOP_AFTER
     return state
 
