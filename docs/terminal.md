@@ -22,7 +22,7 @@ Every image is from a recorded run; click to enlarge.
 
 ## Conversation
 
-Opening a run lands on its conversation (also `agent6 sessions transcript`): the task, the model's reasoning, and every tool call with its complete input and output, following live.
+Opening a run lands on its conversation (also `agent6 sessions transcript`): the task, the model's reasoning, and every tool call with its input and output (clipped to the salient lines by default; Detail cycles none, collapsed, expanded), following live.
 A live run keeps a steer bar at the bottom; above it, a live pane streams the turn in progress and lists the tool calls in flight (`→ run_command  sleep 60  · running`) until their results land in the transcript.
 An approval shows inline at the conversation's tail (the command, fixed-width) with a key row docked above the bar: `a` allow, `s` allow all this session, `d` deny, `x` deny all; answered, it collapses to one dim line.
 The composer keeps focus and owns the keys: they answer only while it is empty and focused (a typed message never answers); a click on a label answers from anywhere.
@@ -49,7 +49,7 @@ Away from the conversation (the dashboard, a machine screen) an approval opens a
 
 ## Event log
 
-The View menu's Full log opens the JSONL event stream the dashboard is built from, scrollable over the whole run.
+The View menu's Full log opens the structural events of the run's log, formatted as the dashboard's log pane formats them, scrollable over the whole run.
 
 ![The event log](screenshots/out/09-logs.png)
 

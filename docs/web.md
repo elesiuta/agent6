@@ -27,7 +27,7 @@ Stop it with Ctrl-C.
 
 ## Pages
 
-Every page docks its text entry at the bottom, like a chat: type, Enter sends, Shift+Enter inserts a newline.
+Pages that take a task, a steer or a machine message dock their text entry at the bottom, like a chat: type, Enter sends, Shift+Enter inserts a newline.
 
 - **Sessions page**: every session (mode, status, last activity, cost)
     - the docked composer starts new work: run / plan / ask, under a chosen preset
