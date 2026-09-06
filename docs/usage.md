@@ -71,13 +71,19 @@ agent6 attach                 # follow the conversation live; --raw, --tui, --js
 agent6 steer ID "focus on X"  # steer a live run at its next step boundary (--now interrupts the in-flight call; the TUI and web composers say /now <text>)
 agent6 answer ID "yes"        # answer a live run's ask_user question (bare: print the question)
 agent6 sessions show          # status, iteration, elapsed, cost, where the changes are; --json to script
-agent6 sessions diff          # the git diff the run produced
+agent6 sessions diff          # the git diff the run produced; --stat for the summary, --path P to narrow
 agent6 sessions commits       # the run's per-step commits
-agent6 sessions merge         # land the run's work on your branch
+agent6 sessions merge         # land the run's work on your branch; --strategy, --into BRANCH
+agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N for one turn
 agent6 sessions prune         # delete merged agent6/* branches; report the rest
 agent6 sessions dir           # where this repo's run history lives (scriptable)
 agent6 sessions dir <id>      # that session's own directory
 agent6 sessions stop          # stop a live run at its next step boundary
+agent6 resume ID [--force]    # continue a stopped or parked run (--force past a diverged chain)
+agent6 fork ID --at-turn 7    # a new run from a checkpoint; --no-run creates it without starting
+agent6 exec ID -- <command>   # run a command inside the run's jail and network
+agent6 forward ID 8000        # reach a port inside the run's session network; --local-port N
+agent6 history search <text>  # search every session's transcripts; --regex
 agent6 sessions rm            # delete one run's history; --asks clears saved asks
 agent6 sessions compare <ids> # ranked comparison: >=2 runs (judged), or one fan-out id (its recorded verdict; --rejudge for a fresh call)
 agent6 sessions transcript    # the full conversation, every tool call with I/O
@@ -129,7 +135,8 @@ Exit codes for `agent6 run` and `resume`, for scripts to branch on:
 ## Plan, review, and ask
 
 ```sh
-agent6 plan "refactor the config loader"      # edit-free plan; run --from
+agent6 plan "refactor the config loader"      # edit-free plan; run --from <id> executes it
+agent6 plan show <session-id>                 # print the plan
 agent6 plan edit <session-id>                 # answer the plan's open questions
 agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
 agent6 review --base origin/main --head HEAD  # read-only diff review
@@ -137,6 +144,7 @@ agent6 ask "how does the task-graph curator work?"
 ```
 
 - `agent6 review --reviewers 3 --personas security,correctness,tests`: a panel whose findings are checked against the diff, so only real problems gate
+- `review --path P` narrows the diff; `--model M` picks a one-shot reviewer model under the reviewer route's provider
 - `ask` runs in any directory; headless (no TTY) under the default `run_commands = "ask"` it needs `--auto-approve`, `--no-commands`, or an away-mode (`AGENT6_DETACHED_AWAY=wait|deny|approve`)
 - `run` and `plan` need a git repository (branches, diffs, merges)
 
@@ -148,8 +156,32 @@ agent6 ask "how does the task-graph curator work?"
 - `--parallel 3` (or `model-a,model-b`): isolated fan-out lanes, auto-compared into a ranked report
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
+- `--pin "<text>"`: an instruction restated every turn, so it survives compaction (`/pin` does the same mid-run)
+- `--from <id>`: seed the run from another session (its task, outcome, diff and, for a plan, its text); a plan id with no task runs that plan
+- `--decompose`: break the task into a task graph up front (`prompt.decompose`); `--skill NAME` puts a skill in the prompt (`[skills]`)
+- `--session-id ID`: name the new session yourself (default: a generated id)
   - new work outranks it; it never passes (retire as skipped or obsolete); budget, stop, and the iteration cap still end the run
 - `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: everything the model receives on the first call (system prompt, tool definitions, the first user message)
+
+## Other commands
+
+```sh
+agent6 tui [target]                  # the full-screen hub, or one session's view
+agent6 web [target]                  # the browser UI on 127.0.0.1:7658 (see web.md)
+agent6 acp                           # speak the Agent Client Protocol on stdio (see acp.md)
+agent6 ps [--json]                   # live sessions across every repository on this machine
+agent6 check [section]               # sandbox, config, boundaries, provider keys, MCP, verify_command
+agent6 init [--yes] [--ecosystem E]  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
+agent6 memory add|list|show|rm       # the repo's memory: one fact per file, restated to every run
+agent6 memory decisions              # the operator rulings the harness recorded
+agent6 skills install|update|list    # skills from a repo, a directory or a SKILL.md URL
+agent6 skills enable [--always]      # a skill the model may use, or one it always gets; disable, remove
+agent6 mcp connect [--pass-env VAR]  # an MCP server the model may call; list, remove, serve
+agent6 machine ...                   # state machines over runs (see state-machines.md)
+agent6 system apparmor install       # the AppArmor profile the strict jail needs on some hosts; status, remove
+agent6 completions bash|zsh|fish|xonsh [--print]
+agent6 config fill [--force]         # write the defaults + global layers as one explicit global config
+```
 
 ## Configuration
 
