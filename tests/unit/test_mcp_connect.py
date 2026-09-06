@@ -65,6 +65,46 @@ def test_a_server_that_answers_is_written_with_its_tools_shown(
     assert entry.enabled is True
 
 
+def test_a_binary_missing_on_the_host_is_named_without_a_sandbox_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A path that exists nowhere is a plain ENOENT: no `read_paths` grant
+    would change it, so the sandbox hint stays out."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+
+    rc = cmd_mcp_connect(
+        "dead",
+        command=["/nonexistent/agent6-test-server"],
+        url="",
+        token_env="",
+        pass_env=[],
+        to_repo=False,
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "/nonexistent/agent6-test-server: no such file on this host" in err
+    assert "read_paths" not in err
+
+
+def test_an_existing_file_that_is_not_executable_is_named_as_such(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    script = tmp_path / "server.py"
+    script.write_text("print(1)\n", encoding="utf-8")
+    script.chmod(0o644)
+
+    rc = cmd_mcp_connect(
+        "plain", command=[str(script)], url="", token_env="", pass_env=[], to_repo=False
+    )
+
+    assert rc == 1
+    assert f"{script}: not executable on this host" in capsys.readouterr().err
+
+
 def test_a_server_that_does_not_answer_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

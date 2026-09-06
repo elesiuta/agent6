@@ -14,6 +14,7 @@ are printed as text and stored nowhere.
 from __future__ import annotations
 
 import shlex
+import shutil
 import sys
 from pathlib import Path
 
@@ -107,6 +108,30 @@ def _describe(spec: MCPServerSpec) -> str:
     return f"spawning {shlex.join(spec.command)}"
 
 
+def _report_no_answer(name: str, command: list[str], isolation: IsolationLevel, error: str) -> None:
+    """The failure and the one hint that applies: a binary missing on the
+    host needs no sandbox grant; one present here but not in the jail does."""
+    print(f"ERROR: {name} did not answer: {error}", file=sys.stderr)
+    if command and shutil.which(command[0]) is None:
+        head = command[0]
+        what = (
+            "not executable"
+            if Path(head).exists()
+            else "no such file"
+            if "/" in head
+            else "not on PATH"
+        )
+        print(f"       {head}: {what} on this host.", file=sys.stderr)
+    elif command and isolation != "none":
+        print(
+            f"       (probed under the run's {isolation} sandbox: a server outside the"
+            f" workspace needs [mcp.servers.{name}.sandbox] read_paths, or"
+            " unconfined = true)",
+            file=sys.stderr,
+        )
+    print("       nothing was written to config.", file=sys.stderr)
+
+
 def cmd_mcp_connect(
     name: str,
     *,
@@ -189,15 +214,7 @@ def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLe
     print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)
     tools, error = _probe(spec)
     if error:
-        print(f"ERROR: {name} did not answer: {error}", file=sys.stderr)
-        if spec.policy is not None:
-            print(
-                f"       (probed under the run's {isolation} sandbox: a server outside the"
-                f" workspace needs [mcp.servers.{name}.sandbox] read_paths, or"
-                " unconfined = true)",
-                file=sys.stderr,
-            )
-        print("       nothing was written to config.", file=sys.stderr)
+        _report_no_answer(name, list(entry.command), isolation, error)
         return 1
     if not tools:
         print(f"ERROR: {name} started but exposed no tools; nothing was written.", file=sys.stderr)
