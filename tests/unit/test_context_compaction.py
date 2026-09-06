@@ -519,6 +519,44 @@ def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
     assert not any("newer result" in c for c in contents)
 
 
+def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
+    """The marker carries the call's arguments, so a long path makes it longer
+    than a small result: writing it inflated the conversation while `deduped`
+    reported a saving."""
+    from agent6.workflows._compaction import compact_old_tool_results
+    from agent6.workflows._conversation import AssistantTurn
+
+    payload = "z" * 210  # over _DEDUP_MIN_CHARS, under the marker's own length
+    conv = Conversation()
+    conv.notice("task")
+    for tid in ("t1", "t2", "t3"):
+        conv.assistant(
+            [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": "a.py"}}]
+        )
+        last = conv.turns[-1]
+        assert isinstance(last, AssistantTurn)
+        conv.results([ToolResultItem(tool_use_id=tid, content=payload, for_call=last.tool_uses[0])])
+    before = sum(
+        len(item.content)
+        for turn in conv.turns
+        if isinstance(turn, UserTurn)
+        for item in turn.items
+        if isinstance(item, ToolResultItem)
+    )
+
+    stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=1)
+
+    after = sum(
+        len(item.content)
+        for turn in conv.turns
+        if isinstance(turn, UserTurn)
+        for item in turn.items
+        if isinstance(item, ToolResultItem)
+    )
+    assert after <= before, f"compaction grew the conversation: {before} -> {after}"
+    assert stats.deduped == 0
+
+
 def test_tier1_dedup_alone_can_satisfy_the_budget() -> None:
     """When freeing duplicates gets the total under the threshold, nothing
     real is elided."""

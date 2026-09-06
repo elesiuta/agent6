@@ -660,13 +660,17 @@ def _dedupe_identical_results(
                 continue
             item = _result_at(conversation, turn_idx, item_idx)
             label = call_label(item.for_call.name, item.for_call.input)
-            conversation.set_result_content(
-                turn_idx,
-                item_idx,
+            marker = (
                 f"{ELISION_PREFIX} (duplicate): {label} returned byte-identical"
                 " content again later in this conversation. If you still need it,"
-                " re-read only the part you need; do not re-issue the identical call.>",
+                " re-read only the part you need; do not re-issue the identical call.>"
             )
+            if len(marker) >= len(item.content):
+                # The label carries the call's arguments, so a long path can
+                # make the marker bigger than the result it replaces: writing
+                # it would GROW the total, as the elision pass also refuses to.
+                continue
+            conversation.set_result_content(turn_idx, item_idx, marker)
             n += 1
             labels.append(label)
     return n, tuple(labels)
@@ -753,26 +757,38 @@ class _Tier1Pass:
             if path in keys and flat:
                 self.gists[keys[path]] = flat[:GIST_MAX_CHARS]
 
+    def _landing_gists(self) -> dict[tuple[int, int], str]:
+        """The distilled placeholders that land, chosen NEWEST-first: the newest
+        read of a path is the one a later turn needs, and `demote` drops gists
+        oldest-first for the same reason. A gist no smaller than the content it
+        replaces never lands, nor does one costing more than the plan's headroom
+        (`demote` would strip it before this same pass returned). A gist shorter
+        than the bare marker costs nothing, so it always lands."""
+        headroom = max(self.gist_headroom, 0)
+        landing: dict[tuple[int, int], str] = {}
+        for turn_idx, item_idx, size in reversed(self.victims):
+            gist = self.gists.get((turn_idx, item_idx))
+            call = self._item(turn_idx, item_idx).for_call
+            if gist is None or not isinstance(call.input, dict):
+                continue
+            candidate = elision_gist_placeholder(call_label(call.name, call.input), gist)
+            extra = len(candidate) - len(elision_placeholder(call.name, call.input))
+            if len(candidate) < size and extra <= headroom:
+                headroom -= max(extra, 0)
+                landing[(turn_idx, item_idx)] = candidate
+        return landing
+
     def apply(self) -> None:
         """Apply the whole plan (`plan` already chose the minimal set; gist
-        placeholders only add back a bounded extra on top of it)."""
+        placeholders only add back what the plan's headroom holds)."""
+        landing = self._landing_gists()
         for turn_idx, item_idx, size in self.victims:
             call = self._item(turn_idx, item_idx).for_call
-            placeholder = elision_placeholder(call.name, call.input)
-            gist = self.gists.get((turn_idx, item_idx))
-            if gist is not None and isinstance(call.input, dict):
-                path = str(call.input.get("path", ""))
-                candidate = elision_gist_placeholder(call_label(call.name, call.input), gist)
-                extra = len(candidate) - len(placeholder)
-                # A gist longer than the content is useless, and one that costs
-                # more than the plan's headroom is demoted again before this
-                # same pass returns. A gist SHORTER than the bare marker costs
-                # nothing, so it always lands.
-                if len(candidate) < size and extra <= max(self.gist_headroom, 0):
-                    placeholder = candidate
-                    self.gist_headroom -= extra
-                    self.gisted += 1
-                    self.gist_paths.append(path)
+            gist_placeholder = landing.get((turn_idx, item_idx))
+            placeholder = gist_placeholder or elision_placeholder(call.name, call.input)
+            if gist_placeholder is not None and isinstance(call.input, dict):
+                self.gisted += 1
+                self.gist_paths.append(str(call.input.get("path", "")))
             self.conversation.set_result_content(turn_idx, item_idx, placeholder)
             self.total -= size - len(placeholder)
             self.elided += 1

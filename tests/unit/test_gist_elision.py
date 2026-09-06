@@ -173,6 +173,22 @@ def test_gist_longer_than_content_stays_bare() -> None:
     assert len(_contents(conv)[0]) < 2100
 
 
+def test_the_headroom_goes_to_the_newest_read() -> None:
+    """`demote` drops gists oldest-first, so headroom for exactly one gist has
+    to go to the newest read; spending it in victim order kept the oldest."""
+    conv = Conversation()
+    _add_read(conv, "old.py", "o" * 4000)
+    _add_read(conv, "new.py", "n" * 4000)
+    _add_read(conv, "tail1.py", "a" * 300)
+    _add_read(conv, "tail2.py", "b" * 300)
+    gister = _SpyGister({"old.py": "OLD " + "g" * 380, "new.py": "NEW " + "g" * 380})
+
+    stats = compact_old_tool_results(conv, max_total_bytes=1600, keep_recent=2, gister=gister)
+
+    assert (stats.gisted, stats.demoted) == (1, 0)
+    assert stats.gist_paths == ("new.py",)
+
+
 def test_a_gist_the_budget_cannot_hold_is_never_reported_as_kept() -> None:
     """A gist costing more than the plan's headroom was applied, demoted back
     to the bare marker in the same pass, and still counted: the run line read
