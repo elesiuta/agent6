@@ -85,9 +85,9 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "--model",
         default="",
         help=(
-            "Override the reviewer model for this one-shot review "
-            "(e.g. claude-sonnet-4-5 for a cheaper read). "
-            "Default: the [models.reviewer] route."
+            "Override the reviewer model for this one-shot review, under the"
+            " [models.reviewer] route's provider (e.g. claude-sonnet-4-5 for a cheaper"
+            " read). Default: that route's model."
         ),
     )
     review_p.add_argument(
