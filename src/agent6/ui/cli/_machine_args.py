@@ -124,7 +124,10 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     machine_stop = _sub(
         machine_sub,
         "stop",
-        help="Park a running machine at its next transition boundary (a marker, not a kill).",
+        help=(
+            "Park a running machine at its next transition boundary; it finishes the step"
+            " in flight."
+        ),
     )
     machine_stop_id = machine_stop.add_argument(
         "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."

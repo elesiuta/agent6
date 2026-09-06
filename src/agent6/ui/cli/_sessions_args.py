@@ -186,7 +186,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_rm = _sub(
         sessions_sub,
         "rm",
-        help="Delete a session's history from the state dir (its branch, if any, is left alone).",
+        help=(
+            "Delete a session's history from the state dir, its chain ref, and a fork's"
+            " worktree; its branch, if any, is left alone."
+        ),
     )
     sessions_rm_id = sessions_rm.add_argument(
         "session_id",
@@ -205,7 +208,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_prune = _sub(
         sessions_sub,
         "prune",
-        help="Delete agent6/* run branches that are safely merged; report the rest.",
+        help=(
+            "Delete safely merged agent6/* run branches, their chain refs, and the fan-out"
+            " clones and fork worktrees whose work has landed; report the rest."
+        ),
     )
     sessions_prune.add_argument(
         "--delete-squashed",

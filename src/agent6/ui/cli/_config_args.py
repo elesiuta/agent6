@@ -40,8 +40,8 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "show",
         help=(
             "Print every effective config value and where it came from"
-            " (default / global / repo / flag). `*` marks values that override"
-            " the built-in default."
+            " (default / global / repo / flag). `*` marks values a config layer"
+            " set, whatever their value."
         ),
     )
     show_keys = config_show.add_argument(
@@ -125,7 +125,10 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             type=Path,
             default=None,
             metavar="FILE",
-            help="Edit a machine file's [config] overlay (providers.* forbidden).",
+            help=(
+                "Edit a machine file's [config] overlay (providers, sandbox, presets"
+                " and mcp, and the host-escape leaves, are operator-only and refused)."
+            ),
         )
         machine_arg.completer = _complete_machine_files  # type: ignore[attr-defined]
 

@@ -16,8 +16,8 @@ def _add_check_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         sub,
         "check",
         help=(
-            "Pre-flight checks: sandbox + config + provider keys + MCP +"
-            " verify_command. Read-only; safe on any clean repo."
+            "Pre-flight checks: sandbox, config (provider keys included), boundaries,"
+            " MCP, verify_command. Read-only; safe on any clean repo."
         ),
     )
     check_p.add_argument(
@@ -99,6 +99,8 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             "Run an adversarial review panel of N grounded reviewers instead of one"
             " freeform review. Findings are grounded against the diff (only real,"
             " block-eligible problems gate). 0 (default) = the classic single review."
+            " With [review].seats configured, N only turns the panel on: the seats"
+            " decide the reviewers."
         ),
     )
     review_p.add_argument(
@@ -106,6 +108,7 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         default="",
         help=(
             "Comma-separated adversarial stances for the panel seats, cycled across"
-            " --reviewers (e.g. 'security,correctness,tests'). Default: a built-in set."
+            " --reviewers (e.g. 'security,correctness,tests'). Default: a built-in set;"
+            " ignored when [review].seats is configured."
         ),
     )

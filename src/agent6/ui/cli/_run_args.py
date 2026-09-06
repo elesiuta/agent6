@@ -71,7 +71,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             "REPL mode: after each successful auto-commit, prompt on stdin for"
             " one of /continue (default), /diff, /cost, /undo (take back the last message:"
             " the tree goes back to the turn before it and a fork continues from there),"
-            " /watch, /mcp, /init, /help, /quit. Requires a TTY."
+            " /watch, /mcp, /init, /help, /quit, /exit (stop and leave without the"
+            " follow-up prompt). Requires a TTY."
         ),
     )
     run_p.add_argument(
@@ -80,7 +81,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             "Open the full-screen TUI on the run (the conversation view; Ctrl+D"
             " toggles the dashboard) instead of the default headless CLI stream."
-            " Needs a TTY; mutually exclusive with -i."
+            " Needs a TTY. With -i the REPL wins: --tui warns and stays headless."
             " (Or run `agent6 tui` and start the run from there.)"
         ),
     )

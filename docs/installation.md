@@ -72,7 +72,7 @@ The jail uses Landlock, seccomp, and user namespaces, and its seccomp filter exi
 - On Windows, use WSL.
 - Unprivileged user namespaces are on by default on Ubuntu, Debian, and most cloud images
     - Ubuntu 24.04+ blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (remove reverts)
-- Without user namespaces agent6 falls back to `hardened` isolation, which keeps Landlock, seccomp, and `NO_NEW_PRIVS`.
+- Without user namespaces `auto` falls back to `hardened` (Landlock, seccomp, `NO_NEW_PRIVS`), and to `none` on a kernel with no Landlock.
 
 The [security model](security.md) describes what each isolation level enforces.
 

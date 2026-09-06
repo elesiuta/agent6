@@ -149,7 +149,7 @@ agent6 ask "how does the task-graph curator work?"
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
   - new work outranks it; it never passes (retire as skipped or obsolete); budget, stop, and the iteration cap still end the run
-- `agent6 prompt show [--mode run|plan|ask|machine|agent] [--json]`: everything the model receives on the first call (system prompt, tool definitions, the first user message)
+- `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: everything the model receives on the first call (system prompt, tool definitions, the first user message)
 
 ## Configuration
 

@@ -170,10 +170,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         default=None,
         metavar="FILE",
         help=(
-            "Explicit config file, layered on top of the global"
-            " (~/.config/agent6/config.toml) and the per-repo config"
-            " (out of the workspace, under the state dir). Default: use only"
-            " those two layers + built-in defaults."
+            "Explicit config file, layered on top of the global config (its path"
+            " is printed below) and the per-repo config (out of the workspace,"
+            " under the state dir). Default: use only those two layers + built-in"
+            " defaults."
         ),
     )
     parser.add_argument(
@@ -259,7 +259,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     prompt_show.add_argument(
         "--json",
         action="store_true",
-        help="One JSON object (system, tools, first_message) instead of text.",
+        help=(
+            "One JSON object (mode, system, tools, first_message, mcp_tools_pending)"
+            " instead of text."
+        ),
     )
 
     _add_resume_parser(sub)
@@ -306,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "ps",
         help=(
             "Live agent6 sessions across every repository on this machine"
-            " (directory, id, status, pid; per-repo views: `sessions`)."
+            " (directory, id, mode, status, pid, front-end; per-repo views: `sessions`)."
         ),
     )
 
@@ -373,8 +376,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "serve",
         help=(
             "Run agent6 as an MCP stdio server over the cwd's agent6 config:"
-            " query_dag and list_sessions always, run_in_sandbox where that"
-            " config allows commands, and run_verify and apply_patch_in_sandbox"
+            " query_dag and list_sessions always, run_in_sandbox only where"
+            ' sandbox.run_commands = "yes" (the default "ask" withholds it: nothing'
+            " here can answer an approval), and run_verify and apply_patch_in_sandbox"
             " where it also sets a verify command. Speaks line-delimited"
             " JSON-RPC on stdin/stdout; configure an MCP-aware client to spawn"
             " this command."

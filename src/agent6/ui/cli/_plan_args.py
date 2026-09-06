@@ -128,7 +128,7 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--from-latest",
         dest="ask_session_latest",
         action="store_true",
-        help="Like --from, but seed the most recent session.",
+        help="Like --from, but seed the most recent run or ask (plans are skipped).",
     )
     ask_query.add_argument(
         "--file",

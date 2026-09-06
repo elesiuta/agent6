@@ -276,9 +276,9 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
         return None
     if not root_optin_enabled(allow_root):
         print(
-            "[agent6] REFUSING to run as root. Running an LLM-driven agent as root"
-            " is dangerous. If a task genuinely needs it, re-run with --allow-root"
-            " (or set AGENT6_ALLOW_ROOT=1).",
+            "REFUSING: running as root. An LLM-driven agent as root is dangerous;"
+            " if a task genuinely needs it, re-run as `agent6 --allow-root <command> ...`"
+            " (the flag goes before the command), or set AGENT6_ALLOW_ROOT=1.",
             file=sys.stderr,
         )
         return 2

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 history search/graph/transcript` commands."""
+"""`agent6 history search` and the `sessions graph` / `sessions transcript` verbs."""
 
 from __future__ import annotations
 

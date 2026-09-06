@@ -35,7 +35,7 @@ The cost receipt goes to stderr only, where a client that shows the agent's log 
 
 ## Approvals
 
-`session/request_permission` carries every approval the CLI would prompt for: `run_commands = "ask"`, a `fetch` to a host outside the allow-list, an unsandboxed autorun.
+`session/request_permission` carries every approval the CLI would prompt for: `run_commands = "ask"`, an MCP tool call the server's `approve` does not cover, a `fetch` to a host outside the allow-list, an unsandboxed autorun.
 The editor renders the buttons.
 The request names the tool call it gates and carries the prompt as that call's title, which is the text the editor renders; it is sent once the run's journal tail has announced that call (a tail that stopped reading, or a cancelled turn, releases the request); a prompt that gates no call (a pre-run question) announces a tool call of its own and closes it with the answer.
 The prompt and its answer are journaled as `approval.prompt` / `approval.answer` (`question.*` for an `ask_user`) by the same gate every front-end answers through, the answer with `source: "acp"` (`"headless"` when the client declared it cannot be asked), so `agent6 attach` and the web show the run as awaiting the answer.
