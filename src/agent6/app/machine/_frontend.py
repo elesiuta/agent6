@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent6.app.machine._preflight import NetworkRefusal
 from agent6.app.reporter import Reporter
 from agent6.config import Config
 from agent6.machine import ToolState
@@ -20,7 +21,7 @@ from agent6.types import IsolationLevel
 # else an exit code. Held cli-side because it needs a TTY (and the offline
 # `machine test` escape hatch); the lifecycle only calls it.
 ResolveNetworkFix = Callable[
-    [Path, str, Config, IsolationLevel, list[ToolState], Path, dict[str, Any]],
+    [Path, NetworkRefusal, Config, IsolationLevel, list[ToolState], Path, dict[str, Any]],
     "int | tuple[Config, IsolationLevel]",
 ]
 

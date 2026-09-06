@@ -12,6 +12,8 @@ from typing import Any
 import pytest
 
 from agent6.app.machine import (
+    NetworkRefusal,
+    machine_network_refusal,
     machine_protect_paths,
     validate_bundle,
 )
@@ -23,7 +25,6 @@ from agent6.paths import jail_cache_home
 from agent6.types import NetworkMode
 from agent6.ui.cli.machine_cmds import (
     _resolve_network_refusal,  # pyright: ignore[reportPrivateUsage]
-    _suggested_network_fix,  # pyright: ignore[reportPrivateUsage]
 )
 
 # A two-tool machine: the first tool opts into the network, the second does not.
@@ -449,7 +450,10 @@ def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
     spec = load_machine(_write(tmp_path, text))
     fetch = spec.states["fetch"]
     assert isinstance(fetch, ToolState)
-    assert _suggested_network_fix("hardened", [fetch]) is None
+    r = machine_network_refusal(
+        Config.model_validate({"sandbox": {"network": "host"}}), "hardened", [fetch]
+    )
+    assert r is not None and r.fix == ()
 
 
 def test_resolve_network_refusal_unfixable_points_to_simulate(
@@ -461,7 +465,7 @@ def test_resolve_network_refusal_unfixable_points_to_simulate(
     assert isinstance(fetch, ToolState)
     code = _resolve_network_refusal(
         tmp_path / "m.asm.toml",
-        "needs strict",
+        NetworkRefusal("needs strict"),
         Config.model_validate({}),
         "hardened",
         [fetch],
@@ -470,3 +474,55 @@ def test_resolve_network_refusal_unfixable_points_to_simulate(
     )
     assert code == 2
     assert "machine test" in capsys.readouterr().err
+
+
+# NET_MACHINE with the second tool pinned offline: one `host` tool beside one
+# `none` tool, the mix `only_explicit_states` exists for.
+MIXED_MACHINE = """
+machine = "netmix"
+version = 1
+initial = "fetch"
+
+[budget]
+max_transitions = 10
+
+[states.fetch]
+kind = "tool"
+command = ["true"]
+timeout_secs = 5
+network = "host"
+on = { ok = "store", nonzero = "stop_fail", timeout = "stop_fail" }
+
+[states.store]
+kind = "tool"
+command = ["true"]
+timeout_secs = 5
+network = "none"
+on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
+
+[states.stop_ok]
+kind = "terminal"
+status = "ok"
+reason = "done"
+
+[states.stop_fail]
+kind = "terminal"
+status = "failed"
+reason = "failed"
+"""
+
+
+def _mixed_tools(tmp_path: Path) -> list[ToolState]:
+    spec = load_machine(_write(tmp_path, MIXED_MACHINE, name="netmix.asm.toml"))
+    return [s for s in spec.states.values() if isinstance(s, ToolState)]
+
+
+def test_suggested_network_fix_strict_mixes_block_with_allow(tmp_path: Path) -> None:
+    """A `network = "none"` tool is already isolated on strict (its own netns,
+    whatever sandbox.network says), so it must not swallow the fix the
+    networked tool beside it needs: the fix read "unfixable" for the pair."""
+    tools = _mixed_tools(tmp_path)
+    r = machine_network_refusal(Config.model_validate({}), "strict", tools)
+    assert r is not None and r.fix == (("sandbox.network", "only_explicit_states"),)
+    fixed = Config.model_validate({"sandbox": {"network": "only_explicit_states"}})
+    assert machine_network_refusal(fixed, "strict", tools) is None

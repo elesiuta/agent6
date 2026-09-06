@@ -20,6 +20,7 @@ from agent6.app.machine._bundle import (
 )
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
+    NetworkRefusal,
     build_machine_notify_hook,
     machine_network_refusal,
     machine_pass_env_refusal,
@@ -42,6 +43,7 @@ from agent6.viewmodel.machine_state import Spend, machine_spend, read_budget_tot
 __all__ = [
     "MachineFileSummary",
     "MachineFrontend",
+    "NetworkRefusal",
     "OfflineTestOutcome",
     "Spend",
     "available_tools",

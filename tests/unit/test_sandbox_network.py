@@ -56,8 +56,8 @@ _BLOCK_TOOL = ToolState(kind="tool", command=("x",), timeout_secs=5, on={"ok": "
 
 
 def test_refusal_networked_tool_under_block() -> None:
-    msg = machine_network_refusal(_cfg("session"), "strict", [_NET_TOOL])
-    assert msg is not None and "network" in msg
+    r = machine_network_refusal(_cfg("session"), "strict", [_NET_TOOL])
+    assert r is not None and r.fix == (("sandbox.network", "only_explicit_states"),)
 
 
 def test_refusal_providers_explicit_states_strict_ok() -> None:
@@ -66,15 +66,15 @@ def test_refusal_providers_explicit_states_strict_ok() -> None:
 
 
 def test_refusal_block_tools_on_hardened() -> None:
-    msg = machine_network_refusal(_cfg("session"), "hardened", [_TOOL])
-    assert msg is not None and "strict" in msg
+    r = machine_network_refusal(_cfg("session"), "hardened", [_TOOL])
+    assert r is not None and "strict" in r.message
 
 
 def test_refusal_explicit_none_state_on_hardened() -> None:
     # sandbox.network = host runs auto/host tools on hardened, but a state that
     # explicitly demands `none` cannot be honoured there -> refuse.
-    msg = machine_network_refusal(_cfg("host"), "hardened", [_BLOCK_TOOL])
-    assert msg is not None and "none" in msg
+    r = machine_network_refusal(_cfg("host"), "hardened", [_BLOCK_TOOL])
+    assert r is not None and "none" in r.message and r.fix == ()
 
 
 def test_refusal_networked_tool_under_the_auto_default() -> None:
@@ -83,9 +83,9 @@ def test_refusal_networked_tool_under_the_auto_default() -> None:
     message names the ACTUAL value. Every other case here pins block/allow/
     only_explicit_states, leaving the default path unexercised."""
     for isolation in ("strict", "hardened"):
-        msg = machine_network_refusal(_cfg("auto"), isolation, [_NET_TOOL])
-        assert msg is not None and "network" in msg
-        assert "'auto'" in msg  # not a hardcoded "session"
+        r = machine_network_refusal(_cfg("auto"), isolation, [_NET_TOOL])
+        assert r is not None and "network" in r.message
+        assert "'auto'" in r.message  # not a hardcoded "session"
 
 
 def test_refusal_allow_auto_tools_on_hardened_ok() -> None:

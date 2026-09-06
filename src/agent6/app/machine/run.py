@@ -33,6 +33,7 @@ from agent6.app.frontend import apply_spawned_away_default, approval_scopes
 from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
+    NetworkRefusal,
     build_machine_notify_hook,
     machine_network_refusal,
     machine_pass_env_refusal,
@@ -326,9 +327,9 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         if (denied := machine_pass_env_refusal(cfg, spec.states)) is not None:
             reporter.refuse(denied)
             return 2
-        refusal = machine_network_refusal(cfg, isolation, tool_states) or check_hide_paths_support(
-            cfg, isolation, cwd
-        )
+        refusal = machine_network_refusal(cfg, isolation, tool_states)
+        if refusal is None and (hidden := check_hide_paths_support(cfg, isolation, cwd)):
+            refusal = NetworkRefusal(hidden)
         if refusal is not None:
             outcome = frontend.resolve_network_fix(
                 path, refusal, cfg, isolation, tool_states, cwd, spec.config

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app.confine import check_network_support
@@ -43,10 +44,20 @@ def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> st
     )
 
 
+@dataclass(frozen=True, slots=True)
+class NetworkRefusal:
+    """A run this host cannot honor: the operator's message and the config
+    leaves that clear it, empty when only a different isolation can. Applied in
+    order, so sequential `config set` writes never trip the combo validator."""
+
+    message: str
+    fix: tuple[tuple[str, str], ...] = ()
+
+
 def machine_network_refusal(
     cfg: Config, isolation: IsolationLevel, tool_states: list[ToolState]
-) -> str | None:
-    """A refusal message if this machine's tool-network needs can't be honored.
+) -> NetworkRefusal | None:
+    """The refusal if this machine's tool-network needs can't be honored.
 
     Layers machine-specific rules on top of `check_network_support` (which
     handles network=only_explicit_states / session on `hardened`). On
@@ -55,40 +66,42 @@ def machine_network_refusal(
     (`network = "session"`) or by a state (`network = "none"`). A
     networked state under `network` in {"session", "auto"} (both keep the
     tool off the host network) is a config conflict, refused on any isolation.
-    Returns None when fine.
+    Each refusal carries the fix its own message names. Returns None when fine.
     """
-    net_err = check_network_support(cfg, isolation)
-    if net_err is not None:
-        return net_err
-    tn = cfg.sandbox.network
-    no_tool_net = tn in ("session", "auto")  # both keep the tool off the host network
     has_allow = any(s.network == "host" for s in tool_states)
     has_block = any(s.network == "none" for s in tool_states)
+    # Every branch reached through `hardened_fix` is hardened-only: a state
+    # that REQUIRES no network needs strict's per-tool netns, which no config
+    # leaf conjures, and only a state that ASKED for the network justifies
+    # widening past the 'auto' that degrades with a warning.
+    hardened_fix: tuple[tuple[str, str], ...] = (
+        () if has_block else (("sandbox.network", "host" if has_allow else "auto"),)
+    )
+    net_err = check_network_support(cfg, isolation)
+    if net_err is not None:
+        return NetworkRefusal(net_err, hardened_fix)
+    tn = cfg.sandbox.network
+    no_tool_net = tn in ("session", "auto")  # both keep the tool off the host network
     if has_allow and no_tool_net:
         # Name the ACTUAL value: a hardcoded 'block' misstates an 'auto'
         # config on a refusal surface.
         if isolation == "hardened":
-            return (
+            return NetworkRefusal(
                 'a tool state sets network = "host" but sandbox.network ='
                 f" {tn!r}. The hardened isolation cannot single out one tool's"
                 " network namespace; let tools share the host network with"
                 " sandbox.network = 'host', or run on strict for explicit"
-                " per-tool egress."
+                " per-tool egress.",
+                hardened_fix,
             )
-        return (
+        return NetworkRefusal(
             'a tool state sets network = "host" but sandbox.network ='
             f" {tn!r}. Set sandbox.network = 'only_explicit_states' for"
-            " explicit per-tool egress."
-        )
-    if tool_states and tn == "session" and isolation == "hardened":
-        return (
-            "isolating a machine's tool-state network requires the strict isolation"
-            " (a per-tool network namespace); this host supports only 'hardened'."
-            " Run on strict, or let tools share the host network with"
-            " sandbox.network = 'host'."
+            " explicit per-tool egress.",
+            (("sandbox.network", "only_explicit_states"),),
         )
     if has_block and isolation == "hardened":
-        return (
+        return NetworkRefusal(
             'a tool state sets network = "none" (network must be denied),'
             " but the hardened isolation can't isolate one tool's network. Run on"
             ' strict, or use network = "auto" to tolerate the host network.'

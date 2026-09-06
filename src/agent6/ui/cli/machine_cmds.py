@@ -21,6 +21,7 @@ from typing import Any
 from agent6.app._setup import detect_env
 from agent6.app.machine import (
     MachineFrontend,
+    NetworkRefusal,
     machine_network_refusal,
     machine_spend,
 )
@@ -121,40 +122,9 @@ def _safe_input(prompt: str) -> str | None:
         return None
 
 
-def _suggested_network_fix(
-    isolation: IsolationLevel, tool_states: list[ToolState]
-) -> dict[str, str] | None:
-    """The minimal sandbox-config change that lets this machine's tool states run
-    ON THIS PROFILE, or None if no config change can (a tool that REQUIRES network
-    isolation needs `strict`, which config can't conjure).
-
-    Two refusals this resolves: a tool that opted in (`network = "host"`)
-    under a config that blocks egress, and -- on `hardened`, which can't give any
-    tool its own netns -- a plain tool refused under `network = "session"`. The
-    returned dict is applied in order
-    so `config set`-style sequential writes never trip the combo validator."""
-    if not tool_states:
-        return None
-    has_allow = any(s.network == "host" for s in tool_states)
-    has_block = any(s.network == "none" for s in tool_states)
-    if has_block:
-        # A tool REQUIRES no network; only strict's per-tool netns isolates it.
-        return None
-    if isolation == "strict":
-        # Plain no-network tools already run on strict; only a tool that opted
-        # into the network needs the explicit-per-tool egress mode.
-        return {"sandbox.network": "only_explicit_states"} if has_allow else None
-    if isolation == "hardened":
-        # hardened can't isolate one tool's netns, so EVERY tool (networked
-        # or not) shares the host network; only an explicit "host" states that
-        # honestly.
-        return {"sandbox.network": "host"}
-    return None
-
-
 def _resolve_network_refusal(  # noqa: PLR0911
     path: Path,
-    refusal: str,
+    refusal: NetworkRefusal,
     cfg: Config,
     isolation: IsolationLevel,
     tool_states: list[ToolState],
@@ -167,24 +137,23 @@ def _resolve_network_refusal(  # noqa: PLR0911
     command and exits non-zero, it never relaxes a sandbox setting unattended.
     Returns the new `(cfg, isolation)` when the fix applied and re-validates
     clear, else an exit code."""
-    refuse(f"{refusal}")
-    fix = _suggested_network_fix(isolation, tool_states)
-    if fix is None:
+    refuse(refusal.message)
+    fix = refusal.fix
+    if not fix:
         print(
-            f"  No sandbox-config change fixes this on the '{isolation}' isolation"
-            " (a tool needs isolation only 'strict' provides).",
+            f"  No sandbox-config change fixes this on the '{isolation}' isolation.",
             file=sys.stderr,
         )
         print(f"  Simulate it offline instead:  agent6 machine test {path}", file=sys.stderr)
         return 2
     if not sys.stdin.isatty():
         print("  To allow it, apply this to the per-repo config and re-run:", file=sys.stderr)
-        for key, value in fix.items():
+        for key, value in fix:
             print(f"    agent6 config set {key} {value} --repo", file=sys.stderr)
         print(f"  Or simulate it offline now:    agent6 machine test {path}", file=sys.stderr)
         return 2
     print("  agent6 can apply the minimal fix now (writes the per-repo config):", file=sys.stderr)
-    for key, value in fix.items():
+    for key, value in fix:
         print(f"    {key} = {value}", file=sys.stderr)
     choice = (_safe_input("  [a]pply & run, [s]imulate offline, or [Q]uit? ") or "").strip().lower()
     if choice == "s":
@@ -194,7 +163,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
         return 2
     target = repo_config_path(cwd)
     mkdir_for_real_user(target.parent)
-    for key, value in fix.items():
+    for key, value in fix:
         upsert_toml_leaf(target, key, value)
     chown_to_real_user(target.parent)
     chown_to_real_user(target)
