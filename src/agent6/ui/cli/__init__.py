@@ -447,7 +447,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
     from agent6.ui.cli.sessions_show import _cmd_status  # noqa: PLC0415
 
     if args.sessions_command in (None, "list"):
-        return _cmd_list()
+        return _cmd_list(as_json=getattr(args, "list_json", False))
     if args.sessions_command == "show":
         return _cmd_status(args.session_id, as_json=args.json)
     if args.sessions_command == "diff":
@@ -469,7 +469,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.sessions_command == "prune":
         return _cmd_prune(delete_squashed=args.delete_squashed, config_path=args.config)
     if args.sessions_command == "dir":
-        return _cmd_sessions_dir()
+        return _cmd_sessions_dir(args.session_id)
     if args.sessions_command == "rm":
         return _cmd_sessions_rm(session_id=args.session_id, asks=args.asks)
     if args.sessions_command == "transcript":

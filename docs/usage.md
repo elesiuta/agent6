@@ -75,6 +75,7 @@ agent6 sessions commits       # the run's per-step commits
 agent6 sessions merge         # land the run's work on your branch
 agent6 sessions prune         # delete merged agent6/* branches; report the rest
 agent6 sessions dir           # where this repo's run history lives (scriptable)
+agent6 sessions dir <id>      # that session's own directory
 agent6 sessions rm            # delete one run's history; --asks clears saved asks
 agent6 sessions compare <ids> # ranked comparison: >=2 runs, or one fan-out id (its lanes)
 agent6 sessions transcript    # the full conversation, every tool call with I/O

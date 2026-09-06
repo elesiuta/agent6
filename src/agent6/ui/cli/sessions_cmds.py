@@ -5,6 +5,7 @@ read side; `merge`/`prune` are `sessions_merge`)."""
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -63,7 +64,7 @@ from agent6.viewmodel.format import (
 )
 
 
-def _cmd_list() -> int:
+def _cmd_list(*, as_json: bool = False) -> int:
     """List this repo's sessions, newest first: updated (last-activity time),
     status (the mode folded in when the word does not imply it, the failure
     reason, the unmerged mark), cost, id, task.
@@ -80,7 +81,7 @@ def _cmd_list() -> int:
         if d.is_dir():
             dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
     if not dirs:
-        print(NOTHING_YET)  # the listing's empty state is output, not an error
+        print("[]" if as_json else NOTHING_YET)  # the empty listing is output, not an error
         return 0
     winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
     tips = run_branch_tips(cwd)
@@ -89,6 +90,25 @@ def _cmd_list() -> int:
         key=lambda s: s.mtime,
         reverse=True,
     )
+    if as_json:
+        rows_json = [
+            {
+                "session_id": s.session_id,
+                "mode": s.mode,
+                "status": s.status,
+                "reason": s.reason,
+                "unmerged": s.unmerged,
+                "verify_ok": s.verify_ok,
+                "cost_usd": s.cost_usd,
+                "usd_partial": s.usd_partial,
+                "updated": s.mtime,
+                "winner": s.session_id in winners,
+                "task": s.task,
+            }
+            for s in summaries
+        ]
+        print(json.dumps(rows_json, indent=2))
+        return 0
     color = sys.stdout.isatty()
     rows: list[tuple[str, str, str, str, str, str]] = []
     for s in summaries:
@@ -415,12 +435,22 @@ def _cmd_commits(*, session_id: str) -> int:
     return 0
 
 
-def _cmd_sessions_dir() -> int:
-    """Print the per-repo state dir: where this repo's run history lives.
+def _cmd_sessions_dir(session_id: str = "") -> int:
+    """Print the per-repo state dir (where this repo's run history lives), or the
+    named session's own directory.
 
     One bare line so it composes (`ls "$(agent6 sessions dir)"`, or delete a bucket
     outright). Sessions live under sessions/<bucket>/, one bucket per mode."""
-    print(resolved_state_dir(Path.cwd()))
+    cwd = Path.cwd()
+    if not session_id:
+        print(resolved_state_dir(cwd))
+        return 0
+    try:
+        layout = resolve_session_layout(cwd, session_id)
+    except SessionIdError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(layout.session_dir)
     return 0
 
 

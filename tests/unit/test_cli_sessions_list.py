@@ -10,7 +10,10 @@ from pathlib import Path
 import pytest
 
 from agent6.ui.cli._common import _runs_dir, styled_status  # pyright: ignore[reportPrivateUsage]
-from agent6.ui.cli.sessions_cmds import _cmd_list  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli.sessions_cmds import (
+    _cmd_list,  # pyright: ignore[reportPrivateUsage]
+    _cmd_sessions_dir,  # pyright: ignore[reportPrivateUsage]
+)
 
 
 def _run(runs: Path, session_id: str, *, winner: bool | None = None) -> None:
@@ -46,6 +49,58 @@ def test_runs_list_marks_the_fan_out_winner(
     out = capsys.readouterr().out
     assert "fan-l2 ★" in out  # the winner id carries the ★
     assert "fan-l1 ★" not in out and "solo ★" not in out  # losers / non-lanes do not
+
+
+def test_runs_list_json_carries_the_row_facts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions list --json` is the table's rows as data: one object per
+    session with the listing facts, the winner as a boolean, no styling."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    assert _cmd_list(as_json=True) == 0
+    assert json.loads(capsys.readouterr().out) == []  # the empty listing is data too
+    runs = _runs_dir(repo)
+    _run(runs, "fan-l2", winner=True)
+    assert _cmd_list(as_json=True) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert [r["session_id"] for r in rows] == ["fan-l2"]
+    row = rows[0]
+    assert row["winner"] is True
+    assert (row["mode"], row["status"], row["task"]) == ("run", "passed", "fan-l2")
+    assert set(row) == {
+        "session_id",
+        "mode",
+        "status",
+        "reason",
+        "unmerged",
+        "verify_ok",
+        "cost_usd",
+        "usd_partial",
+        "updated",
+        "winner",
+        "task",
+    }
+
+
+def test_sessions_dir_names_a_sessions_own_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions dir <id>` prints that session's directory (an unambiguous
+    prefix resolves like everywhere else); an unknown id is an error, not the
+    repo root."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    runs = _runs_dir(repo)
+    _run(runs, "solo-ABC123")
+    assert _cmd_sessions_dir("solo") == 0
+    assert capsys.readouterr().out.strip() == str(runs / "solo-ABC123")
+    assert _cmd_sessions_dir("nope") == 2
+    assert "ERROR" in capsys.readouterr().err
 
 
 def test_runs_list_marks_a_partial_cost(

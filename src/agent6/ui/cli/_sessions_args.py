@@ -27,10 +27,17 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         dest="sessions_command", required=False, metavar="<subcommand>"
     )
 
-    _sub(
+    sessions_list = _sub(
         sessions_sub,
         "list",
         help="List sessions newest-first by update time: updated, status, mode, cost, id, task.",
+    )
+    sessions_list.add_argument(
+        "--json",
+        dest="list_json",
+        action="store_true",
+        help="Emit the rows as a JSON array (session_id, mode, status, reason, unmerged,"
+        " verify_ok, cost_usd, usd_partial, updated, winner, task).",
     )
 
     sessions_show = _sub(
@@ -154,11 +161,19 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     )
     sessions_stop_id.completer = _complete_session_ids  # type: ignore[attr-defined]
 
-    _sub(
+    sessions_dir = _sub(
         sessions_sub,
         "dir",
-        help="Print the directory this repo's session history lives in (one line, scriptable).",
+        help="Print the directory this repo's session history lives in, or a session's own"
+        " directory when given its id (one line, scriptable).",
     )
+    sessions_dir_id = sessions_dir.add_argument(
+        "session_id",
+        nargs="?",
+        default="",
+        help="Session id (exact or unambiguous prefix; omit for the repo's session root).",
+    )
+    sessions_dir_id.completer = _complete_session_ids  # type: ignore[attr-defined]
 
     sessions_rm = _sub(
         sessions_sub,
