@@ -264,6 +264,24 @@ def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: Path) -> None:
         d.dispatch("fetch", {"url": "https://example.com/x"})
 
 
+@pytest.mark.parametrize("isolation", ["hardened", "none"])
+def test_fetch_is_hidden_wherever_a_command_reaches_the_network(
+    tmp_path: Path, isolation: str
+) -> None:
+    """Only strict has network namespaces, so every other level puts a command
+    on the host network whatever the config says. Reading the config value
+    instead of the resolved one left the model both ways round to the same
+    network, which is the thing the rule exists to prevent."""
+    d = ToolDispatcher(
+        root=tmp_path,
+        config=Config.model_validate({"sandbox": {"network": "auto"}}),
+        isolation=isolation,
+    )
+    assert "fetch" not in d.available_tool_names()
+    with pytest.raises(ToolError, match="not available"):
+        d.dispatch("fetch", {"url": "https://example.com/x"})
+
+
 def test_a_plain_text_response_streams_back(monkeypatch: pytest.MonkeyPatch) -> None:
     _fetch_serving(monkeypatch, headers={"content-type": "text/plain"}, content=b"hello")
     got = fetch(check_url("https://example.com/x"))

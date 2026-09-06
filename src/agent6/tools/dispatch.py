@@ -77,7 +77,7 @@ from agent6.tools.mcp_client import (
     split_tool_name,
 )
 from agent6.tools.operator_prompts import OperatorPrompts
-from agent6.tools.policy import jail_policy, workspace_for
+from agent6.tools.policy import jail_policy, resolve_network, workspace_for
 from agent6.tools.results import (
     AnswersResult,
     BackgroundResult,
@@ -446,6 +446,11 @@ class ToolDispatcher:
         `available_tool_names`, so it asks this instead."""
         return self._config.workflow.metric is not None
 
+    def _commands_have_the_network(self) -> bool:
+        """Whether a jailed command reaches the network on its own, which is
+        what `fetch` exists to stand in for."""
+        return resolve_network(self._config, self.isolation) == "host"
+
     def tool_is_withheld(self, name: str) -> bool:
         """Whether the model is denied *name*, extras included. The tool list is
         built from the mode's surface, which carries tools that are not in
@@ -461,9 +466,11 @@ class ToolDispatcher:
         if not self._config.workflow.verify_command:
             names = [n for n in names if n != RunVerifyInput.TOOL_NAME]
         # `fetch` exists because a jailed command has no network. Where one
-        # DOES (`network = "host"`), the worker can already run curl, and
-        # two ways to do one thing is the thing we do not do.
-        if self._config.sandbox.network == "host":
+        # DOES, the worker can already run curl, and two ways to do one thing
+        # is the thing we do not do. The RESOLVED network answers that: only
+        # strict has namespaces, so hardened and none put every command on the
+        # host network whatever the config says.
+        if self._commands_have_the_network():
             names = [n for n in names if n != FetchInput.TOOL_NAME]
         # Bench / A-B harness: constrain the symbol-tool surface without a
         # rebuild (see _SYMBOL_TOOL_ARMS).
@@ -579,7 +586,7 @@ class ToolDispatcher:
             raise ToolError(f"Unknown tool: {name}")
         if name in _COMMAND_TOOLS and self.command_policy() == "no":
             raise ToolError("not available (run_commands = 'no')")
-        if name == FetchInput.TOOL_NAME and self._config.sandbox.network == "host":
+        if name == FetchInput.TOOL_NAME and self._commands_have_the_network():
             raise ToolError("not available (a jailed command has the network)")
         if name in symbol_tools_hidden():
             raise ToolError("not available (AGENT6_SYMBOL_TOOLS)")
