@@ -159,15 +159,11 @@ Gister = Callable[[tuple[GistRequest, ...]], Mapping[str, str]]
 
 @dataclass(frozen=True, slots=True)
 class CompactionStats:
-    """One tier-1 pass: identical results deduplicated, fresh tool_results
-    elided (of which gisted), plus gist placeholders demoted to the bare
-    marker — with the identities of each (`call_label` strings / read
-    paths) for the event stream."""
+    """One tier-1 pass: the identities (`call_label` strings, read paths) of
+    the identical results deduplicated, the old tool_results elided, the
+    gists among them, and the gist placeholders demoted to the bare marker.
+    A count is the length of its tuple."""
 
-    elided: int = 0
-    gisted: int = 0
-    demoted: int = 0
-    deduped: int = 0
     elided_calls: tuple[str, ...] = ()
     gist_paths: tuple[str, ...] = ()
     demoted_paths: tuple[str, ...] = ()
@@ -583,7 +579,7 @@ def compact_old_tool_results(
     elided: losing a gist costs correctness (the file is gone from context),
     losing a hot read costs one paid re-read.
 
-    Idempotent on already-elided entries. Returns per-pass counts.
+    Idempotent on already-elided entries.
     """
     pointers, total = _tool_result_pointers(conversation)
     if total <= max_total_bytes or len(pointers) <= keep_recent:
@@ -591,13 +587,11 @@ def compact_old_tool_results(
 
     # Dedup first: freeing duplicate bytes is lossless, and may spare real
     # content from elision below (or make it unnecessary).
-    deduped, deduped_calls = _dedupe_identical_results(
-        conversation, pointers, keep_recent=keep_recent
-    )
-    if deduped:
+    deduped_calls = _dedupe_identical_results(conversation, pointers, keep_recent=keep_recent)
+    if deduped_calls:
         pointers, total = _tool_result_pointers(conversation)
         if total <= max_total_bytes:
-            return CompactionStats(deduped=deduped, deduped_calls=deduped_calls)
+            return CompactionStats(deduped_calls=deduped_calls)
 
     def _is_protected(turn_idx: int, item_idx: int) -> bool:
         call = _result_at(conversation, turn_idx, item_idx).for_call
@@ -634,10 +628,6 @@ def compact_old_tool_results(
     walk.apply()
     walk.demote()
     return CompactionStats(
-        elided=walk.elided,
-        gisted=walk.gisted,
-        demoted=walk.demoted,
-        deduped=deduped,
         elided_calls=tuple(walk.elided_calls),
         gist_paths=tuple(walk.gist_paths),
         demoted_paths=tuple(walk.demoted_paths),
@@ -673,7 +663,7 @@ def _dedupe_identical_results(
     pointers: list[tuple[int, int, int]],
     *,
     keep_recent: int,
-) -> tuple[int, tuple[str, ...]]:
+) -> tuple[str, ...]:
     """History-wide identical-result dedup, the tier-1 pass's first step.
 
     When the same call (name + input) produced byte-identical content more
@@ -689,7 +679,7 @@ def _dedupe_identical_results(
     never rewritten.
     """
     if len(pointers) <= keep_recent:
-        return 0, ()
+        return ()
     last_turn = max(turn_idx for turn_idx, _, _ in pointers)
     exempt = {(t, i) for t, i, _ in pointers[-keep_recent:]}
     by_key: dict[tuple[str, str, str], list[tuple[int, int]]] = {}
@@ -703,7 +693,6 @@ def _dedupe_identical_results(
         except (TypeError, ValueError):
             continue
         by_key.setdefault((call.name, input_key, item.content), []).append((turn_idx, item_idx))
-    n = 0
     labels: list[str] = []
     for locs in by_key.values():
         for turn_idx, item_idx in locs[:-1]:  # every copy but the newest
@@ -722,9 +711,8 @@ def _dedupe_identical_results(
                 # it would GROW the total, as the elision pass also refuses to.
                 continue
             conversation.set_result_content(turn_idx, item_idx, marker)
-            n += 1
             labels.append(label)
-    return n, tuple(labels)
+    return tuple(labels)
 
 
 @dataclass(slots=True)
@@ -740,9 +728,6 @@ class _Tier1Pass:
     victims: list[tuple[int, int, int]] = field(default_factory=list)
     gist_headroom: int = 0
     gists: dict[tuple[int, int], str] = field(default_factory=dict)
-    elided: int = 0
-    gisted: int = 0
-    demoted: int = 0
     elided_calls: list[str] = field(default_factory=list)
     gist_paths: list[str] = field(default_factory=list)
     demoted_paths: list[str] = field(default_factory=list)
@@ -835,11 +820,9 @@ class _Tier1Pass:
             gist_placeholder = landing.get((turn_idx, item_idx))
             placeholder = gist_placeholder or elision_placeholder(call.name, call.input)
             if gist_placeholder is not None and isinstance(call.input, dict):
-                self.gisted += 1
                 self.gist_paths.append(str(call.input.get("path", "")))
             self.conversation.set_result_content(turn_idx, item_idx, placeholder)
             self.total -= size - len(placeholder)
-            self.elided += 1
             self.elided_calls.append(call_label(call.name, call.input))
 
     def demote(self) -> None:
@@ -859,7 +842,6 @@ class _Tier1Pass:
                 continue
             self.conversation.set_result_content(turn_idx, item_idx, bare)
             self.total -= len(item.content) - len(bare)
-            self.demoted += 1
             call = item.for_call
             self.demoted_paths.append(
                 str(call.input.get("path", "")) if isinstance(call.input, dict) else ""

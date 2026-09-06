@@ -185,7 +185,7 @@ def test_compact_noop_when_under_threshold() -> None:
     conv = Conversation()
     _reads(conv, "small")
     stats = compact_old_tool_results(conv, max_total_bytes=1000)
-    assert stats.elided == 0
+    assert len(stats.elided_calls) == 0
     assert _result_contents(conv) == ["small"]
 
 
@@ -195,7 +195,7 @@ def test_compact_elides_oldest_when_over_threshold() -> None:
     conv = Conversation()
     _reads(conv, a, b, c)  # oldest first
     stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2)
-    assert stats.elided == 1
+    assert len(stats.elided_calls) == 1
     contents = _result_contents(conv)
     # Oldest replaced with marker; the newer two kept.
     assert "elided" in contents[0]
@@ -211,7 +211,7 @@ def test_compact_preserves_keep_recent_floor() -> None:
     _reads(conv, *bodies)
     stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
     # 3 oldest elided, 2 most recent preserved.
-    assert stats.elided == 3
+    assert len(stats.elided_calls) == 3
     contents = _result_contents(conv)
     assert all("elided" in c for c in contents[:3])
     assert contents[3] == bodies[3]
@@ -225,8 +225,8 @@ def test_compact_idempotent_on_already_elided() -> None:
     _reads(conv, *bodies)
     e1 = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2)
     e2 = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2)
-    assert e1.elided == 2  # oldest 2 elided
-    assert e2.elided == 0  # no further work needed on second pass
+    assert len(e1.elided_calls) == 2  # oldest 2 elided
+    assert len(e2.elided_calls) == 0  # no further work needed on second pass
 
 
 def test_compact_never_elides_unseen_results_in_final_turn() -> None:
@@ -240,7 +240,7 @@ def test_compact_never_elides_unseen_results_in_final_turn() -> None:
     conv.notice("task")
     _add_exchange(conv, *[("read_file", {}, big)] * 3)
     stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
-    assert stats.elided == 0
+    assert len(stats.elided_calls) == 0
     assert _result_contents(conv) == [big, big, big]
 
 
@@ -254,7 +254,7 @@ def test_compact_elides_seen_results_but_protects_final_turn() -> None:
     _add_exchange(conv, *[("read_file", {}, c) for c in seen])  # seen: answered below
     _add_exchange(conv, *[("read_file", {}, c) for c in fresh])  # unseen: awaiting delivery
     stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
-    assert stats.elided == 3
+    assert len(stats.elided_calls) == 3
     contents = _result_contents(conv)
     assert all("elided" in c for c in contents[:3])
     assert contents[3:] == fresh
@@ -273,7 +273,7 @@ def test_compact_never_elides_undelivered_results_behind_a_steer_message() -> No
     _add_exchange(conv, *[("read_file", {}, big)] * 3)  # unseen: awaiting delivery
     conv.notice("steer: focus on the parser")
     stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
-    assert stats.elided == 0
+    assert len(stats.elided_calls) == 0
     assert _result_contents(conv) == [big, big, big]
 
 
@@ -360,7 +360,7 @@ def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
     n = compact_old_tool_results(
         conv, max_total_bytes=3500, keep_recent=2, protect_paths=frozenset({"hot.py"})
     )
-    assert n.elided == 1
+    assert len(n.elided_calls) == 1
     contents = _result_contents(conv)
     assert contents[0] == "H" * 1000
     assert "cold.py" in contents[1]
@@ -370,7 +370,7 @@ def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
     n2 = compact_old_tool_results(
         conv2, max_total_bytes=2500, keep_recent=2, protect_paths=frozenset({"hot.py"})
     )
-    assert n2.elided == 2
+    assert len(n2.elided_calls) == 2
     assert "hot.py" in _result_contents(conv2)[0]
 
 
@@ -381,7 +381,7 @@ def test_compact_placeholder_carries_tool_identity() -> None:
     _add_exchange(conv, ("list_dir", {"path": "."}, "Z" * 1000))
     _add_exchange(conv, ("outline", {"path": "a.py"}, "W" * 1000))
     n = compact_old_tool_results(conv, max_total_bytes=3000, keep_recent=2)
-    assert n.elided >= 1
+    assert len(n.elided_calls) >= 1
     elided = _result_contents(conv)[0]
     assert elided.startswith("<elided by context compaction")
     assert "read_file src/lib.py" in elided
@@ -437,7 +437,6 @@ def test_stats_carry_elided_identities() -> None:
     _add_exchange(conv, ("read_file", {"path": "b.py"}, big))
     _add_exchange(conv, ("read_file", {"path": "c.py"}, big))
     stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2)
-    assert stats.elided == 1
     assert stats.elided_calls == ("read_file a.py",)
     assert stats.gist_paths == ()
     assert stats.demoted_paths == ()
@@ -527,7 +526,7 @@ def test_tier1_dedupes_identical_results_keeping_the_newest() -> None:
     conv = _conv_with_repeated_reads(payload)
     stats = compact_old_tool_results(conv, max_total_bytes=1_500, keep_recent=1)
     # Both older copies dedupe; only the newest (t3) keeps the bytes.
-    assert stats.deduped == 2
+    assert len(stats.deduped_calls) == 2
     result_turns = [t for t in conv.turns if isinstance(t, UserTurn) and t.items]
     contents = [
         item.content for t in result_turns for item in t.items if isinstance(item, ToolResultItem)
@@ -602,7 +601,7 @@ def test_a_duplicate_marker_never_grows_the_result_it_replaces() -> None:
         if isinstance(item, ToolResultItem)
     )
     assert after <= before, f"compaction grew the conversation: {before} -> {after}"
-    assert stats.deduped == 0
+    assert len(stats.deduped_calls) == 0
 
 
 def test_tier1_dedup_alone_can_satisfy_the_budget() -> None:
@@ -613,8 +612,8 @@ def test_tier1_dedup_alone_can_satisfy_the_budget() -> None:
     payload = "y" * 1_000
     conv = _conv_with_repeated_reads(payload)
     stats = compact_old_tool_results(conv, max_total_bytes=2_500, keep_recent=1)
-    assert stats.deduped >= 1
-    assert stats.elided == 0
+    assert len(stats.deduped_calls) >= 1
+    assert len(stats.elided_calls) == 0
 
 
 def test_tier1_dedup_skips_small_and_different_results() -> None:
@@ -633,7 +632,7 @@ def test_tier1_dedup_skips_small_and_different_results() -> None:
         )
     stats = compact_old_tool_results(conv, max_total_bytes=100, keep_recent=1)
     # "tiny" is under the dedup floor; the 900-char bodies differ: no dedup.
-    assert stats.deduped == 0
+    assert len(stats.deduped_calls) == 0
 
 
 def test_strip_old_thinking_clears_all_but_the_newest_turns() -> None:

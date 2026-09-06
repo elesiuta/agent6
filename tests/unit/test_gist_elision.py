@@ -69,8 +69,8 @@ def test_large_read_decays_to_gist_placeholder() -> None:
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"rules/r01.md": "R01: headers <80 chars; END: lines exempt (R10)"})
     stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
-    assert stats.elided == 1
-    assert stats.gisted == 1
+    assert len(stats.elided_calls) == 1
+    assert len(stats.gist_paths) == 1
     got = _contents(conv)[0]
     assert got.startswith(ELISION_GIST_PREFIX)
     assert "rules/r01.md" in got
@@ -87,8 +87,8 @@ def test_no_gister_and_failed_gister_fall_back_to_bare() -> None:
         _add_read(conv, "b.py", "x" * 500)
         _add_read(conv, "c.py", "y" * 500)
         stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
-        assert stats.elided == 1
-        assert stats.gisted == 0
+        assert len(stats.elided_calls) == 1
+        assert len(stats.gist_paths) == 0
         got = _contents(conv)[0]
         assert got.startswith(ELISION_PREFIX)
         assert not got.startswith(ELISION_GIST_PREFIX)
@@ -109,8 +109,8 @@ def test_small_protected_and_non_read_results_are_never_gisted() -> None:
         protect_paths=frozenset({"hot.py"}),
         gister=gister,
     )
-    assert stats.elided == 3
-    assert stats.gisted == 0
+    assert len(stats.elided_calls) == 3
+    assert len(stats.gist_paths) == 0
     assert gister.calls == []  # nothing eligible: the distiller is never dialled
 
 
@@ -124,8 +124,8 @@ def test_newest_read_per_path_wins_the_gist() -> None:
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "the spec facts"})
     stats = compact_old_tool_results(conv, max_total_bytes=1200, keep_recent=2, gister=gister)
-    assert stats.elided == 2
-    assert stats.gisted == 1
+    assert len(stats.elided_calls) == 2
+    assert len(stats.gist_paths) == 1
     assert len(gister.calls) == 1 and len(gister.calls[0]) == 1
     assert gister.calls[0][0].content.startswith("NEW spec text")
     # The newer read keeps the gist; the older one gets the bare marker.
@@ -143,16 +143,16 @@ def test_continued_pressure_demotes_gists_oldest_first() -> None:
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "spec facts " * 30})
     first = compact_old_tool_results(conv, max_total_bytes=1800, keep_recent=2, gister=gister)
-    assert (first.gisted, first.demoted) == (1, 0)
+    assert (len(first.gist_paths), len(first.demoted_paths)) == (1, 0)
     gist_ph = _contents(conv)[0]
     assert gist_ph.startswith(ELISION_GIST_PREFIX)
     # Re-running under the same budget is a no-op (idempotent).
     again = compact_old_tool_results(conv, max_total_bytes=1800, keep_recent=2, gister=gister)
-    assert (again.elided, again.gisted, again.demoted) == (0, 0, 0)
+    assert (len(again.elided_calls), len(again.gist_paths), len(again.demoted_paths)) == (0, 0, 0)
     assert _contents(conv)[0] == gist_ph
     # A tighter budget demotes the gist to the bare marker; the bound holds.
     tighter = compact_old_tool_results(conv, max_total_bytes=1100, keep_recent=2, gister=gister)
-    assert tighter.demoted == 1
+    assert len(tighter.demoted_paths) == 1
     got = _contents(conv)[0]
     assert got.startswith(ELISION_PREFIX)
     assert not got.startswith(ELISION_GIST_PREFIX)
@@ -169,7 +169,7 @@ def test_gist_longer_than_content_stays_bare() -> None:
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"a.md": "g" * 3000})  # clipped to GIST_MAX_CHARS, still fits
     stats = compact_old_tool_results(conv, max_total_bytes=2000, keep_recent=2, gister=gister)
-    assert stats.gisted == 1
+    assert len(stats.gist_paths) == 1
     assert len(_contents(conv)[0]) < 2100
 
 
@@ -185,8 +185,8 @@ def test_the_headroom_goes_to_the_newest_read() -> None:
 
     stats = compact_old_tool_results(conv, max_total_bytes=1600, keep_recent=2, gister=gister)
 
-    assert (stats.gisted, stats.demoted) == (1, 0)
     assert stats.gist_paths == ("new.py",)
+    assert stats.demoted_paths == ()
 
 
 def test_a_gist_the_budget_cannot_hold_is_never_reported_as_kept() -> None:
@@ -201,7 +201,7 @@ def test_a_gist_the_budget_cannot_hold_is_never_reported_as_kept() -> None:
 
     stats = compact_old_tool_results(conv, max_total_bytes=1500, keep_recent=2, gister=gister)
 
-    assert (stats.gisted, stats.demoted) == (0, 0)
+    assert (len(stats.gist_paths), len(stats.demoted_paths)) == (0, 0)
     assert not _contents(conv)[0].startswith(ELISION_GIST_PREFIX)
 
 
@@ -246,7 +246,6 @@ def test_stats_carry_gist_and_demotion_identities() -> None:
     assert first.gist_paths == ("docs/spec.md",)
     assert first.demoted_paths == ()
     tighter = compact_old_tool_results(conv, max_total_bytes=1100, keep_recent=2, gister=gister)
-    assert tighter.demoted == 1
     assert tighter.demoted_paths == ("docs/spec.md",)
     assert tighter.elided_calls == ()
     assert tighter.gist_paths == ()

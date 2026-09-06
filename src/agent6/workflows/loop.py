@@ -3884,10 +3884,12 @@ class Workflow:
             protect_paths=recently_edited_paths(conversation),
             gister=self._distill_gists if self.compact_elision_gists else None,
         )
+        n_deduped = len(stats.deduped_calls)
+        n_elided = len(stats.elided_calls)
+        n_gisted = len(stats.gist_paths)
+        n_demoted = len(stats.demoted_paths)
         if self.keep_thinking_turns > 0 and (
-            stats.deduped
-            or stats.elided
-            or context_chars(conversation) > self.compact_drop_at_chars
+            n_deduped or n_elided or context_chars(conversation) > self.compact_drop_at_chars
         ):
             # Same cache-bundling rule as dedup: only at tier-1 pressure
             # moments, never as a rolling per-iteration rewrite.
@@ -3897,20 +3899,20 @@ class Workflow:
                     f"LOOP: compaction dropped thinking from {n_turns} old turns ({n_chars} chars)"
                 )
                 self._emit("loop.compact.thinking_dropped", turns=n_turns, chars=n_chars)
-        if stats.deduped:
-            self._log(f"LOOP: compaction deduplicated {stats.deduped} identical tool results")
-            self._emit("loop.compact.deduped", n=stats.deduped, calls=list(stats.deduped_calls))
-        if stats.elided:
-            detail = f", {stats.gisted} kept as distilled gists" if stats.gisted else ""
-            self._log(f"LOOP: compaction elided {stats.elided} old tool_result blocks{detail}")
-            self._emit("loop.compact.dropped", n=stats.elided, calls=list(stats.elided_calls))
-        if stats.demoted:
-            self._log(f"LOOP: compaction demoted {stats.demoted} gists to bare placeholders")
-        if stats.gisted or stats.demoted:
+        if n_deduped:
+            self._log(f"LOOP: compaction deduplicated {n_deduped} identical tool results")
+            self._emit("loop.compact.deduped", n=n_deduped, calls=list(stats.deduped_calls))
+        if n_elided:
+            detail = f", {n_gisted} kept as distilled gists" if n_gisted else ""
+            self._log(f"LOOP: compaction elided {n_elided} old tool_result blocks{detail}")
+            self._emit("loop.compact.dropped", n=n_elided, calls=list(stats.elided_calls))
+        if n_demoted:
+            self._log(f"LOOP: compaction demoted {n_demoted} gists to bare placeholders")
+        if n_gisted or n_demoted:
             self._emit(
                 "loop.compact.gists",
-                gisted=stats.gisted,
-                demoted=stats.demoted,
+                gisted=n_gisted,
+                demoted=n_demoted,
                 paths=list(stats.gist_paths),
                 demoted_paths=list(stats.demoted_paths),
             )
