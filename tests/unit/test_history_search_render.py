@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.ui.cli.history_cmds import (
+    _char_span,  # pyright: ignore[reportPrivateUsage]
     _parse_rg_matches,  # pyright: ignore[reportPrivateUsage]
     _render_history_hits,  # pyright: ignore[reportPrivateUsage]
     _session_id_from_path,  # pyright: ignore[reportPrivateUsage]
@@ -269,3 +270,15 @@ def test_a_line_that_is_not_utf8_still_parses_from_its_bytes() -> None:
     assert len(out) == 1
     assert (out[0].session_id, out[0].kind) == ("r1", "tool.call")
     assert "NEEDLE" in out[0].snippet and "caf\ufffd" in out[0].snippet
+
+
+def test_byte_offsets_map_onto_the_decoded_line_past_a_byte_that_is_not_utf8() -> None:
+    """The base64 branch decoded with U+FFFD and re-encoded before mapping,
+    so every byte that is not UTF-8 grew to three and the match window slid
+    two characters early ('\ufffd NEED' for NEEDLE). The mapping counts the
+    characters the byte prefix decodes to."""
+    line = b"caf\xe9 NEEDLE and \xe2\x80\x9cmore\xe2\x80\x9d"
+    start, end = _char_span(line, line.index(b"NEEDLE"), line.index(b"NEEDLE") + 6)
+    assert line.decode("utf-8", "replace")[start:end] == "NEEDLE"
+    start, end = _char_span(line, line.index(b"more"), line.index(b"more") + 4)
+    assert line.decode("utf-8", "replace")[start:end] == "more"

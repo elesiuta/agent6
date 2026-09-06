@@ -164,18 +164,13 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
         if rec.get("type") != "match":
             continue
         data = rec.get("data", {})
-        path = Path(_rg_text(data.get("path")))
-        raw = _rg_text(data.get("lines")).rstrip("\n")
+        path = Path(_rg_bytes(data.get("path")).decode("utf-8", "replace"))
+        raw_bytes = _rg_bytes(data.get("lines")).rstrip(b"\n")
+        raw = raw_bytes.decode("utf-8", "replace")
         subs = data.get("submatches") or []
         b_start = subs[0].get("start", 0) if subs else 0
         b_end = subs[0].get("end", b_start) if subs else b_start
-        # rg reports BYTE offsets into the UTF-8 line; Python slices characters.
-        # Convert them: non-ASCII earlier in the line (curly quotes, ellipses,
-        # routine LLM prose) otherwise shifts the window off the match and
-        # breaks the identity key.
-        encoded = raw.encode("utf-8")
-        start = len(encoded[:b_start].decode("utf-8", "ignore"))
-        end = len(encoded[:b_end].decode("utf-8", "ignore"))
+        start, end = _char_span(raw_bytes, b_start, b_end)
         session_id = _session_id_from_path(path)
         when, kind = _event_when_kind(path, raw)
         snippet = _field_snippet(raw, start, end) or _window(raw, start)
@@ -204,14 +199,23 @@ def _kind_rank(hit: _SearchHit) -> int:
     return 3
 
 
-def _rg_text(field: object) -> str:
-    """rg --json encodes a path/line as {"text": ...}, or {"bytes": <base64>}
-    when it is not UTF-8: those decode with U+FFFD for what is not."""
+def _rg_bytes(field: object) -> bytes:
+    """rg --json encodes a path or line as {"text": ...}, or {"bytes": <base64>}
+    when it is not UTF-8: the bytes either way, so rg's byte offsets apply."""
     if isinstance(field, dict):
         if "bytes" in field:
-            return base64.b64decode(str(field["bytes"])).decode("utf-8", errors="replace")
-        return str(field.get("text", ""))
-    return str(field or "")
+            return base64.b64decode(str(field["bytes"]))
+        return str(field.get("text", "")).encode("utf-8")
+    return str(field or "").encode("utf-8")
+
+
+def _char_span(line: bytes, b_start: int, b_end: int) -> tuple[int, int]:
+    """rg's byte offsets as character offsets into the line decoded with
+    U+FFFD for what is not UTF-8: the prefix decodes to the same characters
+    the whole line does, so non-ASCII prose (curly quotes, ellipses) and a
+    stray byte before the match shift nothing."""
+    start = len(line[:b_start].decode("utf-8", "replace"))
+    return start, start + len(line[b_start:b_end].decode("utf-8", "replace"))
 
 
 def _session_id_from_path(path: Path) -> str:
