@@ -1161,3 +1161,19 @@ def test_create_publishes_the_files_a_referenced_script_needs(
 
     assert (tmp_path / "scripts" / "common.py").exists(), "the module it imports"
     assert (tmp_path / "scripts" / "data.json").exists(), "the data file it reads"
+
+
+def test_bundle_scripts_take_the_bundles_own_writer_and_mode(tmp_path: Path) -> None:
+    """The `.asm.toml` went through atomic_write (owner-only, crash-safe) while
+    its scripts were plain write_text at the umask: one bundle, two modes."""
+    import stat
+
+    from agent6.app.machine.create import _write_scripts  # pyright: ignore[reportPrivateUsage]
+    from agent6.portable import atomic_write
+
+    _write_scripts(tmp_path, {"scripts/helper.py": "VALUE = 1"})
+    atomic_write(tmp_path / "m.asm.toml", "machine = 'm'\n")
+    script_mode = stat.S_IMODE((tmp_path / "scripts" / "helper.py").stat().st_mode)
+    assert script_mode == stat.S_IMODE((tmp_path / "m.asm.toml").stat().st_mode)
+    assert (tmp_path / "scripts" / "helper.py").read_text(encoding="utf-8") == "VALUE = 1\n"
+

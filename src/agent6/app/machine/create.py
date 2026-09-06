@@ -65,7 +65,8 @@ def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
         if p.is_symlink():
             p.unlink()
-        p.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
+        # The same writer as the `.asm.toml` beside them: crash-safe, one mode.
+        atomic_write(p, content if content.endswith("\n") else content + "\n")
 
 
 def _machine_file(workspace: Path) -> tuple[Path | None, str]:
