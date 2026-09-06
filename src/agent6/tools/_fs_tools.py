@@ -319,13 +319,13 @@ def apply_edit(
     return EditResult(applied=tuple(applied), path=str(sp.rel_path))
 
 
-def _first_repeated_path(staged: list[tuple[SafePath, str, str | None]]) -> str | None:
-    """The first path two staged sections both target, or None."""
+def _first_repeated(paths: list[Path]) -> Path | None:
+    """The first path two sections of one patch both target, or None."""
     seen: set[Path] = set()
-    for sp, _target, _new in staged:
-        if sp.abs_path in seen:
-            return str(sp.rel_path)
-        seen.add(sp.abs_path)
+    for path in paths:
+        if path in seen:
+            return path
+        seen.add(path)
     return None
 
 
@@ -390,6 +390,7 @@ def apply_patch(
     # files, matching the per-hunk contract within one file). new_content
     # None = the section deletes its file.
     staged: list[tuple[SafePath, str, str | None]] = []
+    seen_paths: list[Path] = []
     previews: list[PreviewResult] = []
     healed_all: list[str] = []
     for section in sections:
@@ -397,17 +398,20 @@ def apply_patch(
             ws, config, extra_protect_paths, path_arg=args.path, section=section
         )
         healed_all.extend(healed)
+        seen_paths.append(sp.abs_path)
         if args.preview:
             # A deletion previews as the full-removal diff (bytes_after 0).
             previews.append(preview_result(target, existing, new_content or ""))
             continue
         staged.append((sp, target, new_content))
-    if (dupe := _first_repeated_path(staged)) is not None:
+    if (dupe := _first_repeated(seen_paths)) is not None:
         # Each section reads the file from DISK during staging, so two sections
         # over one file both start from the original and the last write wins:
-        # the earlier edit vanished while the result reported it applied.
+        # the earlier edit vanished while the result reported it applied. The
+        # preview says the same thing, so it is refused there too.
+        count = sum(1 for path in seen_paths if path == dupe)
         raise ToolError(
-            f"apply_patch: {dupe} appears in {len(sections)} sections of one patch;"
+            f"apply_patch: {dupe.name} appears in {count} sections of one patch;"
             " a section reads the file as it is on disk, so only the last would"
             " land. Send one section per file, with every hunk for it inside."
         )

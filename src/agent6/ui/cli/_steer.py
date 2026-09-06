@@ -303,7 +303,7 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
         if not frontend_is_live(session_dir):
             tty_message(
                 "\n[agent6] pausing after this step: Enter continues, type to steer,"
-                " stop ends it, detach backgrounds it. Ctrl-C again to interrupt now.\n"
+                " /stop ends it, /detach backgrounds it. Ctrl-C again to interrupt now.\n"
                 + _status_suffix(session_facts)
             )
 

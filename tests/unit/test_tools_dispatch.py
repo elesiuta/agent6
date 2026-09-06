@@ -2185,3 +2185,13 @@ def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
         d.dispatch("apply_patch", {"patch": patch})
 
     assert (tmp_path / "m.py").read_text(encoding="utf-8") == "A = 1\nB = 2\nC = 3\nD = 4\nE = 5\n"
+
+    # The preview shows what the apply would do, so it refuses the same patch
+    # instead of previewing a diff whose second section reads the ORIGINAL.
+    with pytest.raises(ToolError, match="appears in 2 sections"):
+        d.dispatch("apply_patch", {"patch": patch, "preview": True})
+
+    # And the count names the repeated file, not the patch's section total.
+    three = patch + ("diff --git a/o.py b/o.py\n--- /dev/null\n+++ b/o.py\n@@ -0,0 +1 @@\n+O = 1\n")
+    with pytest.raises(ToolError, match=r"m\.py appears in 2 sections"):
+        d.dispatch("apply_patch", {"patch": three})
