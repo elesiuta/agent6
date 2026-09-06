@@ -848,8 +848,8 @@ def test_a_machine_overlay_refusal_reads_like_every_other_writer() -> None:
 def test_config_unset_on_an_mcp_server_names_the_verb_that_removes_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`[mcp.servers.<name>]` is valid only whole, so unsetting a key of it
-    leaves a config that does not load; the refusal names `mcp remove`."""
+    """A `[mcp.servers.<name>]` entry is a table, not a leaf, so `config unset`
+    cannot name it; the refusal points at the verb that can."""
     monkeypatch.chdir(tmp_path)
     cfg = tmp_path / "config.toml"
     cfg.write_text(

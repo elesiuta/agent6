@@ -166,12 +166,15 @@ def is_openai_direct_host(base_url: str, deployment: str) -> bool:
 def sent_reasoning_effort(
     model: str, configured: str | None, *, direct_openai: bool = False
 ) -> str | None:
-    """The reasoning effort a request for *model* carries, or None when it
-    carries no reasoning knob at all (a model outside the reasoning families).
+    """The reasoning effort this role resolves to for *model*, or None when the
+    model takes no reasoning knob at all and the request carries none.
 
     One owner for the rule `config show` prints and `complete` sends.
     Precedence: *configured* (the role's `effort`, or a per-call override) >
-    `AGENT6_REASONING_EFFORT` > `low`.
+    `AGENT6_REASONING_EFFORT` > `low`. `off` is a resolved level, not a wire
+    value: `complete` maps it per host, omitting the parameter on
+    api.openai.com (whose o-series always reasons) and sending
+    `{"enabled": false}` elsewhere.
     """
     if not (
         _is_reasoning_model(model) or (direct_openai and _is_openai_direct_reasoning_model(model))

@@ -367,8 +367,8 @@ def _cmd_config_set(
 
 def _not_a_leaf(key: str, config_path: Path | None) -> str:
     """Why *key* cannot be unset. A `[mcp.servers.<name>]` entry is a table,
-    and one that is valid only whole, so the message names the verb that
-    removes it instead of the generic pointer."""
+    not a leaf, so the message names the verb that removes it instead of the
+    generic pointer."""
     name = key.removeprefix("mcp.servers.")
     if name != key and "." not in name:
         cfg = load_effective(Path.cwd(), config_path).config

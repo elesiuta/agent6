@@ -268,9 +268,9 @@ def _enable_command(to_repo: bool) -> str:
 def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None = None) -> int:
     """Drop `[mcp.servers.<name>]` from the global (or `--repo`) config.
 
-    The inverse of `connect`, and the only way to drop a server: an entry is
-    valid only whole, so `config unset` on one of its keys leaves a config that
-    does not load.
+    The inverse of `connect`, and the only way to drop a server: the entry is a
+    table rather than a leaf, so `config unset` cannot name it, and unsetting
+    its `command`/`url` is refused because an entry needs exactly one of them.
     """
     effective = load_effective(Path.cwd(), config_path)
     holders = _layers_holding(effective, name)

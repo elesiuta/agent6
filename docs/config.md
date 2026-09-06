@@ -431,7 +431,7 @@ agent6 mcp list
 agent6 mcp remove files
 ```
 
-`agent6 mcp remove <name>` drops the entry from the global config (`--repo` for the per-repo one): an entry is valid only whole, so `config unset` on one of its keys is refused and names this verb.
+`agent6 mcp remove <name>` drops the entry from the global config (`--repo` for the per-repo one): `config unset` cannot, because the entry is a table rather than a leaf, and dropping its `command`/`url` is refused since an entry needs exactly one of them.
 
 A spawned server's `[sandbox]` block names what it needs on top of the sandbox a `run_command` gets.
 
