@@ -561,9 +561,10 @@ class BudgetTracker:
         pricing table, or a priced model with unpriced calls. Either way the
         figure is a lower bound.
 
-        The live TUI cost meter and the in-record USD ceiling read this;
-        the end-of-run summary iterates `_model_cost_usd` itself, the same
-        arithmetic per model.
+        The live TUI cost meter, the in-record USD ceiling and the end-of-run
+        summary's TOTAL all read this, so the figure the operator sees is the
+        figure the ceiling enforces; the summary's per-model lines call
+        `_model_cost_usd` for their own share.
         """
         with self._lock:
             return self._estimate_usd_locked()
@@ -589,18 +590,17 @@ class BudgetTracker:
         """Human-facing end-of-run summary with USD estimate where known."""
         snap = self.snapshot()
         lines = ["Token + cost summary:"]
-        total_usd = 0.0
-        any_unknown = False
+        # The TOTAL is the figure the USD ceiling enforces, so it carries the
+        # purchased credits a plan-metered run spent; the per-model lines below
+        # report the authoritative $0 those calls cost.
+        total_usd, any_unknown = self.estimate_usd()
         any_estimated = False
         for model, totals in snap.per_model.items():
             cost = _model_cost_usd(model, totals)
             cost_str: str
             if cost is None:
                 cost_str = "$? (unknown price)"
-                any_unknown = True
             else:
-                total_usd += cost.usd
-                any_unknown = any_unknown or cost.partial
                 any_estimated = any_estimated or cost.estimated
                 if cost.partial:
                     note = " (reported, some calls unpriced)"

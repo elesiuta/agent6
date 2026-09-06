@@ -413,6 +413,9 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
     _record_plan(t, reading("$12.50"))
     _record_plan(t, reading("$11.90"))
     assert t.estimate_usd()[0] == pytest.approx(0.60)
+    # The end-of-run summary states the figure the ceiling enforces: summing
+    # the per-model lines alone printed $0.0000 for real money spent.
+    assert "cost=$0.6000" in t.format_summary()
     t.check()
     _record_plan(t, reading("$11.40"))
     with pytest.raises(BudgetExceeded, match="purchased credits spent"):
