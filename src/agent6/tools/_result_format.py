@@ -42,13 +42,18 @@ def parse_metric_score(stdout: str, stderr: str, *, pattern: str) -> float | Non
 
 def truncate_args(raw: dict[str, Any], *, max_value_chars: int = 200) -> dict[str, Any]:
     """Cheap argument preview for telemetry; truncates strings longer than
-    *max_value_chars* and lists longer than 10 items."""
-    out: dict[str, Any] = {}
-    for k, v in raw.items():
-        if isinstance(v, str) and len(v) > max_value_chars:
-            out[k] = v[:max_value_chars] + f"… ({len(v)} chars)"
-        elif isinstance(v, list | tuple) and len(v) > 10:
-            out[k] = [*list(v[:10]), f"… ({len(v)} items)"]
-        else:
-            out[k] = v
-    return out
+    *max_value_chars* and lists longer than 10 items, at every depth (an
+    apply_edit's `edits` is a short list of dicts whose strings hold whole
+    files)."""
+    return {k: _clip_value(v, max_value_chars) for k, v in raw.items()}
+
+
+def _clip_value(v: Any, max_value_chars: int) -> Any:
+    if isinstance(v, str):
+        return v if len(v) <= max_value_chars else v[:max_value_chars] + f"… ({len(v)} chars)"
+    if isinstance(v, dict):
+        return {k: _clip_value(x, max_value_chars) for k, x in v.items()}  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+    if isinstance(v, list | tuple):
+        items = [_clip_value(x, max_value_chars) for x in v[:10]]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        return [*items, f"… ({len(v)} items)"] if len(v) > 10 else items
+    return v

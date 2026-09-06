@@ -2277,3 +2277,15 @@ def test_sizes_on_the_wire_are_bytes(tmp_path: Path) -> None:
     assert preview["bytes_after"] == 22
     written = d.dispatch("apply_patch", {"patch": patch}).to_wire()
     assert written["bytes_written"] == 22
+
+
+def test_the_argument_preview_clips_at_every_depth() -> None:
+    """The `tool.call` preview clipped top-level strings only, so an
+    apply_edit's `edits[0].new_string` wrote a whole file into the durable
+    event log per call while the sibling apply_patch clipped to 200 chars."""
+    from agent6.tools._result_format import truncate_args
+
+    out = truncate_args({"path": "a.py", "edits": [{"old_string": "x", "new_string": "y" * 5000}]})
+    clipped = out["edits"][0]["new_string"]
+    assert len(clipped) < 300 and clipped.endswith("… (5000 chars)")
+    assert out["path"] == "a.py"
