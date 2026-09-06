@@ -482,10 +482,15 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     chain = chain_ref_for(layout.session_id)
     try:
         if chain_tip(cwd, chain) is not None:
-            branch_kept = branch_exists(cwd, run_branch_for(layout.session_id))
+            branch = run_branch_for(layout.session_id)
+            branch_kept = branch_exists(cwd, branch)
             delete_ref(cwd, chain)
             # With no visible branch the ref was the commits' only anchor.
-            note = " and its chain ref" + ("" if branch_kept else " (its commits are now loose)")
+            note = " and its chain ref" + (
+                f" (branch {branch} kept; `sessions prune` reports it)"
+                if branch_kept
+                else " (its commits are now loose)"
+            )
     except GitError:
         pass  # not a repo here, or git unreadable: state-dir removal stands
     print(f"removed {layout.session_id}{note}")

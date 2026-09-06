@@ -430,6 +430,67 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     assert not dead.exists()
 
 
+def test_runs_rm_names_the_kept_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """rm deletes history and the chain ref but never the visible branch (the
+    unmerged work's anchor; only prune's kept-list owns branch deletion) - and
+    it SAYS so: the old message named only the chain ref, leaving the operator
+    to discover an orphan branch later."""
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "seed",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "update-ref", "refs/agent6/gone-run-CCCC33/head", "HEAD"], cwd=repo, check=True
+    )
+    subprocess.run(["git", "branch", "agent6/gone-run-CCCC33"], cwd=repo, check=True)
+    d = resolved_state_dir(repo) / "sessions" / "runs" / "gone-run-CCCC33"
+    d.mkdir(parents=True)
+    (d / "logs.jsonl").write_text(
+        '{"type": "session.start", "mode": "run"}\n'
+        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        encoding="utf-8",
+    )
+
+    assert main(["sessions", "rm", "gone-run-CCCC33"]) == 0
+    out = capsys.readouterr().out
+    assert "branch agent6/gone-run-CCCC33 kept" in out
+    assert "prune" in out
+    ref = subprocess.run(
+        ["git", "rev-parse", "--verify", "-q", "refs/agent6/gone-run-CCCC33/head"],
+        cwd=repo,
+        capture_output=True,
+        check=False,
+    )
+    assert ref.returncode != 0  # the chain ref is gone
+    br = subprocess.run(
+        ["git", "rev-parse", "--verify", "-q", "refs/heads/agent6/gone-run-CCCC33"],
+        cwd=repo,
+        capture_output=True,
+        check=False,
+    )
+    assert br.returncode == 0  # the branch survives
+
+
 def test_runs_rm_asks_clears_the_bucket(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
