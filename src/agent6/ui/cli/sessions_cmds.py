@@ -52,9 +52,9 @@ from agent6.ui.cli._common import (
     styled_status,
 )
 from agent6.viewmodel import (
-    is_session_husk,
     is_winner,
     newest_session_dir,
+    session_dirs,
     session_is_live,
     summarize_session_dir,
     summary_row,
@@ -79,11 +79,7 @@ def _cmd_list(*, as_json: bool = False) -> int:
     """
 
     cwd = Path.cwd()
-    dirs: list[Path] = []
-    for sub in SESSION_BUCKETS:
-        d = bucket_dir(resolved_state_dir(cwd), sub)
-        if d.is_dir():
-            dirs.extend(p for p in d.iterdir() if p.is_dir() and not is_session_husk(p))
+    dirs = session_dirs(resolved_state_dir(cwd), SESSION_BUCKETS)
     if not dirs:
         print("[]" if as_json else NOTHING_YET)  # the empty listing is output, not an error
         return 0

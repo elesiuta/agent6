@@ -41,13 +41,12 @@ from agent6.graph.storage import load_graph
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import (
     SESSION_BUCKETS,
-    bucket_dir,
     is_safe_session_id,
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
-from agent6.viewmodel import is_session_husk, session_mtime
+from agent6.viewmodel import session_dirs
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
@@ -165,42 +164,19 @@ def _no_one_to_ask(config: Config) -> Config:
     return config.with_sandbox_overrides(no_commands=True)
 
 
-def _session_dirs(agent6_dir: Path) -> list[Path]:
-    """Every session dir under the state base, across every bucket.
+def _listable_sessions(agent6_dir: Path) -> list[Path]:
+    """Every session dir under the state base, newest first.
 
-    `list_sessions` is named for what it lists; reading runs/ alone hid a plan
-    and an ask from an editor driving agent6 over MCP.
+    `list_sessions` is named for what it lists: reading runs/ alone hid a plan
+    and an ask from an editor driving agent6 over MCP, and listing husks showed
+    it sessions the CLI and the web hub denied existed. `viewmodel.session_dirs`
+    is the one enumeration behind all three.
     """
-    return [
-        d
-        for bucket in SESSION_BUCKETS
-        if bucket_dir(agent6_dir, bucket).is_dir()
-        for d in bucket_dir(agent6_dir, bucket).iterdir()
-        # Husks are what every other listing hides: a crash-orphaned dir with no
-        # manifest and no log. Listing them here showed an editor sessions the
-        # CLI and the web hub denied existed.
-        if d.is_dir() and not is_session_husk(d)
-    ]
-
-
-def _newest_first(dirs: list[Path]) -> list[Path]:
-    """Session dirs sorted newest-first by session activity.
-
-    Session ids are NOT chronologically sortable -- they start with a random
-    `<adjective>-<noun>` and the embedded ms timestamp rolls over -- so a
-    name sort picks the alphabetically-last one, not the latest. Sort by
-    logs.jsonl activity instead of directory mtime so a front-end writing
-    front-end claims into an older session does not make it look newest.
-    """
-    return sorted(
-        dirs,
-        key=session_mtime,
-        reverse=True,
-    )
+    return session_dirs(agent6_dir, SESSION_BUCKETS)
 
 
 def _most_recent_session_id(agent6_dir: Path) -> str | None:
-    candidates = _newest_first(_session_dirs(agent6_dir))
+    candidates = _listable_sessions(agent6_dir)
     return candidates[0].name if candidates else None
 
 
@@ -494,7 +470,7 @@ class MCPServer:
 
     def _h_list_sessions(self, _args: dict[str, Any]) -> dict[str, Any]:
         entries: list[dict[str, Any]] = []
-        for d in _newest_first(_session_dirs(self._agent6_dir)):
+        for d in _listable_sessions(self._agent6_dir):
             summary: dict[str, Any] = {"session_id": d.name}
             # A missing/corrupt manifest lists the run without one.
             with contextlib.suppress(ManifestError):
