@@ -112,6 +112,50 @@ def _run_that_moved_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple
     return repo, c1, c2
 
 
+def test_undo_of_a_model_controlled_run_refuses_before_committing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `git.control = "model"` run has no agent6 chain. The refusal sat in
+    the fork step, after the undo commit, so a chain ref holding the tree was
+    left behind: `auto_merge` landed it on the base, and the next run's
+    dirty-tree question named a merge that refuses."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("one\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "c1")
+    c1 = _git(repo, "rev-parse", "HEAD")
+    monkeypatch.chdir(repo)
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="model-AAAA11")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "model-AAAA11",
+                "mode": "run",
+                "user_task": "do the thing",
+                "base_sha": c1,
+                "base_branch": "main",
+                "run_branch": None,
+                "git_control": "model",
+            }
+        ),
+        encoding="utf-8",
+    )
+    _checkpoint(layout, 1, head_sha=c1, ops=1)
+    _checkpoint(layout, 2, head_sha=c1, ops=2)
+    (repo / "a.txt").write_text("two\n", encoding="utf-8")  # the model's own uncommitted edit
+    said: list[str] = []
+    got = undo_fork(
+        None, "model-AAAA11", cwd=repo, reporter=Reporter(out=said.append, err=said.append)
+    )
+    assert got is None
+    assert any("managed git itself" in s for s in said), said
+    assert chain_tip(repo, chain_ref_for("model-AAAA11")) is None
+
+
 def test_undo_puts_the_checkout_back_and_keeps_the_tree_as_it_stood(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

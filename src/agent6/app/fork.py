@@ -422,6 +422,12 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     except ManifestError as exc:
         reporter.error(f"cannot read the manifest of {undone.session_id}: {exc}")
         return None
+    refusal = model_git_refusal(manifest, "undo")
+    if refusal is not None:
+        # Before the commit below: a model-controlled run has no agent6 chain,
+        # and a chain ref written here is one auto_merge would land.
+        reporter.error(refusal)
+        return None
     checkout = manifest.worktree or cwd
     if manifest.worktree is not None and manifest.worktree_git_dir is None:
         reporter.error(
@@ -618,8 +624,6 @@ def _plan_fork(
         raise _ForkRefused(2) from exc
     refusal = model_git_refusal(sm, "fork")
     if refusal is not None:
-        # /undo forks in-process, so this one guard covers it too: without an
-        # agent6 chain there is no checkpoint to fork or rewind to.
         reporter.error(refusal)
         raise _ForkRefused(2)
 
