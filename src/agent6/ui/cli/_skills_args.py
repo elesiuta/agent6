@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import _sub
+from agent6.ui.cli._common import REPO_FLAG_HELP, _sub
 from agent6.ui.cli.completers import _complete_skills
 
 
@@ -45,15 +45,11 @@ def _add_skills_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         action="store_true",
         help="Inject the skill's full text into every run's system prompt instead of the index.",
     )
-    sk_enable.add_argument(
-        "--repo", action="store_true", help="Write to the per-repo config instead of the global."
-    )
+    sk_enable.add_argument("--repo", action="store_true", help=REPO_FLAG_HELP)
     sk_disable = _sub(skills_sub, "disable", help="Drop a skill from the index and use_skill.")
     sk_disable_name = sk_disable.add_argument("name", help="Skill name.")
     sk_disable_name.completer = _complete_skills  # type: ignore[attr-defined]
-    sk_disable.add_argument(
-        "--repo", action="store_true", help="Write to the per-repo config instead of the global."
-    )
+    sk_disable.add_argument("--repo", action="store_true", help=REPO_FLAG_HELP)
     sk_remove = _sub(skills_sub, "remove", help="Delete an installed skill from the data dir.")
     sk_remove_name = sk_remove.add_argument("name", help="Skill name.")
     sk_remove_name.completer = _complete_skills  # type: ignore[attr-defined]

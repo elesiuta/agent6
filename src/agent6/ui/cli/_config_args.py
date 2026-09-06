@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import get_args
 
 from agent6.config import EffortLevel
-from agent6.ui.cli._common import _sub
+from agent6.ui.cli._common import REPO_FLAG_HELP, _sub
 from agent6.ui.cli.completers import (
     _complete_config_keys,
     _complete_config_values,
@@ -117,7 +117,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         p.add_argument(
             "--repo",
             action="store_true",
-            help="Write the per-repo config instead of the global config.",
+            help=REPO_FLAG_HELP,
         )
         machine_arg = p.add_argument(
             "--machine-file",
@@ -168,7 +168,7 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     connect_p.add_argument(
         "--repo",
         action="store_true",
-        help="Write the [providers.*] block to the per-repo config instead of the global config.",
+        help=REPO_FLAG_HELP,
     )
     connect_p.add_argument(
         "--logout",
@@ -233,5 +233,5 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     model_p.add_argument(
         "--repo",
         action="store_true",
-        help="Write to the per-repo config instead of the global config.",
+        help=REPO_FLAG_HELP,
     )

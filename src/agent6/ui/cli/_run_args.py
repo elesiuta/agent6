@@ -8,7 +8,13 @@ from __future__ import annotations
 import argparse
 
 from agent6.config.layer import BUILTIN_PRESETS
-from agent6.ui.cli._common import _add_budget_flags, _add_config_flag, _add_sandbox_flags, _sub
+from agent6.ui.cli._common import (
+    SESSION_ID_HELP,
+    _add_budget_flags,
+    _add_config_flag,
+    _add_sandbox_flags,
+    _sub,
+)
 from agent6.ui.cli.completers import (
     _complete_parallel_models,
     _complete_plan_session_ids,
@@ -150,7 +156,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "session_id",
         nargs="?",
         default="",
-        help="Session id under the per-repo state dir (omit for the most recent).",
+        help=SESSION_ID_HELP,
     )
     resume_run.completer = _complete_resumable_ids  # type: ignore[attr-defined]
     _add_config_flag(resume_p)
@@ -211,7 +217,7 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "session_id",
         nargs="?",
         default="",
-        help="Source run id or unambiguous prefix to fork from (omit for the most recent run).",
+        help="Source run id or unambiguous prefix; omit for the newest run.",
     )
     fork_src.completer = _complete_resumable_ids  # type: ignore[attr-defined]
     fork_p.add_argument(

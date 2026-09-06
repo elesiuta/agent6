@@ -148,6 +148,13 @@ def _plans_dir(repo_root: Path) -> Path:
 # the way out rather than the directory that is missing.
 NOTHING_YET = 'no sessions yet. Start one with `agent6 run "<task>"`.'
 
+# The one sentence every command's id argument prints; a command whose default
+# differs appends its own clause.
+SESSION_ID = "Session id or unambiguous prefix"
+SESSION_ID_HELP = f"{SESSION_ID}; omit for the newest."
+MACHINE_ID_HELP = "Machine id (a directory under the per-repo state dir's machines/)."
+REPO_FLAG_HELP = "Write to the per-repo config instead of the global config."
+
 
 def print_nothing_yet() -> None:
     """Say there is nothing yet, and how to change that.

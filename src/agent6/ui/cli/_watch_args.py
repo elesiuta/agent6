@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import _sub
+from agent6.ui.cli._common import SESSION_ID, SESSION_ID_HELP, _sub
 from agent6.ui.cli.completers import (
     _complete_session_ids,
     _complete_session_ports,
@@ -33,7 +33,7 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "target",
         nargs="?",
         default="",
-        help="Session id (exact or prefix) or machine id. Omit for the most recent.",
+        help=f"{SESSION_ID} or machine id; omit for the newest.",
     )
     watch_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
     # One presentation at a time: JSON silently won over --raw/--tui when
@@ -85,7 +85,7 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "target",
         nargs="?",
         default="",
-        help="Session id (exact or prefix) or machine id to open on load. Omit for the hub.",
+        help=f"{SESSION_ID} or machine id to open on load; omit for the hub.",
     )
     web_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
     web_p.add_argument(
@@ -123,7 +123,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " `agent6 resume ID --steer TEXT` queues one for its next leg."
         ),
     )
-    steer_target = steer_p.add_argument("target", help="Session id (exact or unique prefix).")
+    steer_target = steer_p.add_argument("target", help=f"{SESSION_ID}.")
     steer_target.completer = _complete_session_ids  # type: ignore[attr-defined]
     steer_p.add_argument("text", help="The instruction; rides verbatim.")
     steer_p.add_argument(
@@ -147,7 +147,7 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
             " the open question and its options; one TEXT per question, in order."
         ),
     )
-    answer_target = answer_p.add_argument("target", help="Session id (exact or unique prefix).")
+    answer_target = answer_p.add_argument("target", help=f"{SESSION_ID}.")
     answer_target.completer = _complete_session_ids  # type: ignore[attr-defined]
     answer_p.add_argument(
         "answers",
@@ -197,7 +197,7 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         nargs="?",
         default="",
         help=(
-            "Session id (exact or prefix); omit for the newest. A bare number"
+            f"{SESSION_ID_HELP} A bare number"
             " here is read as the PORT of the newest session (name a numeric"
             " session by giving both arguments)."
         ),

@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from agent6.ui.cli._common import _add_sandbox_flags, _sub
+from agent6.ui.cli._common import MACHINE_ID_HELP, _add_sandbox_flags, _sub
 from agent6.ui.cli.completers import _complete_machine_ids
 
 
@@ -96,18 +96,14 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "status",
         help="Report a machine instance's current state, spend, and next wake. Read-only.",
     )
-    machine_status_id = machine_status.add_argument(
-        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
-    )
+    machine_status_id = machine_status.add_argument("machine_id", help=MACHINE_ID_HELP)
     machine_status_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_poke = _sub(
         machine_sub,
         "poke",
         help="Signal a waiting machine to wake on its next check (drops a signal file).",
     )
-    machine_poke_id = machine_poke.add_argument(
-        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
-    )
+    machine_poke_id = machine_poke.add_argument("machine_id", help=MACHINE_ID_HELP)
     machine_poke_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_poke_payload = machine_poke.add_mutually_exclusive_group()
     machine_poke_payload.add_argument(
@@ -129,18 +125,14 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
             " in flight."
         ),
     )
-    machine_stop_id = machine_stop.add_argument(
-        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
-    )
+    machine_stop_id = machine_stop.add_argument("machine_id", help=MACHINE_ID_HELP)
     machine_stop_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
     machine_replay = _sub(
         machine_sub,
         "replay",
         help="Deterministically replay a machine's journal offline (no world I/O).",
     )
-    machine_replay_id = machine_replay.add_argument(
-        "machine_id", help="Machine id (directory under the per-repo state dir, machines subdir)."
-    )
+    machine_replay_id = machine_replay.add_argument("machine_id", help=MACHINE_ID_HELP)
     machine_replay_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
 
     machine_create = _sub(

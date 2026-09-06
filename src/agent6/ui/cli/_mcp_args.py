@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import _sub
+from agent6.ui.cli._common import REPO_FLAG_HELP, _sub
 from agent6.ui.cli.completers import _complete_mcp_servers
 
 
@@ -61,7 +61,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         "--repo",
         dest="to_repo",
         action="store_true",
-        help="Write to the per-repo config instead of the global one.",
+        help=REPO_FLAG_HELP,
     )
 
     remove = _sub(
@@ -75,7 +75,7 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         "--repo",
         dest="to_repo",
         action="store_true",
-        help="Remove from the per-repo config instead of the global one.",
+        help="Remove from the per-repo config instead of the global config.",
     )
 
     _sub(mcp_sub, "list", help="The configured MCP servers and how each is reached.")

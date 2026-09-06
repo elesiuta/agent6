@@ -64,7 +64,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "session_id",
         nargs="?",
         default="",
-        help="Plan run id (or unambiguous prefix); omit for the most recent plan.",
+        help="Plan id or unambiguous prefix; omit for the newest plan.",
     )
     plan_show_id.completer = _complete_plan_session_ids  # type: ignore[attr-defined]
     plan_edit = _sub(
@@ -79,7 +79,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "session_id",
         nargs="?",
         default="",
-        help="Plan run id (or unambiguous prefix); omit for the most recent plan.",
+        help="Plan id or unambiguous prefix; omit for the newest plan.",
     )
     plan_edit_id.completer = _complete_plan_session_ids  # type: ignore[attr-defined]
 

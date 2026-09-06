@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli._common import _sub
+from agent6.ui.cli._common import SESSION_ID, SESSION_ID_HELP, _sub
 from agent6.ui.cli.completers import _complete_session_ids
 
 
@@ -49,7 +49,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id (omit for the most recent).",
+        help=SESSION_ID_HELP,
     )
     sessions_show_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_show.add_argument(
@@ -67,7 +67,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id (or unique prefix). Omit to diff the most recent.",
+        help=SESSION_ID_HELP,
     )
     sessions_diff_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_diff.add_argument(
@@ -93,7 +93,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id (or unique prefix). Omit to merge the most recent.",
+        help=SESSION_ID_HELP,
     )
     sessions_merge_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_merge.add_argument(
@@ -152,7 +152,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id (or unique prefix). Omit for the most recent.",
+        help=SESSION_ID_HELP,
     )
     sessions_commits_id.completer = _complete_session_ids  # type: ignore[attr-defined]
 
@@ -165,7 +165,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id or unique prefix; omit for the most recent.",
+        help=SESSION_ID_HELP,
     )
     sessions_stop_id.completer = _complete_session_ids  # type: ignore[attr-defined]
 
@@ -179,7 +179,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id (exact or unambiguous prefix; omit for the repo's session root).",
+        help=f"{SESSION_ID}; omit for the repo's session root.",
     )
     sessions_dir_id.completer = _complete_session_ids  # type: ignore[attr-defined]
 
@@ -195,7 +195,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id or unique prefix; omit for the most recent.",
+        help=SESSION_ID_HELP,
     )
     sessions_rm_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_rm.add_argument(
@@ -232,7 +232,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id (or unambiguous prefix). Defaults to the most recent.",
+        help=SESSION_ID_HELP,
     )
     sessions_tr_id.completer = _complete_session_ids  # type: ignore[attr-defined]
     sessions_tr.add_argument(
@@ -265,6 +265,6 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "session_id",
         nargs="?",
         default="",
-        help="Session id (or unambiguous prefix). Defaults to the most recent.",
+        help=SESSION_ID_HELP,
     )
     sessions_graph_id.completer = _complete_session_ids  # type: ignore[attr-defined]
