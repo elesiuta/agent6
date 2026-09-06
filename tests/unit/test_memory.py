@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -311,3 +312,26 @@ def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: Path) -> No
         encoding="utf-8"
     ) == "What lane two saw.\n"
     assert show(origin, "shared-name") == "What lane one saw.\n"
+
+
+def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: Path) -> None:
+    """A seed key or a stray file whose name breaks the store's rule (a path
+    fragment, an upper-case name) is not a memory and names no path: the
+    import skips it on both sides. A seed key of `../escape` matching a file
+    beside the store would otherwise be "deleted in the lane" and unlinked
+    outside the store."""
+    origin = tmp_path / "origin"
+    add(origin, "a-fact", "A first.")
+    lane = _seeded_lane(tmp_path, origin)
+    outside = origin / "escape.md"
+    outside.write_text("outside\n", encoding="utf-8")
+    seeds = json.loads(seed_path(lane).read_text(encoding="utf-8"))
+    seeds["../escape"] = hashlib.sha256(b"outside\n").hexdigest()
+    seeds["Bad Name"] = "0" * 64
+    seed_path(lane).write_text(json.dumps(seeds), encoding="utf-8")
+    (memory_dir(lane) / "Bad Name.md").write_text("stray\n", encoding="utf-8")
+    held = tmp_path / "held"
+    merged = merge_memory(lane, origin, held_dir=held)
+    assert outside.read_text(encoding="utf-8") == "outside\n"
+    assert merged == MemoryMerge()
+    assert not (memory_dir(origin) / "Bad Name.md").exists() and not held.exists()

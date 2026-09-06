@@ -162,6 +162,8 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
     lane = {p.stem: p for p in src.glob("*.md") if p.name not in (INDEX_NAME, DECISIONS_NAME)}
     landed: dict[str, list[str]] = {"carry": [], "update": [], "delete": [], "hold": []}
     for name in sorted(seeds.keys() | lane.keys()):
+        if not _NAME_RE.match(name):
+            continue  # not a memory name (`_check_name`): names no path in either store
         path = lane.get(name)
         origin = dst / f"{name}.md"
         seed = seeds.get(name)
