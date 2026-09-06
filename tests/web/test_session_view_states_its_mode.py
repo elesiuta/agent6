@@ -58,3 +58,14 @@ def test_conversation_route_paints_the_prompts_it_claims_to_answer() -> None:
     conv = client[client.index("async function renderConversation") :]
     conv = conv[: conv.index("// --- machine watch")]
     assert conv.count("paintPrompts(") >= 2, "the conversation route paints no prompts"
+
+
+def test_the_run_crumb_carries_the_state_word() -> None:
+    """A phone shows one widget at a time and opens on the conversation, so the
+    state was on a card the operator had to go find: a run could be waiting on
+    an approval, or dead, and the page it opened said neither. The crumb sits in
+    the fixed header on every widget page."""
+    client = CLIENT_JS
+    assert "setCrumb(runState(s) + ' · ' + cards._crumb)" in client
+    # One owner for the word: the state row reads the same helper.
+    assert "add('state', runState(s))" in client

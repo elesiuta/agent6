@@ -40,19 +40,23 @@ function drawerHandle(drawer) {
 }
 { const w = localStorage.getItem('a6-drawer-w'); if (w) document.documentElement.style.setProperty('--drawer-w', w); }
 
+// The run's state word, from the one field the fold stamps it in.
+function runState(s) { return s.status_label || (s.finished ? 'finished' : 'running'); }
+
 async function renderRun(id, opts, gen) {
   opts = opts || {};
   const base = opts.base || ('/api/session/' + encodeURIComponent(id));
   const snap = await getJSON(base); // throws -> route() shows the error
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   const readOnly = !!opts.readOnly;
-  setCrumb(opts.crumb || id);
+  const crumbBase = opts.crumb || id;
+  setCrumb(crumbBase);
   view.innerHTML = '';
   // "paged" only acts on phones: one widget shows at a time there, picked by
   // the floating menu; the desktop drawer ignores it.
   const app = el('div', 'run-app paged');
   const prompts = el('div', 'page-pad'); app.appendChild(prompts); // approval/question boxes surface here
-  const cards = { _id: id, _prompts: prompts, _readOnly: readOnly };
+  const cards = { _id: id, _prompts: prompts, _readOnly: readOnly, _crumb: crumbBase };
   const drawer = el('div', 'grid drawer');
   const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; const h = el('h2', null, title); c.appendChild(h); if (key === 'head') cards._head_title = h; const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
 
@@ -376,12 +380,16 @@ function paintRun(cards, s) {
   // The panel's own heading states the MODE, which is the fact that tells an
   // operator what they are looking at -- and the one the fixed word denied.
   if (cards._head_title && s.mode) cards._head_title.textContent = s.mode;
+  // A phone shows one widget at a time and opens on the conversation, so the
+  // state sat on a card the operator had to go find. The crumb is in the fixed
+  // header on every widget page; state leads it, since the crumb ellipsises.
+  if (cards._crumb) setCrumb(runState(s) + ' · ' + cards._crumb);
   cards.head.innerHTML = '';
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
   add('task', s.user_task || '(none)');
   add('id', s.session_id || cards._id || ''); // older logs carry no session_id in session.start
-  add('state', s.status_label || (s.finished ? 'finished' : 'running'));
+  add('state', runState(s));
   // Where the run's work lives and where Merge lands: consecutive spawns chain
   // branches, which is invisible without this line.
   if (s.forked_from) add('forked from', s.forked_from);
