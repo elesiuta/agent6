@@ -281,7 +281,7 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 | `summarise_at_chars` | _adaptive_ | Tier-2 compaction threshold: once the whole context exceeds this many characters, the elided history is summarized and the conversation restarts on the summary (the task DAG survives). Unset: the model's window minus a 16k-token reserve. Must exceed `drop_at_chars`. |
 | `keep_recent_chars` | `80000` | How many characters of the most recent history a tier-2 restart keeps verbatim after the summary. `0` keeps none. |
 | `keep_thinking_turns` | `0` | At tier-1 moments, drop the model's thinking from assistant turns older than this many turns. `0` keeps all thinking. Wires that re-send thinking (Anthropic's signed blocks, ChatGPT's reasoning items) replay less; the OpenAI wire never re-sends it. |
-| `summary_max_tokens` | `2048` | Cap on the tokens a tier-2 summary (and a gist distillation) may produce. |
+| `summary_max_tokens` | `2048` | Cap on the tokens a tier-2 summary (and a gist distillation) may produce. A reasoning model's per-call floor (room for its reasoning tokens) overrides a smaller cap, and the chatgpt backend takes no cap. |
 | `elision_gists` | `true` | At tier 1, replace a large `read_file` result with a model-written gist before the bare placeholder (the gist is dropped too under continued pressure, so the byte bound holds). `false`: straight to bare placeholders. |
 
 ## `[prompt]`

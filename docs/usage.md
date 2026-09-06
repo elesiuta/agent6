@@ -17,11 +17,11 @@ The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across ev
 
 agent6 routes three model roles independently:
 
-| Role       | Set with            | Used by                                      |
-| ---------- | ------------------- | -------------------------------------------- |
-| `worker`   | `[models.worker]`   | `agent6 run` and `agent6 resume`             |
-| `reviewer` | `[models.reviewer]` | `agent6 review` and the in-loop review panel |
-| `planner`  | `[models.planner]`  | `agent6 plan`                                |
+| Role       | Set with            | Used by                                                                          |
+| ---------- | ------------------- | -------------------------------------------------------------------------------- |
+| `worker`   | `[models.worker]`   | `agent6 run` and `agent6 resume`                                                 |
+| `reviewer` | `[models.reviewer]` | `agent6 review`, the in-loop review panel, the context summariser and the gister |
+| `planner`  | `[models.planner]`  | `agent6 plan`                                                                    |
 
 `reviewer` and `planner` fall back to `worker` when unset.
 

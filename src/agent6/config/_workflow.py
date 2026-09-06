@@ -249,7 +249,11 @@ class ContextConfig(BaseModel):
     summary_max_tokens: int = Field(
         gt=0,
         default=2048,
-        description="Cap on the tokens a tier-2 summary (and a gist distillation) may produce.",
+        description=(
+            "Cap on the tokens a tier-2 summary (and a gist distillation) may produce. A "
+            "reasoning model's per-call floor (room for its reasoning tokens) overrides a "
+            "smaller cap, and the chatgpt backend takes no cap."
+        ),
     )
     # Tier-1 gist elision: a large read_file result about to be elided decays
     # to a placeholder carrying a model-written gist of the file first (one
