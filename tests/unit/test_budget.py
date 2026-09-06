@@ -461,3 +461,25 @@ def test_plan_usage_line_names_a_window_with_no_reported_length() -> None:
     line = format_plan_usage(t.snapshot())
     assert "3% of the window (secondary)" in line
     assert "0-minute" not in line
+
+
+def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
+    """The preflight says an unpriced worker is not metered by max_usd and runs
+    under the token fallback; the receipt then printed "of $10.00" anyway, put
+    the lower-bound `+` after the parenthetical, and spelled the fallback cap
+    without the separator the preflight uses."""
+    t = BudgetTracker(max_usd=10.0, max_tokens_fallback=2_000_000, max_percent=-1)
+    t.record(
+        model="unpriced-xyz",
+        input_tokens=10,
+        output_tokens=5,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        cost_usd=0.0,
+    )
+
+    total = next(ln for ln in t.format_summary().splitlines() if "TOTAL" in ln)
+
+    assert "of $" not in total, total
+    assert "cost~$0.0000+" in total
+    assert "2,000,000 fallback tokens" in total

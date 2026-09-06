@@ -586,21 +586,18 @@ class BudgetTracker:
             total_usd += cost.usd
         return total_usd, any_unknown
 
-    def format_summary(self) -> str:
-        """Human-facing end-of-run summary with USD estimate where known."""
-        snap = self.snapshot()
-        lines = ["Token + cost summary:"]
-        # The TOTAL is the figure the USD ceiling enforces, so it carries the
-        # purchased credits a plan-metered run spent; the per-model lines below
-        # report the authoritative $0 those calls cost.
-        total_usd, any_unknown = self.estimate_usd()
+    def _model_lines(self, snap: BudgetSnapshot) -> tuple[list[str], int, bool]:
+        """One line per model, with how many were priced and whether any figure
+        is an estimate. The TOTAL is the tracker's own (`estimate_usd`)."""
+        lines: list[str] = []
+        priced = 0
         any_estimated = False
         for model, totals in snap.per_model.items():
             cost = _model_cost_usd(model, totals)
-            cost_str: str
             if cost is None:
                 cost_str = "$? (unknown price)"
             else:
+                priced += 1
                 any_estimated = any_estimated or cost.estimated
                 if cost.partial:
                     note = " (reported, some calls unpriced)"
@@ -620,21 +617,44 @@ class BudgetTracker:
                 f"cache_c={totals.cache_creation_tokens} "
                 f"calls={totals.calls} {cost_str}"
             )
-        usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
+        return lines, priced, any_estimated
+
+    def format_summary(self) -> str:
+        """Human-facing end-of-run summary with USD estimate where known."""
+        snap = self.snapshot()
+        lines = ["Token + cost summary:"]
+        # The TOTAL is the figure the USD ceiling enforces, so it carries the
+        # purchased credits a plan-metered run spent; the per-model lines below
+        # report the authoritative $0 those calls cost.
+        total_usd, any_unknown = self.estimate_usd()
+        model_lines, priced, any_estimated = self._model_lines(snap)
+        lines.extend(model_lines)
+        any_unknown = any_unknown or priced < len(snap.per_model)
         approx = "~" if any_unknown or any_estimated else "="
+        # The lower-bound mark belongs to the figure it qualifies: at least one
+        # model has no cached provider price (agent6.models.pricing keeps no
+        # static fallback). Appended after the unmetered parenthetical it read
+        # as "fallback tokens)+".
+        total = format_usd(total_usd) + ("+" if any_unknown else "")
+        # `of <cap>` states what meters this spend. With every model unpriced,
+        # max_usd meters none of it (the preflight says so too), and naming it
+        # here contradicted that.
+        cap = ""
+        if priced or not snap.per_model:
+            usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
+            cap = f" of {usd_cap}"
         budget_line = (
-            f"  TOTAL: in={snap.input_total} out={snap.output_total} "
-            f"cost{approx}{format_usd(total_usd)} of {usd_cap}"
+            f"  TOTAL: in={snap.input_total} out={snap.output_total} cost{approx}{total}{cap}"
         )
         if snap.unmetered_tokens:
             fb_cap = (
-                "unlimited" if snap.max_tokens_fallback == -1 else str(snap.max_tokens_fallback)
+                "unlimited"
+                if snap.max_tokens_fallback == -1
+                else f"{snap.max_tokens_fallback:,}"  # as the preflight NOTE prints it
             )
             budget_line += f" (unmetered: {snap.unmetered_tokens}/{fb_cap} fallback tokens)"
         if any_unknown:
-            # The figure is a lower bound; at least one model has no cached
-            # provider price (see agent6.models.pricing: no static fallback).
-            budget_line += "+ (some models unpriced; figure is a lower bound)"
+            budget_line += " (some models unpriced; figure is a lower bound)"
         lines.append(budget_line)
         if snap.plan_latest is not None:
             lines.append("  " + format_plan_usage(snap))

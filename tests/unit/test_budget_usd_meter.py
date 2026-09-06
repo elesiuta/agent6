@@ -322,7 +322,9 @@ def test_a_sub_cent_cap_prints_at_the_spends_precision() -> None:
         output_tokens=2000,
         cache_read_tokens=0,
         cache_creation_tokens=0,
+        cost_usd=0.0046,  # reported by the provider: this spend IS metered
     )
     summary = bt.format_summary()
-    assert "of $0.0040" in summary
-    assert "$0.00 " not in summary and ">= $0.00" not in summary
+    assert "of $0.0040" in summary  # the cap, at the spend's precision
+    assert "cost=$0.0046" in summary
+    assert ">= $0.0040" in summary  # and the exhaustion reason, not ">= $0.00"

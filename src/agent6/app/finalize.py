@@ -266,18 +266,22 @@ def print_session_end(
         # the URL, the errno, the budget line -- reaches the operator only here.
         reporter.out(f"  {result.summary}")
     reporter.out("")
-    for binary in _sandbox_unreachable_tools(layout):
+    if unreachable := _sandbox_unreachable_tools(layout):
+        # One remedy for the set: printed per binary, three unreachable tools
+        # repeated the same four bullets three times.
+        names = ", ".join(f"`{b}`" for b in unreachable)
+        verb = "is" if len(unreachable) == 1 else "are"
         reporter.out(
-            f"WARNING: `{binary}` is installed on this machine but did not work"
+            f"WARNING: {names} {verb} installed on this machine but did not work"
             " inside agent6's sandbox."
         )
         reporter.out(
             "  Likely a per-user or version-manager install (rustup, pyenv, nvm)"
             " whose toolchain the sandbox does not expose. Fix options:"
         )
-        reporter.out(f"    - make `{binary}` run from a clean shell (a system-wide install)")
-        reporter.out("    - install it into a standard bin dir (~/.local/bin, /usr/local/bin)")
-        reporter.out("    - grant its real directory via [sandbox].extra_read_paths")
+        reporter.out("    - run them from a clean shell (a system-wide install)")
+        reporter.out("    - install them into a standard bin dir (~/.local/bin, /usr/local/bin)")
+        reporter.out("    - grant their real directories via [sandbox].extra_read_paths")
         reporter.out("    - run with --dangerously-disable-sandbox")
     _print_next_session(layout, reporter=reporter)
     _print_unknown_baseline(result, layout=layout, reporter=reporter)

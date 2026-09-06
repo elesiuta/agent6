@@ -860,3 +860,40 @@ def test_a_clean_finish_does_not_repeat_the_summary_the_stream_showed(
     )
 
     assert "fixed it" not in capsys.readouterr().out
+
+
+def test_the_sandbox_warning_states_its_remedy_once(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The four remedy bullets were printed per binary: three unreachable tools
+    filled eighteen lines, twelve of them the same boilerplate."""
+    layout = _layout(
+        tmp_path,
+        "r-tools",
+        [
+            {"type": "session.start", "session_id": "r-tools", "user_task": "t"},
+            *(
+                {"type": "loop.sandbox_tool_unreachable", "binary": b}
+                for b in ("cargo", "node", "pyenv")
+            ),
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    result = SessionResult(
+        completed=True, reason="finish_session", summary="", iterations=1, tool_calls=1
+    )
+
+    print_session_end(
+        result,
+        layout=layout,
+        cwd=tmp_path,
+        budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+        console_stream=False,
+        reporter=STDIO_REPORTER,
+    )
+    out = capsys.readouterr().out
+
+    assert out.count("WARNING:") == 1
+    assert out.count("- run with --dangerously-disable-sandbox") == 1
+    for binary in ("cargo", "node", "pyenv"):
+        assert f"`{binary}`" in out
