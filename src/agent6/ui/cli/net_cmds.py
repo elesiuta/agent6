@@ -9,9 +9,12 @@ commands are the way in, and they are the operator's, never the model's:
 `exec` runs a command the way the agent would, `forward` bridges one of the
 run's ports to a port on this machine so a browser can open it.
 
-Both join through the holder pid the run publishes (`netns.pid`). Entering a
-network namespace needs capabilities in the user namespace that owns it, so
-each joins that first, exactly as the launcher does.
+A join goes through the holder pid the run publishes (`netns.pid`). `forward`
+always joins; `exec` joins only when the run's own commands took the session
+network, so a `host` stamp keeps it on this machine's network even while the
+run holds a netns for an MCP server scoped to it. Entering a network namespace
+needs capabilities in the user namespace that owns it, so each join takes that
+one first, exactly as the launcher does.
 """
 
 from __future__ import annotations
@@ -206,10 +209,10 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     a tool call -- but it is confined identically, which is the point: what you
     see is what the agent sees.
 
-    Unbounded: this is a foreground command in the operator's terminal, so
-    Ctrl-C is the bound, as it is for any other command they type. The fixed
-    policy timeout meant `exec` could not host a long-lived dependency (a dev
-    server, a tail) inside the run's network -- the one thing it is for.
+    Unbounded (`timeout_s=0.0`): a foreground command in the operator's
+    terminal, so Ctrl-C is the bound. The policy's default timeout would kill
+    the long-lived dependency (a dev server, a tail) that `exec` is for, held
+    open inside the run's network.
     """
     # A live run only: the help promises the run's own jail, and a finished
     # run's jail is gone with it (a fresh one built from its recorded policy
@@ -227,7 +230,10 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     if stamped is not None:
         isolation_word, network_word = stamped
         isolation = resolve_isolation(isolation_word, detect_env())
-        network = "session" if pid else network_word
+        # The recorded word, not the holder: a run whose commands took the host
+        # network can still hold a session netns for an MCP server scoped to
+        # it. An "auto" stamp reads as None and follows the holder, as the run did.
+        network = network_word if network_word is not None else ("session" if pid else None)
     else:
         print(
             "[agent6] WARNING: this run recorded no launch policy; using the"

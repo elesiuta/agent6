@@ -307,3 +307,64 @@ def test_exec_refuses_a_run_that_is_over(
     assert rc == 2 and ran == []
     err = capsys.readouterr().err
     assert "REFUSING: over-run-AAAA11 is " in err and "exists only while its run does" in err
+
+
+def test_exec_keeps_a_host_network_run_on_the_host_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run with `[sandbox].network = "host"` and one MCP server scoped to the
+    session holds a session netns while its own commands run on the host
+    network. exec read the holder as the answer and put the operator's command
+    on the routeless session network, contradicting the stamp it had read."""
+    from types import SimpleNamespace
+
+    from agent6.config import Config
+    from agent6.sessions.ipc import write_session_netns_pid
+    from agent6.types import JailPolicy
+    from agent6.ui.cli import net_cmds
+
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="live-run-AAAA11")
+    layout.ensure()
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(layout.session_dir, os.getpid())
+    write_session_netns_pid(layout.session_dir, os.getpid())  # the MCP server's
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": layout.session_id,
+                "mode": "run",
+                "policy": {"run_commands": "yes", "isolation": "strict", "network": "host"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    seen: dict[str, Any] = {}
+
+    def fake_run(policy: JailPolicy, *, session_net: Any = None) -> Any:
+        seen["network"] = policy.network
+        seen["borrowed"] = session_net is not None
+        return SimpleNamespace(stdout="", stderr="", returncode=0)
+
+    def _strict(_req: str, _env: Any) -> str:
+        return "strict"
+
+    monkeypatch.setattr(net_cmds, "detect_env", lambda: SimpleNamespace(sandbox_available=True))
+    monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
+    monkeypatch.setattr(net_cmds, "run_in_jail", fake_run)
+
+    cfg = Config.model_validate(
+        {
+            "sandbox": {"isolation": "strict", "network": "host"},
+            "mcp": {
+                "enabled": True,
+                "servers": {"docs": {"command": ["true"], "sandbox": {"network": "session"}}},
+            },
+        }
+    )
+    assert net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",)) == 0
+    assert seen == {"network": "host", "borrowed": False}
