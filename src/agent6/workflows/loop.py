@@ -12,11 +12,11 @@ from __future__ import annotations
 import itertools
 import json
 import os
-import random
 import shutil
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -70,7 +70,6 @@ from agent6.providers import (
     ProviderResponse,
     ToolDefinition,
     call_for_text,
-    output_cap_truncated,
 )
 from agent6.sessions.ipc import emit_session_start
 from agent6.skills import ResolvedSkills, skill_command, skill_steer_payload
@@ -188,8 +187,10 @@ from agent6.workflows._nudges import (
     VERIFY_SETTLED_NUDGE_AFTER,
     VERIFY_SETTLED_STOP_AFTER,
     VERIFY_UNADOPTED_NOTICE,
+    WENT_QUIET_NUDGE,
     ends_with_question,
     is_test_path,
+    reasoning_starved_nudge,
     standing_fruitless_nudge,
     standing_resume_nudge,
     test_only_green_notice,
@@ -223,10 +224,9 @@ from agent6.workflows._prompt_revision import (
     parse_prompt_revision,
 )
 from agent6.workflows._provider_call import (
-    NON_RETRYABLE_HTTP_STATUSES,
-    RETRY_AFTER_CEILING_S,
-    is_empty_tool_call_response,
+    ProviderCaller,
     provider_error_hint,
+    reasoning_starvation,
 )
 from agent6.workflows._review import CritiqueResult, ReviewDispatch, ReviewSeat, run_panel
 from agent6.workflows._session_state import (
@@ -1102,12 +1102,7 @@ class Workflow:
         `wire` is the pre-call serialization (already snapshotted); the
         conversation is only touched on the steer path."""
         try:
-            return self._call_with_retry(
-                system,
-                wire,
-                tools,
-                self._worker_max_tokens(state),
-            )
+            return self.caller.call(system, wire, tools, self._worker_max_tokens(state))
         except BudgetExceeded as exc:
             self._log(f"LOOP: budget exhausted at iter {iteration} ({exc})")
             self._final_checkpoint(iteration)
@@ -3163,19 +3158,8 @@ class Workflow:
         content and no tool_calls that strict OpenAI-compatible backends reject
         with a non-retryable 400, and either way it is dead context.
         AGENT6_WENT_QUIET_MAX_NUDGES overrides the cap."""
-        # reasoning-starvation trip-wire. When a model spends its entire output
-        # budget on reasoning_content and emits nothing user-visible, the
-        # provider returns stop_reason="length" with empty text + no tool_uses.
-        # Otherwise indistinguishable from a model that genuinely gave up, so
-        # surface it explicitly rather than leaving raw transcripts as the only
-        # diagnosis.
-        reasoning_chars = 0
-        raw_content = (resp.raw or {}).get("content") or []
-        if isinstance(raw_content, list):
-            for block in raw_content:
-                if isinstance(block, dict) and block.get("type") == "thinking":
-                    reasoning_chars += len(str(block.get("thinking") or ""))
-        starved = output_cap_truncated(resp) and reasoning_chars > 0 and resp.output_tokens > 0
+        reasoning_chars = reasoning_starvation(resp)
+        starved = reasoning_chars > 0
         if starved:
             self._log(
                 f"LOOP: reasoning_starvation at iter {iteration}"
@@ -3219,33 +3203,9 @@ class Workflow:
         conversation.pop_quiet_assistant()
         if state.went_quiet_nudges_used < effective_max_nudges:
             state.went_quiet_nudges_used += 1
-            # A starved reasoner gets its own nudge: the generic empty-turn
-            # message gives it nothing actionable, so it repeats the same
-            # loop next turn.
-            if starved:
-                nudge_text = (
-                    "[harness] Your previous turn spent its entire"
-                    f" output budget ({resp.output_tokens} tokens) on"
-                    " reasoning_content with no visible content and"
-                    " no tool_use. STOP REASONING. On this next turn,"
-                    " emit a tool_use IMMEDIATELY; do not think"
-                    " further. If you genuinely don't know what to do"
-                    " next, call `read_file` on the most relevant"
-                    " source file to ground your next decision, or"
-                    " call `finish_session` if the task is complete. Any"
-                    " response that is not a tool_use will waste the"
-                    " entire run."
-                )
-            else:
-                nudge_text = (
-                    "[harness] Your previous turn was empty: no text"
-                    " content and no tool_use. This is a synthetic"
-                    " prompt from the agent6 harness. Either call a"
-                    " tool to make progress, or call `finish_session`"
-                    " with a summary if the task is complete. Do"
-                    " not reply with another empty turn."
-                )
-            conversation.notice(nudge_text)
+            conversation.notice(
+                reasoning_starved_nudge(resp.output_tokens) if starved else WENT_QUIET_NUDGE
+            )
             self._emit(
                 "loop.went_quiet.nudge",
                 iteration=iteration,
@@ -4296,107 +4256,20 @@ class Workflow:
 
         return format_effective_task(user_task, revision)
 
-    def _call_with_retry(
-        self,
-        system: str,
-        messages: list[dict[str, Any]],
-        tools: list[ToolDefinition],
-        max_tokens: int,
-    ) -> ProviderResponse:
-        """Bounded-retry wrapper around `provider.call`: up to
-        `provider_retry_count + 1` attempts. Two retry paths share that budget:
-
-        - Transient `ProviderError` (Anthropic 529, OpenRouter 502, brief socket
-          timeout): retried with exponential backoff + full jitter so one flap
-          doesn't abort the run. `BudgetExceeded` is never retried (hard stop).
-          Permanent client errors (`ProviderError.status_code` in
-          `NON_RETRYABLE_HTTP_STATUSES`: 400/401/402/403/404/422, or
-          `ProviderError.fatal`) re-raise immediately without consuming a
-          retry: a second identical request cannot succeed.
-        - A self-contradictory empty tool-call response
-          (`is_empty_tool_call_response`: stop_reason promises a tool call but
-          none and no text came back -- GLM via OpenRouter, ~50% post-restart):
-          retried with a short fixed delay (model flakiness, not rate-limiting),
-          excluding `stop_reason=length` starvation. If every attempt is empty
-          the last is returned and the loop's went_quiet handler takes over.
-        """
-        attempts = max(1, self.provider_retry_count + 1)
-        last_exc: ProviderError | None = None
-        for attempt in range(1, attempts + 1):
-            try:
-                resp = self.provider.call(
-                    system=system,
-                    messages=messages,
-                    tools=tools,
-                    max_tokens=max_tokens,
-                    temperature=self.temperature,
-                    should_abort=self.should_abort,
-                    should_interrupt=self.should_interrupt,
-                )
-            except (ProviderAborted, ProviderInterrupted):
-                raise  # operator stop/steer: handle it, never retry as a fault
-            except ProviderError as exc:
-                last_exc = exc
-                non_retryable = exc.fatal or exc.status_code in NON_RETRYABLE_HTTP_STATUSES
-                if attempt < attempts and not non_retryable:
-                    base_delay = self.provider_retry_delay_s * (2 ** (attempt - 1))
-                    capped_delay = min(base_delay, self.provider_retry_max_delay_s)
-                    # jitter (full jitter, lower-bounded at 0.5) decorrelates
-                    # concurrent retriers; non-crypto randomness is fine here.
-                    delay = capped_delay * random.uniform(0.5, 1.0)  # noqa: S311
-                    # Honor an upstream Retry-After (429/503): wait at least the
-                    # advertised window (bounded), since our own backoff is
-                    # usually shorter and would just burn the retries before the
-                    # rate-limit clears.
-                    if exc.retry_after_s is not None:
-                        delay = max(delay, min(exc.retry_after_s, RETRY_AFTER_CEILING_S))
-                    self._log(
-                        f"LOOP: provider error attempt {attempt}/{attempts}: "
-                        f"{exc} - retrying in {delay:.2f}s"
-                    )
-                    self._emit(
-                        "loop.provider.retry",
-                        attempt=attempt,
-                        error=str(exc)[:200],
-                    )
-                    time.sleep(delay)
-                    continue
-                if non_retryable:
-                    self._log(
-                        f"LOOP: provider error {exc.status_code or 'fatal'} is permanent;"
-                        " not retrying"
-                    )
-                    self._emit(
-                        "loop.provider.fatal",
-                        status_code=exc.status_code,
-                        error=str(exc)[:200],
-                    )
-                raise
-            # A self-contradictory empty tool-call response (GLM via OpenRouter,
-            # ~50% after a context restart): retry the identical request, which
-            # recovers it about half the time. Bounded by the same attempt budget;
-            # if every attempt comes back empty the loop's went_quiet handler takes
-            # over. A short delay (no exponential growth) -- this is model
-            # flakiness, not rate-limiting.
-            if is_empty_tool_call_response(resp) and attempt < attempts:
-                delay = min(self.provider_retry_delay_s, 1.0) * random.uniform(0.5, 1.0)  # noqa: S311
-                self._log(
-                    f"LOOP: empty tool-call response attempt {attempt}/{attempts}"
-                    f" (stop_reason={resp.stop_reason!r}, no tool_use/text);"
-                    f" retrying in {delay:.2f}s"
-                )
-                self._emit(
-                    "loop.provider.empty_tool_call_retry",
-                    attempt=attempt,
-                    stop_reason=str(resp.stop_reason),
-                )
-                time.sleep(delay)
-                continue
-            return resp
-        # Defensive: loop above either returns or raises; this is unreachable.
-        # Kept for type-checker exhaustiveness in case the loop body changes.
-        assert last_exc is not None
-        raise last_exc
+    @cached_property
+    def caller(self) -> ProviderCaller:
+        """The worker's provider under the run's retry knobs and steer callables."""
+        return ProviderCaller(
+            provider=self.provider,
+            retry_count=self.provider_retry_count,
+            retry_delay_s=self.provider_retry_delay_s,
+            retry_max_delay_s=self.provider_retry_max_delay_s,
+            temperature=self.temperature,
+            should_abort=self.should_abort,
+            should_interrupt=self.should_interrupt,
+            log=self._log,
+            emit=self._emit,
+        )
 
     # ---- review panel ----------------------------------------------------------
 

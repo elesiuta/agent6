@@ -79,7 +79,7 @@ def test_openai_2xx_envelope_permanent_status_is_not_retried() -> None:
     """A 402 (insufficient credits) / 400 / 401 / 404 in a 2xx error envelope
     carries a PERMANENT upstream status in error.code. My first envelope fix
     always left status_code=None (retryable), re-creating the exact
-    402-retried-every-turn regression _call_with_retry documents. The upstream
+    402-retried-every-turn regression `ProviderCaller` documents. The upstream
     code now becomes the status, so NON_RETRYABLE classifies it permanent, and
     the hint (HTTP 402) survives."""
     from agent6.workflows._provider_call import NON_RETRYABLE_HTTP_STATUSES

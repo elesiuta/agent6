@@ -52,6 +52,35 @@ TOOL_DENIED_NUDGE = (
 )
 
 
+# The empty turn (no text, no tool_use). A starved reasoner gets its own
+# nudge: the generic one gives it nothing actionable, so it repeats the loop.
+WENT_QUIET_NUDGE = (
+    "[harness] Your previous turn was empty: no text"
+    " content and no tool_use. This is a synthetic"
+    " prompt from the agent6 harness. Either call a"
+    " tool to make progress, or call `finish_session`"
+    " with a summary if the task is complete. Do"
+    " not reply with another empty turn."
+)
+
+
+def reasoning_starved_nudge(output_tokens: int) -> str:
+    """The nudge after a turn that spent its whole output cap on reasoning."""
+    return (
+        "[harness] Your previous turn spent its entire"
+        f" output budget ({output_tokens} tokens) on"
+        " reasoning_content with no visible content and"
+        " no tool_use. STOP REASONING. On this next turn,"
+        " emit a tool_use IMMEDIATELY; do not think"
+        " further. If you genuinely don't know what to do"
+        " next, call `read_file` on the most relevant"
+        " source file to ground your next decision, or"
+        " call `finish_session` if the task is complete. Any"
+        " response that is not a tool_use will waste the"
+        " entire run."
+    )
+
+
 # A verify command that exited nonzero almost instantly with one of these
 # signatures did not RUN the tests -- the runner itself is absent/broken.
 # Treating that as a normal red misleads the model into "fixing" passing code

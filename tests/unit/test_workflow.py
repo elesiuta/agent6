@@ -8,6 +8,7 @@ distinctions are exercised end-to-end in the integration suite."""
 from __future__ import annotations
 
 import subprocess
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,11 @@ from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
+from agent6.workflows._provider_call import (
+    ProviderCaller,
+    is_empty_tool_call_response,
+    reasoning_starvation,
+)
 from agent6.workflows._session_state import SNAPSHOT_VERSION
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import LoopState, TurnState, Workflow
@@ -338,95 +344,114 @@ def _tool_resp(
     )
 
 
-# --- _call_with_retry -----------------------------------------------------
+# --- ProviderCaller -------------------------------------------------------
 
 
-def test_call_with_retry_first_try_returns() -> None:
-    """No ProviderError -> single call, returns immediately."""
+def _never() -> bool:
+    return False
+
+
+def _no_log(_msg: str) -> None:
+    pass
+
+
+def _no_emit(_event: str, **_fields: Any) -> None:
+    pass
+
+
+def _caller(provider: Any, *, retry_count: int = 0, retry_delay_s: float = 0.01) -> ProviderCaller:
+    return ProviderCaller(
+        provider=provider,
+        retry_count=retry_count,
+        retry_delay_s=retry_delay_s,
+        retry_max_delay_s=0.01,
+        temperature=0.0,
+        should_abort=_never,
+        should_interrupt=_never,
+        log=_no_log,
+        emit=_no_emit,
+    )
+
+
+def _call(caller: ProviderCaller) -> ProviderResponse:
+    return caller.call(system="s", messages=[], tools=[], max_tokens=16384)
+
+
+def test_caller_first_try_returns() -> None:
+    """No ProviderError: one call, returned as is."""
     provider = MagicMock()
     provider.call.return_value = _resp("first")
-    wf = _wf(provider=provider)
-    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
-    assert out.text == "first"
+    assert _call(_caller(provider)).text == "first"
     assert provider.call.call_count == 1
 
 
-def test_call_with_retry_succeeds_on_retry() -> None:
-    """ProviderError on first call, success on retry -> returns the retry."""
+def test_caller_succeeds_on_retry() -> None:
+    """ProviderError on the first call, success on the retry: the retry is returned."""
     provider = MagicMock()
     provider.call.side_effect = [ProviderError("transient 529"), _resp("retried")]
-    wf = _wf(provider=provider, provider_retry_count=1)
-    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
-    assert out.text == "retried"
+    assert _call(_caller(provider, retry_count=1)).text == "retried"
     assert provider.call.call_count == 2
 
 
-def test_call_with_retry_reraises_after_retries_exhausted() -> None:
-    """Two ProviderErrors with retry_count=1 -> bubble the last error."""
+def test_caller_reraises_after_retries_exhausted() -> None:
+    """Two ProviderErrors with retry_count=1: the last error bubbles."""
     provider = MagicMock()
     provider.call.side_effect = [ProviderError("flake 1"), ProviderError("flake 2")]
-    wf = _wf(provider=provider, provider_retry_count=1)
     with pytest.raises(ProviderError, match="flake 2"):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        _call(_caller(provider, retry_count=1))
     assert provider.call.call_count == 2
 
 
-def test_call_with_retry_never_retries_an_abort() -> None:
+def test_caller_never_retries_an_abort() -> None:
     """ProviderAborted (operator stop) bubbles immediately, never retried."""
     from agent6.providers import ProviderAborted
 
     provider = MagicMock()
     provider.call.side_effect = [ProviderAborted("stopped"), _resp("late")]
-    wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(ProviderAborted):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
-    assert provider.call.call_count == 1  # not retried
-    # and should_abort is threaded to the provider
-    assert provider.call.call_args.kwargs["should_abort"] is wf.should_abort
+        _call(_caller(provider, retry_count=3))
+    assert provider.call.call_count == 1
+    assert provider.call.call_args.kwargs["should_abort"] is _never
 
 
-def test_call_with_retry_never_retries_a_steer_interrupt() -> None:
-    """ProviderInterrupted (steer mid-stream) bubbles immediately -- the loop shows
-    the steer menu; retrying would just re-hit the interrupt."""
+def test_caller_never_retries_a_steer_interrupt() -> None:
+    """ProviderInterrupted (a steer mid-stream) bubbles immediately: the loop
+    shows the steer menu, and a retry would re-hit the interrupt."""
     from agent6.providers import ProviderInterrupted
 
     provider = MagicMock()
     provider.call.side_effect = [ProviderInterrupted("steer"), _resp("late")]
-    wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(ProviderInterrupted):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
-    assert provider.call.call_count == 1  # not retried
-    assert provider.call.call_args.kwargs["should_interrupt"] is wf.should_interrupt
+        _call(_caller(provider, retry_count=3))
+    assert provider.call.call_count == 1
+    assert provider.call.call_args.kwargs["should_interrupt"] is _never
 
 
-def test_call_with_retry_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A 429 carrying retry_after_s waits at least that long, not the (shorter)
+def test_caller_honors_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 429 carrying retry_after_s waits at least that long, not the shorter
     self-computed backoff."""
     slept: list[float] = []
-    monkeypatch.setattr("agent6.workflows.loop.time.sleep", slept.append)
+    monkeypatch.setattr("agent6.workflows._provider_call.time.sleep", slept.append)
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("429 rate limited", status_code=429, retry_after_s=50.0),
         _resp("ok"),
     ]
-    wf = _wf(provider=provider, provider_retry_count=1)  # _wf backoff is 0.01s
-    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
-    assert out.text == "ok"
-    assert slept and slept[0] >= 50.0  # honored the server's window, not ~0.01
+    assert _call(_caller(provider, retry_count=1)).text == "ok"
+    assert slept and slept[0] >= 50.0
 
 
-def test_call_with_retry_clamps_retry_after_to_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A hostile/buggy Retry-After can't hang the run: clamp to the ceiling."""
+def test_caller_clamps_retry_after_to_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hostile or buggy Retry-After cannot hang the run: clamped to the ceiling."""
     slept: list[float] = []
-    monkeypatch.setattr("agent6.workflows.loop.time.sleep", slept.append)
+    monkeypatch.setattr("agent6.workflows._provider_call.time.sleep", slept.append)
     provider = MagicMock()
     provider.call.side_effect = [
         ProviderError("429", status_code=429, retry_after_s=9999.0),
         _resp("ok"),
     ]
-    wf = _wf(provider=provider, provider_retry_count=1)
-    wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
-    assert slept and slept[0] <= 120.0  # _RETRY_AFTER_CEILING_S
+    _call(_caller(provider, retry_count=1))
+    assert slept and slept[0] <= 120.0
 
 
 def _empty_tool_call_resp() -> ProviderResponse:
@@ -443,33 +468,46 @@ def _empty_tool_call_resp() -> ProviderResponse:
     )
 
 
-def test_call_with_retry_retries_empty_tool_call_response() -> None:
+def test_caller_retries_empty_tool_call_response() -> None:
     """An empty finish=tool_calls response (no tool_use, no text) is retried; the
     recovered real response is returned."""
     provider = MagicMock()
     provider.call.side_effect = [_empty_tool_call_resp(), _tool_resp("read_file", {"path": "x"})]
-    wf = _wf(provider=provider, provider_retry_count=4, provider_retry_delay_s=0.001)
-    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
-    assert out.tool_uses  # recovered to a real tool call
+    out = _call(_caller(provider, retry_count=4, retry_delay_s=0.001))
+    assert out.tool_uses
     assert provider.call.call_count == 2
 
 
-def test_call_with_retry_returns_last_empty_after_exhausting() -> None:
-    """If every attempt is empty, return the last empty response (the loop's
-    went_quiet handler takes over) -- never raise / assert-fail."""
+def test_caller_returns_last_empty_after_exhausting() -> None:
+    """When every attempt is empty the last empty response is returned (the
+    loop's went_quiet handler takes over), never a raise."""
     provider = MagicMock()
     provider.call.return_value = _empty_tool_call_resp()
-    wf = _wf(provider=provider, provider_retry_count=2, provider_retry_delay_s=0.001)
-    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    out = _call(_caller(provider, retry_count=2, retry_delay_s=0.001))
     assert out.stop_reason == "tool_calls" and not out.tool_uses
-    assert provider.call.call_count == 3  # 1 initial + 2 retries
+    assert provider.call.call_count == 3
+
+
+def test_reasoning_starvation_counts_only_a_cap_cut_turn() -> None:
+    """The count is the thinking a cap-cut, billed turn spent; a turn the cap
+    did not cut, one billed nothing, or one without a thinking block is 0."""
+    starved = ProviderResponse(
+        text="",
+        tool_uses=(),
+        stop_reason="length",
+        input_tokens=1,
+        output_tokens=100,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={"content": [{"type": "thinking", "thinking": "x" * 40}]},
+    )
+    assert reasoning_starvation(starved) == 40
+    assert reasoning_starvation(replace(starved, stop_reason="end_turn")) == 0
+    assert reasoning_starvation(replace(starved, output_tokens=0)) == 0
+    assert reasoning_starvation(replace(starved, raw={"content": []})) == 0
 
 
 def test_is_empty_tool_call_response_discriminates() -> None:
-    from agent6.workflows.loop import (
-        is_empty_tool_call_response,  # pyright: ignore[reportPrivateUsage]
-    )
-
     assert is_empty_tool_call_response(_empty_tool_call_resp())
     assert not is_empty_tool_call_response(_resp("hi"))  # has text -> a silent finish
     assert not is_empty_tool_call_response(_tool_resp("read_file"))  # has a tool_use
@@ -494,7 +532,7 @@ def test_call_with_retry_default_rides_out_multiple_flaps() -> None:
     disconnect = ProviderError("Server disconnected without sending a response")
     provider.call.side_effect = [disconnect, disconnect, disconnect, _resp("recovered")]
     wf = _wf(provider=provider)  # uses the default provider_retry_count
-    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    out = wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert out.text == "recovered"
     assert provider.call.call_count == 4
 
@@ -505,7 +543,7 @@ def test_call_with_retry_zero_retries_no_retry() -> None:
     provider.call.side_effect = [ProviderError("nope")]
     wf = _wf(provider=provider, provider_retry_count=0)
     with pytest.raises(ProviderError, match="nope"):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
 
@@ -515,7 +553,7 @@ def test_call_with_retry_does_not_swallow_non_provider_errors() -> None:
     provider.call.side_effect = [RuntimeError("not a provider error")]
     wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(RuntimeError, match="not a provider error"):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
 
@@ -530,7 +568,7 @@ def test_call_with_retry_skips_retry_on_permanent_status() -> None:
     ]
     wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(ProviderError, match="402"):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
 
@@ -545,7 +583,7 @@ def test_call_with_retry_never_retries_a_fatal_error() -> None:
     ]
     wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(ProviderError, match="not signed in"):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
 
@@ -560,7 +598,7 @@ def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> N
     ]
     wf = _wf(provider=provider, provider_retry_count=3)
     with pytest.raises(ProviderError, match=str(status)):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
 
 
@@ -573,7 +611,7 @@ def test_call_with_retry_still_retries_transient_5xx() -> None:
         _resp("recovered"),
     ]
     wf = _wf(provider=provider, provider_retry_count=1)
-    out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    out = wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert out.text == "recovered"
     assert provider.call.call_count == 2
 
@@ -602,7 +640,7 @@ def test_call_with_retry_exponential_backoff() -> None:
         patch("time.sleep", side_effect=sleep_calls.append),
         patch("random.uniform", return_value=0.75),
     ):
-        out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        out = wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert out.text == "success"
     assert provider.call.call_count == 4
     assert sleep_calls[0] == pytest.approx(1.5)  # 2.0 * 2**0 * 0.75
@@ -631,7 +669,7 @@ def test_call_with_retry_backoff_capped_at_max_delay() -> None:
         patch("time.sleep", side_effect=sleep_calls.append),
         patch("random.uniform", return_value=1.0),
     ):
-        out = wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        out = wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert out.text == "success"
     assert provider.call.call_count == 5
     assert sleep_calls[0] == pytest.approx(2.0)  # min(2.0 * 2**0, 5.0)
@@ -653,7 +691,7 @@ def test_call_with_retry_backoff_skips_sleep_on_permanent_status() -> None:
         patch("time.sleep", side_effect=sleep_calls.append),
         pytest.raises(ProviderError, match="Insufficient credits"),
     ):
-        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+        wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_count == 1
     assert sleep_calls == []
 
@@ -669,7 +707,7 @@ def test_call_with_retry_pins_default_temperature_to_zero() -> None:
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider)
-    wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_args.kwargs["temperature"] == 0.0
 
 
@@ -679,7 +717,7 @@ def test_call_with_retry_honours_overridden_temperature() -> None:
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider, temperature=0.7)
-    wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_args.kwargs["temperature"] == 0.7
 
 
@@ -689,7 +727,7 @@ def test_call_with_retry_passes_through_none_temperature() -> None:
     provider = MagicMock()
     provider.call.return_value = _resp("ok")
     wf = _wf(provider=provider, temperature=None)
-    wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    wf.caller.call(system="s", messages=[], tools=[], max_tokens=16384)
     assert provider.call.call_args.kwargs["temperature"] is None
 
 

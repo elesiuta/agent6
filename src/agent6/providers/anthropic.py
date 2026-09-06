@@ -658,7 +658,7 @@ class AnthropicProvider:
         # not a completion signal). The accumulated blocks are a truncated turn,
         # possibly with text already fanned to the TUI; returning them as a
         # finished response feeds the loop a bogus went_quiet/silent_finish.
-        # Raise a retryable ProviderError so _call_with_retry re-issues the
+        # Raise a retryable ProviderError so the loop's ProviderCaller re-issues the
         # request -- but record what the cut turn already cost first: the
         # operator's cap is about money spent, not turns completed.
         if not saw_message_stop:

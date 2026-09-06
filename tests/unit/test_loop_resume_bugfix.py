@@ -655,7 +655,7 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
         resume_state_path=snap,
     )
     orig_save = wf._save_resume_snapshot  # pyright: ignore[reportPrivateUsage]
-    orig_call = wf._call_with_retry  # pyright: ignore[reportPrivateUsage]
+    orig_call = provider.call
     orig_compact = wf._maybe_compact  # pyright: ignore[reportPrivateUsage]
 
     def _spy_save(**kw: Any) -> None:
@@ -668,16 +668,16 @@ def test_snapshot_written_after_tool_dispatch_advances_iteration(tmp_path: Path)
             }
         )
 
-    def _spy_call(*a: Any, **kw: Any) -> Any:
+    def _spy_call(**kw: Any) -> Any:
         events.append({"kind": "provider_call"})
-        return orig_call(*a, **kw)
+        return orig_call(**kw)
 
     def _spy_compact(msgs: Any, state: Any, **kw: Any) -> bool:
         events.append({"kind": "compact"})
         return orig_compact(msgs, state, **kw)
 
     wf._save_resume_snapshot = _spy_save  # type: ignore[method-assign]
-    wf._call_with_retry = _spy_call  # type: ignore[method-assign]
+    provider.call = _spy_call
     wf._maybe_compact = _spy_compact  # type: ignore[method-assign]
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",

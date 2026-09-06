@@ -1,18 +1,31 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Provider-response classification for the loop's call wrapper.
+"""The loop's one path to the provider, and the classification around it.
 
-Pure predicates + policy constants the retry wrapper (`_call_with_retry`) and
-the per-turn error handler (`_turn_provider_call`) consume: which HTTP statuses
-are permanent, how long an upstream Retry-After is honored, an actionable hint
-for a fatal error, and the self-contradictory empty-tool-call detection that
-drives the blind retry. No loop state here -- each classifies one response or
-status in isolation, so they stay unit-testable without a Workflow.
+`ProviderCaller` runs `provider.call` under a bounded retry. The predicates and
+constants classify one response or status in isolation (which HTTP statuses are
+permanent, how long an upstream Retry-After is honored, the hint for a fatal
+error, the empty tool call that earns a blind retry, the reasoning that starved
+a turn), so they stay unit-testable without a Workflow.
 """
 
 from __future__ import annotations
 
+import random
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
+
+from agent6.providers import (
+    Provider,
+    ProviderAborted,
+    ProviderError,
+    ProviderInterrupted,
+    ProviderResponse,
+    ToolDefinition,
+    output_cap_truncated,
+)
 
 # HTTP statuses that will never succeed on a blind retry of the same request.
 # 400 bad request, 401/403 auth, 402 insufficient credits, 404 bad
@@ -66,10 +79,121 @@ def is_empty_tool_call_response(resp: Any) -> bool:
     )
 
 
+def reasoning_starvation(resp: ProviderResponse) -> int:
+    """The reasoning characters of a turn the output cap cut with billed
+    output, 0 otherwise. In the went-quiet handler the count tells a starved
+    reasoner (its whole budget went to thinking) from a model that gave up."""
+    if not output_cap_truncated(resp) or resp.output_tokens <= 0:
+        return 0
+    reasoning_chars = 0
+    raw_content = (resp.raw or {}).get("content") or []
+    if isinstance(raw_content, list):
+        for block in raw_content:
+            if isinstance(block, dict) and block.get("type") == "thinking":
+                reasoning_chars += len(str(block.get("thinking") or ""))
+    return reasoning_chars
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCaller:
+    """`provider.call` under a bounded retry: `retry_count + 1` attempts at most.
+
+    Two retry paths share that budget. A transient `ProviderError` (a 529, a
+    502, a socket timeout) backs off exponentially with full jitter, waiting
+    at least the upstream Retry-After capped at `RETRY_AFTER_CEILING_S`; a
+    permanent one (`fatal`, or a status in `NON_RETRYABLE_HTTP_STATUSES`)
+    re-raises at once, since the same request cannot succeed. An empty
+    tool-call response (`is_empty_tool_call_response`) is re-asked after a
+    short fixed delay, and when every attempt is empty the last is returned
+    for the loop's went-quiet handler. An abort, an interrupt and
+    `BudgetExceeded` are never retried.
+    """
+
+    provider: Provider
+    retry_count: int
+    retry_delay_s: float
+    retry_max_delay_s: float
+    temperature: float | None
+    should_abort: Callable[[], bool]
+    should_interrupt: Callable[[], bool]
+    log: Callable[[str], None]
+    emit: Callable[..., None]
+
+    def call(
+        self,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[ToolDefinition],
+        max_tokens: int,
+    ) -> ProviderResponse:
+        attempts = max(1, self.retry_count + 1)
+        attempt = 1
+        while True:
+            try:
+                resp = self.provider.call(
+                    system=system,
+                    messages=messages,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=self.temperature,
+                    should_abort=self.should_abort,
+                    should_interrupt=self.should_interrupt,
+                )
+            except (ProviderAborted, ProviderInterrupted):
+                raise  # an operator stop or steer is handled, never retried
+            except ProviderError as exc:
+                if exc.fatal or exc.status_code in NON_RETRYABLE_HTTP_STATUSES:
+                    self.log(
+                        f"LOOP: provider error {exc.status_code or 'fatal'} is permanent;"
+                        " not retrying"
+                    )
+                    self.emit(
+                        "loop.provider.fatal", status_code=exc.status_code, error=str(exc)[:200]
+                    )
+                    raise
+                if attempt == attempts:
+                    raise
+                delay = self._backoff(attempt, exc.retry_after_s)
+                self.log(
+                    f"LOOP: provider error attempt {attempt}/{attempts}: {exc}"
+                    f" - retrying in {delay:.2f}s"
+                )
+                self.emit("loop.provider.retry", attempt=attempt, error=str(exc)[:200])
+            else:
+                if attempt == attempts or not is_empty_tool_call_response(resp):
+                    return resp
+                # Model flakiness, not rate limiting: a short fixed delay.
+                delay = min(self.retry_delay_s, 1.0) * random.uniform(0.5, 1.0)  # noqa: S311
+                self.log(
+                    f"LOOP: empty tool-call response attempt {attempt}/{attempts}"
+                    f" (stop_reason={resp.stop_reason!r}, no tool_use/text);"
+                    f" retrying in {delay:.2f}s"
+                )
+                self.emit(
+                    "loop.provider.empty_tool_call_retry",
+                    attempt=attempt,
+                    stop_reason=str(resp.stop_reason),
+                )
+            time.sleep(delay)
+            attempt += 1
+
+    def _backoff(self, attempt: int, retry_after_s: float | None) -> float:
+        """Exponential backoff with full jitter (floored at half), capped at
+        `retry_max_delay_s`; never shorter than an upstream Retry-After, itself
+        capped at `RETRY_AFTER_CEILING_S` so a hostile header cannot hang a run."""
+        capped = min(self.retry_delay_s * 2 ** (attempt - 1), self.retry_max_delay_s)
+        delay = capped * random.uniform(0.5, 1.0)  # noqa: S311
+        if retry_after_s is not None:
+            delay = max(delay, min(retry_after_s, RETRY_AFTER_CEILING_S))
+        return delay
+
+
 __all__ = [
     "NON_RETRYABLE_HTTP_STATUSES",
     "RETRY_AFTER_CEILING_S",
     "TOOL_CALL_STOP_REASONS",
+    "ProviderCaller",
     "is_empty_tool_call_response",
     "provider_error_hint",
+    "reasoning_starvation",
 ]
