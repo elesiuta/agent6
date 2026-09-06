@@ -481,6 +481,17 @@ class ConversationScreen(ScreenChrome, Screen[None]):
         model turn."""
         item = self.query_one("#conv-approval", Static)
         current = self._open_approval()
+        if current is not None and not self._host_live():
+            # The run died with the prompt open: the fact stays visible, the
+            # key row (whose answer would reach nothing) does not.
+            self._approval = current
+            head, payload = approval_parts(current[1])
+            body = Text(f"? {head}: approval pending when the run ended", style="dim")
+            if payload:
+                body.append("\n" + "\n".join(f"    {ln}" for ln in payload.splitlines()))
+            item.update(body)
+            item.display = True
+            current = None
         if current is not None:
             self._approval = current
             aid, prompt, standing = current
@@ -507,6 +518,8 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             self._row.remove()
             self._row = None
             self._row_id = ""
+        if self._approval is not None:
+            return  # the dead run's prompt, rendered above
         if self._approval_done:
             item.update(Text(f"? {self._approval_done}", style="dim"))
             item.display = True

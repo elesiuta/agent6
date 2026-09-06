@@ -443,8 +443,9 @@ def test_live_run_still_gets_the_inline_approval(tmp_path: Path) -> None:
 
 
 def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
-    """The worker dies while the approval row is open: the answer reaches nothing, so
-    say so instead of silently writing a file the next resume drops."""
+    """The worker dies while the approval row is open: the row is withdrawn
+    (an answer would reach nothing), the prompt stays visible as a fact, and a
+    key press writes no answer file for the next resume to drop."""
     d = tmp_path / "dies-mid-modal"
     _mk_blocked(d, alive=True)
 
@@ -456,11 +457,14 @@ def test_answer_after_death_reports_instead_of_writing(tmp_path: Path) -> None:
             app._heartbeat_at = 0.0
             app._tick()
             await _wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            app._conv._poll()  # pyright: ignore[reportPrivateUsage]
+            await pilot.pause()
             await pilot.press("a")
             await pilot.pause()
             assert not (d / "approvals" / "ap1.answer").exists()
-            notes = [str(n.message) for n in app._notifications]
-            assert any("reached nothing" in n for n in notes)
+            assert not app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
+            item = app._conv.query_one("#conv-approval", Static)  # pyright: ignore[reportPrivateUsage]
+            assert "approval pending when the run ended" in str(item.render())
 
     asyncio.run(scenario())
 
