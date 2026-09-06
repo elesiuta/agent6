@@ -30,6 +30,8 @@ Away from the conversation (the dashboard, a machine screen) an approval opens a
 
 - `Ctrl+T` cycles the thinking and tool detail: hidden, collapsed, expanded
 - `Ctrl+C` copies the selection, or the whole transcript when nothing is selected
+- `Ctrl+Z` leaves the view: a run `agent6 run --tui` fronts detaches to the background after its current step (`agent6 attach` reattaches); one opened with `attach --tui` or from the hub keeps running as it was
+- `Ctrl+_` undoes typing in the composer (`Ctrl+Z` is the detach key everywhere in the view)
 
 ![A run transcript](screenshots/out/05-transcript.png)
 
@@ -71,7 +73,7 @@ The config page shows every setting, its effective value, and the layer that set
 - the pause menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages
     - `/status`, `/tasks`, `/pin`, `/compact`, `/parallel`, `/btw`, `/shells`, `/restate`, `/undo`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
 - a steer sent from another surface (`agent6 steer`, the web or TUI composer) while the menu is open is taken as the answer
-- Ctrl-Z in a view, or `/detach` in the menu, hands the run to the background after its current step (`agent6 attach` reattaches)
+- `/detach` in the menu hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and stands an armed pause down, it never suspends the run (a suspended agent would lose its live provider stream)
 - `/exit` in the menu or the `run -i` REPL (bare `exit` at the fallback prompt) stops the run and leaves without the follow-up prompt (`agent6 resume` continues it)
 - `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
 - a viewer opened with `agent6 attach --tui` just closes
