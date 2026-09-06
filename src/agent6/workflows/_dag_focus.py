@@ -104,12 +104,27 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
     paths = node.relevant_paths
     if paths:
         lines.append("Relevant paths: " + ", ".join(paths[:8]))
-    lines.append(
-        "Work this ONE task to completion before anything else. When its acceptance"
-        " is met, mark it passed with update_task -- you will then be moved to the"
-        " next task. If you find unrelated work, add_task it instead of switching"
-        " to it now."
-    )
+    if node.standing:
+        # A standing task never passes; the curator refuses `passed`, and the
+        # operator's own goal (created_by "steering") refuses every retirement.
+        retire = (
+            "only the operator retires it"
+            if node.created_by == "steering"
+            else "retire it with update_task (skipped or obsolete) once it no longer applies"
+        )
+        lines.append(
+            "This is a standing task: it never passes, so do not mark it passed;"
+            f" {retire}. Work a round on it now, add_task each follow-up you find so"
+            " it is worked in turn, and call finish_session when a round finds"
+            " nothing left to do."
+        )
+    else:
+        lines.append(
+            "Work this ONE task to completion before anything else. When its"
+            " acceptance is met, mark it passed with update_task -- you will then be"
+            " moved to the next task. If you find unrelated work, add_task it"
+            " instead of switching to it now."
+        )
     # Decompose runs plan recursively: invite a finer plan for a task that turns
     # out large, at the point the model has the most context to plan it.
     if decompose and not node.children:
@@ -122,7 +137,9 @@ def current_task_banner(task_id: str, node: TaskNode, *, decompose: bool = False
 
 def stuck_on_task_nudge(task_id: str, node: TaskNode, turns: int) -> str:
     """The anti-grind directive: the model has spent `turns` turns on one task
-    without concluding it; offer the three ways to record progress."""
+    without concluding it; offer the three ways to record progress. Never
+    for a standing task: it concludes nothing by design, and two of the three
+    moves are refused on it."""
     title = node.title.strip() or "(untitled)"
     return (
         f"[harness] You have spent {turns} turns on the current task"

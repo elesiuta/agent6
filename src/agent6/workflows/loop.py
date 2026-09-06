@@ -2873,7 +2873,8 @@ class Workflow:
 
         Also runs the anti-grind counter: when the focus task holds for
         `STUCK_ON_TASK_AFTER` turns with no forward motion, fire one nudge
-        offering to split / pass / skip it.
+        offering to split / pass / skip it. A standing task is exempt: it is
+        worked for as long as nothing else is ready, and never concludes.
 
         Run mode only; no curator or no open subtask is a no-op (the finish-gate
         covers the empty-frontier finish). Best-effort throughout: a curator
@@ -2913,6 +2914,7 @@ class Workflow:
             if (
                 state.turns_on_task % STUCK_ON_TASK_AFTER == 0
                 and state.stuck_nudges_fired < STUCK_NUDGE_MAX
+                and not nodes[current_id].standing
             ):
                 state.stuck_nudges_fired += 1
                 conversation.notice(

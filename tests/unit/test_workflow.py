@@ -7338,3 +7338,59 @@ def test_the_root_passes_with_an_open_child(
     wf._pass_pending_root_tasks()  # pyright: ignore[reportPrivateUsage]
 
     assert curator.nodes()[root.id].status == "passed"
+
+
+def test_the_focus_surface_fits_a_standing_task(tmp_path: Path) -> None:
+    """When nothing ordinary is ready the focus falls back to the standing
+    goal, and the banner told the worker to mark it passed while the stuck
+    nudge offered passed, skipped and obsolete: every one refused on the
+    operator's standing goal, three tool errors feeding the error ladder."""
+    from agent6.graph.curator import GraphCurator
+    from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
+    from agent6.sessions.layout import SessionLayout
+    from agent6.workflows._conversation import UserTurn
+    from agent6.workflows._dag_focus import STUCK_ON_TASK_AFTER
+
+    curator = GraphCurator(SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1"))
+    root = curator.add_subtask(
+        AddSubtaskIntent(
+            parent_id=None,
+            draft=TaskNodeDraft(title="run root", depends_on=(), created_by="planner"),
+        )
+    )
+    standing = curator.add_subtask(
+        AddSubtaskIntent(
+            parent_id=root.id,
+            draft=TaskNodeDraft(
+                title="keep the fleet green", depends_on=(), created_by="steering", standing=True
+            ),
+        )
+    )
+    wf = Workflow(
+        root=tmp_path,
+        config=Config(),
+        provider=MagicMock(),
+        dispatcher=MagicMock(),
+        logger=_silent,
+        mode="run",
+        curator=curator,
+    )
+    state = LoopState(original_task="t", tool_calls=0)
+    conversation = Conversation()
+    conversation.notice("TASK: keep the fleet green")
+
+    for _ in range(STUCK_ON_TASK_AFTER + 2):
+        wf._maybe_surface_current_task(conversation, state)  # pyright: ignore[reportPrivateUsage]
+
+    texts = [
+        item.text
+        for turn in conversation.turns
+        if isinstance(turn, UserTurn)
+        for item in turn.items
+        if isinstance(item, Notice)
+    ]
+    banner = next(t for t in texts if t.startswith("[harness focus]"))
+    assert standing.id in banner and "standing task" in banner
+    assert "mark it passed with update_task" not in banner
+    assert "only the operator retires it" in banner
+    assert not any(t.startswith("[harness] You have spent") for t in texts)
