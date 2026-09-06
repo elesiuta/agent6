@@ -388,8 +388,8 @@ def _models_at(model: type[BaseModel], part: str) -> tuple[type[BaseModel], ...]
     if get_origin(annotation) is dict:
         return _model_members(get_args(annotation)[1]) or None
     # An optional section (`models.worker`, `workflow.metric`) is a section:
-    # read as a leaf it was written inline under a `[models]` header of its
-    # own, which collides with the `[models.worker]` table already there.
+    # written as a leaf it would sit inline under a `[models]` header and
+    # collide with the `[models.worker]` table already there.
     return _model_members(annotation) or None
 
 
@@ -409,8 +409,8 @@ def names_a_section(dotted_key: str) -> bool:
     is one value and is written whole.
 
     A name-keyed table is a section at both levels: `providers.<name>` is one
-    entry, and `providers` is the table of them -- written whole it replaced
-    every provider the operator had, with their keys and comments."""
+    entry, and `providers` is the table of them; written whole it would replace
+    every provider the operator has, with their keys and comments."""
     models: tuple[type[BaseModel], ...] = (Config,)
     keyed = False  # the previous part was a name-keyed table, so this part is a name
     for part in dotted_key.split("."):

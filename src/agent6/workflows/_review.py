@@ -131,9 +131,9 @@ def _coerce_findings(raw: object) -> tuple[Finding, ...]:
 def _no_verdict_error(resp: ProviderResponse) -> str:
     """Why a seat produced no verdict JSON, in the reviewer's own terms: the
     output cap ate the answer, the reviewer returned nothing to parse, or what
-    it returned would not parse. A generic "unparseable reviewer output" over
-    the first two blamed the parser for the provider's own truncation or
-    error, hiding the one actionable fact."""
+    it returned would not parse: a generic "unparseable reviewer output" over
+    the first two would blame the parser for the provider's own truncation or
+    error."""
     if output_cap_truncated(resp):
         detail = (
             "before emitting any content (likely all reasoning)"
@@ -147,9 +147,9 @@ def _no_verdict_error(resp: ProviderResponse) -> str:
         )
     if not resp.text.strip():
         # No content at all: an upstream error, or a reasoning model that spent
-        # its whole budget in the reasoning channel. Blaming the parser for an
-        # empty body hid both; naming the reasoning it DID produce separates
-        # them, and a seat that only ever thinks is the operator's to re-route.
+        # its whole budget in the reasoning channel. Naming the reasoning it
+        # DID produce separates the two, and a seat that only ever thinks is
+        # the operator's to re-route.
         thought = sum(
             len(str(block.get("thinking") or ""))
             for block in (resp.raw.get("content") or [])

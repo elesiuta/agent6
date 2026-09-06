@@ -51,8 +51,7 @@ def resolve_compaction_thresholds(
     An adaptive tier-2 threshold clamps the verbatim tail to half of itself:
     the config validator refuses an explicit pair whose tail is at or above the
     threshold, and a small window (a 32k model against the 80,000-char default)
-    sizes exactly that. Under it the restart kept NO verbatim turns at all,
-    paraphrasing away the results the model was about to act on."""
+    sizes exactly that; a restart under it would keep no verbatim turn at all."""
     drop_override = cfg.context.drop_at_chars
     summarise_override = cfg.context.summarise_at_chars
     provider = rm.provider if rm is not None else ""

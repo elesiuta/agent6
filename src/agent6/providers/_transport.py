@@ -324,14 +324,12 @@ class ProviderCall:
         self.record(headers, resp.status_code, data)
         # An in-band error envelope on a 2xx (OpenRouter/LiteLLM deliver an
         # upstream 5xx/429/4xx this way; Anthropic's error object has the same
-        # top-level key). require_metered below finds no usage and blamed
-        # agent6's own accounting ("no usage input tokens", 422), so a transient
-        # upstream failure killed the run with no retry AND a permanent one
-        # (402 "Insufficient credits") was RETRIED every turn because the status
-        # was dropped. Key on "no usable assistant output" -- a placeholder
-        # `choices` entry with null content is not output, a bare string `error`
-        # is still an envelope -- and carry the upstream code as the status so
-        # NON_RETRYABLE_HTTP_STATUSES makes 4xx permanent, 429/5xx retryable.
+        # top-level key) is refused here, before require_metered blames the
+        # missing usage on agent6's accounting. Key on "no usable assistant
+        # output": a placeholder `choices` entry with null content is not
+        # output, a bare string `error` is still an envelope. The upstream code
+        # is the status, so NON_RETRYABLE_HTTP_STATUSES makes 4xx permanent and
+        # 429/5xx retryable.
         err = data.get("error")
         if err and not _has_assistant_output(data):
             raise ProviderError(

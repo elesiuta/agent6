@@ -119,8 +119,8 @@ def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
     state dir, leaving anything already there. Returns the files copied.
 
     A `--parallel` lane clones the repo into a workspace of its own, so its
-    state dir is new and its memory empty: the lanes ran blind to the facts and
-    rulings every other run on that repo is given. Copies, never a link: a lane
+    state dir is new and its memory empty; without this the lanes run blind to
+    the rulings every other run on that repo is given. Copies, never a link: a lane
     must not write the origin's store mid-run, and `merge_decisions` carries its
     new rulings back at import.
     """
@@ -158,8 +158,8 @@ def index_text(state_dir: Path) -> str:
     (memory is context, one stray byte must not kill every run).
 
     A byte that is not UTF-8 is REPLACED rather than fatal: read strictly, one
-    of them emptied the whole index for every run, and the next `memory add`
-    then rebuilt the file from that empty read -- deleting every line it had.
+    of them would empty the whole index for every run, and the next `memory
+    add` would rebuild the file from that empty read.
     An unreadable FILE (a permission, a directory) is still ""."""
     try:
         return index_path(state_dir).read_text(encoding="utf-8", errors="replace").strip()

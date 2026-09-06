@@ -538,7 +538,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         self.query_one("#dash-preset", ResumePreset).show(mode == "resume")
         role = s.last_role
         # Live heartbeat: a spinner + seconds since the last event, shown while
-        # the run is active. Silent thinking / the resume gap now visibly tick.
+        # the run is active: silent thinking and the resume gap tick visibly.
         # NOT while "waiting": a run blocked on an operator prompt is controllable
         # (steerable) but not working, so the ticking beat would contradict the
         # same line's "waiting · needs answer" -- the rule the stream body honors.

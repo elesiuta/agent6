@@ -159,9 +159,8 @@ class ACPServer:
         raw = message.get("params")
         if not isinstance(method, str):
             # A message with no method and an id we allocated is the CLIENT
-            # answering something we asked -- the reply path for
-            # session/request_permission. Without this it came back as "no
-            # method", and every approval blocked its worker forever.
+            # answering something we asked: the reply path for
+            # session/request_permission.
             if req_id is not None and self._deliver(req_id, message):
                 return None
             if req_id is not None:

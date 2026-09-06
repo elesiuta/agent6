@@ -30,9 +30,9 @@ def session_mtime(session_dir: Path) -> float:
     session was created), else the dir.
 
     NOT the run-directory mtime: a viewer writes its `frontends/` claim into the
-    dir on open, bumping the DIRECTORY mtime, so sorting by it floated a
-    merely-viewed run to "most recent" -- a parked submission outranking live
-    work. A run with no log yet (parked, or a `fork --no-run`) has a manifest
+    dir on open, bumping the DIRECTORY mtime, so sorting by it floats a
+    merely-viewed run to "most recent". A run with no log yet (parked, or a
+    `fork --no-run`) has a manifest
     and nothing else that moves, so that is its time.
     """
     for candidate in (session_dir / LOGS_NAME, session_dir / MANIFEST_NAME, session_dir):
@@ -576,7 +576,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                 elif etype == "session.end":
                     finished = True
                     # An explicit null is the ungated tri-state; an ABSENT key
-                    # (a pre-tri-state log) stays False, reading as it always did.
+                    # stays False.
                     raw_ap = ev.get("all_passed", False)
                     all_passed = None if raw_ap is None else bool(raw_ap)
                     verify_scoped = bool(ev.get("scoped", False))
@@ -591,10 +591,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                         # the enforcement mechanism). The typed fold applies the
                         # same rule (state.BudgetView), so the hub row and the
                         # run view can never disagree. Token counters reset too:
-                        # they are documented as the current leg's. A FORK's log
-                        # OPENS with this event -- that begins leg 1, and
-                        # counting it as 2 labelled a single leg's cost
-                        # "(all 2 legs)".
+                        # they are documented as the current leg's. A fork's log
+                        # opens with this event, which begins leg 1.
                         usd_prior_legs += usd_leg
                         usd_leg = 0.0
                         input_tokens = output_tokens = None
@@ -697,9 +695,9 @@ def summarize_session_dir(
                 encoding="utf-8", errors="replace"
             )
             # The question is the first line under the transcript's first `##`
-            # heading (`## Question`, or `## Q1` from the REPL form). Taking
-            # the first non-heading line instead showed the ANSWER whenever the
-            # question began with `#`.
+            # heading (`## Question`, or `## Q1` from the REPL form); the first
+            # non-heading line would be the ANSWER whenever the question begins
+            # with `#`.
             lines = transcript.splitlines()
             heading = next((i for i, ln in enumerate(lines) if ln.startswith("## ")), None)
             body = lines[heading + 1 :] if heading is not None else []

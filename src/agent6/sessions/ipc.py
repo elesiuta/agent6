@@ -333,11 +333,9 @@ def effective_away(session_dir: Path) -> str:
     """This run's away answer: the env a launcher set, else the one recorded on
     the run dir.
 
-    THE one owner, because the preflight read only the env while the approver
-    reads only the file: a run detached from a terminal (or spawned by the hub)
-    carries its operator's choice in `approvals/away.mode`, and a later resume
-    from cron, CI or a script was refused as unanswerable -- with a refusal
-    saying the run had no away-mode while its own dir said otherwise."""
+    THE one owner: a run detached from a terminal (or spawned by the hub)
+    carries its operator's choice in `approvals/away.mode`, so the preflight
+    and the approver read the env and the file the same way."""
     return os.environ.get("AGENT6_DETACHED_AWAY", "") or away_mode(session_dir)
 
 
@@ -573,8 +571,8 @@ AWAY_MODE_FILE = "away.mode"
 # What an operator may set AGENT6_DETACHED_AWAY to. "approve" is not stored in
 # away.mode: like the interactive detach prompt it sets an allow marker per
 # scope. Anything else is a typo, and a typo must not read as "an absent
-# operator's intent is known" -- that lifted the preflight refusal and left the
-# run waiting forever at the first approval.
+# operator's intent is known", which would lift the preflight refusal and
+# leave the run waiting forever at the first approval.
 AWAY_MODES = ("wait", "deny", "approve")
 
 

@@ -327,9 +327,9 @@ def machine_spend(events: Sequence[object], root: Path, *, alive: bool) -> tuple
             # A slice that ran but never got a StepEvent (a capture that could
             # not be reduced) rides on the end event. Folded unconditionally: an
             # end with no unbooked slice contributes Spend() anyway, while
-            # gating on a truthy `usd` dropped an UNPRICED slice whole -- its
-            # usd is 0.0 by definition, taking 48k tokens and the sticky
-            # lower-bound flag with it.
+            # gating on a truthy `usd` would drop an UNPRICED slice whole (its
+            # usd is 0.0 by definition) with its tokens and the sticky
+            # lower-bound flag.
             total += Spend(event.usd, event.input_tokens, event.output_tokens, event.usd_partial)
     inflight_state = ""
     newest = newest_state_log(root) if alive else None

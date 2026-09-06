@@ -132,10 +132,9 @@ def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
     MachineError for an unloadable source and JournalError for a corrupt
     journal; the callers word those.
 
-    Carries the instance's `spend`, which only `machine status` used to
-    compute: a machine is the one thing that runs unattended against
-    `[budget].max_usd`, and the two surfaces an operator watches it from could
-    not say what it had spent."""
+    Carries the instance's `spend`: a machine runs unattended against
+    `[budget].max_usd`, so every surface that watches one reads the same
+    figure."""
     spec = load_machine(machine_dir / "machine.asm.toml")
     events = MachineJournal(machine_dir).read()
     ms = fold_machine(spec, events)

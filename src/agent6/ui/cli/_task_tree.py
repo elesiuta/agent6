@@ -31,8 +31,7 @@ def task_tree_lines(nodes: dict[str, TaskNode], *, show_commit: bool = False) ->
     Through the read model's own walk, so this renders what the frontier and
     `list_tasks` see: a node its parent's `children` list does not name (the
     crash window `add_subtask` documents) is still shown, where a walk of its
-    own dropped it -- and the operator's DAG view then omitted the very task
-    the run was working on. Nodes are ordered by id, which is a ULID, so roots
+    own would drop it. Nodes are ordered by id, which is a ULID, so roots
     read in creation order however the graph came off disk."""
     ordered = {nid: nodes[nid].model_dump() for nid in sorted(nodes)}
     out: list[str] = []

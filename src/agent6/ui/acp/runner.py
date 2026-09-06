@@ -220,9 +220,9 @@ class RunBridge:
         `toolCall` is required on a permission request, and is the only text
         the editor has to render: it carries the prompt as the call's title,
         which a ToolCallUpdate exists to update. The announced title is
-        `salient_arg` clipped to 60 chars, so without this the operator
-        approved an argv whose first line looked benign and whose rest they
-        never saw. A prompt gating a tool call (*call_id*, the dispatcher's
+        `salient_arg` clipped to 60 chars, which would show the operator an
+        argv whose first line looks benign and whose rest they never see. A
+        prompt gating a tool call (*call_id*, the dispatcher's
         stamp) names THAT call, once the tail has announced it; its lifecycle
         carries on from there (pending, then its outcome). A prompt gating no
         call announces an entity of its own, and closes it: an entity ACP

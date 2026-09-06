@@ -34,7 +34,7 @@ def lock_shared_nonblocking(fd: int) -> None:
     so a run acquiring in that window parked as if the checkout were busy.
 
     Windows has no shared range lock, so the probe there takes the exclusive
-    one it always took."""
+    one."""
     if sys.platform == "win32":
         lock_exclusive(fd, blocking=False)
         return

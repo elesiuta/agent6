@@ -125,12 +125,9 @@ class BackgroundShells:
         self._root = root
         self._shells: dict[str, _Shell] = {}
         # Continue the numbering rather than restart it: a RESUMED run reuses
-        # the session dir, so starting from zero handed the next command an id
-        # whose log directory already existed. `_open_log` refuses that (two
-        # commands must never share a log) with a message blaming a command for
-        # planting it -- so a resumed run's first background command died on a
-        # collision it caused itself. Every long command reaches this now: one
-        # that outlives the check-in is handed back as a background shell.
+        # the session dir, and `_open_log` refuses an id whose log directory
+        # exists (two commands never share a log). Every command that outlives
+        # the check-in is handed back as a background shell and reaches this.
         self._seq = _highest_shell_seq(root)
         # Eagerly: the run's jail session grants this path when it opens, and a
         # mount source has to exist by then.

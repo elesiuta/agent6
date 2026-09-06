@@ -505,10 +505,9 @@ class TranscriptFold:
                     "done",
                     body=body,
                     # The gate's tri-state, not a bool: null (no gate ran, or
-                    # the operator ended the run) is neither pass nor fail, and
-                    # flattening it painted `stopped` and a gateless finish in
-                    # the failure colour and rendered them identically to a
-                    # finish over a RED gate, which exits 4.
+                    # the operator ended the run) is neither pass nor fail;
+                    # flattened, `stopped` and a gateless finish would take the
+                    # failure colour of a finish over a RED gate, which exits 4.
                     ok=all_passed
                     if isinstance(all_passed := event.get("all_passed"), bool)
                     else None,

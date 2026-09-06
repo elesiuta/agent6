@@ -34,8 +34,7 @@ SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 def clip_cell(text: str, width: int) -> str:
     """One line of at most *width* characters, ending in an ellipsis when it
-    was cut. A bare slice reads as the whole value, so a table showed
-    `background=True` and `preview=True` as absent and marked both calls ok."""
+    was cut: a bare slice would read as the whole value."""
     line = " ".join(text.split())
     return line if len(line) <= width else line[: max(1, width - 1)] + "\u2026"
 

@@ -263,8 +263,8 @@ def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
 
     The chain is the record and the branch is a view of it: a commit of the
     operator's on the run branch takes it off the chain, and the run's later
-    commits then land on the chain alone. Reading the branch there merged and
-    diffed a frozen prefix of the run and called it the whole."""
+    commits then land on the chain alone, so the branch would show a frozen
+    prefix of the run."""
     chain = chain_ref_for(manifest.session_id)
     chain_head = chain_tip(cwd, chain)
     if manifest.run_branch and (

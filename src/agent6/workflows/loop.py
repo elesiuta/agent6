@@ -974,7 +974,7 @@ class Workflow:
             self._turn_no_progress(state, turn)
             conversation.results(turn.tool_results)
             # Snapshot AFTER the executed tools (assistant turn + tool_results
-            # are now in the conversation) so a crash before iteration N+1's
+            # are in the conversation) so a crash before iteration N+1's
             # pre-call snapshot resumes from AFTER the dispatched tools instead
             # of replaying them. The dispatch->snapshot window itself stays
             # open (the side effect and this write are not atomic); the
@@ -1395,8 +1395,8 @@ class Workflow:
         manual metric samples, tree edits, and DAG mutations."""
         if name == "ask_user" and isinstance(result, AnswersResult):
             # Through the tool's own model: it also accepts one question flat
-            # (`{question, options}`), and a second parse of the raw dict
-            # missed exactly that shape.
+            # (`{question, options}`), which a second parse of the raw dict
+            # would miss.
             asked = AskUserInput.model_validate(tool_input).questions
             for q, answer in zip(asked, result.answers, strict=False):
                 self._record_decision(state, q.question, answer)
@@ -1715,8 +1715,7 @@ class Workflow:
         if not self.commit_per_step:
             # `commit_per_step` governs the COMMIT. The metric is measurement:
             # the prompt promises a [harness metric] block after every verified
-            # edit, and with the sampling behind this gate the model was pushed
-            # to optimise a number it was never shown.
+            # edit, so the model sees the number it is asked to move.
             return self._sample_metric(state, turn, sha="")
         commit_subject = self._checkpoint_subject(
             turn, fallback="checkpoint" if unjudged_changed else "verify passed"
@@ -1784,8 +1783,8 @@ class Workflow:
 
         One reading per state of the tree: with nothing committing between
         steps (`commit_per_step = false`) the tree stays dirty for the rest of
-        the run, and sampling on dirt alone re-ran the operator's benchmark on
-        every turn, read-only ones included."""
+        the run, and sampling on dirt alone would re-run the operator's
+        benchmark on every turn, read-only ones included."""
         if turn.metric_sampled:
             return None
         tree = self._worktree_tree_sha()
@@ -4067,10 +4066,8 @@ class Workflow:
             pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(state.pins, start=1))
             pins_req = PINS_NO_RESTATE_CLAUSE + pin_lines
         # The previous restart's summary rides at the HEAD of the post-restart
-        # history and the transcript above is tail-clipped, so it was dropped
-        # first: the new summary then started at the last restart while the
-        # preamble promised the worker everything was captured. Carry it
-        # out-of-band, like pins.
+        # history, which the tail-clipped transcript above drops first, so it
+        # is carried out-of-band, like pins.
         prior_req = ""
         for turn in conversation.turns:
             for item in getattr(turn, "items", ()):

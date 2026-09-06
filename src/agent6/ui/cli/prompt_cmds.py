@@ -31,10 +31,9 @@ def _cmd_prompt_show(
     if mode in ("run", "plan") and not cfg.workflow.verify_command and cfg.workflow.verify_infer:
         # A run infers its gate before assembling the prompt, and the gate
         # decides the `<verify-command>` block, the commit rule and whether
-        # `run_verify_command` is offered at all. Without this the audit
-        # surface printed "this run has no verify command" for every repo whose
-        # gate is inferred -- most of them. The LLM tier is a run's own call
-        # (it spends), so only the deterministic ones run here.
+        # `run_verify_command` is offered at all, so the audit surface infers
+        # it the same way. The LLM tier is a run's own call (it spends), so
+        # only the deterministic ones run here.
         inferred = infer_verify_command(cwd, read_agents_md(cwd), llm_call=None)
         if inferred is not None:
             cfg = cfg.with_verify_command(inferred.argv)

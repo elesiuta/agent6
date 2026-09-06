@@ -224,8 +224,8 @@ def _print_stale_gate(result: SessionResult, *, reporter: Reporter) -> None:
     # `verify_command` is argv, so `config set` takes a JSON array: the shell
     # string the worker proposes is rejected as "not a valid tuple". Tokenised
     # by the one owner the inference uses, so a proposal with a pipeline or an
-    # `&&` becomes `sh -c "..."` -- splitting it word by word printed a command
-    # that installs a gate handing `&& ruff check` to pytest as arguments.
+    # `&&` becomes `sh -c "..."`, where a word-by-word split would hand
+    # `&& ruff check` to pytest as arguments.
     argv = json.dumps(list(line_to_argv(result.stale_gate) or ()))
     reporter.out(f"    agent6 config set workflow.verify_command {shlex.quote(argv)}")
 
@@ -267,8 +267,7 @@ def print_session_end(
         reporter.out(f"  {result.summary}")
     reporter.out("")
     if unreachable := _sandbox_unreachable_tools(layout):
-        # One remedy for the set: printed per binary, three unreachable tools
-        # repeated the same four bullets three times.
+        # One remedy for the set, not one per binary.
         names = ", ".join(f"`{b}`" for b in unreachable)
         verb = "is" if len(unreachable) == 1 else "are"
         reporter.out(
@@ -619,11 +618,10 @@ def run_notify_hook(
     label: str,
     note: Callable[[str], None],
 ) -> None:
-    """Run one operator notify hook. The one runner behind both, because the
-    two drifted in both directions: one leaked the hook's stdout into the
-    parent's (under `agent6 acp` that is the JSON-RPC stream, and one printed
-    line desynchronises it), the other swallowed a non-zero exit, and a hook
-    that fails silently stops notifying without anyone noticing.
+    """Run one operator notify hook, the one runner behind both: stdout goes
+    to DEVNULL (under `agent6 acp` the parent's stdout is the JSON-RPC stream,
+    and one printed line desynchronises it) and a non-zero exit is reported,
+    so a failing hook is never silent.
 
     The argv is operator-controlled, never LLM output, so it runs on the host
     outside the jail. A failure is reported and never changes the exit code."""

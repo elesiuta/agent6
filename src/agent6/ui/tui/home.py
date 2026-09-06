@@ -388,7 +388,7 @@ class Agent6HomeApp(PlainNotify, MuxPointerShapes, App[Path | None]):
         # (an unused default whose SVG export is broken in our terminals), and
         # "Theme" (replaced by our live-preview Theme… picker). Every home action,
         # including Open config / Theme… / Keys & actions, is searchable by name
-        # via _HomeCommands now, so nothing is added here.
+        # via _HomeCommands, so nothing is added here.
         for cmd in super().get_system_commands(screen):
             if cmd.title not in ("Keys", "Screenshot", "Theme"):
                 yield cmd

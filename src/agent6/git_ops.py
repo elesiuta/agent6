@@ -645,9 +645,9 @@ def merge_stamp_holds(path: Path, session_id: str, run_branch: str, merged_tip: 
     A resumed run keeps committing under a PRIOR leg's stamp: "merged" holds
     only while the run's tip is the one that merge landed (the comparison
     `sessions prune` trusts). The tip is the run's CHAIN -- its record -- and
-    the branch only for a run with no chain: read from the branch alone, a
-    branchless run (`branch_per_run` off) had nothing to compare and every
-    stamp read as holding. A gone chain and branch (auto_prune), unreadable
+    the branch only for a run with no chain, since a branchless run
+    (`branch_per_run` off) has no branch to compare against the stamp. A gone
+    chain and branch (auto_prune), unreadable
     git, or a pre-`tip` stamp keeps the claim."""
     if not merged_tip:
         return True
@@ -1092,10 +1092,10 @@ def _advance_run_branch(path: Path, branch: str | None, sha: str, *, expected: s
     """Move the run's visible branch to *sha*, but only from *expected* (the
     chain tip this commit was built on).
 
-    Compare-and-swap, like `plumb_merge`'s: a bare `update-ref` rewound
-    anything else that had moved the branch -- the operator committing on the
-    run branch the end banner leaves them sitting on, whose commit then
-    survived only in the reflog. A branch that moved keeps its own tip; the
+    Compare-and-swap, like `plumb_merge`'s: a bare `update-ref` would rewind
+    whatever else moved the branch, such as the operator's own commit on the
+    run branch the end banner leaves them sitting on, leaving it only in the
+    reflog. A branch that moved keeps its own tip; the
     chain ref is the run's record either way."""
     if not branch:
         return

@@ -108,9 +108,9 @@ def check_url(url: str) -> Checked:
     try:
         parts = urlsplit(url)
     except ValueError as exc:
-        # urlsplit itself refuses a malformed literal ("http://[::1"), and the
-        # dispatcher's catch-all relabelled it "failed:" -- the one fetch
-        # refusal that did not read like the others.
+        # urlsplit itself refuses a malformed literal ("http://[::1"); as a
+        # FetchRefused it reads like every other fetch refusal instead of the
+        # dispatcher's "failed:".
         raise FetchRefused(f"the URL cannot be read: {exc}") from exc
     if parts.scheme != "https":
         raise FetchRefused(f"only https is fetched, not {parts.scheme or 'a bare path'!r}")

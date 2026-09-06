@@ -164,11 +164,10 @@ def acp_frontend(
     def _steer(
         _events: EventSink, session_dir: Path, _facts: Callable[[], SessionFacts]
     ) -> SteerHooks:
-        # The file bridge, not an inert stub: a later prompt on this session
-        # resumes the run with its text seeded through the steer files
-        # (resume --steer), and the loop's pre-call drain reads THESE hooks --
-        # inert ones dropped the seeded instruction, so the resumed model
-        # re-finished the old task. Mid-run nothing here writes steer files,
+        # The file bridge: a later prompt on this session resumes the run with
+        # its text seeded through the steer files (resume --steer), and the
+        # loop's pre-call drain reads THESE hooks, so the seeded instruction
+        # reaches the resumed model. Mid-run nothing here writes steer files,
         # so no new affordance is offered.
         return file_bridge_steer(session_dir)
 

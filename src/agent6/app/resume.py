@@ -155,10 +155,9 @@ def turn_replay_allowed(
     headless warns and proceeds).
 
     Approval does NOT clear the marker: the caller clears it once the leg
-    actually starts. Cleared here, a resume the operator approved and that then
-    hit any preflight refusal (a diverged chain, a missing key, a config typo)
-    replayed the turn on the next attempt with no warning at all -- and the
-    tools it had already run applied twice."""
+    actually starts, so a resume the operator approved that then hits a
+    preflight refusal (a diverged chain, a missing key, a config typo) asks
+    again next time instead of replaying the turn."""
     marker_path = session_dir / TURN_IN_FLIGHT_NAME
     marker = read_turn_marker(marker_path)
     if marker is None:
@@ -576,9 +575,8 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         refusal = headless_approval_refusal(
             cfg,
             tui_enabled=tui_enabled,
-            # The env a launcher set, else the choice recorded on the run dir:
-            # the approver reads the file, so a refusal keyed on the env alone
-            # told a detached run it had no away-mode while its dir carried one.
+            # The env a launcher set, else the choice recorded on the run dir,
+            # the same two the approver reads.
             away=effective_away(layout.session_dir),
             can_ask=frontend.capabilities.can_ask,
             clamped=session_kind(mode).clamps_commands,

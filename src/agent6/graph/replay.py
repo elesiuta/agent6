@@ -114,9 +114,9 @@ def graph_at_version(
         if nid is not None and dep is not None:
             deps_after.setdefault(nid, set()).add(dep)
     # The cursor as of *version*: the last one the prefix set. With none in the
-    # prefix but some later in the journal, the run held NO cursor here --
-    # falling back to the CURRENT one gave a fork at turn 1 the focus of the
-    # last turn, so the child worked the newest task first. *current_cursor* is
+    # prefix but some later in the journal, the run held NO cursor here, and
+    # the CURRENT one would give a fork at turn 1 the focus of the last turn.
+    # *current_cursor* is
     # for a graph whose journal records no cursor at all (a pre-journal graph,
     # where the cursor file is the only record).
     cursors = [e for e in at if e["op"] == "set_cursor"]

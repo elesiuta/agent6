@@ -90,10 +90,9 @@ class _ToolSpec:
 _COMMAND_TOOLS = frozenset({"run_verify", "run_in_sandbox", "apply_patch_in_sandbox"})
 
 # The two that run the workspace's gate. With no verify command there is
-# nothing for them to run: `run_verify` reached the jail with an empty argv
-# and answered "tuple index out of range", and `apply_patch_in_sandbox`
-# applied the patch and THEN failed the same way, leaving the workspace
-# changed under a call the client was told had failed. The run loop hides
+# nothing for them to run, and `apply_patch_in_sandbox` must refuse BEFORE
+# applying the patch, or the workspace changes under a call the client is
+# told failed. The run loop hides
 # `run_verify_command` for the same reason.
 _GATE_TOOLS = frozenset({"run_verify", "apply_patch_in_sandbox"})
 
@@ -175,9 +174,8 @@ def _no_one_to_ask(config: Config) -> Config:
 def _listable_sessions(agent6_dir: Path) -> list[Path]:
     """Every session dir under the state base, newest first.
 
-    `list_sessions` is named for what it lists: reading runs/ alone hid a plan
-    and an ask from an editor driving agent6 over MCP, and listing husks showed
-    it sessions the CLI and the web hub denied existed. `viewmodel.session_dirs`
+    `list_sessions` is named for what it lists: every bucket, husks excluded,
+    the same sessions the CLI and the web hub list. `viewmodel.session_dirs`
     is the one enumeration behind all three.
     """
     return session_dirs(agent6_dir, SESSION_BUCKETS)

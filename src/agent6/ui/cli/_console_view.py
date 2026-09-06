@@ -212,9 +212,8 @@ class ConsoleView:
                 return
             if etype == "loop.provider.retry":
                 # A retry resets the idle clock, so without a line the "working…
-                # Ns" counter restarts with nothing said: a run wedged behind
-                # four provider failures read as freshly started, and the
-                # Ctrl-C hint (idle >= 20s) never appeared.
+                # Ns" counter restarts with nothing said and a run wedged behind
+                # provider failures reads as freshly started.
                 self._end_block()
                 attempt = event.get("attempt")
                 self._line(

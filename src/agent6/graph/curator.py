@@ -287,9 +287,9 @@ class GraphCurator:
         with self._mutating():
             node = self.get(intent.id)
             # An end is final: a passed task may only be retired, and a retired
-            # one stays retired. Without the second half `passed -> obsolete ->
-            # pending` walked around the first, re-opening work every dependent
-            # was told had passed. Needed again means a new task.
+            # one stays retired, or `passed -> obsolete -> pending` would walk
+            # around the first rule and re-open work every dependent was told
+            # had passed. Needed again means a new task.
             if node.status == "passed" and intent.new_status != "obsolete":
                 raise CuratorError(
                     f"cannot transition passed node {intent.id} to {intent.new_status}"
@@ -310,9 +310,9 @@ class GraphCurator:
                 and has_open_child(self._nodes, node)
             ):
                 # A parent with open children is a container: the frontier
-                # surfaces its children instead, and passing it satisfied every
-                # dependency on it -- so the tasks it stood for were skipped
-                # while the work they named went undone. The root is the whole
+                # surfaces its children instead, and passing it would satisfy
+                # every dependency on it while the work they name goes undone.
+                # The root is the whole
                 # job, not a unit of work: nothing depends on it, and a run
                 # that ends with a standing goal or a subtask left open still
                 # completed it.

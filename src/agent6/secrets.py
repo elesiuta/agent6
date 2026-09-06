@@ -68,10 +68,9 @@ def _require_safe_perms(path: Path, user: RealUser) -> None:
 def _read_secrets_toml(path: Path) -> dict[str, Any]:
     """Parse `secrets.toml`, as a SecretsError for anything that stops it.
 
-    THE one reader, because an unreadable file (root-owned after a `sudo
-    connect`, a chmod 000) is the operator's environment and not a bug in
-    agent6: it escaped as an unexpected PermissionError, with a saved
-    traceback and an invitation to report it, and no run could start."""
+    THE one reader: an unreadable file (root-owned after a `sudo connect`, a
+    chmod 000) is the operator's environment and not a bug in agent6, so it
+    raises SecretsError naming the path, never an unhandled PermissionError."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:

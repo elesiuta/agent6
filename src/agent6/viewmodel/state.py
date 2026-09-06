@@ -754,8 +754,8 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         # A live probe, [] once the network is gone.
         d["ports"] = listening_ports(session_dir)
         # The background-shell roster, on every frame: the run view streams
-        # from this dict, and a card painted from the snapshot alone vanished
-        # on the first frame.
+        # from this dict, so a card painted from the snapshot alone would
+        # vanish on the first frame.
         d["shells"] = roster_from_dir(session_dir / SHELLS_DIR)
         if d["mode"] == "plan":
             # The planning run's deliverable (`agent6 plan show` prints the
@@ -785,7 +785,7 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     # has no dir status) still needs the "blocked, not working" signal to quiet
     # its heartbeat.
     d["operator_blocked"] = status_facts(state).operator_blocked
-    # log_tail is LogLine objects now; the wire form stays a flat list of strings
+    # log_tail holds LogLine objects; the wire form is a flat list of strings
     # (web + `watch --json` consumers render lines verbatim). task_id filtering is
     # a TUI-local concern that reads the SessionState directly.
     d["log_tail"] = [line.text for line in state.log_tail]

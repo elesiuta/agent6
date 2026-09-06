@@ -187,11 +187,8 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
     """Re-stamp the facts a LEG owns: the models driving it and the policy it
     runs under.
 
-    Written once at run start, they described leg 1 forever: `agent6 exec`
-    takes the recorded policy as the jail to join, so a run started
-    unsandboxed and resumed under `strict` ran the operator's command
-    unconfined against a jailed agent -- and `sessions show` named leg 1's
-    model while another one was answering."""
+    `agent6 exec` joins the recorded policy's jail and `sessions show` reads
+    the recorded model, so both must describe the leg that is live."""
     m = read_manifest(session_dir)
     write_manifest(
         session_dir / "manifest.json",

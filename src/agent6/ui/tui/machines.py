@@ -344,8 +344,8 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             status = f"ended: {ms.ended.status} ({ms.ended.reason})"
         else:
             status = f"{machine_word_for_dir(ms, self._root)} · {ms.current}"
-        # A machine is the one thing that runs unattended against the USD
-        # ceiling, and this screen could not say what it had spent.
+        # A machine runs unattended against the USD ceiling, so the header
+        # carries its spend.
         spend, _in_flight = machine_spend(events, self._root, alive=worker_is_alive(self._root))
         cost = format_cost(spend.usd, partial=spend.partial)
         self.query_one("#mw-head", Static).update(

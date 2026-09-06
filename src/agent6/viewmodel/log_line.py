@@ -16,8 +16,7 @@ from agent6.viewmodel.transcript import scrub_terminal_controls
 
 def _edit_kind(edit: dict[str, object]) -> str:
     """The kind an `apply_edit` pair resolves to, as the tool resolves it: an
-    omitted discriminator follows the pair's shape, so a bare create rendered
-    as "replace" in every log view."""
+    omitted discriminator follows the pair's shape."""
     kind = str(edit.get("kind") or "")
     if kind:
         return kind
@@ -196,8 +195,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
     line = f"{ts[11:23] if len(ts) > 23 else ts}  {etype:<18}"
     # The salient text embeds model-authored fields (args, summaries, output
     # tails): scrub the finished line so no skin's log pane relays an escape.
-    # ONE line by contract -- the scrubber keeps \n (a transcript needs it), so
-    # a provider error carrying an SSE dump painted a dozen rows with no
+    # ONE line by contract: the scrubber keeps \n (a transcript needs it), and
+    # a provider error carrying an SSE dump would paint a dozen rows with no
     # timestamp and no event name on any of them.
     if not salient:
         return line

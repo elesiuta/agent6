@@ -268,9 +268,9 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
 
     Returns a non-zero exit code (to refuse) when running as root without
     `--allow-root` / `AGENT6_ALLOW_ROOT=1`; returns None to proceed. When
-    proceeding as root it prints a loud banner. We deliberately do NOT drop
-    privileges: under sudo the LLM's verify/run commands need to run as root
-    inside the jail, so the jail, not the process uid, is the boundary.
+    proceeding as root it prints a loud banner. Privileges are not dropped:
+    under sudo the LLM's verify/run commands need to run as root inside the
+    jail, so the jail is the boundary.
     """
     if not is_root():
         return None

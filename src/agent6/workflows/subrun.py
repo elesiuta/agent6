@@ -111,9 +111,8 @@ def import_run(
     the move, so a refusal touches neither.
 
     A lane that never committed has no branch to land, and its record imports
-    all the same: reported as a failed fetch, every lane of a fleet stopped by
-    an expired key read "couldn't find remote ref" and the reason stayed in a
-    session dir the operator could no longer reach.
+    all the same, so the reason it stopped stays reachable under
+    `<origin_state>/runs/`.
     """
     if branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")

@@ -157,8 +157,8 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
         entry["current"] = s.current
     if s.reason:
         # The shared cell, like every other surface: `reason` is also set for a
-        # LIVE machine blocked on an operator prompt, and hardcoding "failed"
-        # told the operator it had died instead of sending them to answer it.
+        # LIVE machine blocked on an operator prompt, whose label sends the
+        # operator to answer it.
         entry["label"] = status_label(s.status, s.reason)
     return entry
 

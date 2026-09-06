@@ -107,8 +107,8 @@ def elision_placeholder(tool_name: str, tool_input: Any) -> str:
     if not tool_name or not isinstance(tool_input, dict):
         return ELISION_PLACEHOLDER
     described = call_label(tool_name, tool_input)
-    # Only read_file takes a range, so only it can be told to re-read one:
-    # naming start_line/limit for a run_command result left the model with no
+    # Only read_file takes a range, so only it can be told to re-read one;
+    # start_line/limit named for a run_command result leaves the model no
     # legal move next to "do not re-issue the identical call".
     retry = (
         "re-read only the part you need (read_file with a targeted start_line/limit)"
@@ -411,9 +411,9 @@ def request_prefix_chars(system: str, tools: Sequence[ToolDefinition]) -> int:
     prompt and the tool definitions.
 
     The model's window bounds the WHOLE request, so a threshold measured on the
-    conversation alone left a band -- exactly the size of this prefix -- where
-    the loop saw room and the provider answered 400 (prompt too long). A
-    resumed leg re-issued the same over-window request, so the run was wedged.
+    conversation alone leaves a band, exactly the size of this prefix, where
+    the loop sees room and the provider answers 400 (prompt too long), and a
+    resumed leg re-issues the same over-window request.
     The system prompt is the unbounded half: AGENTS.md rides in it whole."""
     return len(system) + sum(
         len(t.name) + len(t.description) + len(json.dumps(t.input_schema, separators=(",", ":")))

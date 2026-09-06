@@ -562,9 +562,7 @@ def _cmd_config_fix(*, machine: Path | None) -> int:
                     )
                 except ConfigError:
                     # A leaf inside an inline table / dotted key: the surgery
-                    # cannot carve it out, so it is stuck (fix has always
-                    # reported this shape as stuck; the owner now refuses
-                    # loudly instead of returning "not found").
+                    # cannot carve it out, so it is stuck and reported as such.
                     ok = False
             if not ok:
                 stuck.append(entry)

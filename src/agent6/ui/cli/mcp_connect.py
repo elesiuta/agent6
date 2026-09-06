@@ -171,8 +171,8 @@ def cmd_mcp_connect(
     except ValidationError as exc:
         # These are operator flag values, and the entry's own rules (the URL
         # shape above all -- a dropped scheme is the likeliest typo here) live
-        # in the model. Unwrapped they reached the operator as a pydantic dump
-        # with a saved traceback and an invitation to report a bug.
+        # in the model, and reach the operator as one line each rather than a
+        # pydantic dump with a saved traceback.
         detail = "; ".join(
             f"{'.'.join(str(part) for part in issue['loc']) or 'entry'}: {issue['msg']}"
             for issue in exc.errors()
@@ -303,8 +303,8 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
         return 2
     if not res.removed:
         # The layer declares it, but not as a `[mcp.servers.<name>]` header the
-        # line surgery can delete (a dotted key, an inline table). Saying
-        # "removed" there left the entry live, and its tools with it.
+        # line surgery can delete (a dotted key, an inline table), so the entry
+        # is still live and the operator is told so.
         path = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
         print(
             f"ERROR: {name} is not written as a [mcp.servers.{name}] table in {path};"

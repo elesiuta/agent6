@@ -143,9 +143,8 @@ def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text
 def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
     """The empty-conversation placeholder, naming the state the session is in.
 
-    The dashboard says which of these a run is in and this view said only "no
-    conversation yet" or, once the composer flipped, "this session made no
-    conversation": a crashed run and a run that never started both read as an
+    The dashboard says which state a run is in, so this placeholder does too:
+    a crashed run and a run that never started must not both read as an
     ordinary empty one, on the default screen of `agent6 tui`.
     """
     state, action = dead_run_note(word, detail)

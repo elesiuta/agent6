@@ -871,8 +871,8 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
 
 
 def main(argv: list[str] | None = None) -> int:
-    # A redirected stdout is block-buffered: a run's log file stayed empty
-    # until exit. Line-buffer it so every line lands as it is printed.
+    # A redirected stdout is block-buffered, so a run's log file would stay
+    # empty until exit: line-buffer it so every line lands as it is printed.
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(line_buffering=True)
     parser = build_parser()

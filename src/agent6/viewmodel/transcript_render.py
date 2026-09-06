@@ -284,9 +284,8 @@ def _response_turns(resp: dict[str, Any], shape: str, names: dict[str, str]) -> 
         if not choices:
             return []
         # A response message IS the assistant's, so stamp the role rather than
-        # trusting the body to carry it (the streaming path synthesises the
-        # message without one): without this the model's words rendered as the
-        # user's, and its tool_calls and reasoning were dropped entirely.
+        # trusting the body to carry it: the streaming path synthesises the
+        # message without one.
         message = {**_as_dict(choices[0].get("message")), "role": "assistant"}
         return _openai_turns(message, names)
     if resp.get("content") is not None:

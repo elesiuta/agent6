@@ -533,8 +533,8 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             f" spent {format_cost(spend.usd, partial=spend.partial)}"
         )
     # A machine with run states commits to its own branch and never touches the
-    # checkout, so "tests passing" was said over a tree whose tests still fail,
-    # with nothing naming where the work went. Same three lines a run ends on.
+    # checkout, so the ending names the branch and how to merge it: the same
+    # three lines a run ends on.
     branch = machine_branch_for(spec.machine)
     if has_run_agent and branch_exists(cwd, branch) and not is_ancestor(cwd, branch, "HEAD"):
         reporter.out(f"\nchanges are on {branch}")

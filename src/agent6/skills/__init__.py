@@ -185,9 +185,8 @@ def operator_skills(
     """The skills a run has, from `[skills]`: discovery over `extra_dirs` then
     the installed dir, with the operator's per-skill states applied.
 
-    THE one owner of the master switch, which is what `--skill` and the pause
-    menu missed when each resolved the same three calls for itself: off means
-    no skills anywhere, not "off for the model only"."""
+    THE one owner of the master switch, asked by `--skill` and the pause menu
+    alike: off means no skills anywhere, not "off for the model only"."""
     if not enabled:
         return ResolvedSkills(enabled=(), always=(), warnings=())
     found, warns = discover_skills(skill_search_dirs(extra_dirs, installed_dir))

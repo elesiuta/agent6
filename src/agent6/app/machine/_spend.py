@@ -45,11 +45,9 @@ def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
         return
     state = newest.parent.name.split("-", 1)[-1]
     # Retire the log dir FIRST, under a name no later attempt can collide with:
-    # the seq does not advance across a crashed attempt, so a second crash in
-    # the same state reused `crashed-<seq>-<state>` and the rename died
-    # ENOTEMPTY -- after appending a second booking for the same attempt. A
-    # crash between the rename and the append now loses one booking, which is
-    # the behaviour this function was added to improve on, never a duplicate.
+    # the seq does not advance across a crashed attempt, so a seq-derived name
+    # collides on a second crash in the same state. A crash between the rename
+    # and the append loses one booking, never duplicates one.
     ts = datetime.now(UTC).isoformat(timespec="microseconds")
     retired = newest.parent.with_name(f"crashed-{ts.replace(':', '')}-{newest.parent.name}")
     newest.parent.rename(retired)

@@ -38,8 +38,8 @@ class SpiralGuard:
 
         A POLL is not a repeat: `read_background` exists to be called again
         with the same id until the job ends, which `run_command`'s own
-        description tells the model to do. Counted as a spiral it drew three
-        nudges and then killed the run for following the instruction."""
+        description tells the model to do; counted as a spiral it would draw
+        three nudges and then end the run for following the instruction."""
         if sig == self.last_call_sig and not polling:
             self.call_streak += 1
         else:

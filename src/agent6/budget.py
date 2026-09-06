@@ -200,9 +200,9 @@ def _billed_apart_from_plan(t: _ModelTotals | ModelUsage) -> bool:
 
     One model id reaches both a subscription provider and a paid API (a review
     seat, a machine pin, `--from` on another route), and the bucket is keyed by
-    the id: the plan call's authoritative $0 stood for the whole bucket, so
-    every API dollar under that id left the estimate, the receipt and the USD
-    ceiling."""
+    the id, so the plan call's authoritative $0 must not stand for the whole
+    bucket: the API dollars under that id stay in the estimate, the receipt
+    and the USD ceiling."""
     return bool(
         t.reported_cost_usd
         or t.unreported_input_tokens
@@ -665,8 +665,8 @@ class BudgetTracker:
         approx = "~" if any_unknown or any_estimated else "="
         # The lower-bound mark belongs to the figure it qualifies: at least one
         # model has no cached provider price (agent6.models.pricing keeps no
-        # static fallback). Appended after the unmetered parenthetical it read
-        # as "fallback tokens)+".
+        # static fallback), so it sits on the figure, not after the unmetered
+        # parenthetical.
         total = format_usd(total_usd) + ("+" if any_unknown else "")
         # `of <cap>` states what meters this spend. With every model unpriced,
         # or every one drawing on a subscription plan, max_usd meters none of it

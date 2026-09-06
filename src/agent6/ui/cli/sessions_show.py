@@ -94,16 +94,10 @@ def _status_state(
     """This run's state as `(status, label, detail)`.
 
     `status` is the LISTING's own word (`status_for_session_dir`) and *cell* is
-    the listing's own rendering of it, passed in whole: recomputing the mode
-    and the unmerged mark here made a second rule that disagreed with every
-    listing for a branch cut at base, a branch deleted with commits kept, and
-    a run with no manifest. `detail` is this surface's diagnostic: what to do,
+    the listing's own rendering of it, passed in whole, so no second rule can
+    disagree with the listing. `detail` is this surface's diagnostic: what to do,
     or why the word applies. The text render joins them; --json emits the
-    three, the word included, so a script never parses prose.
-
-    The pre-unification words lied twice: a crashed run led with "stopped"
-    (the hub's word for an OPERATOR stop) and a launching run with "running"
-    (the hub said "starting")."""
+    three, the word included, so a script never parses prose."""
     word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if scan.finished:
         # The raw end reason is the diagnostic; it is not repeated when the

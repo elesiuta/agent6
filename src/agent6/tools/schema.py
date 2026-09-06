@@ -145,9 +145,6 @@ class EditPair(BaseModel):
     # can only mean "write this whole file", and a non-empty one can only mean
     # a replace. An omitted kind resolves to `create`, never `overwrite`, so a
     # model that thinks a file is new still cannot clobber one that exists.
-    # Left as "replace", the natural write-a-new-file call was refused forever:
-    # a live `machine create` spent three attempts ping-ponging between the
-    # two refusals and stopped on the tool-error streak.
     kind: str = Field(default="", pattern="^(|replace|create|overwrite)$")
     old_string: str = ""
     new_string: str

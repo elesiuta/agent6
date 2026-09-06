@@ -566,9 +566,9 @@ class _ForkPlan:
     preset: str
     preset_from_flag: bool
     cfg: Config
-    # The source's pinned verify command and its origin. A fork inherits it:
-    # derived from the current config instead, a source whose gate was
-    # inferred or adopted forked to a run the manifest called gateless.
+    # The source's pinned verify command and its origin. A fork inherits it
+    # rather than deriving one from the current config: an inferred or adopted
+    # gate has no config to derive from.
     gate: tuple[Sequence[str], str]
 
 
@@ -708,7 +708,7 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
 
     The dirty check is git's own rule for `worktree remove`: prune and rm land
     on a merged fork, and the tree can still carry an uncommitted edit or a
-    file that was never added. `rmtree` took both with no way back."""
+    file that was never added, which `rmtree` would take with no way back."""
     dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
@@ -738,8 +738,7 @@ def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
     except (GitError, OSError):
         # git runs WITH cwd=worktree, so a directory that vanished between the
         # check above and here is an OSError, not a GitError: unreadable is not
-        # dirt, and crashing here wedged `sessions rm` on the record that names
-        # a worktree `prune` had already swept.
+        # dirt.
         return ""
     if not held:
         return ""

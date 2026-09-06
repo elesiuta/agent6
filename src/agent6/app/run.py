@@ -364,10 +364,10 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # This process is a live worker from here: the pid is what every surface
         # gates on, and both the run's dirty-tree question and an ask's first
-        # question are asked below it. Without it a session parked on its own
-        # start question read "created" in the listings and `agent6 answer`
-        # refused the answer it was waiting for. The teardown clears it on every
-        # exit path, so a park or a later refusal leaves none behind.
+        # question are asked below it, so a session parked on its own start
+        # question reads as live and `agent6 answer` reaches it. The teardown
+        # clears it on every exit path, so a park or a later refusal leaves
+        # none behind.
         write_worker_pid(layout.session_dir, os.getpid())
 
         if mode == "run":

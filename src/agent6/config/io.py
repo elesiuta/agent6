@@ -303,9 +303,8 @@ def _find_leaf_line(lines: list[str], region: int, end: int, leaf: str) -> int |
     """Index of the line assigning *leaf* within `[region, end)`, or None.
 
     The quoted spelling (`"protect_git" = true`) is valid TOML and names the
-    same leaf, so it matches too: unmatched, the surgery appended a duplicate
-    key and the write rolled back, leaving the value unsettable from every
-    surface with a message blaming the file.
+    same leaf, so it matches too; unmatched, the surgery would append a
+    duplicate key and roll the write back.
 
     Skips multi-line value interiors (see `_region_end`)."""
     leaf_re = re.compile(rf"^\s*(\"|')?{re.escape(leaf)}(\"|')?\s*=")

@@ -101,9 +101,8 @@ def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> No
 class FrontendCapabilities:
     """What this surface can actually do, declared once at wiring.
 
-    A surface that knows what it cannot do never offers it: this one was
-    answered at CALL time by the callable failing, so a headless run with no
-    away-mode fabricated an empty `ask_user` answer instead of denying.
+    A surface declares what it can do, so a headless run with no away-mode
+    denies rather than fabricating an empty `ask_user` answer.
     """
 
     # Approvals and ask_user reach a human. False for a headless run with no

@@ -163,7 +163,7 @@ def landed_base(
     or None where git's own base serves.
 
     A squash commit is content git cannot relate to the chain it came from, so
-    the merge read every commit before it as new work and conflicted with the
+    git's own base reads every commit before it as new work against the
     squash that holds the same lines. The base is the merged tip when the chain
     continues past it, else the point a fork left its ancestor's chain (the
     merged tip holds that point's content)."""
@@ -407,8 +407,8 @@ def left_behind_line(target: str, outcome: MergeOutcome) -> str:
     The merge is ref plumbing: it moves the branch and brings the checkout
     forward only where a file still matches what the branch held, so an edit
     of the operator's (or another run's work sitting in the tree) is never
-    overwritten. Without this line the merge read as landed while the tree the
-    operator then tests, and commits, holds the older content."""
+    overwritten. This line says so, since the tree the operator then tests,
+    and commits, holds the older content."""
     if not outcome.left_behind:
         return ""
     named = ", ".join(outcome.left_behind[:4]) + (", ..." if len(outcome.left_behind) > 4 else "")

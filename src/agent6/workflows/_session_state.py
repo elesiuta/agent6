@@ -232,8 +232,7 @@ def _load_state_object(path: Path, what: str) -> dict[str, Any]:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         # The likeliest corruption of all (a snapshot torn by a full disk or a
-        # power loss) is the one whose error said nothing about which run or
-        # which file, while its siblings below both name the path.
+        # power loss) names the path like its siblings below.
         raise ValueError(f"unreadable {what} at {path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError(

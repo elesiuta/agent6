@@ -61,8 +61,7 @@ def update_task(curator: GraphCurator | None, raw: dict[str, Any]) -> UpdateTask
     args = DagUpdateTaskInput.model_validate(raw)
     node = None
     if args.note and args.status is None:
-        # The graph records a note on a status change only; a note sent alone
-        # or beside depends_on was dropped without a word.
+        # The graph records a note on a status change only.
         raise ToolError("update_task: a note rides along with a status; pass status too")
     if args.status is not None:
         if args.status in ("skipped", "obsolete"):
@@ -117,9 +116,8 @@ def list_tasks(curator: GraphCurator | None, raw: dict[str, Any]) -> ListTasksRe
                 "acceptance": node.acceptance,
                 "relevant_paths": list(node.relevant_paths),
                 "depends_on": list(node.depends_on),
-                # A standing task never passes and never gates a finish. Absent
-                # here, the model read three open tasks while the finish gate
-                # counted one, with no field to tell it which.
+                # A standing task never passes and never gates a finish, so the
+                # model can tell which open tasks the finish gate counts.
                 "standing": node.standing,
             }
         )
