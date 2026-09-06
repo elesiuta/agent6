@@ -623,3 +623,51 @@ def test_delete_is_on_the_hubs_file_menu_like_its_sibling_verbs() -> None:
     file_menu = HomeScreen.MENUS[0]
     assert file_menu.title == "File"
     assert "delete_selected" in {item.action for item in file_menu.items}
+
+
+def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The web hub prunes (with the squash-merged opt-in) and clears saved
+    asks; the TUI hub reached neither. Each is a File menu action that
+    confirms, then shells the same fixed argv the CLI takes."""
+    import asyncio
+
+    from agent6.ui.tui import home
+    from agent6.ui.tui.home import Agent6HomeApp, HomeScreen
+    from agent6.ui.tui.modals import ConfirmModal
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+    calls: list[tuple[str, bool]] = []
+
+    def _fake_prune(
+        cwd: Path, *, delete_squashed: bool, config_path: object = None
+    ) -> tuple[bool, str]:
+        calls.append(("prune", delete_squashed))
+        return True, "pruned"
+
+    def _fake_clear(cwd: Path, config_path: object = None) -> tuple[bool, str]:
+        calls.append(("asks", False))
+        return True, "cleared"
+
+    monkeypatch.setattr(home, "_run_prune_cli", _fake_prune)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "_run_clear_asks_cli", _fake_clear)  # type: ignore[attr-defined]
+    actions = {item.action for item in HomeScreen.MENUS[0].items}
+    assert {"prune", "prune_squashed", "clear_asks"} <= actions
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            for action in ("prune", "prune_squashed", "clear_asks"):
+                screen = app.screen
+                assert isinstance(screen, HomeScreen)
+                getattr(screen, f"action_{action}")()
+                await pilot.pause()
+                assert isinstance(app.screen, ConfirmModal)
+                await pilot.press("y")
+                await pilot.pause()
+            assert calls == [("prune", False), ("prune", True), ("asks", False)]
+
+    asyncio.run(scenario())

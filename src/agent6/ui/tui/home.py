@@ -88,6 +88,9 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 MenuItem("Open selected", "open_selected", "enter"),
                 MenuItem("Merge selected run", "merge_selected", "m"),
                 MenuItem("Delete selected run…", "delete_selected", "d"),
+                MenuItem("Prune merged runs…", "prune"),
+                MenuItem("Prune merged runs, squash-merged too…", "prune_squashed"),
+                MenuItem("Clear saved asks…", "clear_asks"),
                 MenuItem("Refresh", "refresh", "r"),
                 MenuItem("Quit", "quit", "q"),
             ),
@@ -352,6 +355,71 @@ class HomeScreen(ScreenChrome, Screen[None]):
 
         return cb
 
+    def action_prune(self) -> None:
+        """`agent6 sessions prune`, after a confirm: the same verb the web hub
+        offers. Deletes run branches git can safely remove, merged runs' chain
+        refs, merged forks' worktrees and landed fan-out clones; squash-merged
+        branches are reported, not deleted."""
+        self.app.push_screen(
+            ConfirmModal(
+                "Prune merged runs?",
+                "Runs `agent6 sessions prune`: deletes run branches git can remove as merged"
+                " (reachable from the checked-out branch), merged runs' chain refs, the"
+                " worktrees of merged forks and fan-out clone dirs whose lanes are all here."
+                " Squash-merged branches and ones merged elsewhere are kept and named;"
+                " unmerged ones are never touched.",
+                confirm_label="Prune",
+            ),
+            self._on_prune_confirm(delete_squashed=False),
+        )
+
+    def action_prune_squashed(self) -> None:
+        """`agent6 sessions prune --delete-squashed`, after a confirm: the
+        force-delete the web hub's checkbox opts into."""
+        self.app.push_screen(
+            ConfirmModal(
+                "Prune merged runs, squash-merged too?",
+                "Runs `agent6 sessions prune --delete-squashed`: also force-deletes branches"
+                " the manifest confirms were squash-merged into a base that still holds the"
+                " merge commit. Each deletion prints its undelete command.",
+                confirm_label="Prune",
+            ),
+            self._on_prune_confirm(delete_squashed=True),
+        )
+
+    def _on_prune_confirm(self, *, delete_squashed: bool) -> Callable[[bool | None], None]:
+        def cb(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            ok, msg = _run_prune_cli(
+                self.repo_cwd, delete_squashed=delete_squashed, config_path=self.config_path
+            )
+            self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
+            self.action_refresh()
+
+        return cb
+
+    def action_clear_asks(self) -> None:
+        """`agent6 sessions rm --asks`, after a confirm: this directory's saved
+        asks go (asks elsewhere are untouched), as the web hub offers."""
+
+        def cb(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            ok, msg = _run_clear_asks_cli(self.repo_cwd, self.config_path)
+            self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
+            self.action_refresh()
+
+        self.app.push_screen(
+            ConfirmModal(
+                "Clear this directory's saved asks?",
+                "Runs `agent6 sessions rm --asks`: removes every saved `agent6 ask` transcript"
+                " for this directory. Asks run elsewhere are untouched.",
+                confirm_label="Clear",
+            ),
+            cb,
+        )
+
     def action_open_config(self) -> None:
         # An invalid config (e.g. a stale value or a leftover table from a removed
         # feature) would crash the config screen on load. Pre-check so we can point
@@ -444,6 +512,23 @@ def _run_delete_cli(
         [*agent6_argv(config_path), "sessions", "rm", "--", session_id], repo_cwd
     )
     return ok, msg or ("removed" if ok else "could not remove")
+
+
+def _run_prune_cli(
+    repo_cwd: Path, *, delete_squashed: bool, config_path: Path | None = None
+) -> tuple[bool, str]:
+    """Run `agent6 sessions prune [--delete-squashed]` and return (ok, message)."""
+    argv = [*agent6_argv(config_path), "sessions", "prune"]
+    if delete_squashed:
+        argv.append("--delete-squashed")
+    ok, msg = run_cli_capture(argv, repo_cwd)
+    return ok, msg or ("pruned" if ok else "prune failed")
+
+
+def _run_clear_asks_cli(repo_cwd: Path, config_path: Path | None = None) -> tuple[bool, str]:
+    """Run `agent6 sessions rm --asks` and return (ok, message)."""
+    ok, msg = run_cli_capture([*agent6_argv(config_path), "sessions", "rm", "--asks"], repo_cwd)
+    return ok, msg or ("saved asks cleared" if ok else "could not clear the saved asks")
 
 
 def run_home(agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> Path | None:
