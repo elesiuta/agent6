@@ -115,11 +115,11 @@ def lane_note(j: LaneJoin) -> str:
     return f"{j.session_id} failed: {j.detail}"
 
 
-def summary_text(group: str, joined: list[LaneJoin]) -> str:
+def summary_text(group: str, lanes: list[LaneJoin]) -> str:
     """ONE user message summarizing every lane's outcome so the model
     continues informed (joined sha, conflict-to-resolve, or failure reason)."""
-    lines = [f"[parallel] group {group} complete ({len(joined)} lane(s)):"]
-    for j in joined:
+    lines = [f"[parallel] group {group} complete ({len(lanes)} lane(s)):"]
+    for j in lanes:
         if j.status == "joined":
             lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
         elif j.status == "conflict":

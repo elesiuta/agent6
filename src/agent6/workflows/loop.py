@@ -969,7 +969,7 @@ class Workflow:
             if result is not None:
                 return result
             self._turn_review_triggers(state, turn, conversation)
-            self._turn_finish_gates(state, turn, conversation)
+            self._turn_finish_gates(state, turn)
             self._turn_notices(state, turn)
             self._turn_metric_plateau(state, turn)
             result = self._turn_verify_settled(state, turn)
@@ -1898,9 +1898,7 @@ class Workflow:
 
     # ---- finish gates ----------------------------------------------------------
 
-    def _turn_finish_gates(
-        self, state: LoopState, turn: TurnState, conversation: Conversation
-    ) -> None:
+    def _turn_finish_gates(self, state: LoopState, turn: TurnState) -> None:
         """Gates that can revoke this turn's finish_session, in precedence order:
         the finish contract (a machine state's output_schema), review
         (before_finish), metric early-finish, open subtasks, verify
@@ -1908,21 +1906,18 @@ class Workflow:
         its nudge; later gates then see the finish as already revoked and stay
         quiet."""
         self._gate_finish_contract(turn)
-        self._gate_before_finish_review(state, turn, conversation)
+        self._gate_before_finish_review(state, turn)
         self._gate_metric_early_finish(state, turn)
         self._gate_task_finish(state, turn)
         self._gate_verify_finish(state, turn)
         self._gate_memory_finish(state, turn)
         self._gate_standing_finish(state, turn)
 
-    def _gate_before_finish_review(
-        self, state: LoopState, turn: TurnState, conversation: Conversation
-    ) -> None:
+    def _gate_before_finish_review(self, state: LoopState, turn: TurnState) -> None:
         """Gate the agent's finish_session on panel approval: an unsatisfied
         verdict suppresses the finish (the tool_result still goes back so the
         call isn't half-applied) and the loop carries on with the findings
         visible."""
-        del conversation
         if not (
             turn.finish_signal is not None
             and turn.finish_kind == "finish_session"
@@ -1988,43 +1983,56 @@ class Workflow:
         return False
 
     def _gate_metric_early_finish(self, state: LoopState, turn: TurnState) -> None:
-        """Metric-run early-finish guard. On optimisation runs the worker often
-        calls finish_session with most of its budget unspent, even though the task
-        asks it to keep optimising up to the cap. Mirror the plateau policy:
-        while the run still has runway above the final budget slice, reject an
-        early finish_session a few times and nudge the worker to keep going; only
-        honour it once we are in the final budget slice or patience is
-        exhausted. Requires a real budget signal - with none (tests / MCP) we
-        defer to the worker's own judgement so a finish can never deadlock."""
-        if not (
+        """A finish_session on a metric run with runway left is rejected and
+        nudged (`_metric_early_finish_rejects`)."""
+        if (
             turn.finish_signal is not None
             and turn.finish_kind == "finish_session"
-            and self.mode == "run"
-            and metric_goal(self.config.workflow.metric) is not None
-            and not self._metric_at_ceiling(state.metric_history)
+            and self._metric_early_finish_rejects(state, iteration=turn.iteration)
         ):
-            return
-        finish_budget_remaining = self._budget_fraction_remaining()
-        has_runway = (
-            finish_budget_remaining is not None
-            and finish_budget_remaining > METRIC_PLATEAU_STOP_BELOW_BUDGET
-        )
-        if has_runway and state.metric_finish_nudges_used < METRIC_EARLY_FINISH_PATIENCE:
-            assert finish_budget_remaining is not None
-            state.metric_finish_nudges_used += 1
             turn.finish_signal = None
             turn.finish_payload = None
             turn.tool_results.append(Notice(METRIC_FINISH_NUDGE))
-            self._log(
-                f"  metric early-finish rejected #{state.metric_finish_nudges_used}"
-                f" at iter {turn.iteration} (budget {finish_budget_remaining:.0%} left)"
-            )
-            self._emit(
-                "loop.metric_early_finish.rejected",
-                iteration=turn.iteration,
-                nudges_used=state.metric_finish_nudges_used,
-                budget_remaining=finish_budget_remaining,
-            )
+
+    def _metric_early_finish_rejects(
+        self, state: LoopState, *, iteration: int, trigger: str = ""
+    ) -> bool:
+        """Metric-run early-finish guard, shared by a finish_session and a
+        silent finish (`trigger` names the silent path). On optimisation runs
+        the worker often finishes with most of its budget unspent, even though
+        the task asks it to keep optimising up to the cap. Mirror the plateau
+        policy: while the run still has runway above the final budget slice,
+        reject an early finish a few times and nudge the worker to keep going;
+        only honour it once the run is in the final budget slice or patience
+        is exhausted. Requires a real budget signal: with none (tests / MCP)
+        the worker's own judgement stands, so a finish can never deadlock.
+        True when the finish is rejected; the caller injects the nudge into
+        its own sink."""
+        if (
+            self.mode != "run"
+            or metric_goal(self.config.workflow.metric) is None
+            or self._metric_at_ceiling(state.metric_history)
+        ):
+            return False
+        remaining = self._budget_fraction_remaining()
+        if remaining is None or remaining <= METRIC_PLATEAU_STOP_BELOW_BUDGET:
+            return False
+        if state.metric_finish_nudges_used >= METRIC_EARLY_FINISH_PATIENCE:
+            return False
+        state.metric_finish_nudges_used += 1
+        self._log(
+            f"  metric early-finish{' (silent)' if trigger else ''} rejected"
+            f" #{state.metric_finish_nudges_used} at iter {iteration}"
+            f" (budget {remaining:.0%} left)"
+        )
+        self._emit(
+            "loop.metric_early_finish.rejected",
+            iteration=iteration,
+            nudges_used=state.metric_finish_nudges_used,
+            budget_remaining=remaining,
+            **({"trigger": trigger} if trigger else {}),
+        )
+        return True
 
     def _gate_task_finish(self, state: LoopState, turn: TurnState) -> None:
         """Task finish-gate: don't let finish_session through while the worker's
@@ -3062,33 +3070,9 @@ class Workflow:
         # nudged to keep optimising rather than accepted. Without this,
         # dropping tool_use was a way to skip the plateau/early-finish policy
         # entirely.
-        if (
-            self.mode == "run"
-            and metric_goal(self.config.workflow.metric) is not None
-            and not self._metric_at_ceiling(state.metric_history)
-        ):
-            finish_budget_remaining = self._budget_fraction_remaining()
-            has_runway = (
-                finish_budget_remaining is not None
-                and finish_budget_remaining > METRIC_PLATEAU_STOP_BELOW_BUDGET
-            )
-            if has_runway and state.metric_finish_nudges_used < METRIC_EARLY_FINISH_PATIENCE:
-                assert finish_budget_remaining is not None
-                state.metric_finish_nudges_used += 1
-                conversation.notice(METRIC_FINISH_NUDGE)
-                self._log(
-                    f"  metric early-finish (silent) rejected"
-                    f" #{state.metric_finish_nudges_used} at iter {iteration}"
-                    f" (budget {finish_budget_remaining:.0%} left)"
-                )
-                self._emit(
-                    "loop.metric_early_finish.rejected",
-                    iteration=iteration,
-                    nudges_used=state.metric_finish_nudges_used,
-                    budget_remaining=finish_budget_remaining,
-                    trigger="silent_finish",
-                )
-                return None
+        if self._metric_early_finish_rejects(state, iteration=iteration, trigger="silent_finish"):
+            conversation.notice(METRIC_FINISH_NUDGE)
+            return None
         # Task finish-gate (silent path): a worker that stops emitting tool
         # calls with its own subtasks still open is steered back to the list
         # rather than silently finished (shares the cap with the finish_session
@@ -4432,14 +4416,6 @@ class Workflow:
             return ""
         return diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)
 
-    def _read_agents_md(self) -> str:
-        # The same text the run prompt injects (repo root's file included on a
-        # subdirectory start), so review and worker see one set of conventions.
-        return agents_md_text(self.root)
-
-    def _readonly_review_tools(self) -> tuple[list[ToolDefinition], ReviewDispatch]:
-        return build_readonly_review_tools(self.dispatcher)
-
     def _run_review_panel(
         self, state: LoopState, *, trigger: str, iteration: int
     ) -> CritiqueResult | None:
@@ -4480,7 +4456,9 @@ class Workflow:
         )
         ctx = ReviewContext(
             task=state.original_task,
-            agents_md=self._read_agents_md(),
+            # The same text the run prompt injects (repo root's file included on
+            # a subdirectory start), so review and worker see one set of conventions.
+            agents_md=agents_md_text(self.root),
             diff=diff,
             verify_ok=state.verify.last_ok,
             verify_output=state.verify.last_tail,
@@ -4491,7 +4469,7 @@ class Workflow:
         tools: list[ToolDefinition] | None = None
         dispatch: ReviewDispatch | None = None
         if any(s.tier == "explore" for s in self.review_seats):
-            tools, dispatch = self._readonly_review_tools()
+            tools, dispatch = build_readonly_review_tools(self.dispatcher)
         try:
             result = run_panel(
                 self.review_seats,
@@ -4962,7 +4940,7 @@ class Workflow:
         # Join every lane sequentially in dispatch order (a merge mutates the one
         # workspace, so joins can never run concurrently), then stamp one DAG node
         # per segment from its lanes' joins.
-        joined = [
+        lanes = [
             join_lane_result(
                 self.root,
                 res,
@@ -4976,19 +4954,19 @@ class Workflow:
         cursor = 0
         for nid, seg_lanes in zip(node_ids, per_segment, strict=True):
             width = len(seg_lanes)
-            self._stamp_segment_node(nid, joined[cursor : cursor + width])
+            self._stamp_segment_node(nid, lanes[cursor : cursor + width])
             cursor += width
         self._emit_graph_snapshot()
 
         payload = [
             {"session_id": j.session_id, "branch": j.branch, "status": j.status, "sha": j.sha}
-            for j in joined
+            for j in lanes
         ]
         self._emit("loop.parallel.joined", group=group, lanes=payload)
-        failures = [p for p, j in zip(payload, joined, strict=True) if j.status != "joined"]
+        failures = [p for p, j in zip(payload, lanes, strict=True) if j.status != "joined"]
         if failures:
             self._emit("loop.parallel.failed", group=group, lanes=failures)
-        self._inject_parallel_summary(conversation, group, joined)
+        conversation.notice(summary_text(group, lanes))
 
     def _ensure_clean_for_dispatch(self, iteration: int) -> bool:
         """True when the chain tip carries the worktree's content, so lanes cut
@@ -5061,14 +5039,6 @@ class Workflow:
         """Answer a `/parallel` steer with a one-line notice and continue."""
         self._log(f"PARALLEL: {msg}")
         conversation.notice(f"[parallel] {msg}")
-
-    def _inject_parallel_summary(
-        self, conversation: Conversation, group: str, joined: list[LaneJoin]
-    ) -> None:
-        """Inject the lane-outcome summary so the model continues informed."""
-        conversation.notice(summary_text(group, joined))
-
-    # ---- chain commits, events, infra ------------------------------------------
 
     def _log(self, msg: str) -> None:
         self.logger(f"[agent6] {msg}")

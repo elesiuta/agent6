@@ -178,14 +178,9 @@ def best_metric_sample(
     return best
 
 
-def format_score(score: float | None) -> str:
-    if score is None:
-        return "unparsed"
-    return f"{score:g}"
-
-
 def format_metric_sample(sample: MetricSample) -> str:
-    parts = [f"{sample.label}: score={format_score(sample.score)}"]
+    score = "unparsed" if sample.score is None else f"{sample.score:g}"
+    parts = [f"{sample.label}: score={score}"]
     if sample.returncode is not None:
         parts.append(f"exit={sample.returncode}")
     if sample.sha:
