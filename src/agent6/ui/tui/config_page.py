@@ -903,25 +903,16 @@ class ConfigScreen(ScreenChrome, Screen[None]):
                 return
             action, raw, to_repo = result
             if action == "unset":
-                if self._refuse_unset(setting):
-                    return
-                try:
-                    err = unset_config_value(
-                        self.repo_root, setting.key, to_repo=setting.source == "repo"
-                    ).error
-                except OperatorError as exc:
-                    err = str(exc)
-                msg = f"Reset {setting.key} to default"
-            else:
-                try:
-                    err = set_config_value(self.repo_root, setting.key, raw, to_repo=to_repo)
-                except OperatorError as exc:
-                    err = str(exc)
-                msg = f"Set {setting.key}"
+                self._unset(setting)
+                return
+            try:
+                err = set_config_value(self.repo_root, setting.key, raw, to_repo=to_repo)
+            except OperatorError as exc:
+                err = str(exc)
             if err:
                 self.notify(err, severity="error", timeout=8.0)
             else:
-                self.notify(msg)
+                self.notify(f"Set {setting.key}")
                 self._reload()
 
         # A model-id field gets a type-to-narrow picker over the provider's
@@ -961,6 +952,10 @@ class ConfigScreen(ScreenChrome, Screen[None]):
         if setting is None:
             self.notify("Select a setting first.", severity="warning")
             return
+        self._unset(setting)
+
+    def _unset(self, setting: ConfigSetting) -> None:
+        """Reset *setting* to its default in the layer that set it, and say so."""
         if self._refuse_unset(setting):
             return
         try:

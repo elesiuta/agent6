@@ -97,10 +97,6 @@ from agent6.viewmodel.state import (
 )
 from agent6.viewmodel.tail import tail_events
 
-# How many recent tool calls the inline table shows. The RowSelected handler maps
-# a visual row back through the same window, so both must use this one value.
-_TOOL_TABLE_ROWS = 20
-
 # Answer submitted after the worker died mid-modal: the file bridge has no
 # reader, and the next resume re-asks the prompt itself.
 _ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re-asks the prompt)"
