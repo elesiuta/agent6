@@ -97,7 +97,7 @@ The general rules, which the rest of agent6 follows:
 
 - Commands need your approval: under the default `run_commands = "ask"`, each command the model proposes waits for your yes, once or for the session; a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does), and a hub-spawned one parks it
 - A run never touches your branch, HEAD or index: its work lands as per-step commits on its own chain (a visible `agent6/<id>` branch by default), and `agent6 sessions merge` lands them when you are ready
-- Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (state dir, never committed), then `--config FILE`
+- Config is layered, lowest precedence first: built-in defaults, the global `~/.config/agent6/config.toml`, the per-repo config (state dir, never committed), `--config FILE`, then a machine agent's per-state overlay; a selected preset splices in just above the layer that named it
 - Nothing is hidden: `agent6 config show` prints every effective value and the layer that set it; every field has a default, and security-sensitive fields default safe (`network = "auto"`, `run_commands = "ask"`, `protect_git = true`)
 - `"auto"` picks the most secure option the host allows, warning when it falls short; an explicit value the host cannot enforce refuses to run
 - agent6 never pushes, rewrites history, or `reset --hard`; no config key can enable them

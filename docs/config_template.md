@@ -33,7 +33,7 @@ It can be empty or absent when the global config supplies a provider and model; 
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop invalid entries (unknown keys, stale values), naming each; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without running.
-  `config show` prints what is set (`network = "auto"`); `check` prints what that resolved to on this host, for the isolation level, the commands' network, and each MCP server's network and `approve`.
+  `config show` prints what an `auto` knob resolved to on this host, tagged `(adaptive)`; `check` adds why a level fell short, live jail probes, and each MCP server's network and `approve`.
 
 ---
 
@@ -168,6 +168,8 @@ Cross-vendor mixes are fine.
 
 The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox) and [Network](security.md#5-network).
 
+`extra_read_paths`, `extra_write_paths` and `hide_paths` take absolute paths with no `..` segment, and `extra_device_paths` only paths under `/dev`; anything else refuses at config load.
+
 <!-- config-table: sandbox -->
 
 ## `[git]`
@@ -252,8 +254,8 @@ A continuous score for measurable goals; `command` runs in the jail like `verify
 ## `[budget]`
 
 Hard stops; on hit the run ends (exit 3) and is resumable with a fresh budget.
-Every call is bounded in exactly one currency: priceable calls (reported cost, else cached price × tokens) count against `max_usd`; unpriceable calls count input+output tokens against `max_tokens_fallback`.
-Both: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
+Every call is bounded in exactly one currency: priceable calls (reported cost, else cached price × tokens) count against `max_usd`; a call carrying a plan-usage reading counts percentage points against `max_percent`; the rest count input+output tokens against `max_tokens_fallback`.
+All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 
 <!-- config-table: budget -->
 
@@ -358,12 +360,13 @@ None of them is reachable by the model.
 |---|---|
 | `AGENT6_CONFIG_HOME` | Override the global config directory. |
 | `AGENT6_CACHE_HOME` | Override the cache directory. |
-| `AGENT6_DATA_HOME` | Override the data directory (installed skills, machine bundles). |
+| `AGENT6_DATA_HOME` | Override the data directory (installed skills). |
 | `AGENT6_STATE_HOME` | Override the state base directory; `[agent6].state_dir` in the global config wins over it. |
 | `AGENT6_DETACHED_AWAY` | `wait`, `deny` or `approve`: what a run with no operator at a terminal does at an approval or question. The hub and machine spawns set `wait`. |
 | `AGENT6_AUTO_APPROVE` | `1` grants every command approval to a machine's agent states, as `--auto-approve` does (a configured `no` stays no). |
 | `AGENT6_NO_COMMANDS` | `1` withholds every command tool from a machine's agent states, as `--no-commands` does. |
 | `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else bundled). |
+| `AGENT6_DANGEROUSLY_DISABLE_SANDBOX` | `1` forces `sandbox.isolation = "none"` for one invocation (same as `--dangerously-disable-sandbox`). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
 
 A provider's `api_key_env` names the env var supplying its key; omit it to read `secrets.toml`.
