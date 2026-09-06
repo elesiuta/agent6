@@ -509,8 +509,14 @@ def test_initialize_sends_the_canonical_version(tmp_path: Path) -> None:
         "    'protocolVersion': '2024-11-05', 'capabilities': {},\n"
         "    'serverInfo': {'name': 'fake', 'version': '1'}}}))\n"
         "sys.stdout.flush()\n"
-        "sys.stdin.readline()\n"
-        "print(json.dumps({'jsonrpc': '2.0', 'id': 2, 'result': {'tools': []}}))\n"
+        # Answer the tools/list request it receives, by its id: the client sends
+        # notifications/initialized first, and a reply written before the client
+        # has registered the request's id is dropped by the reader.
+        "while True:\n"
+        "    req = json.loads(sys.stdin.readline())\n"
+        "    if req.get('method') == 'tools/list':\n"
+        "        break\n"
+        "print(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': {'tools': []}}))\n"
         "sys.stdout.flush()\n"
         "sys.stdin.read()\n",
         encoding="utf-8",
