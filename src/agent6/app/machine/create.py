@@ -166,6 +166,13 @@ def _discard_workspace(workspace: Path, reporter: Reporter) -> None:
         reporter.err(f"machine create: the drafting workspace stays ({errors[0]})")
 
 
+def new_draft_dir(state: Path) -> Path:
+    """The directory a new draft gets: an unused session id under the bucket
+    the TUI and web draft listings read."""
+    bucket = session_bucket("machine")
+    return bucket_dir(state, bucket) / unused_session_id(state, bucket)
+
+
 def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     task: str,
     frontend: MachineFrontend,
@@ -204,11 +211,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     except SessionRefused as refusal:
         return refusal.rc
 
-    state = state_dir(cwd)
-    bucket = session_bucket("machine")
-    # Through the owner: `mkdir(exist_ok=True)` on a collision reused a live
-    # draft's directory, overwriting its prompt and appending to its journal.
-    scratch = bucket_dir(state, bucket) / unused_session_id(state, bucket)
+    scratch = new_draft_dir(state_dir(cwd))
     mkdir_for_real_user(scratch.parent)
     scratch.mkdir(mode=0o700)
     # Persist the natural-language task that drove this draft, so the draft dir is
