@@ -522,6 +522,8 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         gone, left = remove_fork_worktree(cwd, worktree)
         if gone:
             went.append("its worktree" + (f" ({left})" if left else ""))
+        elif left:
+            stays = f"; its worktree stays: it {left} ({worktree})"
     chain = chain_ref_for(layout.session_id)
     try:
         if chain_tip(cwd, chain) is not None:

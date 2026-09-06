@@ -895,3 +895,26 @@ def test_removing_a_worktree_deletes_only_the_lock_it_left_in_its_state_dir(
     assert (planted / "manifest.json").is_file()
     assert "removed fork-merged11's worktree (merged)" in out
     assert f"left {inner_state}" in out and "sessions" in out
+
+
+def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`rmtree` took an edit no commit had and a file that was never added,
+    with nothing said and no way back -- git's own `worktree remove` refuses
+    exactly this."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    merged = _fork_with_worktree(tmp_path, "fork-dirty111", merged=True)
+    (merged / "README.md").write_text("edited, never committed\n", encoding="utf-8")
+    (merged / "notes.md").write_text("hours of untracked notes\n", encoding="utf-8")
+
+    assert main(["sessions", "prune"]) == 0
+
+    out = capsys.readouterr().out
+    assert merged.is_dir(), "a dirty worktree was deleted"
+    assert (merged / "notes.md").exists()
+    assert "no commit has" in out

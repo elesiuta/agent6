@@ -68,6 +68,7 @@ from agent6.git_ops import (
     remove_worktree,
     run_branch_for,
     set_ref,
+    status,
     sync_worktree,
     tree_diff_paths,
     untracked_paths,
@@ -694,13 +695,38 @@ def remove_fork_worktree(repo: Path, worktree: Path) -> tuple[bool, str]:
     """Delete a fork's worktree (only a linked worktree of *repo*, see
     `git_ops.remove_worktree`) and the checkout lock its legs took under the
     worktree's own state dir. Returns `(removed, note)`: removed is False when
-    *worktree* is not one; the note names that state dir when it holds more
-    than the lock (a session the operator ran inside the worktree) and so
-    stays, "" otherwise."""
+    *worktree* is not one, or when it holds work no commit has -- the note then
+    says which. On success the note names the state dir when it holds more than
+    the lock (a session the operator ran inside the worktree) and so stays, ""
+    otherwise.
+
+    The dirty check is git's own rule for `worktree remove`: prune and rm land
+    on a merged fork, and the tree can still carry an uncommitted edit or a
+    file that was never added. `rmtree` took both with no way back."""
+    dirt = _uncommitted_in(worktree)
+    if dirt:
+        return False, dirt
     state_dir = resolved_state_dir(worktree)
     if not remove_worktree(repo, worktree):
         return False, ""
     return True, _drop_checkout_lock(state_dir)
+
+
+def _uncommitted_in(worktree: Path) -> str:
+    """What *worktree* holds that no commit does, as one phrase for a keep
+    line; "" when it is clean or unreadable (a missing dir is not dirt)."""
+    try:
+        st = status(worktree)
+    except GitError:
+        return ""
+    if st.is_clean:
+        return ""
+    parts = [
+        f"{st.modified_count} modified file(s)" if st.modified_count else "",
+        f"{st.untracked_count} untracked file(s)" if st.untracked_count else "",
+    ]
+    held = ", ".join(p for p in parts if p)
+    return f"holds {held} no commit has"
 
 
 def _drop_checkout_lock(state_dir: Path) -> str:
@@ -767,6 +793,10 @@ def sweep_fork_worktrees(
         gone, note = remove_fork_worktree(repo, worktree)
         if gone:
             removed.extend((d.name, note) for d, _ in sessions)
+        elif note:
+            # Merged, but the tree carries work no commit has: keeping it is
+            # the only safe answer, and the operator has to see why.
+            kept.extend((d.name, f"its worktree {note}") for d, _ in sessions)
     return removed, kept
 
 
