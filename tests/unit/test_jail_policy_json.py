@@ -9,15 +9,14 @@ always present and carries the policy value, including the 0 opt-out.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from agent6.sandbox.jail import _policy_to_json  # pyright: ignore[reportPrivateUsage]
+from agent6.sandbox.jail import _policy_spec  # pyright: ignore[reportPrivateUsage]
 from agent6.types import JailPolicy
 
 
 def _fields(policy: JailPolicy) -> dict[str, object]:
-    return json.loads(_policy_to_json(policy))
+    return _policy_spec(policy)
 
 
 def test_policy_json_carries_the_uncapped_default_memory_limit(tmp_path: Path) -> None:

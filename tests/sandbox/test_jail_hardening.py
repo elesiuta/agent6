@@ -742,14 +742,12 @@ def test_serve_launcher_refuses_a_request_with_an_unknown_field(tmp_path: Path) 
 
     from agent6.config import Config
     from agent6.sandbox.jail import (
-        _policy_to_json,  # pyright: ignore[reportPrivateUsage]
+        _policy_spec,  # pyright: ignore[reportPrivateUsage]
         _require_jail_binary,  # pyright: ignore[reportPrivateUsage]
     )
     from agent6.tools.policy import jail_policy
 
-    spec = json.loads(
-        _policy_to_json(jail_policy(tmp_path, Config(), "strict", ("/bin/true",), network="none"))
-    )
+    spec = _policy_spec(jail_policy(tmp_path, Config(), "strict", ("/bin/true",), network="none"))
     spec["mode"] = "serve"
     req = {"kind": "background", "argv": ["/bin/true"], "a_field_from_a_newer_agent6": 1}
     proc = subprocess.run(

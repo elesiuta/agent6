@@ -26,7 +26,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.sandbox.jail import (
-    _policy_to_json,  # pyright: ignore[reportPrivateUsage]
+    _policy_spec,  # pyright: ignore[reportPrivateUsage]
     locate_jail_binary,
 )
 from agent6.tools.dispatch import jail_policy
@@ -86,8 +86,10 @@ def test_a_launcher_without_cap_setpcap_still_strips_the_child(tmp_path: Path) -
     cwd = Path("/tmp") / f"agent6-capdrop-{tmp_path.name}"
     cwd.mkdir(mode=0o777)
     try:
-        policy = _policy_to_json(
-            jail_policy(cwd, Config(), "hardened", ("python3", "-c", _CAPGET), network="none")
+        policy = json.dumps(
+            _policy_spec(
+                jail_policy(cwd, Config(), "hardened", ("python3", "-c", _CAPGET), network="none")
+            )
         )
         res = subprocess.run(
             [*_SCAFFOLD, str(binary)],

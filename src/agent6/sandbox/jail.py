@@ -28,7 +28,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import IO, NoReturn, cast
+from typing import IO, Any, NoReturn, cast
 
 from agent6.child_env import without_provider_keys
 from agent6.paths import hidden_paths, mkdir_for_real_user
@@ -278,29 +278,29 @@ def _join_args(
     return session_net.args(), session_net.fds()
 
 
-def _policy_to_json(policy: JailPolicy) -> str:
-    return json.dumps(
-        {
-            "isolation": policy.isolation,
-            "cwd": str(policy.cwd),
-            "argv": list(policy.argv),
-            "env": [list(pair) for pair in policy.env],
-            "network": policy.network,
-            "extra_ro_paths": [str(p) for p in policy.extra_ro_paths],
-            "extra_rw_paths": [str(p) for p in policy.extra_rw_paths],
-            "extra_device_paths": [str(p) for p in policy.extra_device_paths],
-            "extra_protect_paths": [str(p) for p in policy.extra_protect_paths],
-            "tool_paths": [str(p) for p in policy.tool_paths],
-            # The builtin private set is unioned HERE, the one serialization
-            # choke point, so no policy constructor can omit it: secrets and
-            # state never enter the jail even under a $HOME-wide grant. A
-            # policy grant BENEATH a hidden root is re-bound through the mask
-            # by the launcher (the machine data contract).
-            "hide_paths": sorted({str(p) for p in hidden_paths(policy.hide_paths)}),
-            "timeout_s": policy.timeout_s,
-            "memory_limit_mb": policy.memory_limit_mb,
-        }
-    )
+def _policy_spec(policy: JailPolicy) -> dict[str, Any]:
+    """The launcher's policy spec, JSON-shaped; the caller encodes it. An absent
+    `mode` is the launcher's "once"; the exec and serve callers add theirs."""
+    return {
+        "isolation": policy.isolation,
+        "cwd": str(policy.cwd),
+        "argv": list(policy.argv),
+        "env": [list(pair) for pair in policy.env],
+        "network": policy.network,
+        "extra_ro_paths": [str(p) for p in policy.extra_ro_paths],
+        "extra_rw_paths": [str(p) for p in policy.extra_rw_paths],
+        "extra_device_paths": [str(p) for p in policy.extra_device_paths],
+        "extra_protect_paths": [str(p) for p in policy.extra_protect_paths],
+        "tool_paths": [str(p) for p in policy.tool_paths],
+        # The builtin private set is unioned HERE, the one serialization
+        # choke point, so no policy constructor can omit it: secrets and
+        # state never enter the jail even under a $HOME-wide grant. A
+        # policy grant BENEATH a hidden root is re-bound through the mask
+        # by the launcher (the machine data contract).
+        "hide_paths": sorted({str(p) for p in hidden_paths(policy.hide_paths)}),
+        "timeout_s": policy.timeout_s,
+        "memory_limit_mb": policy.memory_limit_mb,
+    }
 
 
 def _run_unsandboxed(policy: JailPolicy) -> CommandResult:
@@ -536,6 +536,12 @@ def _own_children() -> dict[int, int]:
     return found
 
 
+def _forget_launcher(pid: int) -> None:
+    """The launcher *pid* is done: out of the set the sweep spares."""
+    with _sweep_lock:
+        _live_launchers.discard(pid)
+
+
 def _kill_group_of(pid: int) -> None:
     """SIGKILL *pid*'s process group, or *pid* alone when it does not lead one.
 
@@ -633,8 +639,7 @@ class JailedProcess:
                     os.killpg(proc.pid, signal.SIGKILL)
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     proc.wait(timeout=1.0)
-        with _sweep_lock:
-            _live_launchers.discard(proc.pid)
+        _forget_launcher(proc.pid)
         return _kill_escapees(self._before | {proc.pid})
 
 
@@ -688,7 +693,7 @@ def spawn_in_jail(
             _live_launchers.add(proc.pid)
         return JailedProcess(proc, before)
     binary = _require_jail_binary()
-    spec = json.loads(_policy_to_json(policy))
+    spec = _policy_spec(policy)
     spec["mode"] = "exec"
     _become_subreaper()
     # pass_fds keeps the descriptor's NUMBER in the child, so the launcher is
@@ -742,7 +747,7 @@ def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None
         return _run_unsandboxed(policy)
     binary = _require_jail_binary()
     join_args, join_fds = _join_args(policy, session_net)
-    spec = _policy_to_json(policy)
+    spec = json.dumps(_policy_spec(policy))
     start = time.monotonic()
     _become_subreaper()
     # Snapshot first: anything that is a child of this process afterwards but was not before
@@ -771,8 +776,7 @@ def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None
                 launcher.kill()
             with contextlib.suppress(subprocess.TimeoutExpired):
                 launcher.communicate(timeout=5.0)
-        with _sweep_lock:
-            _live_launchers.discard(launcher.pid)
+        _forget_launcher(launcher.pid)
         survivors = _kill_escapees(before | {launcher.pid})
     if survivors:
         raise JailUnavailableError(survivors_message(survivors))
@@ -975,8 +979,7 @@ def _stop_detached(proc: subprocess.Popen[bytes], descendants: frozenset[int], w
             os.killpg(proc.pid, signal.SIGKILL)
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=5.0)
-    with _sweep_lock:
-        _live_launchers.discard(proc.pid)
+    _forget_launcher(proc.pid)
     survivors = _kill_escapees(descendants)
     stuck = f"{what} {proc.pid} did not exit after SIGKILL" if proc.poll() is None else ""
     left = survivors_message(survivors) if survivors else ""
@@ -1080,8 +1083,7 @@ class BackgroundJob:
         return answer
 
     def _unregister(self) -> None:
-        with _sweep_lock:
-            _live_launchers.discard(self._proc.pid)
+        _forget_launcher(self._proc.pid)
 
 
 class SessionJob:
@@ -1181,7 +1183,7 @@ def start_in_jail(policy: JailPolicy, *, outcome_dir: Path) -> BackgroundJob | L
             _live_launchers.add(proc.pid)
         return LocalJob(proc, outcome_dir)
     binary = _require_jail_binary()
-    spec = _policy_to_json(policy)
+    spec = json.dumps(_policy_spec(policy))
     _become_subreaper()
     result = (outcome_dir / _RESULT_NAME).open("wb")
     errors = (outcome_dir / _LAUNCHER_ERR_NAME).open("wb")
@@ -1205,8 +1207,7 @@ def _abandon_launcher(proc: subprocess.Popen[bytes], interrupt_w: int) -> None:
     forces on the buffered spec write; left to garbage collection, that close
     re-raises as unraisable BrokenPipeError noise in the caller's log, and the
     unreaped child sits as a zombie for the rest of the process."""
-    with _sweep_lock:
-        _live_launchers.discard(proc.pid)
+    _forget_launcher(proc.pid)
     with contextlib.suppress(OSError):
         os.close(interrupt_w)
     for pipe in (proc.stdin, proc.stdout, proc.stderr):
@@ -1288,7 +1289,7 @@ class JailSession:
             raise
         finally:
             os.close(interrupt_r)
-        spec = json.loads(_policy_to_json(policy))
+        spec = _policy_spec(policy)
         spec["mode"] = "serve"
         assert proc.stdin is not None and proc.stdout is not None
         try:
@@ -1503,8 +1504,7 @@ class JailSession:
         if self._proc.poll() is None:
             with contextlib.suppress(OSError):
                 os.killpg(self._proc.pid, signal.SIGKILL)
-        with _sweep_lock:
-            _live_launchers.discard(self._proc.pid)
+        _forget_launcher(self._proc.pid)
         return self._sweep(frozenset())
 
     def child_snapshot(self) -> ChildSnapshot:

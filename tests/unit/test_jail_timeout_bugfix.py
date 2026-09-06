@@ -50,10 +50,10 @@ def test_jail_timeout_returns_124_and_kills_group(
     fake = _write_fake_launcher(tmp_path)
     monkeypatch.setattr(jail, "locate_jail_binary", lambda: fake)
 
-    def _policy_to_json(policy: JailPolicy) -> str:
-        return "{}"
+    def _policy_spec(policy: JailPolicy) -> dict[str, object]:
+        return {}
 
-    monkeypatch.setattr(jail, "_policy_to_json", _policy_to_json)
+    monkeypatch.setattr(jail, "_policy_spec", _policy_spec)
 
     policy = JailPolicy(
         cwd=tmp_path,
