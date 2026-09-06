@@ -485,7 +485,10 @@ class MCPServerEntry(BaseModel):
     call_timeout_s: float = Field(
         gt=0.0,
         default=60.0,
-        description="Seconds one `tools/call` may take before it is treated as failed.",
+        description=(
+            "Seconds one `tools/call` may take before it fails; a spawned server is restarted "
+            "after a timeout."
+        ),
     )
     httpx_trust_env: bool = Field(
         default=False,

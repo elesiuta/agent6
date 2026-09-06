@@ -154,6 +154,14 @@ class MCPError(RuntimeError):
     """Anything the MCP client refuses to do or could not complete."""
 
 
+class MCPTimeout(MCPError):
+    """A request the server did not answer within its timeout."""
+
+
+class MCPRestarted(MCPError):
+    """A request cut short because another caller's timeout replaced the server."""
+
+
 @dataclass(frozen=True, slots=True)
 class MCPToolDescriptor:
     """One tool advertised by one MCP server. `qualified_name` is what
@@ -329,6 +337,16 @@ class _MCPServer:
     _reader: threading.Thread | None = None
     _reader_stop: threading.Event = field(default_factory=threading.Event)
     _tools: tuple[MCPToolDescriptor, ...] = ()
+    # Bumped under `_restart_lock` by the caller whose timed-out call replaces
+    # the process (`_restart`): a request in flight under another caller ends
+    # as MCPRestarted the moment it changes, and a second timed-out caller
+    # finds the restart already done. The lock also holds a new call back
+    # until a restart's handshake is complete.
+    _generation: int = 0
+    _restart_lock: threading.Lock = field(default_factory=threading.Lock)
+    # Releases the keeper thread a restart spawned the process from (see
+    # `_restart`); set by `close`.
+    _keeper_release: threading.Event | None = None
 
     def _redact_secrets(self, text: str) -> str:
         """Strip `pass_env` credential VALUES from a diagnostic string. A
@@ -439,13 +457,62 @@ class _MCPServer:
         return self._tools
 
     def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        if self._proc is None and self.http is None:
-            raise MCPError(f"server {self.name!r} is not running")
         # The name rides in from the LLM: a name outside the negotiated set
         # (filtered at registration, or never advertised by the server) is
         # refused before any request leaves agent6.
         if tool_name not in {d.tool_name for d in self._tools}:
             raise MCPError(f"server {self.name!r} did not advertise tool {tool_name!r}")
+        # Once more when another caller's timeout replaced the server under
+        # this call; a call the fresh server loses the same way gives up.
+        for _ in range(2):
+            with self._restart_lock:
+                if self._proc is None and self.http is None:
+                    raise MCPError(f"server {self.name!r} is not running")
+                generation = self._generation
+            try:
+                return self._call(tool_name, arguments)
+            except MCPTimeout as exc:
+                raise MCPError(f"{exc}; {self._restart(generation)}") from exc
+            except MCPRestarted:
+                continue
+        raise MCPError(f"server {self.name!r} was restarted under tools/call twice; giving up")
+
+    def _restart(self, generation: int) -> str:
+        """Replace the process after a timed-out call (a stdio server still
+        busy with the call it never answered cannot take the next one; agent6
+        owns the spawn), once per generation, and say what happened for the
+        call's error."""
+        with self._restart_lock:
+            if self._generation != generation:
+                return "the server was already restarted by another call"
+            self._generation += 1
+            self.close()
+            self._reader_stop.clear()
+            self._errors = []
+            # PDEATHSIG ties a child to the THREAD that forked it (the launcher's
+            # own tie and `die_with_parent` alike), and this caller may be a pool
+            # worker about to end: the spawn runs on a keeper thread that lives
+            # as long as this process does.
+            release = threading.Event()
+            spawned = threading.Event()
+            failure: list[MCPError] = []
+
+            def keep() -> None:
+                try:
+                    self.start()
+                except MCPError as exc:
+                    failure.append(exc)
+                spawned.set()
+                release.wait()
+
+            self._keeper_release = release
+            threading.Thread(target=keep, name=f"mcp-keeper[{self.name}]", daemon=True).start()
+            spawned.wait()
+            if failure:
+                return f"restarting it failed ({failure[0]})"
+            return "the server was restarted"
+
+    def _call(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         result = self._request(
             "tools/call",
             {"name": tool_name, "arguments": arguments},
@@ -477,6 +544,9 @@ class _MCPServer:
         request already closes.
         """
         self._reader_stop.set()
+        if self._keeper_release is not None:
+            self._keeper_release.set()
+            self._keeper_release = None
         proc = self._proc
         self._proc = None
         if proc is None:
@@ -567,6 +637,7 @@ class _MCPServer:
                     f" id {response.get('id')!r}, not to {req_id}"
                 )
             return _result_of(response, name=self.name, method=method)
+        generation = self._generation
         with self._pending_cv:
             self._pending[req_id] = None
         try:
@@ -574,9 +645,11 @@ class _MCPServer:
             deadline = time.monotonic() + timeout_s
             with self._pending_cv:
                 while (response := self._pending[req_id]) is None:
+                    if self._generation != generation:
+                        raise MCPRestarted(f"server {self.name!r} was restarted under {method}")
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        raise MCPError(
+                        raise MCPTimeout(
                             f"server {self.name!r} timed out after {timeout_s:.1f}s on {method}"
                         )
                     # If the reader thread died (server crashed mid-call)

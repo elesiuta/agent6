@@ -36,6 +36,7 @@ def _fake_server_argv(
     crash_after_init: bool = False,
     bad_tool: bool = False,
     newline_tool: bool = False,
+    sleep_on: str = "",
 ) -> tuple[str, ...]:
     """Return argv that runs a tiny Python MCP server inline.
 
@@ -47,14 +48,16 @@ def _fake_server_argv(
     Knobs:
     * ``hang=True``: never responds (forces client timeout).
     * ``crash_after_init=True``: exits 0 right after handshake.
+    * ``sleep_on=TEXT``: a ``tools/call`` with that text sleeps 3s before answering.
     """
     script = textwrap.dedent(
         f"""
-        import json, sys
+        import json, sys, time
         HANG = {hang!r}
         CRASH = {crash_after_init!r}
         BAD_TOOL = {bad_tool!r}
         NEWLINE_TOOL = {newline_tool!r}
+        SLEEP_ON = {sleep_on!r}
         def reply(req_id, result):
             sys.stdout.write(json.dumps({{
                 "jsonrpc": "2.0", "id": req_id, "result": result,
@@ -99,6 +102,8 @@ def _fake_server_argv(
             if method == "tools/call":
                 args = msg["params"].get("arguments", {{}})
                 tname = msg["params"].get("name")
+                if SLEEP_ON and args.get("text") == SLEEP_ON:
+                    time.sleep(3)
                 if tname == "shout":
                     out = str(args.get("text", "")).upper()
                 else:
@@ -271,6 +276,34 @@ def test_manager_times_out_on_hanging_server() -> None:
     try:
         assert mgr.descriptors() == ()
         assert any("timed out" in m for m in logs)
+    finally:
+        mgr.close()
+
+
+def test_a_timed_out_call_restarts_the_server_before_the_next_call() -> None:
+    """A stdio server still busy with the call it never answered is wedged
+    for the next one, which then timed out too. agent6 owns the spawn: the
+    timed-out call's error names the restart, and the next call gets a fresh
+    server."""
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="slow",
+                command=_fake_server_argv(sleep_on="sleep"),
+                startup_timeout_s=5.0,
+                call_timeout_s=0.5,
+            )
+        ]
+    )
+    try:
+        with pytest.raises(
+            MCPError, match=r"timed out after 0\.5s on tools/call; the server was restarted"
+        ):
+            mgr.call(f"{MCP_TOOL_PREFIX}slow__echo", {"text": "sleep"})
+        started = time.monotonic()
+        result = mgr.call(f"{MCP_TOOL_PREFIX}slow__echo", {"text": "hi"})
+        assert result == {"content": [{"type": "text", "text": "hi"}]}
+        assert time.monotonic() - started < 0.5, "the second call waited on the wedged server"
     finally:
         mgr.close()
 
@@ -561,3 +594,46 @@ def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) ->
     )
     assert captured.get("preexec_fn") is not None
     assert captured.get("start_new_session") is True
+
+
+def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
+    """Two callers on one server (review seats share a dispatcher): A's
+    timeout replaces the process under B's in-flight call. B does not time
+    out on a server that no longer exists, nor restart the fresh one: it
+    goes once more on it. One restart in total."""
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="slow",
+                command=_fake_server_argv(sleep_on="sleep"),
+                startup_timeout_s=5.0,
+                call_timeout_s=0.5,
+            )
+        ]
+    )
+    outcomes: dict[str, object] = {}
+
+    def call(tag: str, text: str) -> None:
+        try:
+            outcomes[tag] = mgr.call(f"{MCP_TOOL_PREFIX}slow__echo", {"text": text})
+        except MCPError as exc:
+            outcomes[tag] = str(exc)
+
+    a = threading.Thread(target=call, args=("a", "sleep"))
+    b = threading.Thread(target=call, args=("b", "hi"))
+    started = time.monotonic()
+    try:
+        a.start()
+        time.sleep(0.1)  # the server is busy with A's call when B's arrives
+        b.start()
+        a.join(timeout=10)
+        b.join(timeout=10)
+        assert outcomes["a"] == (
+            "server 'slow' timed out after 0.5s on tools/call; the server was restarted"
+        )
+        assert outcomes["b"] == {"content": [{"type": "text", "text": "hi"}]}
+        assert time.monotonic() - started < 3.0, "a caller waited on a server that was gone"
+        server = mgr._servers["slow"]  # pyright: ignore[reportPrivateUsage]
+        assert server._generation == 1  # pyright: ignore[reportPrivateUsage]
+    finally:
+        mgr.close()

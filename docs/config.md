@@ -453,7 +453,7 @@ Anything else that reaches an unconfined process is still a way out, so name the
 | `servers.<name>.pass_env` | `[]` | Environment variables a spawned server needs, by name; everything else is agent6's curated base environment. |
 | `servers.<name>.approve` | `"ask"` | `ask` prompts before each of this server's tool calls, showing the arguments the model chose; `yes` never asks. The session answers are per server: "allow all" covers this server for the run (not the command tools, not a sibling server), "deny all" withdraws its tools from the next turn. `--auto-approve` sets `yes` for the run. There is no `no`: `enabled = false` is how a server's tools are withheld. |
 | `servers.<name>.startup_timeout_s` | `10.0` | Seconds the server gets to answer `initialize` and `tools/list` before it is given up on. |
-| `servers.<name>.call_timeout_s` | `60.0` | Seconds one `tools/call` may take before it is treated as failed. |
+| `servers.<name>.call_timeout_s` | `60.0` | Seconds one `tools/call` may take before it fails; a spawned server is restarted after a timeout. |
 | `servers.<name>.httpx_trust_env` | `false` | For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE` (httpx's `trust_env`). `false` so a local server's bearer token never routes to a proxy; set it for a server reachable only through the environment's proxy. |
 
 ### `[mcp.servers.<name>.sandbox]`
