@@ -494,6 +494,70 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     ]
 
 
+def test_the_resume_note_names_the_files_it_hands_to_the_operator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A file that appeared between legs and no tool of the run wrote joins
+    the operator's set and leaves every later commit of the run, and the
+    resume said nothing about it: an operator whose command-written file
+    vanished from the run's commits had nothing to read. The note names
+    what it reassigned."""
+    from unittest.mock import MagicMock
+
+    from agent6.sessions.layout import write_untracked_at_start
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
+    base = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    session_dir = state_dir(repo) / "sessions" / "runs" / "note-ARRIVED"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "note-ARRIVED",
+                "mode": "run",
+                "user_task": "t",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": "agent6/note-ARRIVED",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "loop_state.json").write_text(
+        json.dumps(
+            {
+                "version": SNAPSHOT_VERSION,
+                "system": "s",
+                "messages": [],
+                "tool_calls": 0,
+                "next_iteration": 1,
+                "root_task_id": None,
+                "original_task": "t",
+                "verify_command": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_untracked_at_start(session_dir, {"notes.md"})
+    (repo / "notes.md").write_text("the operator's, since before the run\n", encoding="utf-8")
+    (repo / "build.log").write_text("written by a command between legs\n", encoding="utf-8")
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    monkeypatch.setattr(resume_mod, "select_isolation", _unconfined)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _nothing)
+    monkeypatch.setattr(resume_mod, "run_leg", _finished_leg)
+    assert resume_mod.resume_task(None, "note-ARRIVED", frontend=MagicMock(), force=False) == 0
+    err = capsys.readouterr().err
+    assert "[agent6] left out of this run's commits as yours: build.log" in err
+    assert "no commit has" not in err  # build.log is not dirt the next commit takes
+
+
 def test_plan_resume_builds_the_planner_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

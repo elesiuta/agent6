@@ -283,7 +283,7 @@ A second `agent6 run` parks: the submitted task is saved verbatim in the new run
 Plan and ask expose no edit tools and spawn freely; `--parallel` lanes work in isolated workdirs under the coordinator's one lock.
 
 The working tree at start is the run's next gate, in the same shape.
-Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between legs and the run cannot show it wrote.
+Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between legs and the run cannot show it wrote, and its note names them.
 Uncommitted changes to tracked files are asked about over the `ask_user` channel (stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes"); `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before its dir exists.
 
 ## Session state on disk

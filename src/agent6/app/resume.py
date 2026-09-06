@@ -675,6 +675,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 if arrived:
                     untracked_at_start = untracked_at_start | arrived
                     write_untracked_at_start(layout.session_dir, untracked_at_start)
+                    named = sorted(arrived)
+                    shown = ", ".join(named[:4])
+                    if len(named) > 4:
+                        shown += f", +{len(named) - 4} more"
+                    reporter.note(
+                        f"left out of this run's commits as yours: {shown} (arrived"
+                        " between legs, unwritten by any tool of the run)"
+                    )
             except (GitError, OSError) as exc:
                 reporter.error(f"cannot tell the run's files from the operator's: {exc}")
                 return 2
