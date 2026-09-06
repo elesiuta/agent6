@@ -52,6 +52,7 @@ from agent6.viewmodel import (
     SessionSummary,
     is_winner,
     session_dirs,
+    session_is_live,
     summarize_session_dir,
     task_snippet,
 )
@@ -139,6 +140,9 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # The hub's `--config F`, stamped into everything it spawns or loads.
         self.config_path = config_path
         self._runs: list[Path] = []
+        # The rows the poll built, by run id: `check_action` reads them instead
+        # of re-folding a session on every binding refresh.
+        self._summaries: dict[str, SessionSummary] = {}
 
     def compose(self) -> ComposeResult:
         yield MenuBar(self.MENUS)  # the top row: menus + "agent6 — <path>"
@@ -179,6 +183,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # cursor_row-indexed selection action (open/logs/merge) maps to the wrong
         # run for cursor positions past the gap.
         survivors: list[Path] = []
+        rows: dict[str, SessionSummary] = {}
         tips = run_branch_tips(self.repo_cwd)
         for rd in session_dirs(self.agent6_dir):
             if not rd.is_dir():
@@ -193,7 +198,9 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 Text(task_snippet(s.task, max_chars=60)),
             )
             survivors.append(rd)
+            rows[rd.name] = s
         self._runs = survivors
+        self._summaries = rows
         if selected:
             row = next((i for i, rd in enumerate(survivors) if rd.name == selected), None)
             if row is not None:
@@ -244,6 +251,26 @@ class HomeScreen(ScreenChrome, Screen[None]):
                 models=available_models(self.repo_cwd, self.config_path),
             )
         )
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Dim Merge unless the selected run can take one: the CLI refuses a
+        live run, one with no branch and one already merged, and the footer
+        offered the key anyway (the web disables the button and says why)."""
+        del parameters
+        if action == "merge_selected":
+            rd = self._selected_dir()
+            if rd is None:
+                return False
+            s = self._summaries.get(rd.name)
+            return bool(s and s.unmerged) and not session_is_live(rd)
+        return True
+
+    def _selected_dir(self) -> Path | None:
+        """The run dir under the cursor, or None on an empty table."""
+        table = self.query_one("#sessions", DataTable)
+        if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
+            return None
+        return self._runs[table.cursor_row]
 
     def action_merge_selected(self) -> None:
         """Merge the selected run's branch into its base, after a confirm. The TUI

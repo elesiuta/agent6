@@ -298,6 +298,7 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
     """Pressing `m` opens a confirm modal; confirming runs `agent6 sessions merge` for the
     selected run (stubbed here so no real CLI is spawned)."""
     import asyncio
+    import subprocess as sp
 
     from textual.widgets import DataTable
 
@@ -306,7 +307,38 @@ def test_merge_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: obje
     from agent6.ui.tui.modals import ConfirmModal
 
     a6 = tmp_path / ".agent6"
-    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+    rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+    # Merge is offered only for a run whose branch holds commits its base does
+    # not: the key is dimmed otherwise, as the CLI refuses those.
+    repo = tmp_path
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    sp.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "seed.txt").write_text("seed\n")
+    sp.run(["git", "add", "seed.txt"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-q", "-m", "base"], cwd=repo, check=True)
+    base = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    (repo / "work.txt").write_text("work\n")
+    sp.run(["git", "add", "work.txt"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-q", "-m", "work"], cwd=repo, check=True)
+    sp.run(["git", "branch", "agent6/r1"], cwd=repo, check=True)
+    sp.run(["git", "reset", "-q", "--hard", base], cwd=repo, check=True)
+    (rd / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "r1",
+                "mode": "run",
+                "user_task": "x",
+                "base_sha": base,
+                "base_branch": "main",
+                "run_branch": "agent6/r1",
+            }
+        ),
+        encoding="utf-8",
+    )
 
     calls: list[str] = []
 
@@ -467,3 +499,25 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
     monkeypatch.setattr(home, "run_home", _capture)
     assert plan_watch._cmd_tui() == 0  # pyright: ignore[reportPrivateUsage]
     assert seen == [resolved_state_dir(tmp_path)]
+
+
+def test_merge_is_dimmed_for_a_run_with_nothing_to_merge(tmp_path: Path) -> None:
+    """The CLI refuses a merge for a live run, a run with no branch and an
+    already-merged one; the hub offered the key anyway and the operator got the
+    refusal after confirming. The web disables the same button up front."""
+    import asyncio
+
+    from agent6.ui.tui.home import Agent6HomeApp
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert screen.check_action("merge_selected", ()) is False
+            assert screen.check_action("refresh", ()) is True
+
+    asyncio.run(scenario())
