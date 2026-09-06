@@ -502,6 +502,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             tui_enabled=tui_enabled,
             away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
             can_ask=frontend.capabilities.can_ask,
+            clamped=session_kind(mode).clamps_commands,
         )
         if refusal is not None:
             reporter.refuse(refusal)

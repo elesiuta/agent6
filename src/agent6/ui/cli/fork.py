@@ -15,6 +15,7 @@ from agent6.app.fork import create_fork
 from agent6.app.preflight import headless_approval_refusal
 from agent6.app.resume import resume_task
 from agent6.config import Config
+from agent6.types import session_kind
 from agent6.ui.cli.run import session_frontend
 
 
@@ -52,6 +53,7 @@ def _cmd_fork(
             tui_enabled=frontend.should_spawn_tui(tui, False, mode),
             away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
             can_ask=frontend.capabilities.can_ask,
+            clamped=session_kind(mode).clamps_commands,
         )
 
     child_id, rc = create_fork(

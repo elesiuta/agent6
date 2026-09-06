@@ -356,7 +356,7 @@ def require_git_repo(cwd: Path) -> bool:
 
 
 def headless_approval_refusal(
-    cfg: Config, *, tui_enabled: bool, away: str, can_ask: bool
+    cfg: Config, *, tui_enabled: bool, away: str, can_ask: bool, clamped: bool = False
 ) -> str | None:
     """Refuse a run that would block forever waiting to be approved.
 
@@ -371,16 +371,24 @@ def headless_approval_refusal(
     whose stdin is the protocol pipe and which asks over
     `session/request_permission` -- had every run refused before it started.
 
+    *clamped* says this session kind clamps a standing `run_commands = "yes"`
+    to `ask` (plan and ask do), so the remedy names the flag, not the config
+    value that is already set.
+
     Returns the message, or None when approval is answerable.
     """
     if cfg.sandbox.run_commands != "ask" or tui_enabled or can_ask or away:
         return None
+    unattended = (
+        "--auto-approve (this session kind clamps a standing sandbox.run_commands = 'yes' to 'ask')"
+        if clamped
+        else "sandbox.run_commands = 'yes' (or --auto-approve)"
+    )
     return (
         "sandbox.run_commands = 'ask' needs someone to answer, and this run has no"
         " TUI and no away-mode. Every command, the verify gate included, would wait"
         " forever.\n"
-        "  - unattended: sandbox.run_commands = 'yes' (or --auto-approve), or 'no'"
-        " to withhold commands entirely\n"
+        f"  - unattended: {unattended}, or 'no' to withhold commands entirely\n"
         "  - attended: start it from a terminal, or set an away-mode"
         " (AGENT6_DETACHED_AWAY=wait|deny) so an absent operator's intent is known"
     )

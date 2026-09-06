@@ -29,6 +29,17 @@ def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
     assert "--auto-approve" in refusal  # the fix is named
 
 
+def test_a_clamped_session_kind_names_the_flag_not_the_config_value() -> None:
+    """plan and ask clamp a standing run_commands = "yes" to ask: the remedy
+    names --auto-approve and the clamp, never the value that is already set."""
+    refusal = headless_approval_refusal(
+        _ask_cfg(), tui_enabled=False, away="", can_ask=False, clamped=True
+    )
+    assert refusal is not None
+    assert "clamps a standing sandbox.run_commands = 'yes'" in refusal
+    assert "sandbox.run_commands = 'yes' (or --auto-approve)" not in refusal
+
+
 @pytest.mark.parametrize(
     ("tui", "away", "commands", "can_ask"),
     [
