@@ -957,3 +957,34 @@ name-match a nearest-tests pick, and the gate already ran in every leg.
 Prompt addendum extended mid-pilot with the no-test-weakening rule
 (prototype license): batch 1 ran the v1 addendum (v1 kept beside it),
 batches 2-5 carry v2; 7 of the 8 broke-P2P ids sit in batches 2-4.
+
+### Combined pilot result: 10/54 misses converted; substituted 60.0% (2026-08-25)
+
+54/54 legs, 1 empty, ~8 plan points total. Per class (converted/class):
+broke-P2P 2/8, near-miss 4/18, slow-empty 2/5, zero-F2P 2/23.
+Substituted full-110 (gate-on 50 + parked-rerun 6 + these 10) = 66/110 =
+60.0%, board range 58-62. That substitution is a ratchet: it keeps every
+prior success and harvests retry variance from the misses, so it is an
+upper bound, not a score.
+
+Waves (the wheel bug made an accidental control): batches 1-3 ran with the
+scoped gate unreachable (prompt-only) and converted 5/33; batches 4-5 on
+the fixed wheel converted 5/21. Suggestive for the wheel, small n.
+
+Mechanisms observed:
+- The no-test-weakening prompt line is inert: every v2 broke-P2P leg still
+  edited tests (3, 2, 7 times) with the line verbatim in its prompt; the
+  two class conversions edited tests too and won on the code half.
+  Mechanisms beat prose, again. Next candidates are mechanisms: bench-side
+  immutable test files, or a truthful harness notice when a red gate went
+  green with only test-file edits in between.
+- Both zero-F2P conversions touched exactly the gold file the gate-on leg
+  missed (pipecat strategy module, sunpy frames.py); the other 21 did not
+  convert, so the interface-layer prose is at best marginal.
+- The scoped gate never fired in the field during the pilot: batches 1-3
+  had the wiring bug (harness-site only; the model's own timed-out call is
+  never re-judged), and after the fix the only 124 leg (pandas) hit the
+  heuristic gap (package-level tests dirs unscanned). Both fixed and
+  pinned on the branch; a 4-leg re-run of the 124 ids on the final wheel
+  is the field test (rpl124).
+- Empties stay solved: 1/54 vs the gate-on era's recurring walls.
