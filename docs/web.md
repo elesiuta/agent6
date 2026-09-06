@@ -93,7 +93,7 @@ curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per chang
 - reads: `/api/meta`, `/api/hub`, `/api/config`, `/api/config/suggest/<key>`, `/api/config/provider_choices`, `/api/session/<id>` with `/conversation`, `/restate`, `/diff` and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` (a `machine create` draft) with `/conversation`, `/diff` and `/events`
     - a `/diff` takes `?sha=<sha>` and `&cumulative=1` for the chain up to that step
 - the page and its PWA assets: `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
-- writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`)
+- writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/provider`, `/api/machine/{create,run}`)
 - every write drives the typed spawn / answer-file contracts, never arbitrary execution
 - a machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (optional `message`/`data`) on the instance
 - machine names and answer ids validate to a single path component: no traversal out of the instance dir

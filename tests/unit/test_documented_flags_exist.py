@@ -122,14 +122,30 @@ def test_documented_toml_examples_parse(doc: Path) -> None:
             pytest.fail(f"{doc.name}:{line} toml block does not parse: {exc}")
 
 
-def test_docs_name_every_web_write_verb() -> None:
+def _documented_routes(page: str) -> set[str]:
+    """Every `/api/...` route the page names, with `{a,b}` groups expanded."""
+    routes: set[str] = set()
+    for span in re.findall(r"`(/api/[^`]+)`", page):
+        head, _, rest = span.partition("{")
+        if rest:
+            routes.update(head + alt for alt in rest.split("}")[0].split(","))
+        else:
+            routes.add(span)
+    return routes
+
+
+def test_docs_name_every_web_write_route() -> None:
     """docs/web.md enumerates the browser UI's write surface, which a reader
-    audits to see what a POST can do. The list had drifted: `undo` (forks a run)
-    and a machine's `stop` existed in the server and were absent from the page.
+    audits to see what a POST can do. Both halves drifted: `undo` and a
+    machine's `stop` among the `<id>/<verb>` routes, `/api/config/provider`
+    among the top-level ones.
     """
     server = (ROOT / "src" / "agent6" / "ui" / "web" / "server.py").read_text(encoding="utf-8")
+    post = server[server.index("def _route_post") :]
+    post = post[: post.index("\n    def ", 1)]
     verbs = set(re.findall(r'verb == "([a-z_]+)"', server))
-    assert verbs, "no POST verbs found in the web server"
+    paths = set(re.findall(r'path == "(/api/[a-z0-9_/]+)"', post))
+    assert verbs and paths, "no POST verbs/routes found in the web server"
     page = (ROOT / "docs" / "web.md").read_text(encoding="utf-8")
-    missing = sorted(v for v in verbs if v not in page)
-    assert not missing, f"docs/web.md does not name web POST verb(s): {missing}"
+    missing = sorted([v for v in verbs if v not in page] + list(paths - _documented_routes(page)))
+    assert not missing, f"docs/web.md does not name web POST route(s): {missing}"

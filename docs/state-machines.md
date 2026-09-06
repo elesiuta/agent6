@@ -67,7 +67,7 @@ machine = "item-classifier"                # stable id; names the instance dir
 version = 1                                # schema version; bumped on changes
 initial = "poll"                           # name of the entry state
 
-[budget]
+[budget]                  # required; max_transitions always binds
 max_usd         = 25.0    # optional cap on metered spend (see below)
 max_transitions = 100000  # hard stop on total edges taken (runaway guard)
 
@@ -775,23 +775,27 @@ status = "failed"
 reason = "machine budget exhausted"
 ```
 
-Control flow, condensed.
-`agent6 machine graph` prints the same shape with one edge per transition and each `on` key verbatim:
+`agent6 machine graph` prints the control flow, one edge per transition, labelled with the state's `on` key or branch predicate as written, whitespace collapsed:
 
 ```mermaid
 stateDiagram-v2
     [*] --> poll
     poll --> scan: tick
+    poll --> scan: signal
     scan --> have_items: ok
-    scan --> poll: nonzero or timeout
-    have_items --> poll: no items
+    scan --> poll: nonzero
+    scan --> poll: timeout
+    have_items --> poll: len(pending) == 0
     have_items --> classify: else
     classify --> route: ok
-    classify --> poll: failed or timeout
+    classify --> poll: failed
+    classify --> poll: timeout
     classify --> halt: budget_exhausted
-    route --> record: urgent and confident
+    route --> record: verdict.label == 'urgent' and verdict.confidence >= 0.7
     route --> poll: else
-    record --> poll: done
+    record --> poll: ok
+    record --> poll: nonzero
+    record --> poll: timeout
     halt --> [*]
 ```
 
