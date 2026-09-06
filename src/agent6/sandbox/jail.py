@@ -773,11 +773,15 @@ def run_in_jail(policy: JailPolicy, *, session_net: SessionNetwork | None = None
             _live_launchers.discard(launcher.pid)
         survivors = _kill_escapees(before | {launcher.pid})
     if survivors:
-        raise JailUnavailableError(
-            f"could not kill everything the command left running (pids {sorted(survivors)});"
-            " a process would have outlived this run."
-        )
+        raise JailUnavailableError(survivors_message(survivors))
     return result
+
+
+def survivors_message(pids: frozenset[int]) -> str:
+    return (
+        f"could not kill everything the command left running (pids {sorted(pids)});"
+        " a process would have outlived this run."
+    )
 
 
 def _launcher_result(
@@ -1311,6 +1315,7 @@ class JailSession:
         start = time.monotonic()
         before = frozenset() if self._pid_namespaced else frozenset(_own_children())
         answer: dict[str, object] = {}
+        survivors: frozenset[int] = frozenset()
         try:
             answer = self._request(
                 {
@@ -1328,7 +1333,9 @@ class JailSession:
             # Only for a command that ENDED: one handed back is still running,
             # and its own children are not escapees yet.
             if not self._pid_namespaced and not answer.get("backgrounded"):
-                _kill_escapees(before | {self._proc.pid})
+                survivors = _kill_escapees(before | {self._proc.pid})
+        if survivors:
+            raise JailUnavailableError(survivors_message(survivors))
         elapsed = time.monotonic() - start
         if answer.get("backgrounded"):
             pid = answer.get("pid")
@@ -1434,7 +1441,7 @@ class JailSession:
                 asked = True
         return self._proc.stdout.readline()
 
-    def close(self) -> None:
+    def close(self) -> frozenset[int]:
         """Shut the request channel; the launcher exits on the EOF, and under
         strict its PID namespace takes any survivors with it.
 
@@ -1443,7 +1450,10 @@ class JailSession:
         `stdin.close()`: on Python 3.12/3.13 `communicate()` then flushes
         the already-closed pipe and raises `ValueError: flush of closed file`
         (3.14 tolerates it), which would be an unhandled crash in
-        `ToolDispatcher.close()` teardown on the project's minimum Python."""
+        `ToolDispatcher.close()` teardown on the project's minimum Python.
+
+        Returns the pids the sweep could not kill (empty under a PID
+        namespace, which takes everything with it): the caller says so."""
         with contextlib.suppress(OSError):
             os.close(self._interrupt_w)
         with contextlib.suppress(subprocess.TimeoutExpired, ValueError, OSError):
@@ -1458,4 +1468,5 @@ class JailSession:
             # command outlives every one of those sweeps, and the launcher can
             # only kill the process group it tracked. Whatever appeared since
             # the session opened and is not ours goes here.
-            _kill_escapees(self._opened_with | {self._proc.pid})
+            return _kill_escapees(self._opened_with | {self._proc.pid})
+        return frozenset()

@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from agent6.sandbox.jail import JailSession
+from agent6.sandbox.jail import JailSession, JailUnavailableError
 
 
 class _FakeProc:
@@ -42,14 +42,14 @@ class _FakeProc:
         return None if self._alive_after else 0
 
 
-def _session(proc: Any) -> JailSession:
+def _session(proc: Any, *, pid_namespaced: bool = True) -> JailSession:
     # A real pipe end for the interrupt channel: close() closes it, and a
     # bogus number would make that the failure under test instead of the flush.
     _, interrupt_w = os.pipe()
     return JailSession(
         _proc=proc,
         _binary=Path("/nonexistent"),
-        _pid_namespaced=True,
+        _pid_namespaced=pid_namespaced,
         _interrupt_w=interrupt_w,
         _memory_limit_mb=0,
     )
@@ -77,3 +77,30 @@ def test_close_kills_a_launcher_that_outlived_the_drain(monkeypatch: pytest.Monk
     )
     _session(proc).close()  # must not raise
     assert killed == [proc.pid]
+
+
+def test_a_survivor_of_the_sweep_fails_the_command_and_comes_back_from_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`run_in_jail` fails a command whose escapee the sweep could not kill;
+    the session path every run_command takes discarded the sweep's answer in
+    `run` and in `close`, so a process outlived the run in silence."""
+
+    def sweep(exclude: frozenset[int]) -> frozenset[int]:
+        return frozenset({4321})
+
+    def no_children() -> dict[int, int]:
+        return {}
+
+    def answered(
+        self: JailSession, request: dict[str, object], *, interrupted: object = None
+    ) -> dict[str, object]:
+        return {"returncode": 0, "stdout": "", "stderr": ""}
+
+    monkeypatch.setattr("agent6.sandbox.jail._kill_escapees", sweep)
+    monkeypatch.setattr("agent6.sandbox.jail._own_children", no_children)
+    monkeypatch.setattr(JailSession, "_request", answered)
+    session = _session(_FakeProc(communicate_raises=None, alive_after=False), pid_namespaced=False)
+    with pytest.raises(JailUnavailableError, match="4321"):
+        session.run(("true",))
+    assert session.close() == frozenset({4321})

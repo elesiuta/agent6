@@ -31,7 +31,13 @@ from agent6.graph.curator import GraphCurator
 from agent6.memory import memory_dir
 from agent6.paths import data_dir
 from agent6.sandbox._tool_paths import jail_search_path
-from agent6.sandbox.jail import JailSession, JailUnavailableError, SessionNetwork, run_in_jail
+from agent6.sandbox.jail import (
+    JailSession,
+    JailUnavailableError,
+    SessionNetwork,
+    run_in_jail,
+    survivors_message,
+)
 from agent6.sessions.ipc import (
     COMMAND_SCOPE,
     MCP_SCOPE_PREFIX,
@@ -1205,11 +1211,14 @@ class ToolDispatcher:
 
     def close_jail_session(self) -> None:
         """End the run's jail process (under strict, its PID namespace takes
-        any survivors with it)."""
+        any survivors with it); a survivor the sweep could not kill is
+        recorded as a degradation, since it outlives the run."""
         with self._session_lock:
             if self._session is not None:
-                self._session.close()
+                survivors = self._session.close()
                 self._session = None
+                if survivors:
+                    self._emit("jail.degraded", detail=survivors_message(survivors))
 
     def _run_argv_in_jail(
         self,
