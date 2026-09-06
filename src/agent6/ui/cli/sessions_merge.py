@@ -420,8 +420,8 @@ def _sweep_workdirs(cwd: Path, state_dir: Path, config_path: Path | None) -> tup
             " repo lacks (merge or archive their lanes first)"
         )
     worktrees_removed, worktrees_kept = sweep_fork_worktrees(cwd, state_dir)
-    for fork_id in worktrees_removed:
-        print(f"[agent6] removed {fork_id}'s worktree (merged)")
+    for fork_id, note in worktrees_removed:
+        print(f"[agent6] removed {fork_id}'s worktree (merged)" + (f"; {note}" if note else ""))
     for fork_id, why in worktrees_kept:
         print(f"[agent6] kept {fork_id}'s worktree ({why})")
     note = (

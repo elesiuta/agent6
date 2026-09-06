@@ -648,15 +648,33 @@ def _plan_fork(
     )
 
 
-def remove_fork_worktree(repo: Path, worktree: Path) -> bool:
+def remove_fork_worktree(repo: Path, worktree: Path) -> tuple[bool, str]:
     """Delete a fork's worktree (only a linked worktree of *repo*, see
-    `git_ops.remove_worktree`) and the state dir that held its checkout lock;
-    False when *worktree* is not one."""
+    `git_ops.remove_worktree`) and the checkout lock its legs took under the
+    worktree's own state dir. Returns `(removed, note)`: removed is False when
+    *worktree* is not one; the note names that state dir when it holds more
+    than the lock (a session the operator ran inside the worktree) and so
+    stays, "" otherwise."""
     state_dir = resolved_state_dir(worktree)
     if not remove_worktree(repo, worktree):
-        return False
-    shutil.rmtree(state_dir, ignore_errors=True)
-    return True
+        return False, ""
+    return True, _drop_checkout_lock(state_dir)
+
+
+def _drop_checkout_lock(state_dir: Path) -> str:
+    """Remove the `repo.lock` a fork's leg took in *state_dir* and the dir
+    itself when that lock was all it held. Anything else there is not the
+    fork's (a session the operator ran inside the worktree, memory) and
+    stays: returns the note naming it, "" when nothing was left behind."""
+    (state_dir / "repo.lock").unlink(missing_ok=True)
+    try:
+        state_dir.rmdir()
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        held = ", ".join(sorted(p.name for p in state_dir.iterdir()))
+        return f"left {state_dir} ({held} inside, not the fork's)"
+    return ""
 
 
 def worktree_owners(state_dir: Path) -> dict[Path, list[tuple[Path, SessionManifest]]]:
@@ -686,12 +704,15 @@ def _still_needs_worktree(repo: Path, session_dir: Path, manifest: SessionManife
     return "" if merged else "unmerged"
 
 
-def sweep_fork_worktrees(repo: Path, state_dir: Path) -> tuple[list[str], list[tuple[str, str]]]:
+def sweep_fork_worktrees(
+    repo: Path, state_dir: Path
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     """Remove every fork worktree whose sessions have all landed their work
-    (merged, none live), and keep the rest. Returns `([removed ids],
-    [(kept id, why)])`; a session sharing a kept worktree is kept for the
-    session that needs it."""
-    removed: list[str] = []
+    (merged, none live), and keep the rest. Returns `([(removed id, note)],
+    [(kept id, why)])`: the note names a worktree state dir left behind
+    (`remove_fork_worktree`); a session sharing a kept worktree is kept for
+    the session that needs it."""
+    removed: list[tuple[str, str]] = []
     kept: list[tuple[str, str]] = []
     for worktree, sessions in worktree_owners(state_dir).items():
         if not worktree.exists():
@@ -700,8 +721,10 @@ def sweep_fork_worktrees(repo: Path, state_dir: Path) -> tuple[list[str], list[t
         if needs:
             first = next(iter(needs))
             kept.extend((d.name, needs.get(d.name, f"shared with {first}")) for d, _ in sessions)
-        elif remove_fork_worktree(repo, worktree):
-            removed.extend(d.name for d, _ in sessions)
+            continue
+        gone, note = remove_fork_worktree(repo, worktree)
+        if gone:
+            removed.extend((d.name, note) for d, _ in sessions)
     return removed, kept
 
 

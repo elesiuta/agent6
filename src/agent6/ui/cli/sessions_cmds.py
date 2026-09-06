@@ -527,8 +527,10 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     note = ""
     if worktree is not None and sharing:
         note = f" (its worktree stays: {', '.join(sharing)} still work in it)"
-    elif worktree is not None and remove_fork_worktree(cwd, worktree):
-        note = " and its worktree"
+    elif worktree is not None:
+        gone, left = remove_fork_worktree(cwd, worktree)
+        if gone:
+            note = " and its worktree" + (f" ({left})" if left else "")
     chain = chain_ref_for(layout.session_id)
     try:
         if chain_tip(cwd, chain) is not None:
