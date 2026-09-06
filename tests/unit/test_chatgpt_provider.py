@@ -775,6 +775,37 @@ def test_preflight_failure_never_blocks(signed_in: ChatGPTCredential) -> None:
     assert resp.text == "hello"
 
 
+class _FlakyCredential(ChatGPTCredential):
+    """The signed-in credential, raising once from `token()`."""
+
+    def __init__(self) -> None:
+        super().__init__("chatgpt", issuer="https://auth.example", client_id="app_X")
+        self.faults = 1
+
+    def token(self) -> str:
+        if self.faults:
+            self.faults -= 1
+            raise ProviderError("refresh failed")
+        return super().token()
+
+
+def test_a_credential_fault_in_the_preflight_is_no_reading(signed_in: ChatGPTCredential) -> None:
+    """The preflight's catch named the transport faults and not the
+    credential's own: a refresh that failed inside the reading aborted the
+    call before its own token path could raise or recover."""
+    get, _urls = _usage_get({}, status=200)
+    provider = _provider(
+        _FlakyCredential(),
+        budget=BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_percent=-1),
+    )
+    with (
+        mock.patch("httpx2.get", side_effect=get),
+        mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
+    ):
+        resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    assert resp.text == "hello"
+
+
 def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
     signed_in: ChatGPTCredential,
 ) -> None:

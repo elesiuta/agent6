@@ -413,7 +413,7 @@ class ChatGPTProvider:
             if resp.status_code != 200:
                 return None
             body = resp.json()
-        except (httpx2.HTTPError, ValueError, OSError):
+        except (ProviderError, httpx2.HTTPError, ValueError, OSError):
             return None
         return plan_usage_from_usage_body(body) if isinstance(body, dict) else None
 
