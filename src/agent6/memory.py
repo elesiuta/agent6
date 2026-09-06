@@ -118,15 +118,17 @@ def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]
 def merge_memory(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]:
     """Carry the memories recorded under *src_state_dir* into *dst_state_dir*
     (a fan-out lane's facts outlive its state dir, like its rulings): a file
-    the destination lacks is copied with its index line, one it already holds
-    is skipped. Returns (carried, skipped). The rulings have `merge_decisions`."""
+    the destination lacks is copied with its index line; one whose name it
+    already holds (the seeded copy, edited or not) is held back; a file the
+    lane's own index does not list is left where it is. Returns
+    (carried, held). The rulings have `merge_decisions`."""
     src = memory_dir(src_state_dir)
     if not src.is_dir():
         return 0, 0
     dst = memory_dir(dst_state_dir)
     dst.mkdir(parents=True, exist_ok=True)
     src_index = index_text(src_state_dir).splitlines()
-    carried = skipped = 0
+    carried = held = 0
     for path in sorted(src.glob("*.md")):
         if path.name in (INDEX_NAME, DECISIONS_NAME):
             continue
@@ -136,12 +138,12 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]:
         if line is None:
             continue  # unindexed in the lane: invisible there, and stays so
         if (dst / path.name).exists() or _index_has(dst_state_dir, name):
-            skipped += 1
+            held += 1
             continue
         shutil.copyfile(path, dst / path.name)
         _append_index_line(dst_state_dir, name, line.split(":", 1)[1].strip())
         carried += 1
-    return carried, skipped
+    return carried, held
 
 
 def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:

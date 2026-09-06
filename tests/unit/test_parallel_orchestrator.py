@@ -698,11 +698,13 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
 
 
 def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
-    origin: Path, tmp_path: Path, runtime: LaneRuntime
+    origin: Path, tmp_path: Path, runtime: LaneRuntime, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The harness nudges a lane to write memory like any run, and the import
     carried only its rulings before tearing the lane's state dir down: every
-    memory file the lane wrote, and its index line, went with it."""
+    memory file the lane wrote, and its index line, went with it. A name the
+    origin already holds (its seeded copy, here edited by the lane) is held
+    back, and the note says so: the count was dropped on the floor."""
     from agent6.config.layer import resolved_state_dir
 
     origin_state = resolved_state_dir(origin)
@@ -711,6 +713,7 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     lanes = _specs(tmp_path, cfg, "fan", "1")
     lane_state = state_dir(lanes[0].workdir, cfg.agent6.state_dir)
     memory.add(lane_state, "lane-fact", "The flaky test is test_clock.")
+    memory.add(lane_state, "repo-fact", "The build needs BUILD_ID set, and BUILD_NO.")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
 
     assert (
@@ -731,6 +734,8 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     assert (
         memory.index_text(origin_state).count("repo-fact") == 1
     )  # the seeded copy is not a second line
+    assert "BUILD_NO" not in memory.show(origin_state, "repo-fact")
+    assert "lane 1: 1 memory file(s) carried over, 1 already recorded" in capsys.readouterr().err
 
 
 def test_run_parallel_forwards_auto_approve_to_the_default_spawner(

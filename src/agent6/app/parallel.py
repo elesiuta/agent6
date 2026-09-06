@@ -777,9 +777,10 @@ def _import_lanes(
             reporter.note(
                 f"lane {res.spec.lane}: {carried} recorded decision(s) carried over{already}"
             )
-        facts, _held = merge_memory(lane_state, origin_state)
-        if facts:
-            reporter.note(f"lane {res.spec.lane}: {facts} memory file(s) carried over")
+        facts, held = merge_memory(lane_state, origin_state)
+        if facts or held:
+            already = f", {held} already recorded" if held else ""
+            reporter.note(f"lane {res.spec.lane}: {facts} memory file(s) carried over{already}")
         summary = summarize_session_dir(dest)
         if not produced_result(summary.status):
             # Imported (its branch is safe in the origin) but not a candidate:
