@@ -892,6 +892,55 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: Path) 
     assert status(tmp_path).is_clean  # main is checked out: index brought forward
 
 
+def test_add_worktree_is_detached_shares_refs_and_is_removed_alone(tmp_path: Path) -> None:
+    """`add_worktree` makes a detached linked worktree at the sha whose refs
+    are the repository's own (a chain commit made there is visible from the
+    main checkout); `git_common_dir` names the repository's `.git`;
+    `remove_worktree` deletes it with its record only, so the record of
+    another worktree whose directory is missing survives, and refuses a
+    directory that is not a linked worktree of the repository."""
+    import shutil
+
+    from agent6.git_ops import add_worktree, chain_commit, git_common_dir, remove_worktree
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    base = _rev(repo, "HEAD")
+    (repo / "README.md").write_text("later\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "commit", "-qam", "second"], check=True)
+    wt = tmp_path / "wt"
+
+    add_worktree(repo, wt, base)
+    assert (wt / ".git").is_file()
+    assert _rev(wt, "HEAD") == base
+    assert (wt / "README.md").read_text(encoding="utf-8") == "hi\n"
+    assert git_common_dir(wt) == (repo / ".git").resolve()
+    (wt / "new.txt").write_text("n\n", encoding="utf-8")
+    sha = chain_commit(wt, "step", ref="refs/agent6/w/head", fallback_parent=base)
+    assert sha is not None and _rev(repo, "refs/agent6/w/head") == sha
+    assert _rev(repo, "HEAD") != base and status(repo).is_clean  # the main checkout: untouched
+
+    other = tmp_path / "other"
+    add_worktree(repo, other, base)
+    shutil.rmtree(other)  # missing, its record kept: not agent6's to prune
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / ".git").write_text("gitdir: /nowhere/.git/worktrees/x\n", encoding="utf-8")
+
+    assert remove_worktree(repo, plain) is False
+    assert (plain / ".git").is_file()
+    assert remove_worktree(repo, wt) is True
+    assert not wt.exists()
+    listed = subprocess.run(
+        ["git", "-C", str(repo), "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert str(wt) not in listed
+    assert str(other) in listed
+
+
 def test_plumb_merge_conflict_moves_nothing(tmp_path: Path) -> None:
     _init_repo(tmp_path)
     base = status(tmp_path).head_sha

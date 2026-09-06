@@ -766,6 +766,45 @@ def checkout_detached(path: Path, rev: str) -> None:
     _run(path, "checkout", "-q", "--detach", rev)
 
 
+def add_worktree(path: Path, dest: Path, sha: str) -> None:
+    """A linked worktree of *path*'s repository at *dest*, detached at *sha*:
+    a fork's own checkout. It shares the repository's refs and objects, so a
+    chain commit made there is visible from every other checkout; the
+    operator's checkout, HEAD, and index are untouched."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _run(path, "worktree", "add", "--detach", str(dest.absolute()), sha)
+
+
+def remove_worktree(path: Path, dest: Path) -> bool:
+    """Delete the linked worktree at *dest* and git's record of it, when it
+    is one of *path*'s repository (its `.git` file names an entry under the
+    repository's `worktrees/`); anything else is left alone, False. Only that
+    entry goes: a repo-wide `worktree prune` would also drop the record of an
+    operator's worktree whose directory is temporarily missing."""
+    pointer = dest / ".git"
+    if not pointer.is_file():
+        return False
+    text = pointer.read_text(encoding="utf-8", errors="replace").strip()
+    if not text.startswith("gitdir:"):
+        return False
+    admin = Path(text[len("gitdir:") :].strip())
+    if not admin.is_absolute():
+        admin = dest / admin
+    admin = admin.resolve()
+    if admin.parent != git_common_dir(path) / "worktrees":
+        return False
+    shutil.rmtree(dest, ignore_errors=True)
+    shutil.rmtree(admin, ignore_errors=True)
+    return True
+
+
+def git_common_dir(path: Path) -> Path:
+    """The repository's shared `.git` directory, absolute: for a linked
+    worktree the main checkout's, which its commands must be able to read."""
+    out = _run(path, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+    return Path(out).resolve()
+
+
 def create_branch_at(path: Path, name: str, sha: str) -> None:
     """Create branch *name* pointing at *sha* WITHOUT checking it out.
 
