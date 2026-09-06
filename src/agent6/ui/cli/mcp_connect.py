@@ -18,6 +18,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from agent6.app._setup import detect_env, mcp_server_spec, no_jail_cause
 from agent6.config import (
     Config,
@@ -156,15 +158,27 @@ def cmd_mcp_connect(
         print("nothing was written to config.", file=sys.stderr)
         return 1
 
-    entry = MCPServerEntry.model_validate(
-        {
-            "command": command,
-            "url": url,
-            "token_env": token_env,
-            "pass_env": pass_env,
-            "startup_timeout_s": _CONNECT_TIMEOUT_S,
-        }
-    )
+    try:
+        entry = MCPServerEntry.model_validate(
+            {
+                "command": command,
+                "url": url,
+                "token_env": token_env,
+                "pass_env": pass_env,
+                "startup_timeout_s": _CONNECT_TIMEOUT_S,
+            }
+        )
+    except ValidationError as exc:
+        # These are operator flag values, and the entry's own rules (the URL
+        # shape above all -- a dropped scheme is the likeliest typo here) live
+        # in the model. Unwrapped they reached the operator as a pydantic dump
+        # with a saved traceback and an invitation to report a bug.
+        detail = "; ".join(
+            f"{'.'.join(str(part) for part in issue['loc']) or 'entry'}: {issue['msg']}"
+            for issue in exc.errors()
+        )
+        print(f"ERROR: {name}: {detail}", file=sys.stderr)
+        return 2
     env = detect_env()
     isolation = resolve_isolation(cfg.sandbox.isolation, env)
     if command and isolation == "none":

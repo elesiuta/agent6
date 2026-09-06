@@ -285,6 +285,33 @@ def test_manager_times_out_on_hanging_server() -> None:
         mgr.close()
 
 
+def test_a_timeout_carries_the_servers_own_words() -> None:
+    """A server that logs its reason and then waits on stdin is the common
+    shape of a misconfigured one. Its reason sat in the stderr buffer while the
+    operator got a bare timeout, and `mcp connect`'s hint sent them to sandbox
+    grants that were not the problem -- the same server EXITING says why."""
+    logs: list[str] = []
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="errlog",
+                command=(
+                    "/bin/sh",
+                    "-c",
+                    'echo "FATAL: missing API token" >&2; sleep 30',
+                ),
+                startup_timeout_s=0.5,
+                call_timeout_s=0.5,
+            )
+        ],
+        logger=logs.append,
+    )
+    try:
+        assert any("FATAL: missing API token" in m for m in logs), logs
+    finally:
+        mgr.close()
+
+
 def test_a_timed_out_call_restarts_the_server_before_the_next_call() -> None:
     """A stdio server still busy with the call it never answered is wedged
     for the next one, which then timed out too. agent6 owns the spawn: the

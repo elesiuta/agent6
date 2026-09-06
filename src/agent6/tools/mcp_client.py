@@ -660,8 +660,15 @@ class _MCPServer:
                         raise MCPRestarted(f"server {self.name!r} was restarted under {method}")
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
+                        # Its own words if it left any, exactly as the died-
+                        # first arm below reports them: a server that logs its
+                        # reason and then waits on stdin (the common shape) was
+                        # a bare timeout pointing at the sandbox grants.
+                        said = self._redact_secrets(_stderr_tail(self._errors))
+                        detail = f": {said}" if said else ""
                         raise MCPTimeout(
-                            f"server {self.name!r} timed out after {timeout_s:.1f}s on {method}"
+                            f"server {self.name!r} timed out after"
+                            f" {timeout_s:.1f}s on {method}{detail}"
                         )
                     # If the reader thread died (server crashed mid-call)
                     # the call would otherwise wait the full timeout for nothing.
