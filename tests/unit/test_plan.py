@@ -288,8 +288,10 @@ def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: Path) -
 
 def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: Path) -> None:
     p = tmp_path / "agent6.toml"
+    # `run_commands = "no"` withholds every command tool, the metric included,
+    # and the block describing it goes with the tool.
     p.write_text(
-        _VALID_TOML
+        _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"')
         + '\n[workflow.metric]\ncommand = ["python3", "bench.py"]\n'
         + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
         encoding="utf-8",

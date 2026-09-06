@@ -130,3 +130,35 @@ def test_prompt_show_infers_the_gate_a_run_would_infer(
     assert "pytest -q" in out
     assert "no verify command" not in out
     assert "run_verify_command" in out
+
+
+def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
+    """`run_commands = "no"` withholds every command tool, and a metric with no
+    `[workflow.metric]` can only error. A prompt block describing a tool the
+    model does not have is one it cannot act on, and the metric tool was
+    offered unconditionally while `run_verify_command` was already hidden."""
+    import tempfile
+
+    from agent6.config import Config
+    from agent6.tools.dispatch import ToolDispatcher
+    from agent6.workflows import model_exchange_for
+    from agent6.workflows._toolset import tool_definitions  # pyright: ignore[reportPrivateUsage]
+
+    withheld = Config.model_validate(
+        {
+            "sandbox": {"run_commands": "no"},
+            "workflow": {
+                "verify_command": ["pytest", "-q"],
+                "metric": {"command": ["m"], "pattern": r"x:(\d+)", "goal": "minimize"},
+            },
+        }
+    )
+    exchange = model_exchange_for(withheld, tmp_path, "run", state_dir=tmp_path)
+    assert "<verify-command>" not in exchange.system
+    assert "<metric-command>" not in exchange.system
+    assert "<no-verify-command>" in exchange.system
+
+    with tempfile.TemporaryDirectory() as td:
+        plain = ToolDispatcher(root=Path(td), config=Config())
+        names = [t.name for t in tool_definitions(plain, mode="run")]
+    assert "run_metric_command" not in names, "offered with no [workflow.metric]"

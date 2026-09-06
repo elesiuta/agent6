@@ -51,6 +51,9 @@ class _StubDispatcher:
         """No MCP servers, so nothing to add to the per-turn tool list."""
         return ()
 
+    def metric_configured(self) -> bool:
+        return True  # the stub's config carries whatever the test set
+
     def skills_available(self) -> bool:
         return False
 

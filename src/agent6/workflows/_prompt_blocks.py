@@ -346,7 +346,11 @@ def build_system_prompt(
         )
         return "\n".join(parts)
 
-    verify_argv = list(config.workflow.verify_command)
+    # `run_commands = "no"` withholds every command tool, the gate included, so
+    # a run under it is gateless whatever is configured: the block that names
+    # `run_verify_command` would describe a tool the model does not have.
+    commands_allowed = config.sandbox.run_commands != "no"
+    verify_argv = list(config.workflow.verify_command) if commands_allowed else []
     if verify_argv:
         parts.append(
             V2_VERIFY_BLOCK_TEMPLATE.format(
@@ -364,7 +368,9 @@ def build_system_prompt(
 
     # Run mode only: plan/ask do not expose `run_metric_command`, and the
     # "harness automatically runs this metric" behaviour is the run loop's.
-    if mode == "run" and config.workflow.metric is not None:
+    # `run_commands = "no"` withholds the tool, and a block describing a tool
+    # the model does not have is one it cannot act on.
+    if mode == "run" and config.workflow.metric is not None and commands_allowed:
         m = config.workflow.metric
         parts.append(
             V2_METRIC_BLOCK_TEMPLATE.format(

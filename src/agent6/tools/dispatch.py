@@ -440,6 +440,12 @@ class ToolDispatcher:
             return configured
         return effective_run_commands(configured, self._session_dir)
 
+    def metric_configured(self) -> bool:
+        """Whether `[workflow.metric]` gives `run_metric_command` anything to
+        run. The loop exposes that tool as an extra, outside
+        `available_tool_names`, so it asks this instead."""
+        return self._config.workflow.metric is not None
+
     def available_tool_names(self) -> tuple[str, ...]:
         names = list(self._available)
         # `no` withholds every command tool, run_verify_command included.

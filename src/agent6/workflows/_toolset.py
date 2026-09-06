@@ -14,7 +14,7 @@ from typing import Any, Literal
 from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.results import ToolResult
-from agent6.tools.schema import UseSkillInput, mode_tools, wire_schema
+from agent6.tools.schema import RunMetricInput, UseSkillInput, mode_tools, wire_schema
 from agent6.types import session_kind
 from agent6.workflows._review import ReviewDispatch
 
@@ -50,6 +50,11 @@ def tool_definitions(
             # Extras (finish_session/finish_planning, run_metric_command,
             # the task tools, ask_user, use_skill) are always exposed even
             # though they're not in ALL_TOOLS.
+            continue
+        if cls.TOOL_NAME == RunMetricInput.TOOL_NAME and not dispatcher.metric_configured():
+            # No [workflow.metric]: the tool can only answer "no metric
+            # configured", which the model cannot fix. Hidden like use_skill
+            # below and run_verify_command in the dispatcher.
             continue
         if cls.TOOL_NAME == UseSkillInput.TOOL_NAME and not dispatcher.skills_available():
             # No installed/enabled skills (or [skills].enabled off): hide the
