@@ -125,6 +125,42 @@ def test_memory_dir_edit_marks_memory_written() -> None:
     assert turn.edited is False
 
 
+def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
+    """`apply_patch`'s normal shape carries no `path` (the targets are the
+    headers), so a memory-dir patch counted as a workspace edit: it withdrew
+    a green verify, left `memory_written` False (both nudges then fired at a
+    model that had just written memory) and set `ever_edited`. The targets
+    come from the patch; a patch over the store and the workspace together is
+    workspace work."""
+    from agent6.tools.results import PatchResult
+
+    def note(patch: str) -> tuple[LoopState, TurnState]:
+        wf = _wf()
+        state = _state()
+        turn = _turn(1)
+        wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+            state,
+            turn,
+            "apply_patch",
+            PatchResult(path="new-fact.md", bytes_written=2),
+            {"patch": patch},
+        )
+        return state, turn
+
+    memory = "--- /dev/null\n+++ /tmp/state/memory/new-fact.md\n@@ -0,0 +1 @@\n+x\n"
+    state, turn = note(memory)
+    assert (state.memory_written, state.ever_edited, turn.edited) == (True, False, False)
+    v4a = "*** Begin Patch\n*** Add File: /tmp/state/memory/other.md\n+x\n*** End Patch\n"
+    state, turn = note(v4a)
+    assert (state.memory_written, state.ever_edited, turn.edited) == (True, False, False)
+    workspace = "--- a/src/code.py\n+++ b/src/code.py\n@@ -1 +1 @@\n-a\n+b\n"
+    state, turn = note(workspace)
+    assert (state.memory_written, state.ever_edited, turn.edited) == (False, True, True)
+    both = "diff --git a/src/code.py b/src/code.py\n" + workspace + "diff --git a/x b/x\n" + memory
+    state, turn = note(both)
+    assert (state.memory_written, state.ever_edited, turn.edited) == (False, True, True)
+
+
 def test_workspace_edit_does_not_mark_memory_written() -> None:
     wf = _wf()
     state = _state()

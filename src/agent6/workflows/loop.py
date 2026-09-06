@@ -80,6 +80,7 @@ from agent6.tools.dispatch import (
     ToolError,
 )
 from agent6.tools.mcp_client import MCP_TOOL_PREFIX
+from agent6.tools.patch_apply import PatchError, patch_target_path, split_patch_files
 from agent6.tools.results import AnswersResult, ExecResult, MetricResult, ToolResult
 from agent6.tools.schema import (
     AskUserInput,
@@ -1437,16 +1438,8 @@ class Workflow:
             # An edit under the memory dir is a memory write, not workspace
             # work: both memory nudges stay quiet for the rest of the run and
             # none of the tree bookkeeping below applies (the gate's tree is
-            # untouched). Judged on the MODEL'S input path: the store sits
-            # outside the workspace root, so only an absolute path reaches it
-            # (EditResult.path is store-relative; matching on it never fires,
-            # and the write would fall through to the tree bookkeeping).
-            raw_path = str(tool_input.get("path", "")) if isinstance(tool_input, dict) else ""
-            if (
-                self.state_dir is not None
-                and raw_path.startswith("/")
-                and Path(raw_path).resolve().is_relative_to(memory_dir(self.state_dir))
-            ):
+            # untouched).
+            if self._edits_the_memory_store(name, tool_input):
                 state.memory_written = True
                 return
             turn.edited = True
@@ -1465,6 +1458,27 @@ class Workflow:
             state.verify.note_edit()
         if name in DAG_MUTATING_TOOLS:
             turn.dag_mutated = True  # snapshot once after the turn
+
+    def _edits_the_memory_store(self, name: str, tool_input: Any) -> bool:
+        """Whether an edit tool's call addressed the memory store. Judged on the
+        MODEL'S input paths: the store sits outside the workspace root, so only
+        an absolute path reaches it (a result's path is store-relative, and
+        matching on it never fires). `apply_patch` normally carries no `path`
+        and names its files in the headers; every one must be under the store
+        (a patch over the store and the workspace together is workspace work)."""
+        if self.state_dir is None or not isinstance(tool_input, dict):
+            return False
+        paths = [str(tool_input["path"])] if tool_input.get("path") else []
+        if not paths and name == "apply_patch":
+            try:
+                sections = split_patch_files(str(tool_input.get("patch", "")))
+                paths = [patch_target_path(section) for section in sections]
+            except PatchError:
+                return False
+        store = memory_dir(self.state_dir)
+        return bool(paths) and all(
+            p.startswith("/") and Path(p).resolve().is_relative_to(store) for p in paths
+        )
 
     def _capture_finish(self, turn: TurnState, name: str, tool_input: Any) -> None:
         """Capture a finish_session / finish_planning call's summary + payload on
