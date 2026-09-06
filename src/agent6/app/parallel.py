@@ -473,7 +473,7 @@ def run_lane_to_completion(
     # import. Dropped just before import so import_run can place the real dir.
     symlink_lane(origin_state, res)
     if not await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
-        request_stop(res.session_dir)
+        asked = request_stop(res.session_dir)
         if not drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
             # Still running: keep the clone + live symlink (they hold the only
             # copy of its branch until an import) and report the truth.
@@ -482,8 +482,9 @@ def run_lane_to_completion(
                 session_dir=res.session_dir,
                 branch=res.branch,
                 ok=False,
-                error="interrupted; lane was asked to stop and keeps running"
-                " detached; not imported",
+                error="interrupted; lane "
+                + ("was asked to stop and" if asked else "could not be asked to stop and")
+                + " keeps running detached; not imported",
             )
     lock = import_lock if import_lock is not None else contextlib.nullcontext()
     link = lane_link(origin_state, res.spec.session_id)

@@ -309,6 +309,25 @@ def test_stop_step_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path
     assert "not live" in str(data["error"])
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes through a read-only dir")
+def test_stop_step_that_cannot_write_the_marker_is_refused(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """The action announced "stopping after the current step" whatever the
+    marker write did; a write that fails is a refusal, as compact's is."""
+    _srv, port = server
+    _make_run(tmp_path, "run-ro", [{"type": "session.start"}])
+    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-ro"
+    (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    runs.chmod(0o555)
+    try:
+        status, data = _post(port, "/api/session/run-ro/stop_step", {})
+    finally:
+        runs.chmod(0o700)
+    assert status == 422 and "could not write the stop request" in str(data["error"])
+    assert not (runs / "stop.request").exists()
+
+
 def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     _make_run(

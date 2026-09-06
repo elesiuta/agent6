@@ -293,7 +293,8 @@ def stop_after_step(cwd: Path, session_id: str) -> tuple[bool, str]:
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    request_stop(session_dir)
+    if not request_stop(session_dir):
+        return False, "could not write the stop request"
     return True, "stopping after the current step"
 
 

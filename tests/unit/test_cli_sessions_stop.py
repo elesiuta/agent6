@@ -36,6 +36,26 @@ def test_runs_stop_requests_stop_for_a_live_run(
     assert "requested stop" in capsys.readouterr().out
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root writes through a read-only dir")
+def test_runs_stop_that_cannot_write_the_marker_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`request_stop` swallowed the write error and the command announced
+    "it ends after the current step" over a marker that never landed."""
+    monkeypatch.chdir(tmp_path)
+    rd = _session_dir(tmp_path, "live-run-RO1111")
+    write_worker_pid(rd, os.getpid())
+    rd.chmod(0o555)
+    try:
+        assert main(["sessions", "stop", "live-run-RO1111"]) == 1
+        assert not stop_request_pending(rd)
+    finally:
+        rd.chmod(0o700)
+    captured = capsys.readouterr()
+    assert "could not write the stop request" in captured.err
+    assert "requested stop" not in captured.out
+
+
 def test_runs_stop_on_a_finished_run_with_lingering_pid_is_a_noop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

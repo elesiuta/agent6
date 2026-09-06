@@ -778,13 +778,20 @@ def clear_steer_request(session_dir: Path) -> None:
 STOP_REQUEST_FILE = "stop.request"
 
 
-def request_stop(session_dir: Path) -> None:
+def request_stop(session_dir: Path) -> bool:
     """Front-end "stop after this step": drop a marker the session polls at each
     completed-iteration boundary and honors by ending the run cleanly there
     (the finished step's tool results and auto-commit land first). The
-    immediate stop stays the steer "abort" answer, which interrupts mid-turn."""
-    with contextlib.suppress(OSError):
+    immediate stop stays the steer "abort" answer, which interrupts mid-turn.
+
+    Returns whether the marker landed, the `request_compact` rule: a failed
+    write neither raises into a front-end action nor reads as a stop nothing
+    will honor."""
+    try:
         (session_dir / STOP_REQUEST_FILE).write_text("", encoding="utf-8")
+    except OSError:
+        return False
+    return True
 
 
 def stop_request_pending(session_dir: Path) -> bool:

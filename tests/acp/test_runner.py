@@ -78,8 +78,9 @@ class _Wire:
         )
 
 
-def _ignore(_path: Path) -> None:
-    """A cancel that has nowhere to write is still a cancel."""
+def _ignore(_path: Path) -> bool:
+    """A cancel whose marker landed (nothing here reads the run dir)."""
+    return True
 
 
 def _repo(path: Path) -> Path:
@@ -121,7 +122,12 @@ def test_a_cancel_reaches_the_run_it_names(tmp_path: Path, monkeypatch: pytest.M
     cancel reported success while the run continued to completion, spending
     budget and making commits."""
     stopped: list[Path] = []
-    monkeypatch.setattr(session_mod, "request_stop", stopped.append)
+
+    def _record(path: Path) -> bool:
+        stopped.append(path)
+        return True
+
+    monkeypatch.setattr(session_mod, "request_stop", _record)
     monkeypatch.chdir(tmp_path)
 
     started, release = threading.Event(), threading.Event()

@@ -624,9 +624,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
             return
 
         def _confirmed(yes: bool | None) -> None:
-            if yes:
-                request_stop(self.session_dir)
+            if not yes:
+                return
+            if request_stop(self.session_dir):
                 self.notify("stopping after this step…")
+            else:
+                self.notify("could not write the stop request", severity="warning")
 
         self.push_screen(
             ConfirmModal(

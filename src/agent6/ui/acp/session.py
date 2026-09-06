@@ -10,6 +10,7 @@ editor sends would arrive only after the thing it meant to stop had finished.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -168,8 +169,14 @@ class Sessions:
         operator can read rather than halfway through one.
         """
         session.cancelled = True
-        if session.session_id:
-            request_stop(session.layout(self.state_dir_for(session.cwd)).session_dir)
+        if session.session_id and not request_stop(
+            session.layout(self.state_dir_for(session.cwd)).session_dir
+        ):
+            # A notification has no reply: stderr is the one channel left.
+            print(
+                f"[agent6] could not write the stop request for {session.session_id}",
+                file=sys.stderr,
+            )
 
 
 def prompt_text(params: dict[str, Any]) -> str:

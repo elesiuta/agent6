@@ -379,7 +379,9 @@ def _cmd_stop(*, session_id: str) -> int:
         # a stop the exited loop will never read.
         print(f"[agent6] {rid} is not running; nothing to stop.", file=sys.stderr)
         return 0
-    request_stop(session_dir)
+    if not request_stop(session_dir):
+        print(f"[agent6] could not write the stop request for {rid}", file=sys.stderr)
+        return 1
     fanout = None
     with contextlib.suppress(ManifestError):
         fanout = read_manifest(session_dir).fanout
