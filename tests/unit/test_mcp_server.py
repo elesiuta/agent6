@@ -296,6 +296,10 @@ def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     assert sessions_out[1]["manifest"]["user_task"] == "alpha"
     assert sessions_out[1]["manifest"]["version"] == MANIFEST_VERSION
     assert "manifest" not in sessions_out[0]
+    # The row the hubs share rides on top of the manifest: an editor reads the
+    # same status words the CLI and web list, which the raw manifest lacks.
+    assert sessions_out[1]["task"] == "alpha" and sessions_out[0]["mode"] == "run"
+    assert {"status", "label", "level", "reason", "cost"} <= set(sessions_out[0])
 
 
 def test_query_dag_missing_run_returns_tool_error(tmp_path: Path) -> None:

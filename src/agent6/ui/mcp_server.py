@@ -21,7 +21,7 @@ Tool surface:
     run_in_sandbox          - run arbitrary argv in jail (gated).
     apply_patch_in_sandbox  - apply a unified diff + re-run verify.
     query_dag               - load <run-dir>/graph/*.md as nodes.
-    list_sessions               - enumerate sessions (per-repo state dir) with manifest summary.
+    list_sessions               - enumerate sessions: the shared listing row plus the manifest.
 """
 
 from __future__ import annotations
@@ -47,6 +47,7 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.errors import OperatorCommandUnexecutable
 from agent6.viewmodel import session_dirs
+from agent6.viewmodel.listing import summarize_session_dir, summary_row
 
 _PROTOCOL_VERSION = "2024-11-05"
 _SERVER_NAME = "agent6"
@@ -331,8 +332,9 @@ class MCPServer:
             _ToolSpec(
                 name="list_sessions",
                 description=(
-                    "Enumerate sessions under the per-repo state dir (most-recent first) with"
-                    " their manifest summary (task, base_sha, models, ...)."
+                    "Enumerate sessions under the per-repo state dir (most-recent first): the"
+                    " listing row every hub shares (status, label, level, reason, mode, task,"
+                    " cost) plus the manifest (lineage: parent, branch, worktree, base_sha)."
                 ),
                 input_schema={
                     "type": "object",
@@ -487,11 +489,14 @@ class MCPServer:
     def _h_list_sessions(self, _args: dict[str, Any]) -> dict[str, Any]:
         entries: list[dict[str, Any]] = []
         for d in _listable_sessions(self._agent6_dir):
-            summary: dict[str, Any] = {"session_id": d.name}
+            # The row every listing shares (status, label, cost, task), so an
+            # editor reads the same state words the hubs show; the manifest
+            # rides along for the lineage fields the row omits.
+            entry: dict[str, Any] = summary_row(summarize_session_dir(d))
             # A missing/corrupt manifest lists the run without one.
             with contextlib.suppress(ManifestError):
-                summary["manifest"] = read_manifest(d).model_dump(mode="json")
-            entries.append(summary)
+                entry["manifest"] = read_manifest(d).model_dump(mode="json")
+            entries.append(entry)
         return {"sessions": entries}
 
 
