@@ -371,7 +371,9 @@ class DagUpdateTaskInput(_ToolInput):
         "Update a task: status (in_progress moves focus; passed once the verify"
         " confirms it, or once you have checked it yourself in a gateless"
         " run), note, or depends_on (task ULIDs that must pass"
-        " first). Fields omitted stay unchanged."
+        " first). Fields omitted stay unchanged. An end is final: a passed task"
+        " takes only obsolete, and a skipped or obsolete one stays retired --"
+        " add_task if the work is needed after all."
     )
 
     id: str = Field(min_length=26, max_length=26)

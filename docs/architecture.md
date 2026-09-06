@@ -105,6 +105,7 @@ A red finish certification returns to the model with the gate's output `verify_r
 - `finish_session` refuses while the worker's own subtasks are open, capped so an unclosable task cannot stall the run
 - the surfaced banner survives tier-1 elision and re-injects after each tier-2 restart
 - a focus task held without forward motion draws a split/pass/skip nudge, re-firing up to a small cap; progress resets it
+- an end is final: `passed` takes only `obsolete`, and a `skipped` or `obsolete` task stays retired (needed again means a new task)
 
 **Standing tasks park a run instead of ending it.** A standing task (`run --standing "<goal>"`, `add_task(standing=true)`) is the never-passing fallback, worked only when no ordinary subtask is ready.
 

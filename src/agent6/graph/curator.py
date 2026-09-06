@@ -286,9 +286,18 @@ class GraphCurator:
     def update_status(self, intent: UpdateStatusIntent) -> TaskNode:
         with self._mutating():
             node = self.get(intent.id)
-            if node.status == "passed" and intent.new_status not in ("obsolete",):
+            # An end is final: a passed task may only be retired, and a retired
+            # one stays retired. Without the second half `passed -> obsolete ->
+            # pending` walked around the first, re-opening work every dependent
+            # was told had passed. Needed again means a new task.
+            if node.status == "passed" and intent.new_status != "obsolete":
                 raise CuratorError(
                     f"cannot transition passed node {intent.id} to {intent.new_status}"
+                )
+            if node.status in ("skipped", "obsolete") and intent.new_status != node.status:
+                raise CuratorError(
+                    f"{intent.id} is retired ({node.status}) and stays retired;"
+                    " add_task if the work is needed after all"
                 )
             if node.standing and intent.new_status == "passed":
                 raise CuratorError(

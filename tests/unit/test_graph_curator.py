@@ -77,6 +77,25 @@ def test_update_status_passed_then_obsolete_ok_other_rejected(tmp_path: Path) ->
         c.update_status(UpdateStatusIntent(id=n2.id, new_status="failed"))
 
 
+def test_a_retired_task_stays_retired(tmp_path: Path) -> None:
+    """`passed -> obsolete -> pending` walked around the passed-node guard, and
+    re-opened work every dependent had been told passed."""
+    c = GraphCurator(_layout(tmp_path))
+    n = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft()))
+    c.update_status(UpdateStatusIntent(id=n.id, new_status="passed"))
+    c.update_status(UpdateStatusIntent(id=n.id, new_status="obsolete"))
+    with pytest.raises(CuratorError, match="stays retired"):
+        c.update_status(UpdateStatusIntent(id=n.id, new_status="pending"))
+    # A note on a retired task still lands: the status is unchanged.
+    c.update_status(UpdateStatusIntent(id=n.id, new_status="obsolete", note="superseded"))
+    assert "superseded" in c.get(n.id).notes
+
+    skipped = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft()))
+    c.update_status(UpdateStatusIntent(id=skipped.id, new_status="skipped"))
+    with pytest.raises(CuratorError, match="stays retired"):
+        c.update_status(UpdateStatusIntent(id=skipped.id, new_status="in_progress"))
+
+
 def test_add_dependency_detects_cycle(tmp_path: Path) -> None:
     c = GraphCurator(_layout(tmp_path))
     a = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("a")))
