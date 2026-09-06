@@ -443,8 +443,8 @@ function makeConv(url, box, body) {
   const emptyNote = () => conv.parkedLabel
     ? conv.parkedLabel + ' \u2014 the composer below starts it'
     : conv.finished
-      ? 'this run made no conversation'
-      : 'no conversation yet; it appears as the run streams';
+      ? 'this session made no conversation'
+      : 'no conversation yet; it appears as the session streams';
 
   const paintItems = () => {
     const follow = following();

@@ -759,5 +759,5 @@ def test_a_parked_sessions_empty_view_names_the_reason() -> None:
     note = empty_conversation_note("parked", "uncommitted changes", ended=False)
     assert "parked" in note and "uncommitted changes" in note and "type below" in note
     assert empty_conversation_note("parked", "", ended=False).startswith("(parked ")
-    assert empty_conversation_note("", "", ended=True) == "this run made no conversation"
-    assert "appears as the run streams" in empty_conversation_note("", "", ended=False)
+    assert empty_conversation_note("", "", ended=True) == "this session made no conversation"
+    assert "appears as the session streams" in empty_conversation_note("", "", ended=False)

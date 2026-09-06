@@ -476,7 +476,7 @@ def test_live_pane_says_waiting_while_the_operator_holds_the_answer(tmp_path: Pa
 
 def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: Path) -> None:
     """The conversation pane is the first thing a run opens on, and it promised
-    a dead run's output "appears as the run streams". The web already gates the
+    a dead run's output "appears as the session streams". The web already gates the
     tense on liveness; the TUI did not."""
 
     class _Dead(_Host):
@@ -489,7 +489,7 @@ def test_an_ended_run_with_no_conversation_says_so_in_the_past_tense(tmp_path: P
             await pilot.pause()
             body = _body_text(app)
             assert "made no conversation" in body
-            assert "as the run streams" not in body
+            assert "as the session streams" not in body
 
     asyncio.run(scenario())
 

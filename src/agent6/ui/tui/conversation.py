@@ -148,8 +148,8 @@ def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
         why = f": {detail}" if detail else ""
         return f"(parked{why} \u2014 type below to start it)"
     if ended:
-        return "this run made no conversation"
-    return "(no conversation yet; it appears as the run streams)"
+        return "this session made no conversation"
+    return "(no conversation yet; it appears as the session streams)"
 
 
 class _ChromeStatic(Static):

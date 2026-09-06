@@ -73,7 +73,7 @@ async function renderRun(id, opts, gen) {
       catch (e) { toast(e.message, true); }
     };
     const stopBtn = el('button', 'danger', '■ Stop now');
-    stopBtn.onclick = () => stopRun('/api/session/' + encodeURIComponent(id), 'the run');
+    stopBtn.onclick = () => stopRun('/api/session/' + encodeURIComponent(id), 'this session');
     const stepBtn = el('button', null, 'Stop after step');
     stepBtn.onclick = post('stop_step', 'stopping after the current step');
     const compactBtn = el('button', null, 'Compact context');
@@ -86,7 +86,7 @@ async function renderRun(id, opts, gen) {
       // History only, and not undoable, so it asks. The CLI refuses a live run.
       // The branch is named only while it exists (the snapshot's run_branch).
       const kept = cards._run_branch ? ' The branch and its commits are kept.' : '';
-      if (!confirm('Delete this run\'s history?' + kept)) return;
+      if (!confirm('Delete this session\'s history?' + kept)) return;
       try {
         const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/rm', {});
         toast(d.message || 'removed');
@@ -366,10 +366,10 @@ function paintRun(cards, s) {
   cards._run_branch = s.run_branch || '';
   if (cards._merge_btn) {
     cards._merge_btn.disabled = !notLive(s) || !s.run_branch || !!s.merged_into;
-    cards._merge_btn.title = !notLive(s) ? 'the run is still live; stop or let it finish first'
+    cards._merge_btn.title = !notLive(s) ? 'the session is still live; stop or let it finish first'
       : s.merged_into ? 'already merged into ' + s.merged_into
       : s.run_branch ? 'merge ' + s.run_branch + (s.base_branch ? ' into ' + s.base_branch : '')
-      : 'this run has no branch to merge';
+      : 'this session has no branch to merge';
   }
   if (cards._composer) cards._composer.setState(s);
   // header
