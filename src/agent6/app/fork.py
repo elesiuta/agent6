@@ -63,7 +63,6 @@ from agent6.git_ops import (
     chain_ref_for,
     chain_tip,
     create_branch_at,
-    delete_ref,
     git_common_dir,
     merge_stamp_holds,
     remove_worktree,
@@ -917,10 +916,9 @@ def _materialize_fork(
         set_ref(cwd, chain_ref_for(dst.session_id), plan.forked_from_sha)
     except GitError as exc:
         reporter.error(f"could not cut fork refs at {plan.forked_from_sha[:12]}: {exc}")
-        # A fork exists only with its refs: the chain ref and the run dir
-        # written above go too, so a later run reusing the id cannot build its
-        # chain on a dead fork's tip.
-        delete_ref(cwd, chain_ref_for(dst.session_id))
+        # A fork exists only with its refs: the run dir written above goes too.
+        # Nothing else is unpicked -- a chain ref under this id is a previous
+        # run's anchor (`sessions prune` keeps exactly those), not the fork's.
         shutil.rmtree(dst.session_dir, ignore_errors=True)
         return 1
 

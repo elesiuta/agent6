@@ -1370,7 +1370,7 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     """`sessions rm` keeps a run's branch, so forking onto a reused id hits the
     branch refusal. The chain ref was written first and never removed, and a
     later run with that id would build its chain on the dead fork's tip."""
-    from agent6.git_ops import chain_ref_for, chain_tip
+    from agent6.git_ops import chain_ref_for, chain_tip, set_ref
 
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -1387,6 +1387,17 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
 
     assert "could not cut fork refs" in capsys.readouterr().err
     assert chain_tip(repo, chain_ref_for("brave-yak-BBBB22")) is None
-    assert not (
-        SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    assert not SessionLayout(
+        state_dir=state_dir, session_id="brave-yak-BBBB22"
     ).session_dir.exists()
+
+    # The same refusal over an id whose chain ref already holds commits: that
+    # ref is the earlier run's anchor and must survive.
+    anchor = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    set_ref(repo, chain_ref_for("brave-yak-BBBB22"), anchor)
+
+    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
+
+    assert chain_tip(repo, chain_ref_for("brave-yak-BBBB22")) == anchor
