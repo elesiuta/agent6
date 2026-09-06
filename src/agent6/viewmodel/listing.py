@@ -205,7 +205,7 @@ def status_word(
     """Map an end state to `(word, reason-detail)`.
 
     The single place that decides how a run's outcome reads -- shared by
-    `session_status_label` (headers) and `summarize_session_dir` (listings) so the
+    `session_state_as_dict` (headers) and `summarize_session_dir` (listings) so the
     surfaces can never disagree. "stopped" and "undone" are the operator's
     own acts (a stop, an /undo), not failures; "planned" and "answered" are
     the no-verify clean exits (a plan pass / an ask, where "passed" would
@@ -287,7 +287,7 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
 
     Every listing and header feeds this the event facts and lets the DIR
     supply what events cannot: a parked submission (manifest) and worker
-    liveness (worker.pid). The pure fold's `session_status_label`
+    liveness (worker.pid). The pure fold's `session_state_as_dict`
     is only for a stream with genuinely no dir (`attach --json`); a surface
     with a run dir that folds events alone reads every non-`session.end` state
     as "running" and disagrees with the hub.

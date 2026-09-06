@@ -20,7 +20,6 @@ from agent6.viewmodel.state import (
     format_log_line,
     initial_state,
     session_state_as_dict,
-    session_status_label,
 )
 
 
@@ -501,18 +500,19 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
         s = apply_event(initial_state(), {"type": "session.start", "user_task": "t"})
         return apply_event(s, {"type": "session.end", "reason": reason, "all_passed": all_passed})
 
-    assert session_status_label(initial_state()) == "running"
-    assert session_status_label(end("steer_abort", False)) == "stopped"
-    assert session_status_label(end("finish_session", True)) == "passed"
-    assert session_status_label(end("finish_session", False)) == "finished"
-    assert session_status_label(end("provider_error", False)) == "failed · provider error"
+    assert session_state_as_dict(initial_state())["status_label"] == "running"
+    assert session_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
+    assert session_state_as_dict(end("finish_session", True))["status_label"] == "passed"
+    assert session_state_as_dict(end("finish_session", False))["status_label"] == "finished"
+    assert (
+        session_state_as_dict(end("provider_error", False))["status_label"]
+        == "failed · provider error"
+    )
     scoped = apply_event(
         end("finish_session", True),
         {"type": "session.end", "reason": "finish_session", "all_passed": True, "scoped": True},
     )
-    assert session_status_label(scoped) == "passed · scoped gate"
-    # and the computed label rides along on the wire dict for the web client
-    assert session_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
+    assert session_state_as_dict(scoped)["status_label"] == "passed · scoped gate"
     # the raw status WORD rides along too, so a client can branch on it (the web
     # heartbeat goes quiet on "waiting" instead of painting "working" over a run
     # blocked on the operator).
@@ -528,7 +528,7 @@ def test_resume_start_unfinishes_the_run() -> None:
     assert s.finished and s.end_reason == "steer_abort"
     s = apply_event(s, {"type": "loop.resume.start"})
     assert not s.finished and s.end_reason == ""
-    assert session_status_label(s) == "running"
+    assert session_state_as_dict(s)["status_label"] == "running"
 
 
 def test_role_result_tracks_context_tokens_and_provider() -> None:
@@ -574,7 +574,7 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
     s = apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
     assert s.finished is False
     assert s.end_reason == ""
-    assert session_status_label(s) == "running"
+    assert session_state_as_dict(s)["status_label"] == "running"
     s = apply_event(s, {"type": "budget.update", "usd_total": 0.03})
     assert s.budget.usd_total == pytest.approx(0.03)
     assert s.budget.usd_prior_legs == pytest.approx(0.0)

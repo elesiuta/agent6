@@ -97,7 +97,6 @@ from agent6.viewmodel.state import (
     initial_state,
     open_question,
     session_state_as_dict,
-    session_status_label,
     status_facts,
     task_tree_views,
 )
@@ -181,7 +180,6 @@ __all__ = [
     "session_policy",
     "session_snapshot",
     "session_state_as_dict",
-    "session_status_label",
     "status_facts",
     "status_for_session_dir",
     "status_word",

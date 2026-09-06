@@ -670,23 +670,6 @@ def fold_until_commit(events: Iterable[dict[str, Any]], sha: str) -> SessionStat
     return None
 
 
-def session_status_label(state: SessionState) -> str:
-    """The status label for a stream with genuinely NO run dir (the
-    `attach --json` wire form). It distinguishes a stop from a finish from an
-    error (all three set finished=True; the reason tells them apart) via the
-    shared `listing.status_word`, but it folds events alone, so it reads
-    every unfinished state as "running". A surface that HAS a run dir must call
-    `listing.status_for_session_dir` with `status_facts` instead -- the dir
-    knows parked/starting/created/stale/waiting, this cannot."""
-    word, reason = status_word(
-        finished=state.finished,
-        all_passed=state.all_passed,
-        end_reason=state.end_reason,
-        scoped=state.verify_scoped,
-    )
-    return status_label(word, reason)
-
-
 def status_facts(state: SessionState) -> StatusFacts:
     """The fold's answers to the status questions -- the typed twin of
     `LogScan.status_facts()`, for surfaces that hold a `SessionState`. The two
