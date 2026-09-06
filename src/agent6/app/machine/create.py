@@ -29,6 +29,7 @@ from agent6.machine import (
     SCRIPTS_PAYLOAD_KEY,
     TOML_PAYLOAD_KEY,
     AgentRequest,
+    FieldSpec,
     MachineError,
     MachineSpec,
     build_authoring_prompt,
@@ -197,6 +198,17 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # subprocess is otherwise a fresh tracker, so N retries could bill N full
     # budgets. -1 = unlimited (the config's own convention).
     create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
+    # The authoring finish contract, leg-enforced like any machine state's:
+    # a finish_session without result.toml bounces in-run with the problem
+    # named, instead of ending the attempt for the outer loop to diagnose
+    # (kimi returned summary-only finishes three times in a row against the
+    # prose instruction alone).
+    draft_schemas = {
+        "draft": {
+            TOML_PAYLOAD_KEY: FieldSpec(type="str"),
+            SCRIPTS_PAYLOAD_KEY: FieldSpec(type="json", optional=True),
+        }
+    }
     attempt = 0  # bound for the session.end below (the loop always runs: max_attempts >= 1)
     for attempt in range(1, max_attempts + 1):
         if create_cap is not None and total_usd >= create_cap:
@@ -229,6 +241,8 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 mode="machine",
                 effort="off",
                 max_usd=remaining,
+                output_schema="draft",
+                schemas=draft_schemas,
             ),
             events_log,
         )

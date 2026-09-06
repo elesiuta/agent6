@@ -1163,3 +1163,35 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
     retry_prompt = seen_prompts[1]
     assert "initial" in retry_prompt  # the schema problem
     assert "PLW1510" in retry_prompt  # the lint problem, in the same attempt's diagnostics
+
+
+def test_the_authoring_agent_carries_the_draft_finish_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """machine create's AgentRequest declares output_schema="draft" (toml
+    required, scripts optional json), so a finish_session without result.toml
+    is bounced in-run by the leg's contract check instead of ending the
+    attempt. Three summary-only finishes in a row burned a create budget
+    against the prose instruction alone."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    captured: list[AgentRequest] = []
+
+    def fake_build(
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+            captured.append(request)
+            return AgentExecResult(
+                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
+            )
+
+        return run
+
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    assert main(["machine", "create", "Greet the user"]) == 0
+    assert captured, "runner was never invoked"
+    req = captured[0]
+    assert req.output_schema == "draft"
+    assert req.schemas["draft"][TOML_PAYLOAD_KEY].optional is False
+    assert req.schemas["draft"][SCRIPTS_PAYLOAD_KEY].optional is True
