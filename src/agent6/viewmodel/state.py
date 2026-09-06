@@ -741,7 +741,7 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         usd_prior_legs=state.budget.usd_prior_legs,
     )
     for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
-        row["head"], row["payload"] = ap.head, ap.payload
+        row["head"], row["payload"] = approval_parts(ap.prompt)
     if session_dir is not None:
         word, reason = status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in LIVE_STATUS_WORDS

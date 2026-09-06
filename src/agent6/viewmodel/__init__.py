@@ -27,12 +27,10 @@ from __future__ import annotations
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.listing import (
     LIVE_STATUS_WORDS,
-    OPERATOR_PROMPT_EVENTS,
     LogScan,
     SessionSummary,
     StatusFacts,
     died_without_end,
-    first_task_line,
     is_session_husk,
     is_winner,
     newest_session_dir,
@@ -51,7 +49,6 @@ from agent6.viewmodel.listing import (
 from agent6.viewmodel.log_line import format_log_line
 from agent6.viewmodel.machine_state import (
     MachineState,
-    MachineStateView,
     MachineSummary,
     MachineWatchCursor,
     NotificationView,
@@ -71,7 +68,7 @@ from agent6.viewmodel.machine_state import (
     read_complete_lines,
     summarize_machine_dir,
 )
-from agent6.viewmodel.policy import SessionPolicy, session_policy
+from agent6.viewmodel.policy import session_policy
 from agent6.viewmodel.snapshot import (
     UnknownStepError,
     existing_run_branch,
@@ -84,13 +81,11 @@ from agent6.viewmodel.state import (
     MAX_LOG_TAIL,
     ApprovalPrompt,
     BudgetView,
-    CommitStep,
     QuestionPrompt,
     RoleCall,
     SessionState,
     TaskNodeView,
     ToolCallView,
-    VerifyView,
     apply_event,
     approval_parts,
     fold_session,
@@ -114,20 +109,16 @@ from agent6.viewmodel.transcript import (
 __all__ = [
     "LIVE_STATUS_WORDS",
     "MAX_LOG_TAIL",
-    "OPERATOR_PROMPT_EVENTS",
     "ApprovalPrompt",
     "BudgetView",
-    "CommitStep",
     "LogScan",
     "LogTail",
     "MachineState",
-    "MachineStateView",
     "MachineSummary",
     "MachineWatchCursor",
     "NotificationView",
     "QuestionPrompt",
     "RoleCall",
-    "SessionPolicy",
     "SessionState",
     "SessionSummary",
     "StatusFacts",
@@ -137,13 +128,11 @@ __all__ = [
     "TranscriptItem",
     "TransitionView",
     "UnknownStepError",
-    "VerifyView",
     "apply_event",
     "approval_parts",
     "died_without_end",
     "event_epoch",
     "existing_run_branch",
-    "first_task_line",
     "fold_machine",
     "fold_session",
     "fold_transcript",

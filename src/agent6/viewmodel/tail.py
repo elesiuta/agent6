@@ -152,13 +152,5 @@ class LogTail:
                 self._pos = fh.tell()
         except OSError:
             return out
-        if not chunk:
-            return out
-        self._pending += chunk
-        lines = self._pending.split(b"\n")
-        self._pending = lines[-1]  # last fragment may be incomplete
-        for line in lines[:-1]:
-            evt = _parse_event_line(line)
-            if evt is not None:
-                out.append(evt)
-        return out
+        parsed, self._pending = _complete_lines(self._pending + chunk, 0)
+        return [evt for _end, evt in parsed]
