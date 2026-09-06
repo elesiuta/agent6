@@ -522,6 +522,21 @@ def test_call_with_retry_skips_retry_on_permanent_status() -> None:
     assert provider.call.call_count == 1
 
 
+def test_call_with_retry_never_retries_a_fatal_error() -> None:
+    """A ProviderError flagged fatal (no HTTP status: a missing binary, a
+    signed-out login) re-raises on the first failure without consuming a
+    retry; without the flag a status-less error is retried like a flap."""
+    provider = MagicMock()
+    provider.call.side_effect = [
+        ProviderError("claude not signed in", fatal=True),
+        _resp("should-never-be-reached"),
+    ]
+    wf = _wf(provider=provider, provider_retry_count=3)
+    with pytest.raises(ProviderError, match="not signed in"):
+        wf._call_with_retry(system="s", messages=[], tools=[], max_tokens=16384)  # pyright: ignore[reportPrivateUsage]
+    assert provider.call.call_count == 1
+
+
 @pytest.mark.parametrize("status", [400, 401, 402, 403, 404, 422])
 def test_call_with_retry_skips_retry_on_all_permanent_statuses(status: int) -> None:
     """Every status in _NON_RETRYABLE_HTTP_STATUSES re-raises on the first
@@ -859,6 +874,55 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: Path) -> N
     assert "provider error" in result.summary and "HTTP 400" in result.summary
     assert "user_SECRET" not in result.summary  # the raw blob is NOT re-echoed here
     assert any("user_SECRET" in line for line in logs)  # kept once, in the log line
+
+
+def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: Path) -> None:
+    """A fatal ProviderError (agent6's own remedy text, no HTTP status) ends
+    the run after one call, and the summary carries that text: with no
+    status there is no hint, and hiding the reason would leave the operator
+    with a bare "provider error"."""
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.calls += 1
+            raise ProviderError("Claude Code is not signed in; run `claude auth login`", fatal=True)
+
+    config = SimpleNamespace(
+        git=_GIT_STUB,
+        budget=SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        workflow=SimpleNamespace(
+            verify_when="never",
+            verify_retries=2,
+            verify_command=("true",),
+            metric=SimpleNamespace(goal=None),
+        ),
+    )
+    provider = ProviderStub()
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=MagicMock(),
+        max_iterations=3,
+        provider_retry_count=3,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
+    result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+        system="system",
+        conversation=Conversation.from_wire(messages),
+        tool_calls=0,
+        start_iteration=1,
+        root_task_id=None,
+        original_task="t",
+    )
+    assert result.reason == "provider_error"
+    assert provider.calls == 1
+    assert "claude auth login" in result.summary
+    assert "HTTP" not in result.summary and "agent6 connect" not in result.summary
 
 
 class _OneShotSteer:

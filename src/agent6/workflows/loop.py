@@ -1111,10 +1111,12 @@ class Workflow:
                 all_passed=False,
             )
             status = f" (HTTP {exc.status_code})" if exc.status_code else ""
+            # A fatal error's text is agent6's own remedy, not an upstream body.
+            detail = f": {exc}" if exc.fatal else ""
             return SessionResult(
                 completed=False,
                 reason="provider_error",
-                summary=f"provider error at iter {iteration}{status}{hint}",
+                summary=f"provider error at iter {iteration}{status}{hint}{detail}",
                 iterations=iteration,
                 tool_calls=state.tool_calls,
             )
@@ -4210,9 +4212,9 @@ class Workflow:
           timeout): retried with exponential backoff + full jitter so one flap
           doesn't abort the run. `BudgetExceeded` is never retried (hard stop).
           Permanent client errors (`ProviderError.status_code` in
-          `NON_RETRYABLE_HTTP_STATUSES`: 400/401/402/403/404/422) re-raise
-          immediately without consuming a retry: a second identical request
-          cannot succeed.
+          `NON_RETRYABLE_HTTP_STATUSES`: 400/401/402/403/404/422, or
+          `ProviderError.fatal`) re-raise immediately without consuming a
+          retry: a second identical request cannot succeed.
         - A self-contradictory empty tool-call response
           (`is_empty_tool_call_response`: stop_reason promises a tool call but
           none and no text came back -- GLM via OpenRouter, ~50% post-restart):
@@ -4237,7 +4239,7 @@ class Workflow:
                 raise  # operator stop/steer: handle it, never retry as a fault
             except ProviderError as exc:
                 last_exc = exc
-                non_retryable = exc.status_code in NON_RETRYABLE_HTTP_STATUSES
+                non_retryable = exc.fatal or exc.status_code in NON_RETRYABLE_HTTP_STATUSES
                 if attempt < attempts and not non_retryable:
                     base_delay = self.provider_retry_delay_s * (2 ** (attempt - 1))
                     capped_delay = min(base_delay, self.provider_retry_max_delay_s)
@@ -4262,7 +4264,10 @@ class Workflow:
                     time.sleep(delay)
                     continue
                 if non_retryable:
-                    self._log(f"LOOP: provider error {exc.status_code} is permanent; not retrying")
+                    self._log(
+                        f"LOOP: provider error {exc.status_code or 'fatal'} is permanent;"
+                        " not retrying"
+                    )
                     self._emit(
                         "loop.provider.fatal",
                         status_code=exc.status_code,
