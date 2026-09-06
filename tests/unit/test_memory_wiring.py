@@ -64,9 +64,8 @@ def test_readonly_modes_render_only_with_content(tmp_path: Path) -> None:
     assert "<memory>" not in _build("ask", "", tmp_path)
 
 
-def test_machine_and_agent_modes_never_see_memory(tmp_path: Path) -> None:
-    for mode in ("machine", "agent"):
-        assert "<memory>" not in _build(mode, "- fact: hook", tmp_path)
+def test_agent_mode_never_sees_memory(tmp_path: Path) -> None:
+    assert "<memory>" not in _build("agent", "- fact: hook", tmp_path)
 
 
 def _dispatcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ToolDispatcher, Path]:

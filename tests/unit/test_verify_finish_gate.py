@@ -26,7 +26,7 @@ from agent6.workflows.loop import (
 def _wf(
     *,
     verify: bool,
-    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "agent"] = "run",
     root: Path = Path("/tmp"),
 ) -> Workflow:
     data: dict[str, Any] = {"workflow": {"verify_command": ["true"]}} if verify else {}

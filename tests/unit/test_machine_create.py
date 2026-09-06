@@ -190,9 +190,7 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
     assert code == 0
     assert captured, "runner was never invoked"
     assert captured[0].model is None  # inherit, not "" (which would fail to validate)
-    # mode="machine" -> authoring system prompt + read-only tools. If the
-    # plumbing dropped it the authoring agent would silently fall back to the
-    # 29k coding prompt with no test catching it.
+    # The authoring agent is a run: it writes the bundle with the edit tools.
     assert captured[0].mode == "run"
 
 

@@ -456,7 +456,7 @@ def run_one(
         summariser_provider=summariser_provider,
         dispatcher=dispatcher,
         logger=reporter.err,
-        mode=mode if mode in ("machine", "agent") else "run",
+        mode="agent" if mode == "agent" else "run",
         # A mode="run" state commits on its own chain like any run; the
         # instance dir name is its session-unique id. Read-only states never
         # commit (mode gate), so the refs stay None there.

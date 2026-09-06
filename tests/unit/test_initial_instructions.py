@@ -43,7 +43,7 @@ def test_a_gateless_run_is_not_told_to_run_verify() -> None:
     assert "finish_session" in initial_instructions("run", "yes", has_gate=False)
 
 
-@pytest.mark.parametrize("mode", ["run", "plan", "ask", "machine", "agent"])
+@pytest.mark.parametrize("mode", ["run", "plan", "ask", "agent"])
 def test_no_instruction_names_a_tool_outside_the_mode_surface(mode: str) -> None:
     """The drift guard: every backticked tool name in a mode's header must be
     one that mode actually exposes, so the ladder and tools/schema.py cannot

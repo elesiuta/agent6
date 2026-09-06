@@ -16,7 +16,7 @@ from agent6.workflows import ModelExchange, model_exchange_for
 def _cmd_prompt_show(
     config_path: Path | None,
     *,
-    mode: Literal["run", "plan", "ask", "machine", "agent"],
+    mode: Literal["run", "plan", "ask", "agent"],
     as_json: bool = False,
 ) -> int:
     """Print everything the model receives on a run's first call here, for

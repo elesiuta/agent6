@@ -252,7 +252,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     prompt_show.add_argument(
         "--mode",
-        choices=("run", "plan", "ask", "machine", "agent"),
+        choices=("run", "plan", "ask", "agent"),
         default="run",
         help="Which mode's exchange to assemble (default: run).",
     )

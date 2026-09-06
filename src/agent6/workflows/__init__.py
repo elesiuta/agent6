@@ -34,7 +34,7 @@ __all__ = [
 def system_prompt_for(
     config: Config,
     root: Path,
-    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "agent"] = "run",
     *,
     state_dir: Path | None = None,
 ) -> str:
@@ -56,7 +56,7 @@ def system_prompt_for(
     repo = load_repo_summary(root, dispatcher=dispatcher)
     # Machine and agent modes assemble without repo context, so neither half of
     # per-repo recall applies: one gate, not one per block.
-    recall = None if mode in ("machine", "agent") else state_dir
+    recall = None if mode == "agent" else state_dir
     return build_system_prompt(
         config=config,
         repo=repo,
@@ -88,7 +88,7 @@ class ModelExchange:
 def model_exchange_for(
     config: Config,
     root: Path,
-    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "agent"] = "run",
     *,
     state_dir: Path | None = None,
 ) -> ModelExchange:
@@ -129,7 +129,7 @@ def _shown_isolation(config: Config) -> IsolationLevel:
 
 
 def _installed_skills(
-    root: Path, config: Config, mode: Literal["run", "plan", "ask", "machine", "agent"]
+    root: Path, config: Config, mode: Literal["run", "plan", "ask", "agent"]
 ) -> ResolvedSkills | None:
     """The loop's `_load_skills` rules: run mode only, and nothing installed
     renders no block."""

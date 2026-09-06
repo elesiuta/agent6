@@ -154,8 +154,8 @@ class AgentRequest(BaseModel):
     max_tokens_fallback: int | None = None
     # Workflow mode for the nested loop: "agent" (default) for a machine
     # `agent` state, a read-only structured-output judge; "run" for an agent
-    # state that opted into coding work; "machine" for the `machine create`
-    # authoring agent. machine_agent maps anything else to "run".
+    # state that opted into coding work (the `machine create` authoring agent
+    # is one). machine_agent maps anything else to "run".
     mode: str = "agent"
     # Which state, at which transition, this agent invocation is. The live World
     # uses them to give each agent-state execution its own watchable logs.jsonl

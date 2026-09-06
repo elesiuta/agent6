@@ -296,7 +296,7 @@ def test_restart_notice_is_dag_aware() -> None:
         assert "Do NOT start over" in notice
     # ask/machine/agent have no DAG tools: instructing list_tasks there burns a
     # turn on an unknown-tool error, so the DAG paragraph must be absent.
-    for mode in ("ask", "machine", "agent"):
+    for mode in ("ask", "agent"):
         notice = context_restart_notice(mode)
         assert "list_tasks" not in notice
         assert "Do NOT start over" in notice

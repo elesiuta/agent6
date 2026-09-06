@@ -531,11 +531,10 @@ PLAN_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
 # DOES add `agent6_docs` so it can answer "how do I use agent6" questions.
 ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 
-# Tool list for machine-authoring mode (`agent6 machine create`). The agent's
-# only deliverable is a `.asm.toml` returned via `finish_session`'s `result.toml`,
-# so it gets read-only navigation (in case the task references existing files)
-# plus `finish_session`, no edit/patch/verify/run_command/DAG/metric tools, which
-# only tempt a weak model into writing the file or spelunking the repo.
+# Tool list for a read-only machine `agent` state (the dispatcher's "machine"
+# mode): navigation plus `finish_session`, whose `result` carries the state's
+# structured output; no edit/patch/verify/run_command/DAG/metric tools, which
+# only tempt a weak model into writing files or spelunking the repo.
 MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishSessionInput,)
 
 

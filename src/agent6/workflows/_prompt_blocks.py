@@ -25,7 +25,6 @@ from agent6.prompts.loop import (
     AUTO_COMMIT_RULE_GATELESS,
     GIT_PROTECT_RULE,
     HARDENED_FS_RULE,
-    MACHINE_SYSTEM_PROMPT_BASE,
     MODEL_GIT_RULE,
     NO_AUTO_COMMIT_RULE,
     PLAN_BUDGET_LINE,
@@ -99,11 +98,6 @@ def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str
     `run_verify_command` is named only where the tool exists."""
     if mode == "plan":
         return "The task is above; `finish_planning` ends the pass with the plan markdown."
-    if mode == "machine":
-        return (
-            "The task is above; a single `finish_session` call returns the machine"
-            " (the complete `.asm.toml` in `result.toml`)."
-        )
     if mode == "agent":
         return (
             "The task is above; `finish_session` ends the step with a `result`"
@@ -256,7 +250,7 @@ def build_system_prompt(
     *,
     config: Config,
     repo: RepoSummary,
-    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "agent"] = "run",
     memory_index: str = "",
     memory_dir_path: str = "",
     decisions: str = "",
@@ -281,8 +275,6 @@ def build_system_prompt(
     base = (
         ASK_SYSTEM_PROMPT_BASE
         if mode == "ask"
-        else MACHINE_SYSTEM_PROMPT_BASE
-        if mode == "machine"
         else AGENT_SYSTEM_PROMPT_BASE
         if mode == "agent"
         else PLAN_SYSTEM_PROMPT_BASE
@@ -346,7 +338,7 @@ def build_system_prompt(
     # repo context: those blocks reference tools they aren't given (run_verify /
     # run_metric) and the repo prior only tempts them to spelunk. They just need
     # the budget cap + their base prompt.
-    if mode in ("machine", "agent"):
+    if mode == "agent":
         parts.append(
             V2_BUDGET_BLOCK_TEMPLATE.format(
                 usd_cap=(

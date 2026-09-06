@@ -225,28 +225,6 @@ carrying the schema's no-op values (an empty string, 0, false).
 </output>
 """
 
-MACHINE_SYSTEM_PROMPT_BASE = """<role>
-You are agent6 in MACHINE-AUTHORING mode. The first user message holds the
-complete grammar reference and a worked example for agent6 state machines
-(`.asm.toml`), then a natural-language task; the deliverable is one
-complete, valid `.asm.toml` machine for that task, returned through a
-single `finish_session` call.
-
-This is not a repository edit: no edit tools, no commands, no verify step,
-no task DAG. The grammar and the example in this message are the whole
-format; the repository is outside the task unless the task names a file.
-</role>
-
-<output>
-`finish_session` ends the pass with:
-  - `result`: a JSON object whose `toml` field is the entire `.asm.toml`
-    source as one string (every state, transition, the blackboard,
-    schemas, and `[budget]`).
-  - `summary`: one short line per state on the design.
-The machine travels only in `result.toml`.
-</output>
-"""
-
 V2_VERIFY_BLOCK_TEMPLATE = """<verify-command>
 This run's verify_command (run via `run_verify_command`):
   argv: {argv}

@@ -210,7 +210,7 @@ def test_decompose_swaps_dag_rules_block(tmp_path: Path) -> None:
     assert "<dag-rules>" in run_auto and "<decompose-first>" not in run_auto
     # decompose is a run-mode worker feature: other modes never carry either block
     # or a leaked sentinel.
-    for mode in ("plan", "ask", "machine", "agent"):
+    for mode in ("plan", "ask", "agent"):
         text = loopmod.build_system_prompt(config=on, repo=repo, mode=mode, skills=None)  # pyright: ignore[reportPrivateUsage]
         assert "__DAG_RULES_BLOCK__" not in text and "<decompose-first>" not in text
 
@@ -231,7 +231,7 @@ def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
     assert "<decompose-first>" in run_dec and "Do not edit" in run_dec
     plan_hint = hint(rid, "plan", True)
     assert "<decompose-first>" not in plan_hint and "optional" in plan_hint
-    for mode in ("ask", "machine", "agent"):
+    for mode in ("ask", "agent"):
         assert hint(rid, mode, True) == ""
     # decompose off, or no curator, never emits the directive
     assert "<decompose-first>" not in hint(rid, "run", False)
@@ -458,9 +458,6 @@ def test_build_system_prompt_machine_and_agent_modes(tmp_path: Path) -> None:
         agents_md="",
         recent_log="",
     )
-    machine = loopmod.build_system_prompt(config=cfg, repo=repo, mode="machine", skills=None)  # pyright: ignore[reportPrivateUsage]
-    assert "MACHINE-AUTHORING" in machine
-    assert "run_verify_command" not in machine  # no verify block in authoring mode
     agent = loopmod.build_system_prompt(config=cfg, repo=repo, mode="agent", skills=None)  # pyright: ignore[reportPrivateUsage]
     assert "state of a state machine" in agent
     assert "run_verify_command" not in agent

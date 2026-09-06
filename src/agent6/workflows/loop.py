@@ -569,7 +569,7 @@ class Workflow:
     # commit-on-verify-pass, and on finish_planning writes the
     # `plan_markdown` argument to `plan_output_path` before exiting.
     # `plan_output_path` is required when `mode="plan"`.
-    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run"
+    mode: Literal["run", "plan", "ask", "agent"] = "run"
     plan_output_path: Path | None = None
     # weak-model resilience. Open-weights models sometimes emit an empty turn
     # mid-run (no text, no tool_use, stop_reason="end_turn" or
@@ -3561,7 +3561,7 @@ class Workflow:
         prompt assembly drops repo context). An unreadable index degrades to
         "" inside the store: memory is context, not correctness.
         """
-        if self.state_dir is None or self.mode in ("machine", "agent"):
+        if self.state_dir is None or self.mode == "agent":
             return ""
         return memory_index_text(self.state_dir)
 
