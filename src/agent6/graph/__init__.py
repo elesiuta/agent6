@@ -15,3 +15,5 @@ invariant. The run-level `worker.lock` flock nonetheless keeps this the sole
 writer; the curator's own per-mutation flock guards against a concurrent
 operator-CLI read/write of the same files.
 """
+
+from __future__ import annotations
