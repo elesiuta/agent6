@@ -137,7 +137,7 @@ class MergeStamp(BaseModel):
     def commit(self) -> str:
         """The merge commit's abbreviated sha, "" for a record that names none
         (an all-zero sha)."""
-        return "" if not self.sha or set(self.sha) == {"0"} else self.sha[:12]
+        return "" if not self.sha or self.sha == NO_MERGE_COMMIT else self.sha[:12]
 
     def landed(self) -> str:
         """Where the merge put the run's work, one wording for every surface:

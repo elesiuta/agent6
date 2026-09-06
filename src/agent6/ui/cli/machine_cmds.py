@@ -122,7 +122,7 @@ def _safe_input(prompt: str) -> str | None:
 
 
 def _suggested_network_fix(
-    cfg: Config, isolation: IsolationLevel, tool_states: list[ToolState]
+    isolation: IsolationLevel, tool_states: list[ToolState]
 ) -> dict[str, str] | None:
     """The minimal sandbox-config change that lets this machine's tool states run
     ON THIS PROFILE, or None if no config change can (a tool that REQUIRES network
@@ -168,7 +168,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     Returns the new `(cfg, isolation)` when the fix applied and re-validates
     clear, else an exit code."""
     refuse(f"{refusal}")
-    fix = _suggested_network_fix(cfg, isolation, tool_states)
+    fix = _suggested_network_fix(isolation, tool_states)
     if fix is None:
         print(
             f"  No sandbox-config change fixes this on the '{isolation}' isolation"

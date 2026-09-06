@@ -20,6 +20,7 @@ from agent6.sessions.layout import (
     SessionLayout,
 )
 from agent6.sessions.manifest import (
+    NO_MERGE_COMMIT,
     ManifestError,
     SessionManifest,
     read_manifest,
@@ -58,7 +59,7 @@ def _candidate_diff(cwd: Path, manifest: SessionManifest) -> tuple[str, bool]:
     if merged is None:
         return "", False
     for ref in (merged.tip, merged.sha):
-        if ref and set(ref) != {"0"}:
+        if ref and ref != NO_MERGE_COMMIT:
             try:
                 return diff_range(cwd, base_sha, ref), True
             except GitError:

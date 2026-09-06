@@ -85,7 +85,7 @@ MENU_COMMANDS: dict[str, str] = {
 }
 
 
-def _without_btw(config_path: Path | None = None) -> dict[str, str]:
+def _without_btw() -> dict[str, str]:
     """The menu minus `/btw`, for a surface with nothing to spawn one from."""
     return {cmd: help_ for cmd, help_ in MENU_COMMANDS.items() if cmd != "/btw"}
 
@@ -245,11 +245,10 @@ def _run_info_command(
     cmd: str,
     session_dir: Path,
     btw_runner: BtwRunner | None = None,
-    config_path: Path | None = None,
 ) -> None:
     """Run a print-and-re-prompt command (everything not in `_ACTIONS`)."""
     if cmd == "/help":
-        _print_help(MENU_COMMANDS if btw_runner is not None else _without_btw(config_path))
+        _print_help(MENU_COMMANDS if btw_runner is not None else _without_btw())
     elif cmd == "/status":
         _print_status(session_dir)
     elif cmd == "/tasks":
@@ -300,7 +299,7 @@ def pause_menu(
     skills = skill_menu_table(config_path)
     # A surface that cannot spawn a sibling session never offers `/btw`: an
     # offered command that answers "needs a live run" is not offered.
-    offered = MENU_COMMANDS if btw_runner is not None else _without_btw(config_path)
+    offered = MENU_COMMANDS if btw_runner is not None else _without_btw()
     if input_fn is None:
         input_fn = _line_reader(session_dir, offered, skills)
     while True:
@@ -311,7 +310,7 @@ def pause_menu(
         except LineSuperseded:
             print("[agent6] a steer arrived from a front-end; taking it")
             return take_steer_answer(session_dir) or ""
-        answer = _answer_line(line, session_dir, btw_runner, config_path, skills)
+        answer = _answer_line(line, session_dir, btw_runner, skills)
         if not isinstance(answer, _Again):
             return answer
 
@@ -332,7 +331,6 @@ def _answer_line(  # noqa: PLR0911, PLR0912
     line: str,
     session_dir: Path,
     btw_runner: BtwRunner | None,
-    config_path: Path | None,
     skills: dict[str, tuple[str, str]],
 ) -> str | _Again:
     """One typed line, answered the same way at both prompts (see `pause_menu`
@@ -392,7 +390,7 @@ def _answer_line(  # noqa: PLR0911, PLR0912
         return _ACTIONS[matches[0]]
     if matches[0] in skills:
         return matches[0]
-    _run_info_command(matches[0], session_dir, btw_runner, config_path)
+    _run_info_command(matches[0], session_dir, btw_runner)
     return AGAIN
 
 
@@ -407,5 +405,5 @@ def pause_line(
     answers, with a line that printed continuing the run. None (EOF) continues."""
     if line is None:
         return None
-    answer = _answer_line(line, session_dir, btw_runner, config_path, skill_menu_table(config_path))
+    answer = _answer_line(line, session_dir, btw_runner, skill_menu_table(config_path))
     return "" if isinstance(answer, _Again) else answer

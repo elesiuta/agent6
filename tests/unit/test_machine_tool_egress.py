@@ -449,7 +449,7 @@ def test_suggested_network_fix_block_is_unfixable(tmp_path: Path) -> None:
     spec = load_machine(_write(tmp_path, text))
     fetch = spec.states["fetch"]
     assert isinstance(fetch, ToolState)
-    assert _suggested_network_fix(Config.model_validate({}), "hardened", [fetch]) is None
+    assert _suggested_network_fix("hardened", [fetch]) is None
 
 
 def test_resolve_network_refusal_unfixable_points_to_simulate(

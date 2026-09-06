@@ -342,9 +342,11 @@ class ConsoleView:
                 idle = time.monotonic() - self._last_output_at
                 stall_after = _MID_BLOCK_STALL_S if self._phase is not None else _STALL_AFTER_S
                 if not self._active or idle < stall_after:
-                    self._clear_status()  # output flowing or turn done: no spinner
-                    if self._status_active is False:
-                        self._out.flush()
+                    # Output flowing or turn done: no spinner. The flush is the
+                    # heartbeat's own: `_raw` coalesces streaming flushes and
+                    # leaves a partial line in the buffer.
+                    self._clear_status()
+                    self._out.flush()
                     continue
                 # Silent mid-turn: close any open prose block so the cursor sits on
                 # a clean line, then draw/refresh the spinner in place.

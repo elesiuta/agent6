@@ -181,6 +181,35 @@ def test_cli_heartbeat_shows_working_when_the_stream_stalls(
         view.close()
 
 
+class _CountingTTY(_FakeTTY):
+    def __init__(self) -> None:
+        super().__init__()
+        self.flushes = 0
+
+    def flush(self) -> None:
+        self.flushes += 1
+
+
+def test_the_heartbeat_flushes_a_partial_line_while_output_flows() -> None:
+    """`_raw` coalesces streaming flushes and leaves the tail of a line in the
+    buffer; the heartbeat's tick is what makes it visible during a stall
+    shorter than the spinner's threshold. Tying that flush to an erased
+    spinner left a stream wedged mid-token invisible for the whole threshold."""
+    import time
+
+    out = _CountingTTY()
+    view = ConsoleView(out, color=False)  # type: ignore[arg-type]
+    try:
+        view.feed({"type": "role.call", "role": "worker", "model": "m"})
+        view.feed({"type": "role.text_delta", "text": "partial"})
+        before = out.flushes
+        time.sleep(1.2)  # two heartbeat ticks, under every stall threshold
+        assert out.flushes > before, "the heartbeat flushed nothing while output flowed"
+        assert "working…" not in out.getvalue()
+    finally:
+        view.close()
+
+
 def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
     """A few-seconds gap in a flowing prose block must NOT draw the spinner:
     doing so closes the block and the next delta opens a new bullet, visibly
