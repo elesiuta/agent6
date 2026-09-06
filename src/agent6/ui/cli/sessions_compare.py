@@ -26,7 +26,12 @@ from agent6.sessions.manifest import (
 from agent6.ui.cli._common import (
     _runs_dir,
 )
-from agent6.ui.cli._compare import manifest_task, print_ranked_candidates, rank
+from agent6.ui.cli._compare import (
+    RankOutcome,
+    manifest_task,
+    print_ranked_candidates,
+    rank,
+)
 from agent6.ui.cli.sessions_cmds import _resolve_session_manifest
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
@@ -120,19 +125,56 @@ def _fanout_lanes(cwd: Path, parallel_id: str) -> tuple[str, ...]:
     return tuple(name for _, name in sorted(lanes))
 
 
-def _cmd_compare(*, session_ids: tuple[str, ...], config_path: Path | None) -> int:
+def _recorded_outcome(
+    resolved: list[tuple[SessionLayout, SessionManifest]], candidates: list[CandidateBrief]
+) -> RankOutcome | None:
+    """One fan-out's own stamped verdict as a `RankOutcome`, so the recorded
+    order prints through the same table a fresh ranking does.
+
+    None when any comparable candidate carries no auto-compare stamp: a
+    fan-out whose auto-compare never ran has no verdict to read, and is judged.
+    """
+    ids = {c.session_id for c in candidates}
+    stamps = {
+        layout.session_id: manifest.compare
+        for layout, manifest in resolved
+        if layout.session_id in ids and manifest.compare is not None and manifest.compare.rank
+    }
+    if len(stamps) != len(ids):
+        return None
+    first = stamps[min(stamps, key=lambda sid: stamps[sid].rank)]
+    return RankOutcome(
+        ranking=tuple(sorted(stamps, key=lambda sid: stamps[sid].rank)),
+        rationale=first.rationale,
+        ranked_by="judge" if first.ranked_by == "judge" else "mechanical",
+        judge_cost_usd=first.judge_cost_usd,
+        judge_cost_partial=first.judge_cost_partial,
+    )
+
+
+def _cmd_compare(
+    *, session_ids: tuple[str, ...], config_path: Path | None, rejudge: bool = False
+) -> int:
     """Advisory ranked comparison across >=2 already-run candidates: the same
     ranked report `--parallel`'s auto-compare prints (judge via the reviewer
     model when configured, else the mechanical verify+cost ranking) -- for
     runs picked by hand, not necessarily from the same fan-out or even the
     same task (each candidate's own manifest `user_task` is its task).
-    Read-only: no merges, no writes."""
+    Read-only: no merges, no writes.
+
+    A fan-out id prints the verdict that fan-out recorded, so asking twice
+    costs nothing and answers what `sessions show` shows; ids named one by one
+    are a comparison to make, and are judged. `rejudge` judges either way,
+    which can rank differently than the stamp the listings read."""
     cwd = Path.cwd()
+    by_fanout = False
     if len(session_ids) == 1:
         # One id: a fan-out's, comparing its lanes (the console prints the
         # fan-out id, `sessions show` calls it ambiguous); anything else is one
         # run, too few.
-        session_ids = _fanout_lanes(cwd, session_ids[0]) or session_ids
+        lanes = _fanout_lanes(cwd, session_ids[0])
+        by_fanout = bool(lanes)
+        session_ids = lanes or session_ids
     if len(session_ids) < 2:
         print(
             "ERROR: sessions compare needs 2 or more run ids, or one --parallel fan-out id"
@@ -164,16 +206,23 @@ def _cmd_compare(*, session_ids: tuple[str, ...], config_path: Path | None) -> i
         )
         return 2
 
-    reviewer = cfg.models.resolve("reviewer")
-    # `sessions compare` is advisory and stateless: it ranks + prints but never stamps
-    # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
-    outcome = rank(cfg, candidates, transcript_dir=resolved_state_dir(cwd) / "compare")
-    print(f"[agent6] comparing {len(candidates)} runs:")
     merged = {
         layout.session_id: manifest.merged.into
         for layout, manifest in resolved
         if manifest.merged is not None and manifest.merged.into
     }
+    recorded = _recorded_outcome(resolved, candidates) if by_fanout and not rejudge else None
+    if recorded is not None:
+        print(f"[agent6] the recorded verdict for {len(candidates)} lanes:")
+        print_ranked_candidates(candidates, recorded, merged_into=merged)
+        print("\n(recorded when the fan-out ran; `--rejudge` spends a fresh judge call)")
+        return 0
+
+    reviewer = cfg.models.resolve("reviewer")
+    # `sessions compare` is advisory and stateless: it ranks + prints but never stamps
+    # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
+    outcome = rank(cfg, candidates, transcript_dir=resolved_state_dir(cwd) / "compare")
+    print(f"[agent6] comparing {len(candidates)} runs:")
     print_ranked_candidates(candidates, outcome, merged_into=merged)
     # A fresh judgment can contradict the fan-out's recorded verdict (the star in
     # listings comes from the auto-compare stamp, which this command never

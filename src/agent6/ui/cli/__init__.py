@@ -462,7 +462,11 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
             config_path=args.config,
         )
     if args.sessions_command == "compare":
-        return _cmd_compare(session_ids=tuple(args.session_ids), config_path=args.config)
+        return _cmd_compare(
+            session_ids=tuple(args.session_ids),
+            config_path=args.config,
+            rejudge=args.rejudge,
+        )
     if args.sessions_command == "commits":
         return _cmd_commits(session_id=args.session_id)
     if args.sessions_command == "stop":

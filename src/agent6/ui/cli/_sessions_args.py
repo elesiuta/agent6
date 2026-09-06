@@ -121,7 +121,15 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help=(
             "Advisory ranked comparison across >=2 sessions (verify+cost, judged by the"
             " reviewer model when configured): the report `--parallel`'s auto-compare"
-            " prints. Never merges."
+            " prints. A fan-out id prints that report as recorded. Never merges."
+        ),
+    )
+    sessions_compare.add_argument(
+        "--rejudge",
+        action="store_true",
+        help=(
+            "Judge again instead of printing a fan-out's recorded verdict:"
+            " a fresh call, which can rank differently than the listings show."
         ),
     )
     sessions_compare_ids = sessions_compare.add_argument(

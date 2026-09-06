@@ -808,3 +808,84 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     out = capsys.readouterr().out
     assert "read from the recorded merge" in out
     assert "empty diff" not in out.lower()
+
+
+def _stamped_fanout(repo: Path) -> None:
+    """Two lanes of one fan-out, stamped with the verdict its auto-compare
+    recorded (run-BBBB22 first)."""
+    base = _init_repo(repo)
+    _setup_run(
+        repo,
+        "run-AAAA11",
+        base_sha=base,
+        commits=[("a.txt", "a\n", "add a")],
+        manifest_extra=_lane_extra(winner=False, rank=2),
+    )
+    _setup_run(
+        repo,
+        "run-BBBB22",
+        base_sha=base,
+        commits=[("b.txt", "b\n", "add b")],
+        manifest_extra=_lane_extra(winner=True, rank=1),
+    )
+    _write_reviewer_config(repo)
+
+
+def test_compare_of_a_fanout_id_prints_the_recorded_verdict_without_judging(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Asking a fan-out for its comparison spent a judge call every time, and
+    could answer differently than the stamp `sessions show` reads."""
+    _stamped_fanout(repo)
+    judge = _FakeProvider(['{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "flip"}'])
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(judge))
+
+    rc = main(["sessions", "compare", "fan"])
+
+    assert rc == 0
+    assert judge.calls == 0, "the recorded verdict is on disk; asking for it costs nothing"
+    out = capsys.readouterr().out
+    assert "recorded verdict" in out
+    assert out.index("run-BBBB22") < out.index("run-AAAA11"), "the stamped order, best first"
+    assert "--rejudge" in out, "the way to a fresh opinion is named"
+
+
+def test_rejudge_on_a_fanout_id_spends_a_fresh_judge_call(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _stamped_fanout(repo)
+    judge = _FakeProvider(['{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "flip"}'])
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(judge))
+
+    rc = main(["sessions", "compare", "fan", "--rejudge"])
+
+    assert rc == 0
+    assert judge.calls == 1
+    out = capsys.readouterr().out
+    assert out.index("run-AAAA11") < out.index("run-BBBB22"), "the fresh ranking"
+    assert "note: the recorded fan-out verdict picked run-BBBB22" in out
+
+
+def test_a_fanout_with_no_recorded_verdict_is_judged(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An auto-compare that never ran leaves no stamp to print; the lanes are
+    ranked rather than reported as an empty verdict."""
+    base = _init_repo(repo)
+    for sid, name in (("run-AAAA11", "a"), ("run-BBBB22", "b")):
+        _setup_run(
+            repo,
+            sid,
+            base_sha=base,
+            commits=[(f"{name}.txt", f"{name}\n", f"add {name}")],
+            manifest_extra={"parallel_id": "fan", "lane": 1},
+        )
+    _write_reviewer_config(repo)
+    judge = _FakeProvider(['{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b wins"}'])
+    monkeypatch.setattr(compare_mod, "build_role_provider", _stub_builder(judge))
+
+    rc = main(["sessions", "compare", "fan"])
+
+    assert rc == 0
+    assert judge.calls == 1
+    assert "b wins" in capsys.readouterr().out
