@@ -160,9 +160,12 @@ def test_approver_falls_back_to_stdin_without_tui(
 def test_approver_headless_no_frontend_waits_not_denies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A web/hub-spawned run (no terminal, no away-mode, no front-end attached
-    # right now) WAITS for a front-end to attach rather than denying -- deny
-    # discards the run's work. A writer thread attaches + answers after a beat.
+    # No terminal, no away-mode, no front-end attached right now: the run
+    # WAITS for a front-end rather than denying (the ruled default: a park
+    # spends nothing and stays answerable late via attach; deny would let the
+    # run burn tokens on a path it may not be able to finish). A context that
+    # can never be attended declares AGENT6_DETACHED_AWAY=deny (the bench
+    # containers do). A writer thread attaches + answers after a beat.
     import threading
     import time
 

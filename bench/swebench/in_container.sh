@@ -215,6 +215,11 @@ BASE=$(git rev-parse HEAD)
 # before the wall, `agent6 steer` tells the run to land its best patch now:
 # an empty patch scores 0 with certainty, a partial one might score. Unset
 # (every other arm) the driver behaves as before.
+# A bench leg can never be attended: a no-answer approval (the off-list
+# fetch gate) must DENY at once, not park for a front-end that will never
+# come. Without this, 19 of 470 fleet legs froze on "Allow fetch:
+# api.github.com ..." and died at the wall as empty-patch "timeouts".
+export AGENT6_DETACHED_AWAY=deny
 AGENT6_SB_TIMEOUT="$TIMEOUT_S" "$CONDA_PY" - <<'PYEOF'
 import os, subprocess, threading
 problem = open("/mnt/problem.txt", encoding="utf-8").read()
