@@ -89,9 +89,10 @@ from agent6.sandbox.jail import die_with_parent
 EMAIL_PLACEHOLDER = "<operator-email>"
 _MAX_LINE_BYTES = 8 * 1024 * 1024
 _STDERR_KEEP_BYTES = 8192
-# A round that moved a window is followed by its reading within milliseconds
-# of message_stop (4 ms measured on 2.1.251): one tick covers it. A process's
-# first round is always followed by one; none inside the grace is not meterable.
+# The CLI emits a reading when a window's rounded percent or reset time
+# changes, within milliseconds of message_stop (4 ms measured on 2.1.251): one
+# tick covers it. A process's first round is always followed by one; none
+# inside the grace is not meterable.
 _PLAN_READING_DRAIN_S = STREAM_WATCHDOG_TICK_S
 _PLAN_READING_GRACE_S = 3.0
 # The reserve `models.registry.compaction_thresholds` keeps below the window;
