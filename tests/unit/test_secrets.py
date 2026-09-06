@@ -174,3 +174,20 @@ def test_delete_provider_secrets_preserves_siblings(gcfg: Path) -> None:
     assert secrets.delete_provider_secrets("chatgpt") is False
     assert secrets.load_oauth_tokens("chatgpt") is None
     assert secrets.resolve_api_key("anthropic", None) == "sk-1"
+
+
+def test_a_logout_on_a_fresh_machine_creates_no_open_config_dir(gcfg: Path) -> None:
+    """`delete_provider_secrets` took its lock before anything had created the
+    config dir, and the lock file's own parent walk made `$XDG_CONFIG_HOME/agent6`
+    at the umask's 755 with nothing left to tighten it. The config dir is
+    created by the state tree's one creator, 0700, or not at all."""
+    import os
+
+    old = os.umask(0o022)
+    try:
+        assert secrets.delete_provider_secrets("nobody") is False
+        assert not (gcfg / "agent6").exists()
+        secrets.save_secret("anthropic", "sk-1")
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE((gcfg / "agent6").stat().st_mode) == 0o700

@@ -137,6 +137,10 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
     """
     user = user or effective_user()
     path = secrets_path(user)
+    # The config dir is created here, 0700 and handed back, before the lock
+    # file's own parent walk would create it at the umask.
+    mkdir_for_real_user(path.parent, user)
+    path.parent.chmod(0o700)
     with locked_file(path):
         data: dict[str, Any] = {}
         if path.exists():
@@ -148,8 +152,6 @@ def _save_provider_entry(provider_name: str, entry: dict[str, str], user: RealUs
         providers[provider_name] = entry
         data["providers"] = providers
 
-        mkdir_for_real_user(path.parent, user)
-        path.parent.chmod(0o700)
         text = _render_secrets_toml(data)
         # atomic_write uses tempfile.mkstemp: an unpredictable name opened O_EXCL
         # at 0600, so a pre-planted `secrets.toml.tmp` symlink cannot redirect this
@@ -168,6 +170,8 @@ def delete_provider_secrets(provider_name: str, *, user: RealUser | None = None)
     """Remove `[providers.<name>]` from `secrets.toml`. True when it existed."""
     user = user or effective_user()
     path = secrets_path(user)
+    if not path.exists():
+        return False  # before the lock: its parent walk would create the config dir
     with locked_file(path):
         if not path.exists():
             return False
