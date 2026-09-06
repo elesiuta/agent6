@@ -19,7 +19,12 @@ from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, wor
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import print_no_session_match, resolve_or_newest_layout
-from agent6.viewmodel import LogScan, scan_session_log, status_for_session_dir
+from agent6.viewmodel import (
+    LogScan,
+    existing_run_branch,
+    scan_session_log,
+    status_for_session_dir,
+)
 from agent6.viewmodel.format import (
     format_branch,
     format_compare,
@@ -171,10 +176,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "forked_from_sha": manifest.forked_from_sha,
                     "worktree": str(manifest.worktree) if manifest.worktree else None,
                     "compare": compare_json,
-                    # The branch is created at the first commit: null until it exists.
-                    "run_branch": manifest.run_branch
-                    if manifest.run_branch and branch_exists(Path.cwd(), manifest.run_branch)
-                    else None,
+                    "run_branch": existing_run_branch(manifest, Path.cwd()) or None,
                     "base_branch": manifest.base_branch or None,
                     "merged_into": changes.merged_into or None,
                     "pins": list(scan.pins),

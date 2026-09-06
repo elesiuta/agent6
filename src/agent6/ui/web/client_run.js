@@ -84,7 +84,9 @@ async function renderRun(id, opts, gen) {
     const rmBtn = el('button', 'danger', 'Delete');
     rmBtn.onclick = async () => {
       // History only, and not undoable, so it asks. The CLI refuses a live run.
-      if (!confirm('Delete this run\'s history? The branch and its commits are kept.')) return;
+      // The branch is named only while it exists (the snapshot's run_branch).
+      const kept = cards._run_branch ? ' The branch and its commits are kept.' : '';
+      if (!confirm('Delete this run\'s history?' + kept)) return;
       try {
         const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/rm', {});
         toast(d.message || 'removed');
@@ -357,6 +359,7 @@ function paintRun(cards, s) {
   // Merge needs a finished run with an unmerged branch: a live run (the server
   // refuses one), an ask / branch_per_run=false run (no branch), or an already-
   // merged branch can't be merged.
+  cards._run_branch = s.run_branch || '';
   if (cards._merge_btn) {
     cards._merge_btn.disabled = !notLive(s) || !s.run_branch || !!s.merged_into;
     cards._merge_btn.title = !notLive(s) ? 'the run is still live; stop or let it finish first'

@@ -10,10 +10,10 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
-from agent6.git_ops import merge_stamp_holds
+from agent6.git_ops import branch_exists, merge_stamp_holds
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions.layout import LOGS_NAME
-from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel.format import format_branch, format_lineage
 from agent6.viewmodel.listing import session_compare
@@ -22,32 +22,49 @@ from agent6.viewmodel.state import fold_session, fold_until_commit, session_stat
 from agent6.viewmodel.tail import tail_events
 
 
+def existing_run_branch(manifest: SessionManifest, repo: Path | None) -> str:
+    """The run's branch while it exists, else "". The manifest names the
+    branch at run start and git creates it at the first commit, so a run that
+    never committed has none to merge or prune, whatever the manifest says
+    (`sessions show --json` reports `run_branch` by this rule). With no *repo*
+    to ask, the manifest's word stands, as `merged_into` trusts its stamp."""
+    name = manifest.run_branch or ""
+    if not name or (repo is not None and not branch_exists(repo, name)):
+        return ""
+    return name
+
+
 def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[str, str]:
     """Branch facts from the run's manifest (run_branch / base_branch /
     merged_into, and `branch_line`, their one wording) for the run header.
     The event fold does not carry them, and an operator needs to SEE where a
     run's work lives and where Merge lands (consecutive spawns chain branches
     invisibly otherwise). Empty for a run with no manifest (or branch_per_run
-    off). With *repo*, `merged_into` is claimed only while the merge stamp
-    still describes the branch (a resumed run commits past its stamp; the
-    footer and `sessions show` apply the same check)."""
+    off). With *repo*, `run_branch` is the branch only while it exists
+    (`existing_run_branch`) and `merged_into` is claimed only while the merge
+    stamp still describes the branch (a resumed run commits past its stamp;
+    the footer and `sessions show` apply the same check)."""
     try:
         manifest = read_manifest(session_dir)
     except ManifestError:
         return {}
     out: dict[str, str] = {}
-    if manifest.run_branch:
-        out["run_branch"] = manifest.run_branch
+    run_branch = existing_run_branch(manifest, repo)
+    if run_branch:
+        out["run_branch"] = run_branch
     if manifest.base_branch:
         out["base_branch"] = manifest.base_branch
     stamp = manifest.merged
+    merged_into = ""
     if stamp and stamp.into:
         holds = repo is None or merge_stamp_holds(repo, manifest.run_branch or "", stamp.tip)
-        if holds:
-            out["merged_into"] = stamp.into
-    line = format_branch(
-        out.get("run_branch", ""), out.get("base_branch", ""), out.get("merged_into", "")
-    )
+        merged_into = stamp.into if holds else ""
+    if merged_into:
+        out["merged_into"] = merged_into
+    # The line names the manifest's branch when merged (the stamp describes
+    # it, pruned or not, as `sessions show` prints it) or existing.
+    named = (manifest.run_branch or "") if merged_into else run_branch
+    line = format_branch(named, manifest.base_branch or "", merged_into)
     if line:
         out["branch_line"] = line
     return out

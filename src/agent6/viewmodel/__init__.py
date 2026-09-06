@@ -73,6 +73,7 @@ from agent6.viewmodel.machine_state import (
 from agent6.viewmodel.policy import SessionPolicy, session_policy
 from agent6.viewmodel.snapshot import (
     UnknownStepError,
+    existing_run_branch,
     machine_snapshot,
     manifest_branches,
     manifest_header,
@@ -140,6 +141,7 @@ __all__ = [
     "approval_parts",
     "died_without_end",
     "event_epoch",
+    "existing_run_branch",
     "first_task_line",
     "fold_machine",
     "fold_session",

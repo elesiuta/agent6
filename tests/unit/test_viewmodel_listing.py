@@ -208,6 +208,46 @@ def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: Pa
     assert manifest_branches(d)["merged_into"] == "main"
 
 
+def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: Path) -> None:
+    """The manifest names the run branch at run start; git creates it at the
+    first commit. A run stopped before one (or parked before starting) had a
+    header reading `agent6/x → merges into main` and an enabled Merge that the
+    CLI then refused with "no branch to merge"; `sessions show --json` already
+    reported `run_branch` null. One rule, `existing_run_branch`, for both."""
+    import json
+    import subprocess
+
+    from agent6.sessions.manifest import read_manifest
+    from agent6.viewmodel import existing_run_branch, session_snapshot
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo)]
+    subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
+    d = tmp_path / "run-x"
+    d.mkdir()
+    (d / "manifest.json").write_text(
+        json.dumps({"mode": "run", "run_branch": "agent6/x", "base_branch": "main"})
+    )
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "steer_abort"})
+        + "\n"
+    )
+    assert existing_run_branch(read_manifest(d), repo) == ""
+    assert manifest_branches(d, repo=repo) == {"base_branch": "main"}
+    snap = session_snapshot(d, repo=repo)
+    assert "run_branch" not in snap and "branch_line" not in snap
+    # The first commit creates it: from here the header names it and Merge lands.
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t"}
+    env["GIT_COMMITTER_EMAIL"] = "t@t"
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True, env=env)
+    subprocess.run([*git, "branch", "agent6/x"], check=True)
+    assert existing_run_branch(read_manifest(d), repo) == "agent6/x"
+    assert session_snapshot(d, repo=repo)["branch_line"] == "agent6/x → merges into main"
+
+
 # --- summarize_session_dir / status_word (shared by TUI hub, web hub, runs list) --
 
 

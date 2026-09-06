@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -671,10 +672,21 @@ def test_prompt_and_answer_events_update_the_chip_immediately(tmp_path: Path) ->
     asyncio.run(scenario())
 
 
-def test_dashboard_header_says_where_the_changes_are(tmp_path: Path) -> None:
+def test_dashboard_header_says_where_the_changes_are(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The header carries the run's branch line (the web header's and
-    `sessions show`'s wording): the run branch and the base a merge lands on;
-    reopened after the merge stamp lands, the branch merged."""
+    `sessions show`'s wording): the run branch, once its first commit created
+    it, and the base a merge lands on; reopened after the merge stamp lands,
+    the branch merged."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo)]
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t"}
+    env["GIT_COMMITTER_EMAIL"] = "t@t"
+    subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True, env=env)
+    monkeypatch.chdir(repo)  # the dashboard reads the branch facts from the cwd checkout
     d = tmp_path / "branched"
     d.mkdir()
     evs = [
@@ -695,8 +707,13 @@ def test_dashboard_header_says_where_the_changes_are(tmp_path: Path) -> None:
             await _open_dash(app, pilot)
             return str(app._dash.query_one("#top", Static).render())
 
+    assert "branch:" not in asyncio.run(header())  # no commit yet: no branch to name
+    subprocess.run([*git, "branch", "agent6/branched"], check=True)
     assert "branch: agent6/branched → merges into main" in asyncio.run(header())
-    manifest["merged"] = {"into": "main", "sha": "abc", "tip": "abc"}
+    tip = subprocess.run(
+        [*git, "rev-parse", "agent6/branched"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    manifest["merged"] = {"into": "main", "sha": tip, "tip": tip}
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert "branch: agent6/branched (merged into main)" in asyncio.run(header())  # a reopen
 

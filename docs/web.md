@@ -84,7 +84,7 @@ curl -s localhost:7658/api/config                    # effective config
 curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per change
 ```
 
-- `curl /api/session/<id>`: what `agent6 attach <id> --json` prints, plus the manifest's branch and compare facts
+- `curl /api/session/<id>`: what `agent6 attach <id> --json` prints, plus the run branch (while it exists) and the compare facts
 - writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,resume,run_plan,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`)
 - every write drives the typed spawn / answer-file contracts, never arbitrary execution
 - a machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (optional `message`/`data`) on the instance
