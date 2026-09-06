@@ -134,7 +134,7 @@ agent6 ask "how does the task-graph curator work?"
 ```
 
 - `agent6 review --reviewers 3 --personas security,correctness,tests`: a panel whose findings are checked against the diff, so only real problems gate
-- `ask` runs in any directory; headless (no TTY) under the default `run_commands = "ask"` it needs `--auto-approve`, `--no-commands`, or `AGENT6_DETACHED_AWAY=deny`
+- `ask` runs in any directory; headless (no TTY) under the default `run_commands = "ask"` it needs `--auto-approve`, `--no-commands`, or an away-mode (`AGENT6_DETACHED_AWAY=wait|deny|approve`)
 - `run` and `plan` need a git repository (branches, diffs, merges)
 
 ## Run options
@@ -146,7 +146,7 @@ agent6 ask "how does the task-graph curator work?"
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
   - new work outranks it; it never passes (retire as skipped or obsolete); budget, stop, and the iteration cap still end the run
-- `agent6 prompt show [--mode run|plan|ask] [--json]`: everything the model receives on the first call (system prompt, tool definitions, the first user message)
+- `agent6 prompt show [--mode run|plan|ask|machine|agent] [--json]`: everything the model receives on the first call (system prompt, tool definitions, the first user message)
 
 ## Configuration
 

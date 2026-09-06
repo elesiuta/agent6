@@ -210,7 +210,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
 
 def _dirty_worktree_note(cwd: Path, run_branch: object) -> str:
     """A note when the diffed run's branch is the current checkout and its
-    worktree has uncommitted work (a run commits only after each verify pass),
+    worktree has uncommitted work (a run commits at each editing step),
     else "". Only speaks when the dirty files are unambiguously THIS run's:
     the current branch must equal run_branch. Best-effort; git errors -> "" ."""
     if not run_branch:

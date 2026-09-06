@@ -1643,9 +1643,10 @@ class Workflow:
     ) -> SessionResult | None:
         """Auto-commit the turn's work, then take the automatic metric sample.
 
-        With a verify command, commits are gated on a green verify; with none
-        configured (a gateless run), each editing step is committed
-        as an un-gated checkpoint so resume + the audit trail still work.
+        A step the gate judged green commits as a verified step; every other
+        editing step (a gateless run, and under `verify_when = "finish"` a step
+        the model did not verify itself) commits as an un-gated checkpoint, so
+        resume and the audit trail still work.
         `turn.edited` (apply_edit/apply_patch) is the cheap fast-path; the
         worktree-dirty fallback catches run_command-authored edits (else they'd
         never be committed gateless). Plan mode is read-only and never commits.

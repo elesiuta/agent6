@@ -36,8 +36,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "--json",
         dest="list_json",
         action="store_true",
-        help="Emit the rows as a JSON array (session_id, mode, status, reason, unmerged,"
-        " verify_ok, cost_usd, usd_partial, updated, winner, task).",
+        help="Emit the rows as a JSON array (session_id, mode, status, label, level,"
+        " reason, unmerged, verify_ok, cost_usd, usd_partial, mtime, winner, task).",
     )
 
     sessions_show = _sub(

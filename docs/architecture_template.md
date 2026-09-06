@@ -76,7 +76,7 @@ flowchart TD
 
 **Snapshot before every call.** `loop_state.json` is rewritten in the session directory before each provider request, with a per-turn copy under `checkpoints/<NNNN>.json`.
 `agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` from the matching checkpoint.
-With the per-tool transcripts, an interrupted run replays deterministically up to the next model call.
+With the per-call transcripts, an interrupted run replays deterministically up to the next model call.
 
 **The harness runs the gate** (`[workflow].verify_when`, default `finish`): when `finish_session` arrives over a tree no green run covers, the loop runs `verify_command` itself through the same dispatcher path as the model's `run_verify_command` (approvals included; a denied approval withholds the gate for the rest of the run, and the run ends unverified); `step` also runs it after every editing turn; `never` leaves every run to the model. A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run or the model's own) re-runs scoped to the tests nearest the run's diff and runs scoped until a full run of the gate passes; the notice lists the selected files, `session.end` carries `scoped`, and a scoped green reads `passed · scoped gate` on every surface.
 A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
@@ -146,7 +146,7 @@ The table routes <!-- generated: tool-names -->.
 ## A review
 
 A single read-only pass ([workflows/review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/workflows/review.py)) over a diff: the working tree, a branch against a base, or an arbitrary range.
-It produces structured findings, and makes no edits, no commits, and no `run_command`.
+It prints a markdown review, and makes no edits, no commits, and no `run_command`; `--reviewers N` runs the adversarial panel instead, which returns structured findings.
 
 ## Parallel runs
 
@@ -280,7 +280,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail` |
 | `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `memory/DECISIONS.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
-| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`agents_md` / manifest / `llm` / `none` / `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
+| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`agents_md` / manifest / `llm` / `none` / `disabled` / `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
 | `role.call` | `role`, `model`, `provider` |
 | `role.result` | `role`, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason` (`error` when `ok` is false) |
 | `role.text_delta` | streamed assistant text chunk |
@@ -289,6 +289,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `budget.update` | totals and caps for input and output tokens |
 | `approval.prompt` / `.answer` | `id`, `prompt`, `standing`, `call_id` (the gated tool call; null for a verify the harness runs itself) / `id`, `approved`, `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `session`, `headless`, `acp`) |
 | `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-wait`, `headless-default`, `headless`, `acp`): the `ask_user` tool and the start question |
+| `graph.update` | the task DAG after this turn: `nodes` (title, status, parent_id, children), `cursor` |
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat, read by `agent6 sessions show` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |
@@ -302,7 +303,7 @@ A `run_command` approval publishes as `approval.prompt`.
 - the asking side decides what a choice grants: each prompt names its "allow all" scope (`command`, or one MCP server); standing answers record per scope; a no-standing gate sets `standing: false` and no front-end shows the button
 - the answer poll falls back headless (stdin, or deny for a machine state) only after the front-end stays dead 30 consecutive seconds: a page reload or locked phone never converts a pending approval into a deny
 - a watching browser registers as the run's answer front-end; prompts bridge to the page
-- the task DAG is not in this stream: curator-owned `graph.jsonl`, read via `sessions graph`
+- the task DAG rides as `graph.update` (`nodes`: title, status, parent_id, children; `cursor`), one per turn; every mutation is curator-owned in `graph.jsonl`, read via `sessions graph`
 
 ## Where things live
 

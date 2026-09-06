@@ -34,7 +34,7 @@ Commands the model runs go through a jail to give you control over what the mode
 <div class="a6-card" markdown>
 ### Verify gate
 A run is measured against a verify command, inferred from the repo when unset and pinned for the run.
-Steps commit on green.
+Every editing step commits; the gate certifies the tree the run ends on.
 </div>
 
 <div class="a6-card" markdown>

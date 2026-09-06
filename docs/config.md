@@ -25,7 +25,7 @@ It can be empty or absent when the global config supplies a provider and model; 
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
-- `agent6 config get|set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay).
+- `agent6 config set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay); `agent6 config get <dotted.key>` prints the effective value and its layer.
   Every edit is re-validated and rolled back if invalid.
   A sibling pair that must move together is set as one inline table: `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
 - Writes are atomic; a blocked edit lock never blocks the write (worst case one lost update, reported as "kept as written").
@@ -108,7 +108,7 @@ agent6 model worker chatgpt gpt-5-codex
 ```
 
 - `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`, a constant, not config) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
-- Usage draws on the plan's own limits; cost meters show $0 for included-plan usage while token counts still feed the budget caps.
+- Usage draws on the plan's own limits; cost meters show an authoritative $0 and the tokens meter nothing, so `[budget].max_percent` is the ledger that bounds these calls.
 - Past the included window, calls draw on PURCHASED credits (real money; auto top-up can buy more).
   `[budget].allow_paid_credits = false` (the default) is a circuit breaker: a usage preflight before the first call and every response's headers report both windows and the credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes, so a boundary-crossing call can spend before the stop.
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
@@ -362,7 +362,7 @@ Both: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 | `max_percent` | `-1` | Cap on the plan percentage points one run may consume on a subscription provider (the rise in the account's reported used-percent across the run, accumulated across window resets, so values above 100 are meaningful; with several windows, the one that moved most). The reading is account-global: a concurrent run's spend counts toward whichever run observes it next. `-1`: unlimited; `0`: refuse plan-metered calls. `--max-percent` overrides per run. |
 | `allow_paid_credits` | `false` | Allow plan-metered calls (`chatgpt`, `claude_code`) to spend PURCHASED credits or extra usage once the included plan window is exhausted (auto top-up can buy more with the saved payment method). `false` is a circuit breaker, not a guarantee: the backend's usage readings (a chatgpt preflight and every response's headers, every claude_code round's rate-limit event) report the account's windows and credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes. `true`: a chatgpt credit balance's drop across the run is read as dollars and meters against `max_usd`; a claude_code run reads no credit balance, so the extra usage it spends is not metered by `max_usd`. Included-plan usage is unaffected. |
 
-`--max-usd` / `--max-tokens-fallback` override per run; an explicit `--max-usd` refuses to start when the worker has no price data.
+`--max-usd` / `--max-tokens-fallback` override per run; a worker with no price data is not metered by `max_usd` at all and runs under `max_tokens_fallback`, with a note at startup.
 Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.
 
 ## `[machine]`

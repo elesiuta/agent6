@@ -180,7 +180,7 @@ An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript,
 
 `mode` chooses the tool surface.
 
-- `"agent"` (default): a read-only, structured-output loop; the dispatcher refuses edit, `run_command`, and `run_verify`, so the state can only read and call `finish_session`
+- `"agent"` (default): a read-only, structured-output loop; the dispatcher refuses edit, `run_command`, `run_verify_command`, `read_session` and `fetch`, so the state can only read the repo and call `finish_session`
 - `"run"`: real coding work (edit + verify + commit tools), exactly like `agent6 run`
 
 Where a run state's work lands:
@@ -251,7 +251,7 @@ A single command, argv-style (never a shell string), through the existing `run_i
 | `host` | host network | host network (and `run_command`) |
 
 - the headline setup (offline commands + one networked reviewed tool): `sandbox.network = "only_explicit_states"` + `network = "host"` on that state
-- `only_explicit_states` and `session` need `strict`; an unhonorable tool-network config refuses at startup naming the state
+- `only_explicit_states` and `session` need `strict`; an unhonorable tool-network config refuses at startup, naming the conflicting `sandbox.network` value and the fix
 - offline tool states each get their own network (separate launchers; no run-wide session network to share)
 
 **Script bundles.** A machine is a bundle: the `.asm.toml` plus an optional sibling `scripts/` of operator-reviewed helpers (the kind `machine create` may draft).
@@ -375,8 +375,8 @@ There are exactly two filters, both zero-argument:
 | `json` | any value | compact JSON, object keys sorted (deterministic) |
 
 - deliberately no `join` filter: a delimited string a command must re-split is fragile and injection-prone; lists reach argv by **splicing** (below)
-- an interpolation always produces a string
-- a bare `{{ x }}` is legal only for a scalar (`str`/`int`/`float`/`bool`); a bare `list`/`json`/record reference is a load error (apply `json`, or splice a list in argv)
+- an interpolation renders to a string, except a lone filter-less `{{ ref }}` in `capture.set`, which assigns the referenced value with its own type (it must match the target's declared type)
+- elsewhere a bare `{{ x }}` is legal only for a scalar (`str`/`int`/`float`/`bool`); a bare `list`/`json`/record reference is a load error (apply `json`, or splice a list in argv)
 
 **List-splicing (argv only).**
 
@@ -538,7 +538,7 @@ Mirrors the existing per-run layout under the per-repo state dir, out of the wor
   machine.asm.toml           # the exact source the run started from (replay, status)
   journal.jsonl              # append-only, fsync'd, one event per line
   snapshots/<n>.json         # blackboard + current state, atomic temp+rename
-  agent_transcripts/<ts>.json  # full lossless conversation per agent-state run
+  agent_transcripts/<utc-iso>-<seq>.json  # one lossless request/response per file
   states/<seq>-<state>/logs.jsonl  # per-execution event stream (role.*/tool.*),
                                    #   the watchable live view; pruned to recent
   states/<seq>-<state>/approvals/, questions/  # that execution's answer bridge
@@ -647,7 +647,7 @@ Files (all `from __future__ import annotations`, strict pyright, pydantic only a
 - `machine/graph.py`: the mermaid/DOT renderers.
 - `machine/journal.py`: append-only event log, snapshots, locking, and persisted-wake state.
 - `machine/engine.py`: the deterministic reducer loop.
-- `machine/authoring.py`: the dependency-free prompt scaffolding for `machine create` (grammar guide, per-attempt prompt builder, draft extractor).
+- `machine/authoring.py`: the dependency-free prompt scaffolding for `machine create` (grammar guide, per-attempt prompt builder).
 
 No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 
