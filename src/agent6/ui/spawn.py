@@ -34,6 +34,11 @@ def agent6_exe() -> str:
     argv0 = Path(sys.argv[0])
     if argv0.name.startswith("agent6") and argv0.exists():
         return str(argv0.resolve())
+    # A view started as `python -m agent6.ui.tui`: the binary of the same
+    # install sits beside its interpreter.
+    beside = Path(sys.executable).with_name("agent6")
+    if beside.exists():
+        return str(beside.resolve())
     return shutil.which("agent6") or "agent6"
 
 

@@ -196,3 +196,16 @@ def test_run_cli_capture_strips_console_prefixes(
     ok, msg = spawn.run_cli_capture(["a6", "sessions", "prune"], tmp_path)
     assert ok
     assert msg == "merged a into b\ndeleted branch a\nskipped c (checked out)"
+
+
+def test_agent6_exe_finds_the_binary_beside_the_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A view started as `python -m agent6.ui.tui` has a module path in
+    argv[0]; the binary of the same install sits beside its interpreter."""
+    binary = tmp_path / "bin" / "agent6"
+    binary.parent.mkdir()
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(spawn.sys, "argv", [str(tmp_path / "ui" / "tui" / "__main__.py")])
+    monkeypatch.setattr(spawn.sys, "executable", str(tmp_path / "bin" / "python3"))
+    assert spawn.agent6_exe() == str(binary.resolve())
