@@ -9,32 +9,50 @@ from pathlib import Path
 
 import pytest
 
-from agent6.ui.cli._steer_menu import normalize_steer_choice
+from agent6.ui.cli._steer_menu import pause_line
 
 
-def test_stop_keys_map_to_abort() -> None:
-    for key in ("q", "Q", "quit", "stop", "abort", "  ABORT  "):
-        assert normalize_steer_choice(key) == "abort"
+def test_both_prompts_answer_a_line_the_same_way(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The plain prompt took bare words (`q`, `exit`, `d`) the rich menu had
+    already dropped, then a slash table of its own that swallowed `/parallel`
+    and sent `/shells` to the model: one dispatcher answers a typed line at
+    both prompts, and the plain one continues where the menu asks again."""
+    assert pause_line("/stop", tmp_path) == "abort"
+    assert pause_line(" /EXIT ", tmp_path) == "exit"
+    assert pause_line("/detach", tmp_path) == "detach"
+    assert pause_line("/continue", tmp_path) == ""
+    assert pause_line("/undo", tmp_path) == "/undo"
+    # The loop's directives travel verbatim, arguments and all, the word
+    # lowercased for its case-sensitive parsers.
+    assert pause_line("/parallel 2 fix the tests", tmp_path) == "/parallel 2 fix the tests"
+    assert pause_line("/PIN always gate", tmp_path) == "/pin always gate"
+    # Any other line with spaces travels verbatim, case and spacing included.
+    assert pause_line("/Users/eric/Notes.md   has it", tmp_path) == "/Users/eric/Notes.md   has it"
+    assert pause_line("/h check the logs", tmp_path) == "/h check the logs"
+    # A command that prints continues the run; an unknown one says so.
+    assert pause_line("/shells", tmp_path) == ""
+    assert pause_line("/statsu", tmp_path) == ""
+    out = capsys.readouterr().out
+    assert "background commands" in out and "unknown command '/statsu'" in out
+    for word in ("q", "Q", "quit", "stop", "abort", "d", "detach", "exit"):
+        assert pause_line(word, tmp_path) == word
 
 
-def test_detach_keys_map_to_detach() -> None:
-    for key in ("d", "D", "detach", " Detach "):
-        assert normalize_steer_choice(key) == "detach"
+def test_blank_continues(tmp_path: Path) -> None:
+    assert pause_line("", tmp_path) == ""
+    assert pause_line("   ", tmp_path) == ""
 
 
-def test_blank_continues() -> None:
-    assert normalize_steer_choice("") == ""
-    assert normalize_steer_choice("   ") == ""
+def test_none_stays_none(tmp_path: Path) -> None:
+    assert pause_line(None, tmp_path) is None
 
 
-def test_none_stays_none() -> None:
-    assert normalize_steer_choice(None) is None
-
-
-def test_instruction_passes_through() -> None:
-    assert normalize_steer_choice("focus on the parser") == "focus on the parser"
+def test_instruction_passes_through(tmp_path: Path) -> None:
+    assert pause_line("focus on the parser", tmp_path) == "focus on the parser"
     # a sentence that merely starts with a keyword is an instruction, not a command
-    assert normalize_steer_choice("abort the current plan") == "abort the current plan"
+    assert pause_line("abort the current plan", tmp_path) == "abort the current plan"
 
 
 def _feed(lines: list[str]) -> Callable[[str], str]:
@@ -530,9 +548,8 @@ def test_exit_maps_to_exit_and_stop_stays_abort(tmp_path: Path) -> None:
     /stop and then type /exit at the "next:" prompt to actually leave."""
     from agent6.ui.cli._steer_menu import pause_menu
 
-    assert normalize_steer_choice("exit") == "exit"
-    assert normalize_steer_choice(" EXIT ") == "exit"
+    assert pause_line("/exit", tmp_path) == "exit"
     # a sentence starting with the word stays an instruction
-    assert normalize_steer_choice("exit the retry loop early") == "exit the retry loop early"
+    assert pause_line("exit the retry loop early", tmp_path) == "exit the retry loop early"
     assert pause_menu(tmp_path, input_fn=_feed(["/exit"])) == "exit"
     assert pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"

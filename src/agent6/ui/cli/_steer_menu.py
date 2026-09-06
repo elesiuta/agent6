@@ -12,9 +12,11 @@ run's event log and re-prompt, so the operator can inspect the run before
 steering it.
 
 Parsing rule: a command fires only when it is the WHOLE line (one `/token`;
-a unique prefix like `/sta` works, an ambiguous one re-asks). Any line with
-a space -- or not starting with `/` -- is sent to the run verbatim as the
-steering instruction, so no quoting is ever needed:
+a unique prefix like `/sta` works, an ambiguous one re-asks). A line with a
+space is answered here when its word is `/compact`, `/btw` or a skill; the
+loop's `/pin` and `/parallel` travel with their word lowercased; any other
+line with a space, or one not starting with `/`, is sent to the run verbatim
+as the steering instruction, so no quoting is ever needed:
 
     /status   run status: tasks, tools, cost, ctx, preset
     /tasks    the task graph with statuses
@@ -108,23 +110,6 @@ def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, st
         for s in (*resolved.enabled, *resolved.always)
         if f"/{s.name}" not in MENU_COMMANDS
     }
-
-
-def normalize_steer_choice(line: str | None) -> str | None:
-    """Map a mid-run menu line to a canonical action: None/'' continue,
-    'abort' stop, 'exit' stop-and-leave, 'detach' keep-running-in-background,
-    else the instruction."""
-    if line is None:
-        return None
-    choice = line.strip()
-    low = choice.lower()
-    if low in ("q", "quit", "stop", "abort"):
-        return "abort"
-    if low == "exit":
-        return "exit"
-    if low in ("d", "detach"):
-        return "detach"
-    return choice
 
 
 @dataclass(slots=True)
@@ -298,7 +283,7 @@ def _line_reader(
     return lambda p: menu_input(p, display, _RECALL.lines, until=arrived)
 
 
-def pause_menu(  # noqa: PLR0911, PLR0912
+def pause_menu(
     session_dir: Path,
     *,
     input_fn: Callable[[str], str] | None = None,
@@ -326,56 +311,101 @@ def pause_menu(  # noqa: PLR0911, PLR0912
         except LineSuperseded:
             print("[agent6] a steer arrived from a front-end; taking it")
             return take_steer_answer(session_dir) or ""
-        stripped = line.strip()
-        if not stripped:
-            return ""  # Enter: continue the run unchanged
-        if not stripped.startswith("/"):
-            return stripped  # a steering instruction, sent verbatim
-        first, _, args = stripped.partition(" ")
-        word = first.lower()
-        if word in ("/h", "/?"):
-            word = "/help"
-        if args:
-            # /compact, /btw and skill commands take arguments; any other line
-            # with spaces stays a verbatim steer (the loop itself parses the
-            # /pin and /parallel directives out of steer text).
-            builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
-            smatches = [word] if word in skills else [c for c in skills if c.startswith(word)]
-            if builtin == ["/compact"] and not smatches:
-                if request_compact(session_dir, focus=args.strip()):
-                    print(
-                        "[agent6] compaction requested (focus noted);"
-                        " applies before the next model call"
-                    )
-                else:
-                    print("[agent6] could not write the compaction request; nothing was requested")
-                continue
-            if builtin == ["/btw"] and not smatches:
-                # A btw is a question asked BESIDE the run; letting it fall
-                # through would send it to the loop as steer text instead.
-                print(_start_btw(stripped, session_dir, btw_runner))
-                continue
-            if len(smatches) == 1 and not builtin:
-                # A skill command travels as typed; the loop expands it (the
-                # one owner, so every composer's `/<skill>` means the same).
-                return f"{smatches[0]} {args.strip()}"
-            return stripped
-        if word in MENU_COMMANDS or word in skills:  # exact match (never both: the
-            # table builder drops skills that collide with a built-in)
-            matches = [word]
-        else:
-            builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
-            matches = builtin + [c for c in skills if c.startswith(word) and c not in builtin]
-        if len(matches) > 1:
-            print(f"[agent6] ambiguous: {'  '.join(matches)} (type more)")
-        elif not matches:
-            print(
-                f"[agent6] unknown command {word!r}; /help lists them"
-                " (a line with spaces is sent as a steer)"
-            )
-        elif matches[0] in _ACTIONS:
-            return _ACTIONS[matches[0]]
-        elif matches[0] in skills:
-            return matches[0]
-        else:
-            _run_info_command(matches[0], session_dir, btw_runner, config_path)
+        answer = _answer_line(line, session_dir, btw_runner, config_path, skills)
+        if not isinstance(answer, _Again):
+            return answer
+
+
+@dataclass(frozen=True, slots=True)
+class _Again:
+    """A line that printed (an info command, an unknown or ambiguous one): the
+    menu asks again, the plain prompt continues the run."""
+
+
+AGAIN = _Again()
+# The directives the loop parses out of steer text, with case-sensitive parsers:
+# their word travels lowercased. Every other line with spaces travels verbatim.
+_LOOP_DIRECTIVES = ("/pin", "/parallel")
+
+
+def _answer_line(  # noqa: PLR0911, PLR0912
+    line: str,
+    session_dir: Path,
+    btw_runner: BtwRunner | None,
+    config_path: Path | None,
+    skills: dict[str, tuple[str, str]],
+) -> str | _Again:
+    """One typed line, answered the same way at both prompts (see `pause_menu`
+    for the contract)."""
+    stripped = line.strip()
+    if not stripped:
+        return ""  # Enter: continue the run unchanged
+    if not stripped.startswith("/"):
+        return stripped  # a steering instruction, sent verbatim
+    first, _, args = stripped.partition(" ")
+    word = first.lower()
+    if word in ("/h", "/?"):
+        word = "/help"
+    if args:
+        # /compact, /btw and skill commands take arguments; any other line
+        # with spaces stays a verbatim steer (the loop itself parses the
+        # /pin and /parallel directives out of steer text).
+        builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
+        smatches = [word] if word in skills else [c for c in skills if c.startswith(word)]
+        if builtin == ["/compact"] and not smatches:
+            if request_compact(session_dir, focus=args.strip()):
+                print(
+                    "[agent6] compaction requested (focus noted);"
+                    " applies before the next model call"
+                )
+            else:
+                print("[agent6] could not write the compaction request; nothing was requested")
+            return AGAIN
+        if builtin == ["/btw"] and not smatches:
+            # A btw is a question asked BESIDE the run; letting it fall
+            # through would send it to the loop as steer text instead.
+            print(_start_btw(stripped, session_dir, btw_runner))
+            return AGAIN
+        if len(smatches) == 1 and not builtin:
+            # A skill command travels as typed; the loop expands it (the
+            # one owner, so every composer's `/<skill>` means the same).
+            return f"{smatches[0]} {args.strip()}"
+        if word in _LOOP_DIRECTIVES:
+            return f"{word} {args.strip()}"
+        return stripped
+    if word in MENU_COMMANDS or word in skills:  # exact match (never both: the
+        # table builder drops skills that collide with a built-in)
+        matches = [word]
+    else:
+        builtin = [c for c in MENU_COMMANDS if c.startswith(word)]
+        matches = builtin + [c for c in skills if c.startswith(word) and c not in builtin]
+    if len(matches) > 1:
+        print(f"[agent6] ambiguous: {'  '.join(matches)} (type more)")
+        return AGAIN
+    if not matches:
+        print(
+            f"[agent6] unknown command {word!r}; /help lists them"
+            " (a line with spaces is sent as a steer)"
+        )
+        return AGAIN
+    if matches[0] in _ACTIONS:
+        return _ACTIONS[matches[0]]
+    if matches[0] in skills:
+        return matches[0]
+    _run_info_command(matches[0], session_dir, btw_runner, config_path)
+    return AGAIN
+
+
+def pause_line(
+    line: str | None,
+    session_dir: Path,
+    *,
+    btw_runner: BtwRunner | None = None,
+    config_path: Path | None = None,
+) -> str | None:
+    """The plain (one-shot) prompt's answer for one typed line: what the menu
+    answers, with a line that printed continuing the run. None (EOF) continues."""
+    if line is None:
+        return None
+    answer = _answer_line(line, session_dir, btw_runner, config_path, skill_menu_table(config_path))
+    return "" if isinstance(answer, _Again) else answer

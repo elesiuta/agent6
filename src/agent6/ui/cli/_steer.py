@@ -36,7 +36,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._menu_input import menu_capable, read_line_until
-from agent6.ui.cli._steer_menu import BtwRunner, normalize_steer_choice, pause_menu
+from agent6.ui.cli._steer_menu import BtwRunner, pause_line, pause_menu
 from agent6.ui.steer import SteerState, file_bridge_steer
 from agent6.viewmodel.format import format_usd
 
@@ -376,15 +376,16 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
                     # fish-style Tab preview of the slash commands.
                     return pause_menu(session_dir, btw_runner=btw_runner, config_path=config_path)
                 typed = tty_prompt(
-                    "[agent6] paused: [enter] continue · type to steer"
-                    " · q stop · exit leave · d detach: ",
+                    "[agent6] paused: [enter] continue · type to steer · /stop · /exit · /detach: ",
                     until=lambda: steer_answer_written(session_dir),
                 )
                 if typed is None and steer_answer_written(session_dir):
                     # A front-end's steer landed while the prompt waited.
                     tty_message("[agent6] a steer arrived from a front-end; taking it\n")
                     return take_steer_answer(session_dir)
-                return normalize_steer_choice(typed)
+                return pause_line(
+                    typed, session_dir, btw_runner=btw_runner, config_path=config_path
+                )
         finally:
             state["prompting"] = False
 
