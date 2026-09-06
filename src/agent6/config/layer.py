@@ -665,7 +665,7 @@ def find_invalid_entries(repo_root: Path, *, machine: Path | None = None) -> Con
 
     Returns the invalid leaves that can be dropped from a config FILE (each with its
     provenance), plus a `blocked` message when the config is invalid in a way fix
-    cannot repair by dropping a leaf (a non-absolute `state_dir`, a value only a
+    cannot repair by dropping a leaf (an unknown preset name, a value only a
     built-in default/preset carries, unreadable TOML). Empty + None == valid.
 
     With *machine* set, only the machine file's `[config]` overlay entries are

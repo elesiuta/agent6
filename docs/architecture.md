@@ -283,7 +283,7 @@ A second `agent6 run` parks: the submitted task is saved verbatim in the new run
 Plan and ask expose no edit tools and spawn freely; `--parallel` lanes work in isolated workdirs under the coordinator's one lock.
 
 The working tree at start is the run's next gate, in the same shape.
-Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt.
+Files that are untracked then are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt. A resume adds the files that appeared between legs and the run cannot show it wrote.
 Uncommitted changes to tracked files are asked about over the `ask_user` channel (stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes"); `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before its dir exists.
 
 ## Session state on disk
@@ -300,7 +300,7 @@ Ids are one namespace across every bucket, since every surface addresses a sessi
 | `checkpoints/<NNNN>.json` | per-turn snapshots at the pre-call boundary, carrying the workspace `head_sha` and curator `graph_version` |
 | `plan.md` | the plan itself, in plan sessions |
 | `transcripts/` | full provider request and response pairs for replay |
-| `untracked-at-start` | the files untracked when the run started (repo-root-relative, NUL-separated): the operator's, left out of every chain commit and dirty check; a fork copies its source's |
+| `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between legs and it cannot show it wrote; left out of every chain commit and dirty check; a fork copies its source's |
 
 `loop_state.json` is the latest pointer for resume; `checkpoints/` is the per-turn history `fork --at-turn` addresses, kept in full.
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor; the planner re-reads it before every turn and is shown it whenever it differs from what it last saw, so answers written there survive the next `finish_planning`.

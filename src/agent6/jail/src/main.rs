@@ -1377,12 +1377,11 @@ fn apply_landlock_strict(policy: &Policy) -> io::Result<()> {
     // within hierarchies it can already write; the crate's best-effort mode
     // drops TRUNCATE (and REFER) on kernels too old to know them, matching
     // sandbox/landlock.py, which masks the same bit below its ABI.
-    // MakeChar/MakeBlock are HANDLED (so they are denied everywhere) but never
-    // GRANTED: no build creates a device node, and under `sudo agent6` on a
-    // profile with no user namespace the child holds real CAP_MKNOD -- a block
-    // device for the host disk in its own workspace reads and writes raw
-    // sectors, past every path rule. Handled-but-ungranted is how Landlock
-    // says "never".
+    // MakeChar/MakeBlock are stripped from the set passed to handle_access, and
+    // a right the ruleset does not handle is left unrestricted by the kernel, so
+    // Landlock restricts neither. Device-node creation is denied here by the
+    // user namespace (the child holds no CAP_MKNOD in the initial one) and by
+    // the seccomp mode rule below, which is the only layer under hardened.
     let access_all = AccessFs::from_all(ABI::V3) & !AccessFs::MakeChar & !AccessFs::MakeBlock;
     let access_read = AccessFs::from_read(ABI::V3);
     // from_read excludes EXECUTE; system paths must be read+execute so spawned
@@ -1588,9 +1587,10 @@ fn apply_landlock_hardened(policy: &Policy) -> io::Result<()> {
     // handling truncate matters. It matters more here -- hardened has no
     // mount-namespace RO binds to fall back on, so Landlock is the only thing
     // standing between a jailed child and truncating files outside its grants.
-    // Device nodes are handled and never granted; see apply_landlock_strict.
-    // It matters most HERE: hardened has no user namespace, so under sudo the
-    // child is real root with CAP_MKNOD and no MS_NODEV bind to fall back on.
+    // Device nodes are not restricted by Landlock either (see
+    // apply_landlock_strict). It matters most HERE: hardened has no user
+    // namespace, so under sudo the child is real root with CAP_MKNOD and no
+    // MS_NODEV bind, and the seccomp mode rule below is the only thing left.
     let access_all = AccessFs::from_all(ABI::V3) & !AccessFs::MakeChar & !AccessFs::MakeBlock;
     let access_read = AccessFs::from_read(ABI::V3);
     let access_read_exec = access_read | AccessFs::Execute;
@@ -1965,8 +1965,9 @@ fn apply_seccomp() -> io::Result<()> {
     // `sudo agent6` on a profile with no user namespace the child is real root
     // with CAP_MKNOD and no MS_NODEV bind, so a block device for the host disk
     // in its own workspace reads and writes raw sectors past every path rule.
-    // Landlock denies it too (MakeChar/MakeBlock are handled, never granted);
-    // this is the second lock. One rule per type: rules are OR-ed, conditions
+    // Landlock does not cover it (MakeChar/MakeBlock are not in the handled
+    // set), so under hardened this rule is the only lock; strict has the user
+    // namespace as well. One rule per type: rules are OR-ed, conditions
     // AND-ed, so testing both types in one rule would match neither.
     // arm64 has no bare mknod(2); its mknodat carries the mode one arg later.
     #[cfg(target_arch = "aarch64")]
