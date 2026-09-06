@@ -25,7 +25,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - `sandbox.extra_read_paths` adds more; `agent6 check boundaries` prints the resolved set
 - `/tmp` is writable at every level
     - `strict`: a private tmpfs discarded with the run
-    - `hardened`: the host's `/tmp`; `HOME` (`/tmp/agent6-home`) is a host dir shared by every run on the machine
+    - `hardened`: the host's `/tmp`; `HOME` is `/tmp/agent6-home` there, a path agent6 does not create (a shared name on a multi-user host; `strict` creates it inside the private tmpfs)
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
     - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `strict`, and push needs egress
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary

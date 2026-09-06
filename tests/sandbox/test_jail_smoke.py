@@ -931,3 +931,20 @@ def test_jail_operator_hide_paths_mask_a_file(jail_bin: Path, tmp_path: Path) ->
     assert "fine" in res.stdout
     assert "token" not in res.stdout
     assert private.read_text(encoding="utf-8") == "token\n"
+
+
+def test_jail_home_exists_in_the_private_tmpfs(jail_bin: Path, tmp_path: Path) -> None:
+    # dispatch points HOME at /tmp/agent6-home; the launcher creates it in the
+    # fresh tmpfs, so `cd ~` and a toolchain's first write under it work.
+    try:
+        res = run_in_jail(
+            JailPolicy(
+                cwd=tmp_path,
+                argv=("/bin/sh", "-c", 'test -d "$HOME" && cd ~ && touch .probe'),
+                env=(("HOME", "/tmp/agent6-home"),),
+                timeout_s=10.0,
+            )
+        )
+    except JailUnavailableError:
+        pytest.skip("jail unavailable")
+    assert res.returncode == 0, (res.stdout, res.stderr)

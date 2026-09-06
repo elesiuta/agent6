@@ -880,6 +880,9 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         Some("size=1g"),
     )
     .map_err(io_err)?;
+    // HOME itself (dispatch sets /tmp/agent6-home): a missing home breaks `cd ~`
+    // and `git config --global` before any cache dir gets created under it.
+    fs::create_dir_all(new_root.join("tmp/agent6-home")).map_err(io_err)?;
     // Operator tool dirs (uv etc.) at their REAL locations, RO. After /tmp so a dir
     // that happens to live under it is not shadowed by the fresh tmpfs. Best-effort:
     // a dir that fails to mount just leaves that tool unreachable rather than aborting
