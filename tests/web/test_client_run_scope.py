@@ -45,3 +45,14 @@ def test_the_machine_watch_gates_on_the_shared_refusals() -> None:
     assert "m.refusals" in body, "the machine watch derives its own gating"
     assert "notRunning" not in body
     assert "canAnswer ? (data.reasoning || {}) : {}" in body
+
+
+def test_the_web_approval_box_offers_every_answer() -> None:
+    """`session-deny` is a first-class answer (the CLI's `x`, the TUI's "Deny
+    all", the endpoint's own Literal); the box offered three of the four."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("for (const ap of")
+    body = js[start : js.index("for (const q of", start)]
+    for answer in ("'yes'", "'no'", "'session'", "'session-deny'"):
+        assert f"send({answer})" in body, answer

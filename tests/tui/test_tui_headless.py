@@ -1501,3 +1501,29 @@ def test_the_menu_bar_title_keeps_the_tasks_brackets(tmp_path: Path) -> None:
             assert "[wip]" in text, text
 
     asyncio.run(scenario())
+
+
+def test_the_approval_modal_offers_every_answer_and_focuses_the_safe_one() -> None:
+    """`session-deny` is a first-class answer the CLI and the composer's inline
+    row both offer; the modal did not. Enter also fell on Allow, where the
+    modal's sibling deliberately focuses the safe choice."""
+
+    class _Host(App[None]):
+        def on_mount(self) -> None:
+            self.push_screen(ApprovalModal("a", "rm -rf build/"), lambda _v: None)
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, ApprovalModal)
+            labels = [str(b.label) for b in modal.query(Button)]
+            assert labels == ["Allow (y)", "Allow session (a)", "Deny (n)", "Deny all (x)"]
+            focused = modal.focused
+            assert isinstance(focused, Button) and focused.id == "no"
+            await pilot.press("x")
+            await pilot.pause()
+            assert app.screen is not modal, "'x' answered nothing"
+
+    asyncio.run(scenario())

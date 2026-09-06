@@ -72,6 +72,7 @@ class ApprovalModal(ModalScreen[str]):
         Binding("a", "approve_session", "Allow session", show=True),  # dropped when not standing
         Binding("n", "deny", "Deny", show=True),
         Binding("N", "deny", "Deny", show=False),
+        Binding("x", "deny_session", "Deny all", show=True),  # dropped when not standing
         Binding("escape", "deny", "Deny", show=False),
     ]
 
@@ -92,9 +93,13 @@ class ApprovalModal(ModalScreen[str]):
                 if self.standing:
                     yield Button("Allow session (a)", id="session", variant="success")
                 yield Button("Deny (n)", id="no", variant="error")
+                if self.standing:
+                    yield Button("Deny all (x)", id="session-deny", variant="error")
 
     def on_mount(self) -> None:
-        self.query_one("#yes", Button).focus()
+        # The safe choice takes the focus, as ConfirmModal's does: an accidental
+        # Enter must not grant a command the model wrote.
+        self.query_one("#no", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id or "no")  # button ids ARE the answer values
@@ -103,11 +108,15 @@ class ApprovalModal(ModalScreen[str]):
         self.dismiss("yes")
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Hides the "a" binding (footer included) on a prompt with no scope."""
-        return self.standing if action == "approve_session" else True
+        """Hides the scope bindings (footer included) on a prompt with none."""
+        del parameters
+        return self.standing if action in ("approve_session", "deny_session") else True
 
     def action_approve_session(self) -> None:
         self.dismiss("session")
+
+    def action_deny_session(self) -> None:
+        self.dismiss("session-deny")
 
     def action_deny(self) -> None:
         self.dismiss("no")
