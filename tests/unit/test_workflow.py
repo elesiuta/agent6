@@ -21,6 +21,7 @@ from agent6.providers import ProviderError, ProviderResponse
 from agent6.tools.mcp_client import MCPToolDescriptor
 from agent6.tools.results import ExecResult, MetricResult, RawResult, ToolResult
 from agent6.workflows._conversation import AssistantTurn, Conversation, Notice
+from agent6.workflows._session_state import SNAPSHOT_VERSION
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import LoopState, TurnState, Workflow
 
@@ -4028,7 +4029,7 @@ def test_load_run_snapshot_rejects_version_mismatch(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="is version 999, not 2"):
+    with pytest.raises(ValueError, match=f"is version 999, not {SNAPSHOT_VERSION}"):
         load_session_snapshot(snap_path)
 
 
@@ -4056,7 +4057,7 @@ def test_resume_drives_loop_from_snapshot(tmp_path: Path) -> None:
     # Pre-seed the snapshot as if a prior run had just completed iter 4
     # and was about to start iter 5.
     snap_path.write_text(
-        '{"version": 2, "system": "S", "messages": [{"role": "user", '
+        f'{{"version": {SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 2, '
         '"next_iteration": 5, "root_task_id": null, "original_task": "go", '
         '"verify_command": []}',
@@ -4085,7 +4086,7 @@ def test_resume_restores_root_task_id_on_dispatcher(tmp_path: Path) -> None:
     """A non-null root_task_id in the snapshot must be re-set on dispatcher."""
     snap_path = tmp_path / "loop_state.json"
     snap_path.write_text(
-        '{"version": 2, "system": "S", "messages": [{"role": "user", '
+        f'{{"version": {SNAPSHOT_VERSION}, "system": "S", "messages": [{{"role": "user", '
         '"content": [{"type": "text", "text": "go"}]}], "tool_calls": 0, '
         '"next_iteration": 1, "root_task_id": "task-xyz", "original_task": "go", '
         '"verify_command": []}',
@@ -7076,8 +7077,10 @@ def _metric_repo(repo: Path) -> str:
     ).stdout.strip()
 
 
-def _metric_wf(repo: Path, base: str, dispatcher: MagicMock) -> Workflow:
-    """A gateless run with an operator metric, committing per step on a chain."""
+def _metric_wf(
+    repo: Path, base: str, dispatcher: MagicMock, *, commit_per_step: bool = True
+) -> Workflow:
+    """A gateless run with an operator metric on a chain."""
     return Workflow(
         root=repo,
         config=Config.model_validate(
@@ -7098,6 +7101,7 @@ def _metric_wf(repo: Path, base: str, dispatcher: MagicMock) -> Workflow:
         mode="run",
         chain_ref="refs/agent6/metric-run/head",
         chain_fallback_parent=base,
+        commit_per_step=commit_per_step,
     )
 
 
@@ -7123,7 +7127,9 @@ def _edited_turn(iteration: int) -> TurnState:
 def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: Path) -> None:
     """The auto path skipped its sample only when the manual call landed on a
     verify-pass turn, so on a gateless run the operator's benchmark ran twice
-    per turn over one tree, and the duplicate read as "not a new best"."""
+    per turn over one tree, and the duplicate read as "not a new best". With
+    nothing committing between steps the tree reads changed on every turn,
+    so the worker's reading must stamp the tree it covers."""
     repo = tmp_path / "repo"
     base = _metric_repo(repo)
     dispatched: list[str] = []
@@ -7134,7 +7140,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: Path
         return _metric_result(42.0)
 
     dispatcher.dispatch.side_effect = dispatch
-    wf = _metric_wf(repo, base, dispatcher)
+    wf = _metric_wf(repo, base, dispatcher, commit_per_step=False)
     state = LoopState(original_task="t", tool_calls=0)
     turn = _edited_turn(1)
     (repo / "x.txt").write_text("an improvement\n", encoding="utf-8")
@@ -7145,6 +7151,13 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: Path
     assert dispatched == [], "the harness re-ran the operator's metric over an unchanged tree"
     assert [s.score for s in state.metric_history] == [42.0]
     assert "not a new best" not in (turn.metric_feedback or "")
+    # The next turn reads the same tree: still one reading per state of it.
+    later = TurnState(
+        iteration=2, resp=_resp(""), assistant=AssistantTurn(raw_content=(), tool_uses=())
+    )
+    wf._turn_auto_commit_and_metric(state, later)  # pyright: ignore[reportPrivateUsage]
+    assert dispatched == []
+    assert [s.score for s in state.metric_history] == [42.0]
 
 
 def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: Path) -> None:

@@ -1418,6 +1418,10 @@ class Workflow:
                 self._note_verify_result(state, turn, result)
         elif name == "run_metric_command" and isinstance(result, MetricResult):
             turn.metric_sampled = True
+            # The tree this reading covers: without the stamp the auto path
+            # sampled it again on the next turn that read the tree as changed
+            # (every turn, with nothing committing between steps).
+            state.metric_tree = self._worktree_tree_sha()
             turn.metric_feedback = self._record_metric_result(
                 state.metric_history,
                 result,
