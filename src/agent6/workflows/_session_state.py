@@ -191,6 +191,10 @@ class SessionSnapshot(BaseModel):
     last_verify_ok: bool | None = None
     edited_since_verify: bool = False
     baseline_ok: bool | None = None
+    # The full gate overran verify_timeout_s once: gates run scoped for the
+    # rest of the run. A fact about the suite, not the tree, so a resumed leg
+    # carries it unconditionally instead of burning the timeout again.
+    verify_scoped: bool = False
     # Executed-dispatch count for the standing spin guard (0 on old snapshots:
     # one extra re-entry at most, then the mark resyncs).
     ok_tool_calls: int = 0

@@ -34,6 +34,9 @@ class VerifyVerdict:
 
     last_ok: bool | None = None
     denied: bool = False
+    # The full gate overran verify_timeout_s once: harness gates run scoped
+    # (command + tests nearest the run's diff) for the rest of the run.
+    scoped: bool = False
     baseline_ok: bool | None = None
     last_tail: str = ""
     fail_signature: str = ""

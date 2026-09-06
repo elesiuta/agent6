@@ -155,6 +155,7 @@ def restore_completion_state(state: LoopState, snap: SessionSnapshot) -> None:
     persisted completion field is one field on SessionSnapshot plus one line here."""
     state.review_rejections_total = snap.review_rejections_total
     state.verify.ever_passed = snap.verify_ever_passed
+    state.verify.scoped = snap.verify_scoped
     state.gateless_ever_committed = snap.gateless_ever_committed
     state.parallel_groups_dispatched = snap.parallel_groups_dispatched
     state.pins = list(snap.pins)

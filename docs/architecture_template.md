@@ -77,7 +77,7 @@ flowchart TD
 `agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` from the matching checkpoint.
 With the per-tool transcripts, an interrupted run replays deterministically up to the next model call.
 
-**The harness runs the gate** (`[workflow].verify_when`, default `finish`): when `finish_session` arrives over a tree no green run covers, the loop runs `verify_command` itself through the same dispatcher path as the model's `run_verify_command` (approvals included; a denied approval withholds the gate for the rest of the run, and the run ends unverified); `step` also runs it after every editing turn; `never` leaves every run to the model.
+**The harness runs the gate** (`[workflow].verify_when`, default `finish`): when `finish_session` arrives over a tree no green run covers, the loop runs `verify_command` itself through the same dispatcher path as the model's `run_verify_command` (approvals included; a denied approval withholds the gate for the rest of the run, and the run ends unverified); `step` also runs it after every editing turn; `never` leaves every run to the model. A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run or the model's own) re-runs scoped to the tests nearest the run's diff and stays scoped for the run; the notice lists the selected files, `session.end` carries `scoped`, and a scoped green reads `passed · scoped gate` on every surface.
 A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
 
 **Per-step commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged); a step no gate judged (a gateless run, or `verify_when = "finish"` between the model's own gate runs) commits as a checkpoint.
@@ -285,7 +285,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.metric.*`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-iteration usage heartbeat, read by `agent6 sessions show` |
 | `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, decision, disarmed), `skipped`, and the finish gate's rejections |
-| `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, false = not green, null = nothing gated it); one shape from every exit path |
+| `session.end` | `reason`, `iterations`, `all_passed` (true = final tree observed verify-green, false = not green, null = nothing gated it), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it); one shape from every exit path |
 
 A `run_command` approval publishes as `approval.prompt`.
 

@@ -53,6 +53,22 @@ def harness_verify_notice(result: ExecResult, why: HarnessVerifyWhy) -> str:
     return f"{head}\n{tail}" if tail else head
 
 
+def scoped_verify_notice(
+    result: ExecResult, why: HarnessVerifyWhy, *, timeout_s: float, n_paths: int
+) -> str:
+    """What the model sees of a scoped gate run: the full command overran its
+    budget, so the gate ran only the tests nearest the run's change. A scoped
+    green certifies less than a full pass and the notice says so."""
+    verdict = "passed" if result.returncode == 0 else f"exit {result.returncode}"
+    tail = f"{result.stdout}\n{result.stderr}".strip()[-_TAIL_CHARS:]
+    head = (
+        f"[harness verify] {why}: verify_command overran its {timeout_s:.0f}s budget;"
+        f" the gate ran scoped to the {n_paths} test files nearest the run's change:"
+        f" {verdict} ({result.duration_s:.0f}s). A scoped green is not a full-suite pass."
+    )
+    return f"{head}\n{tail}" if tail else head
+
+
 def finish_red_notice(*, used: int, retries: int) -> str:
     """The finish came back: the gate did not certify the tree."""
     left = retries - used

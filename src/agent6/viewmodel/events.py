@@ -290,6 +290,9 @@ class SessionEnd:
     # not green (red/stale/error), None = nothing gated it (no verify command).
     all_passed: bool | None
     reason: str
+    # The gate that judged the tree ran scoped to the tests nearest the run's
+    # diff (the full command overran verify_timeout_s): a pass is qualified.
+    scoped: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -507,6 +510,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
             return SessionEnd(
                 all_passed=None if raw_ap is None else bool(raw_ap),
                 reason=str(raw.get("reason", "") or ""),
+                scoped=bool(raw.get("scoped", False)),
             )
         case other:
             return RawEvent(type=str(other), raw=raw)

@@ -140,6 +140,11 @@ from agent6.workflows._metric import (
     metric_plateau_nudge,
     metric_plateau_summary,
 )
+from agent6.workflows._nearest_tests import (
+    diff_changed_paths,
+    is_bare_pytest,
+    nearest_test_paths,
+)
 from agent6.workflows._nudges import (
     BASELINE_RED_NOTICE,
     MEMORY_FINISH_NUDGE,
@@ -228,6 +233,7 @@ from agent6.workflows._verify_gate import (
     finish_red_notice,
     harness_verify_due,
     harness_verify_notice,
+    scoped_verify_notice,
 )
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
@@ -1524,7 +1530,15 @@ class Workflow:
         self._log(f"LOOP: harness verify ({why}) at iter {turn.iteration}")
         self._emit("loop.verify_harness", why=why, iteration=turn.iteration)
         try:
-            result = self.dispatcher.run_verify()
+            scope = self._gate_scope_paths() if state.verify.scoped else ()
+            result = self.dispatcher.run_verify(extra_argv=scope)
+            if result.returncode == self._EXIT_TIMEOUT and not state.verify.scoped:
+                scope = self._gate_scope_paths()
+                if scope:
+                    state.verify.scoped = True
+                    self._log(f"LOOP: verify overran; gate scoped to {len(scope)} test files")
+                    self._emit("loop.verify_scoped", n_paths=len(scope), iteration=turn.iteration)
+                    result = self.dispatcher.run_verify(extra_argv=scope)
         except ToolDenied as exc:
             state.verify.denied = True
             turn.tool_results.append(
@@ -1542,8 +1556,27 @@ class Workflow:
                 exc, iteration=turn.iteration, tool_calls=state.tool_calls
             )
         self._note_verify_result(state, turn, result)
-        turn.tool_results.append(Notice(harness_verify_notice(result, why)))
+        notice = (
+            scoped_verify_notice(
+                result,
+                why,
+                timeout_s=self.config.workflow.verify_timeout_s,
+                n_paths=len(scope),
+            )
+            if scope
+            else harness_verify_notice(result, why)
+        )
+        turn.tool_results.append(Notice(notice))
         return None
+
+    def _gate_scope_paths(self) -> tuple[str, ...]:
+        """The scoped-gate selection: tests nearest the run's cumulative diff.
+        Empty unless the gate is a pytest argv naming no paths (the one shape
+        that takes appended test files as its selection), or when nothing
+        near the change exists to run."""
+        if not is_bare_pytest(tuple(self.config.workflow.verify_command)):
+            return ()
+        return nearest_test_paths(self.root, diff_changed_paths(self._run_diff()))
 
     def _turn_auto_commit_and_metric(
         self, state: LoopState, turn: TurnState
@@ -3310,13 +3343,18 @@ class Workflow:
 
         The roots pass either way, like the settled path: the DAG tracks work
         items and the run-level word carries the verify truth, so grounding it
-        there too left a red-verify finish reading `tasks 0/1` forever."""
+        there too left a red-verify finish reading `tasks 0/1` forever.
+
+        `scoped` carries whether the gate ran scoped to the tests nearest the
+        diff (the full command overran verify_timeout_s), so a scoped green
+        reads "passed · scoped gate" on every surface, never a bare pass."""
         self._pass_pending_root_tasks()
         self._emit(
             "session.end",
             reason=reason,
             iterations=iteration,
             all_passed=self._tree_is_verify_green(state),
+            scoped=state.verify.scoped,
         )
 
     def _emit_graph_snapshot(self) -> None:
@@ -3476,6 +3514,7 @@ class Workflow:
             last_verify_ok=state.verify.last_ok,
             edited_since_verify=state.verify.edited_since,
             baseline_ok=state.verify.baseline_ok,
+            verify_scoped=state.verify.scoped,
             standing_tools_mark=state.standing_tools_mark,
             standing_fruitless=state.standing_fruitless,
             ok_tool_calls=state.ok_tool_calls,

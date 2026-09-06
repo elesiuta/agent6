@@ -11,7 +11,10 @@ from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock
 
+import pytest
+
 from agent6.config import Config
+from agent6.viewmodel.listing import status_word
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
     LoopState,
@@ -121,6 +124,35 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
         assert (emitted[-1]["all_passed"] is True) == (
             wf._verification(state) == "passed"  # pyright: ignore[reportPrivateUsage]
         )
+
+
+def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
+    """A scoped green is a pass with a qualifier: `session.end` carries
+    `scoped`, and every surface words it "passed · scoped gate" through the
+    one status_word. A run that ended over a red or a stale scoped gate is
+    "finished" as before: the qualifier belongs to a pass only."""
+    emitted: list[dict[str, Any]] = []
+
+    def _capture(_type: str, **fields: Any) -> None:
+        emitted.append(fields)
+
+    wf = _wf(verify=True)
+    wf.events = MagicMock(emit=_capture)
+    wf.events.emit = _capture  # type: ignore[method-assign]
+    for scoped in (True, False):
+        state = LoopState(
+            original_task="t", tool_calls=0, verify=VerifyVerdict(last_ok=True, scoped=scoped)
+        )
+        wf._emit_run_end_grounded(  # pyright: ignore[reportPrivateUsage]
+            reason="finish_session", iteration=1, state=state
+        )
+        assert (emitted[-1]["all_passed"], emitted[-1]["scoped"]) == (True, scoped)
+    assert status_word(
+        finished=True, all_passed=True, end_reason="finish_session", scoped=True
+    ) == ("passed", "scoped gate")
+    assert status_word(
+        finished=True, all_passed=False, end_reason="finish_session", scoped=True
+    ) == ("finished", "")
 
 
 def test_plan_and_ask_are_never_gated_on_verify() -> None:
@@ -242,6 +274,19 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: Path) -> N
     assert _resumed_state(wf, _snap(head_sha="", **green)).verify.last_ok is None
 
 
+def test_a_resumed_leg_carries_the_scoped_gate(tmp_path: Path) -> None:
+    """The full gate overran once: the resumed leg goes straight to the
+    scoped form instead of burning the timeout again. Carried whatever the
+    tree did between legs (the fact is about the suite, not the tree), while
+    the verdict itself still drops when the tree moved."""
+    _git_seed(tmp_path)
+    wf = _wf(verify=True, root=tmp_path)
+    (tmp_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    state = _resumed_state(wf, _snap(verify_scoped=True, last_verify_ok=True))
+    assert state.verify.scoped is True
+    assert state.verify.last_ok is None
+
+
 # ---- the harness-run gate (`[workflow].verify_when`) -------------------------
 
 
@@ -299,7 +344,7 @@ def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree
 
     assert wf._turn_harness_verify(state, turn) is None  # pyright: ignore[reportPrivateUsage]
 
-    dispatcher.run_verify.assert_called_once_with()
+    dispatcher.run_verify.assert_called_once_with(extra_argv=())
     assert state.verify.green_and_untouched and turn.verify_just_passed
     assert _notices(turn) == ["[harness verify] finish: verify_command passed (1s).\n3 passed"]
     wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
@@ -458,4 +503,120 @@ def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
     turn.verify_just_passed = True  # the model's own green, then the edit
     turn.edit_since_verify_pass = True
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
-    dispatcher.run_verify.assert_called_once_with()
+    dispatcher.run_verify.assert_called_once_with(extra_argv=())
+
+
+def _scoped_wf(root: Path, command: list[str]) -> tuple[Workflow, MagicMock]:
+    """A finish-gated loop whose root holds pkg/mod.py + tests/test_mod.py."""
+    for rel in ("pkg/mod.py", "tests/test_mod.py"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("")
+    data: dict[str, Any] = {"workflow": {"verify_command": command, "verify_when": "finish"}}
+    dispatcher = MagicMock()
+    dispatcher.command_policy.return_value = "yes"
+    wf = Workflow(
+        root=root,
+        config=Config.model_validate(data),
+        provider=MagicMock(),
+        dispatcher=dispatcher,
+        logger=lambda _m: None,
+        mode="run",
+    )
+    return wf, dispatcher
+
+
+def _fake_diff(_self: Workflow) -> str:
+    return "diff --git a/pkg/mod.py b/pkg/mod.py\n"
+
+
+def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """The full gate overran verify_timeout_s (exit 124): the harness re-runs
+    the same pytest command scoped to the tests nearest the run's diff, the
+    verdict comes from the scoped run, and the notice names the scope. Later
+    gates go straight to the scoped form instead of burning the timeout again.
+    Grounds the SWE-rebench broke-P2P class: big-repo legs finished over a
+    gate that timed out and certified nothing."""
+    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
+    dispatcher.run_verify.side_effect = [_exec(124), _exec(0)]
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    assert [c.kwargs["extra_argv"] for c in dispatcher.run_verify.call_args_list] == [
+        (),
+        ("tests/test_mod.py",),
+    ]
+    assert state.verify.scoped is True
+    assert turn.verify_just_passed is True
+    notice = turn.tool_results[-1].text
+    assert "scoped to the 1 test files nearest" in notice
+    assert "not a full-suite pass" in notice
+    # The next gate skips the doomed full run.
+    dispatcher.run_verify.reset_mock(side_effect=True)
+    dispatcher.run_verify.return_value = _exec(0)
+    state.verify.note_edit()
+    turn2 = _turn(finishing=True, edited=True)
+    wf._turn_harness_verify(state, turn2)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
+
+
+def test_a_timed_out_non_pytest_gate_stays_a_plain_timeout(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Only pytest takes file-path selection; a make/other gate that times out
+    is reported as-is, one run, no scoped rerun."""
+    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, ["make", "test"])
+    dispatcher.run_verify.return_value = _exec(124)
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_called_once_with(extra_argv=())
+    assert state.verify.scoped is False
+    assert "scoped" not in turn.tool_results[-1].text
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["sh", "-c", "uv run ruff check && uv run pytest"],
+        ["python", "-m", "pytest", "-q", "tests"],
+    ],
+    ids=["sh-c-pipeline", "pytest-naming-a-path"],
+)
+def test_a_gate_that_cannot_take_appended_paths_stays_a_plain_timeout(
+    tmp_path: Path, monkeypatch: Any, command: list[str]
+) -> None:
+    """A `sh -c` script binds appended paths as $0/$1 with the script
+    unchanged, and `pytest tests` unions the dir with the files: the re-run
+    would be the identical full command, a second timeout, and a false "ran
+    scoped" notice. The substring predicate scoped both; neither scopes."""
+    monkeypatch.setattr(Workflow, "_run_diff", _fake_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, command)
+    dispatcher.run_verify.return_value = _exec(124)
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_called_once_with(extra_argv=())
+    assert state.verify.scoped is False
+    assert _notices(turn) == ["[harness verify] finish: verify_command exit 124 (1s)."]
+
+
+def test_a_timeout_with_no_nearby_tests_stands(tmp_path: Path, monkeypatch: Any) -> None:
+    """Nothing near the change to run: the timeout is the verdict; scoping
+    never arms on an empty selection."""
+
+    def no_tests_diff(_self: Workflow) -> str:
+        return "diff --git a/docs/page.md b/docs/page.md\n"
+
+    monkeypatch.setattr(Workflow, "_run_diff", no_tests_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
+    dispatcher.run_verify.return_value = _exec(124)
+    state = LoopState(original_task="t", tool_calls=0)
+    turn = _turn(finishing=True)
+    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
+    dispatcher.run_verify.assert_called_once_with(extra_argv=())
+    assert state.verify.scoped is False
+    assert turn.verify_just_failed is True

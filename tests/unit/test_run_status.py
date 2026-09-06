@@ -178,6 +178,31 @@ def test_status_leads_with_the_listing_word_then_the_raw_reason(
     assert "passed (finish_session)" in capsys.readouterr().out
 
 
+def test_status_of_a_scoped_green_names_the_scoped_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pass certified by a scoped gate reads `passed · scoped gate` here as on
+    every listing (the label is `status_label`'s); the raw reason stays in parens."""
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(40), "type": "session.start"},
+            {
+                "ts": _ts(1),
+                "type": "session.end",
+                "reason": "finish_session",
+                "all_passed": True,
+                "scoped": True,
+            },
+        ],
+    )
+    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["state"] == "passed · scoped gate (finish_session)"
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert "state:      passed · scoped gate (finish_session)\n" in capsys.readouterr().out
+
+
 def test_status_finish_without_all_passed_reads_finished(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -204,8 +229,9 @@ def test_status_error_reason_reads_failed(
             {"ts": _ts(1), "type": "session.end", "reason": "provider_error", "all_passed": False},
         ],
     )
-    _cmd_status("winsome-dawn-YWH5ZS")
-    assert "failed (provider_error)" in capsys.readouterr().out
+    # The label already carries the reason; the parenthetical is not repeated.
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert "state:      failed · provider error\n" in capsys.readouterr().out
 
 
 def test_status_shows_fan_out_compare_outcome(

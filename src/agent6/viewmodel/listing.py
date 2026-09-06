@@ -168,7 +168,9 @@ class SessionSummary:
     verify_ok: bool | None = None
 
 
-def status_word(*, finished: bool, all_passed: bool | None, end_reason: str) -> tuple[str, str]:
+def status_word(
+    *, finished: bool, all_passed: bool | None, end_reason: str, scoped: bool = False
+) -> tuple[str, str]:
     """Map an end state to `(word, reason-detail)`.
 
     The single place that decides how a run's outcome reads -- shared by
@@ -183,7 +185,9 @@ def status_word(*, finished: bool, all_passed: bool | None, end_reason: str) -> 
     observed verify-green, False = it was not (red, stale, or an error end),
     None = NOTHING gated it (no verify command). None reads "finished"
     whatever the reason: an ungated end never claims "passed" and never
-    reads "failed".
+    reads "failed". `scoped` qualifies a pass: the gate that certified the
+    tree ran scoped to the tests nearest the run's diff, so it reads
+    "passed · scoped gate", never a bare "passed".
     """
     if not finished:
         return "running", ""
@@ -205,7 +209,7 @@ def status_word(*, finished: bool, all_passed: bool | None, end_reason: str) -> 
     if end_reason in no_verify:
         return no_verify[end_reason]
     if all_passed:
-        return "passed", ""
+        return "passed", "scoped gate" if scoped else ""
     # Only an OBSERVED not-green (False) can word "failed"; the ungated None
     # falls through to "finished" whatever the reason.
     if all_passed is False and end_reason and end_reason != "finish_session":
@@ -237,6 +241,7 @@ class StatusFacts:
     started: bool = False  # a session.start was seen (a parked/created run has none)
     finished: bool = False
     all_passed: bool | None = False  # None = the end was ungated (no verify command)
+    verify_scoped: bool = False  # the judging gate ran scoped (qualifies a pass)
     end_reason: str = ""
     operator_blocked: bool = False  # alive but waiting on an unanswered approval/question
     blocked_kind: str = ""  # "approval" | "question" | "" (oldest unanswered prompt)
@@ -261,7 +266,12 @@ def status_for_session_dir(session_dir: Path, facts: StatusFacts) -> tuple[str, 
     (silence would read "running" for the whole 600s window).
     """
     if facts.finished:
-        return status_word(finished=True, all_passed=facts.all_passed, end_reason=facts.end_reason)
+        return status_word(
+            finished=True,
+            all_passed=facts.all_passed,
+            end_reason=facts.end_reason,
+            scoped=facts.verify_scoped,
+        )
     if facts.operator_blocked and worker_is_alive(session_dir):
         # Before session.start too: a run asks about the working tree's
         # uncommitted changes before it starts. The detail names WHAT it
@@ -366,6 +376,7 @@ class LogScan:
     task: str = ""
     finished: bool = False  # a later resume un-finishes
     all_passed: bool | None = False  # None = the end was ungated (no verify command)
+    verify_scoped: bool = False  # session.end scoped: the judging gate ran scoped
     end_reason: str = ""
     cost_usd: float | None = None
     usd_partial: bool = False  # sticky: unpriced spend in any leg -> under-estimate
@@ -405,6 +416,7 @@ class LogScan:
             started=self.saw_start,
             finished=self.finished,
             all_passed=self.all_passed,
+            verify_scoped=self.verify_scoped,
             end_reason=self.end_reason,
             operator_blocked=self.operator_blocked,
             blocked_kind=self.blocked_kind,
@@ -463,6 +475,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     mode, task = "?", ""
     finished, end_reason = False, ""
     all_passed: bool | None = False
+    verify_scoped = False
     saw_start = False
     usd_leg = 0.0  # latest leg's running total
     usd_prior_legs = 0.0  # summed totals of completed (resumed-past) legs
@@ -524,6 +537,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                     # (a pre-tri-state log) stays False, reading as it always did.
                     raw_ap = ev.get("all_passed", False)
                     all_passed = None if raw_ap is None else bool(raw_ap)
+                    verify_scoped = bool(ev.get("scoped", False))
                     end_reason = str(ev.get("reason", ""))
                 elif etype == "loop.resume.start":
                     if saw_start:
@@ -572,6 +586,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         task=task,
         finished=finished,
         all_passed=all_passed,
+        verify_scoped=verify_scoped,
         end_reason=end_reason,
         cost_usd=(usd_prior_legs + usd_leg) if saw_budget else None,
         usd_partial=usd_partial,

@@ -169,6 +169,7 @@
   "started": true,
   "finished": true,
   "all_passed": true,
+  "verify_scoped": false,
   "end_reason": "finish_session",
   "undone_to": "",
   "undone_text": "",

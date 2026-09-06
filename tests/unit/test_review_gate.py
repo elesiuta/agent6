@@ -468,7 +468,7 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     state = _settled_state()
     turn = _idle_turn()
     assert wf._turn_verify_settled(state, turn) is None  # pyright: ignore[reportPrivateUsage]
-    dispatcher.run_verify.assert_called_once_with()
+    dispatcher.run_verify.assert_called_once_with(extra_argv=())
     assert turn.verify_settled_stop is False and state.verify_settled_idle == 0
     assert state.verify_finish_retries_used == 1
     notices = [r.text for r in turn.tool_results if hasattr(r, "text")]

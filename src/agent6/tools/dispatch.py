@@ -808,10 +808,13 @@ class ToolDispatcher:
             return ToolDenied(f"{name} not run: the run was asked to stop while awaiting approval")
         return ToolDenied(f"{name} not approved (sandbox.run_commands='ask')")
 
-    def run_verify(self) -> ExecResult:
+    def run_verify(self, extra_argv: tuple[str, ...] = ()) -> ExecResult:
         """Run the gate: the model's `run_verify_command` and the harness's
-        `verify_when` certification share this one path, approvals included."""
-        argv = tuple(self._config.workflow.verify_command)
+        `verify_when` certification share this one path, approvals included.
+        *extra_argv* appends to the configured command (the harness's scoped
+        fallback passes the selected test paths); the result's `command`
+        carries the argv that actually ran."""
+        argv = tuple(self._config.workflow.verify_command) + extra_argv
         if self.command_policy() == "ask" and not self._approver(
             f"Allow run_verify_command: {shlex.join(argv)}", scope=COMMAND_SCOPE
         ):

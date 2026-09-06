@@ -506,6 +506,11 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
     assert session_status_label(end("finish_session", True)) == "passed"
     assert session_status_label(end("finish_session", False)) == "finished"
     assert session_status_label(end("provider_error", False)) == "failed · provider error"
+    scoped = apply_event(
+        end("finish_session", True),
+        {"type": "session.end", "reason": "finish_session", "all_passed": True, "scoped": True},
+    )
+    assert session_status_label(scoped) == "passed · scoped gate"
     # and the computed label rides along on the wire dict for the web client
     assert session_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
     # the raw status WORD rides along too, so a client can branch on it (the web

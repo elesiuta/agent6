@@ -5601,7 +5601,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
 
-        def run_verify(self) -> ExecResult:
+        def run_verify(self, extra_argv: tuple[str, ...] = ()) -> ExecResult:
             self.gate_runs += 1
             return ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False

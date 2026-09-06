@@ -218,6 +218,7 @@ class SessionState:
     started: bool = False  # a session.start was folded (a parked/created run has none)
     finished: bool = False
     all_passed: bool | None = None
+    verify_scoped: bool = False  # session.end scoped: the judging gate ran scoped
     end_reason: str = ""  # session.end reason: finish_session | steer_abort | provider_error | ...
     undone_to: str = ""  # /undo's fork: the child session id surfaces follow
     undone_text: str = ""  # the message /undo took back (composer refill)
@@ -568,8 +569,14 @@ def apply_event(state: SessionState, event: dict[str, Any]) -> SessionState:  # 
         case events.SteerRequested():
             return replace(state, steer_requests=state.steer_requests + 1)
 
-        case events.SessionEnd(all_passed=all_passed, reason=reason):
-            return replace(state, finished=True, all_passed=all_passed, end_reason=reason)
+        case events.SessionEnd(all_passed=all_passed, reason=reason, scoped=scoped):
+            return replace(
+                state,
+                finished=True,
+                all_passed=all_passed,
+                end_reason=reason,
+                verify_scoped=scoped,
+            )
 
         case events.SessionUndone(new_session_id=new_id, undone_text=text):
             return replace(state, undone_to=new_id, undone_text=text)
@@ -656,7 +663,10 @@ def session_status_label(state: SessionState) -> str:
     `listing.status_for_session_dir` with `status_facts` instead -- the dir
     knows parked/starting/created/stale/waiting, this cannot."""
     word, reason = status_word(
-        finished=state.finished, all_passed=state.all_passed, end_reason=state.end_reason
+        finished=state.finished,
+        all_passed=state.all_passed,
+        end_reason=state.end_reason,
+        scoped=state.verify_scoped,
     )
     return status_label(word, reason)
 
@@ -673,6 +683,7 @@ def status_facts(state: SessionState) -> StatusFacts:
         started=state.started,
         finished=state.finished,
         all_passed=state.all_passed,
+        verify_scoped=state.verify_scoped,
         end_reason=state.end_reason,
         operator_blocked=bool(pending),
         blocked_kind=oldest[0] if oldest else "",
@@ -752,7 +763,10 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         # liveness is unknowable here.
         d["live"] = None
         word, reason = status_word(
-            finished=state.finished, all_passed=state.all_passed, end_reason=state.end_reason
+            finished=state.finished,
+            all_passed=state.all_passed,
+            end_reason=state.end_reason,
+            scoped=state.verify_scoped,
         )
     # The raw status WORD, not only the human label, so a client can branch on it
     # -- e.g. render the waiting line instead of the "working" heartbeat when the

@@ -20,7 +20,13 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import print_no_session_match, resolve_or_newest_layout
 from agent6.viewmodel import LogScan, scan_session_log, status_for_session_dir
-from agent6.viewmodel.format import format_branch, format_compare, format_cost, format_lineage
+from agent6.viewmodel.format import (
+    format_branch,
+    format_compare,
+    format_cost,
+    format_lineage,
+    status_label,
+)
 
 
 def _fmt_dur(seconds: float | None) -> str:
@@ -60,15 +66,18 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
 def _status_state(session_dir: Path, scan: LogScan, *, last_age: float | None) -> str:
     """The one-line state `sessions show` prints (and emits as --json "state").
 
-    Leads with the LISTING's word -- `status_for_session_dir`, the one decision
-    every surface feeds -- then appends this surface's diagnostic detail (what
-    to do, or why the word applies). The pre-unification words lied twice: a
-    crashed run led with "stopped" (the hub's word for an OPERATOR stop) and a
-    launching run with "running" (the hub said "starting")."""
+    Leads with the LISTING's label -- `status_label` over
+    `status_for_session_dir`, the one decision every surface feeds -- then
+    appends this surface's diagnostic detail (what to do, or why the word
+    applies). The pre-unification words lied twice: a crashed run led with
+    "stopped" (the hub's word for an OPERATOR stop) and a launching run with
+    "running" (the hub said "starting")."""
     word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if scan.finished:
-        # An ask ends "answered": the reason repeats the word.
-        return word if scan.end_reason == word else f"{word} ({scan.end_reason})"
+        # The raw end reason is the diagnostic; it is not repeated when the
+        # label already carries it (an ask's word, a failure's reason).
+        label = status_label(word, reason)
+        return label if scan.end_reason in (word, reason) else f"{label} ({scan.end_reason})"
     detail = {
         "waiting": "needs answer; attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
