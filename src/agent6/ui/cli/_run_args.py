@@ -49,7 +49,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default=[],
         metavar="TEXT",
         help="Pin an instruction before the run starts (repeatable). Like /pin:"
-        " it survives context compaction and stays binding for the whole run."
+        " it survives context compaction and is restated to the model for the whole run."
         " A /parallel lane inherits the coordinator's pins through this.",
     )
     run_profile = run_p.add_argument(
