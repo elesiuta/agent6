@@ -146,6 +146,40 @@ def test_withdrawn_command_tools_are_absent_and_named(tmp_path: Path) -> None:
     assert "withdrawn" in err and "run_commands" in err and "'no'" in err
 
 
+def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(tmp_path: Path) -> None:
+    """With no verify command there is nothing to run: `run_verify` reached the
+    jail with an empty argv and answered "tuple index out of range", and
+    `apply_patch_in_sandbox` applied the patch and THEN failed the same way,
+    leaving the workspace changed under a call reported as failed."""
+    p = tmp_path / "agent6.toml"
+    p.write_text(
+        _VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"').replace(
+            'verify_command = ["true"]', ""
+        ),
+        encoding="utf-8",
+    )
+    server = MCPServer(
+        root=tmp_path, config=load_config(p), stdin=io.BytesIO(), stdout=io.BytesIO()
+    )
+    resps = _roundtrip(
+        server,
+        [
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "apply_patch_in_sandbox", "arguments": {}},
+            },
+        ],
+    )
+
+    names = {t["name"] for t in resps[0]["result"]["tools"]}
+    assert names == {"run_in_sandbox", "query_dag", "list_sessions"}
+    err = resps[1]["error"]["message"]
+    assert "withdrawn" in err and "verify_command" in err
+
+
 def test_unknown_method_returns_rpc_error(tmp_path: Path) -> None:
     server = _server(tmp_path)
     resps = _roundtrip(

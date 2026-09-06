@@ -89,6 +89,14 @@ class _ToolSpec:
 # The command-spawning tool names, withdrawn together when commands are off.
 _COMMAND_TOOLS = frozenset({"run_verify", "run_in_sandbox", "apply_patch_in_sandbox"})
 
+# The two that run the workspace's gate. With no verify command there is
+# nothing for them to run: `run_verify` reached the jail with an empty argv
+# and answered "tuple index out of range", and `apply_patch_in_sandbox`
+# applied the patch and THEN failed the same way, leaving the workspace
+# changed under a call the client was told had failed. The run loop hides
+# `run_verify_command` for the same reason.
+_GATE_TOOLS = frozenset({"run_verify", "apply_patch_in_sandbox"})
+
 
 def _schema_violation(value: Any, schema: dict[str, Any], where: str) -> str | None:
     """First way *value* fails *schema*, or None.
@@ -208,9 +216,12 @@ class MCPServer:
         # tools/list, not offered-and-failing. _call_tool still names the real
         # reason for a client that calls one by name anyway.
         self._commands_withdrawn = config.sandbox.run_commands in ("ask", "no")
+        self._gate_missing = not config.workflow.verify_command
         specs = self._build_tools()
         if self._commands_withdrawn:
             specs = [t for t in specs if t.name not in _COMMAND_TOOLS]
+        if self._gate_missing:
+            specs = [t for t in specs if t.name not in _GATE_TOOLS]
         self._tools: dict[str, _ToolSpec] = {t.name: t for t in specs}
 
     # ---- public entry point -----
@@ -388,6 +399,12 @@ class MCPServer:
                 raise _RpcError(
                     -32601,
                     f"{name} is withdrawn: [sandbox].run_commands = {mode!r} ({detail})",
+                )
+            if isinstance(name, str) and name in _GATE_TOOLS and self._gate_missing:
+                raise _RpcError(
+                    -32601,
+                    f"{name} is withdrawn: this workspace has no [workflow]"
+                    " verify_command, so there is no gate to run",
                 )
             raise _RpcError(-32601, f"unknown tool: {name!r}")
         if raw_args is not None and not isinstance(raw_args, dict):
