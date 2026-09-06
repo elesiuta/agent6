@@ -589,7 +589,7 @@ depends_on = ["agent6.graph.models", "agent6.portable", "agent6.sessions.layout"
 
 [[modules]]
 path = "agent6.graph.curator"
-depends_on = ["agent6.graph.models", "agent6.graph.storage", "agent6.graph.ulid"]
+depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage", "agent6.graph.ulid"]
 
 [[modules]]
 path = "agent6.machine"

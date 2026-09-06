@@ -56,6 +56,7 @@ from agent6.graph.models import (
     TaskNode,
     UpdateStatusIntent,
 )
+from agent6.graph.order import has_open_child
 from agent6.graph.storage import (
     SessionLayout,
     flock,
@@ -293,6 +294,15 @@ class GraphCurator:
                 raise CuratorError(
                     f"a standing task never passes ({intent.id}); mark it skipped or"
                     " obsolete to retire it"
+                )
+            if intent.new_status == "passed" and has_open_child(self._nodes, node):
+                # A parent with open children is a container: the frontier
+                # surfaces its children instead, and passing it satisfied every
+                # dependency on it -- so the tasks it stood for were skipped
+                # while the work they named went undone.
+                raise CuratorError(
+                    f"{intent.id} has open children, so it is not finished; mark them"
+                    " passed, skipped or obsolete first"
                 )
             updated = node.model_copy(
                 update={

@@ -17,14 +17,13 @@ work to surface.
 from __future__ import annotations
 
 from agent6.graph.models import TaskNode
-from agent6.graph.order import tree_order
+from agent6.graph.order import OPEN_STATUSES, has_open_child, tree_order
 
 # Tool names that mutate the task DAG; after one runs the loop re-snapshots the
 # graph (graph.update event) so a live viewer can render the worker's task
 # breakdown.
 DAG_MUTATING_TOOLS = frozenset({"add_task", "update_task"})
 
-OPEN_STATUSES = frozenset({"pending", "in_progress"})
 DEPS_SATISFIED_STATUSES = frozenset({"passed", "skipped", "obsolete"})
 
 # Anti-grind: a weak model on a vague/oversized task can stay on one DAG task for
@@ -38,17 +37,6 @@ DEPS_SATISFIED_STATUSES = frozenset({"passed", "skipped", "obsolete"})
 # model making normal progress (which changes focus well before this) never sees it.
 STUCK_ON_TASK_AFTER = 20
 STUCK_NUDGE_MAX = 3
-
-
-def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
-    """True if any of `node`'s children is still open. A subtask with open
-    children is a container -- its children are the unit of work, not it -- so the
-    frontier surfaces the children's leaves instead."""
-    for cid in node.children:
-        c = nodes.get(cid)
-        if c is not None and c.status in OPEN_STATUSES:
-            return True
-    return False
 
 
 def ready_subtask(nodes: dict[str, TaskNode], node: TaskNode) -> bool:

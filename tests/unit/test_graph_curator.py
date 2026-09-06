@@ -101,6 +101,25 @@ def test_cycle_check_survives_dangling_depends_on(tmp_path: Path) -> None:
     assert b.id in updated.depends_on
 
 
+def test_a_container_with_open_children_cannot_pass(tmp_path: Path) -> None:
+    """A parent with open children is a container: the frontier surfaces its
+    children instead, and every dependency ON it counts as satisfied once it
+    passes -- so passing it skipped the tasks it stood for while the work they
+    named went undone. The tier-2 check-off offers containers to the
+    summariser, which is how a model came to mark one."""
+    from agent6.graph.models import UpdateStatusIntent
+
+    c = GraphCurator(_layout(tmp_path))
+    parent = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft("phase")))
+    child = c.add_subtask(AddSubtaskIntent(parent_id=parent.id, draft=_draft("step")))
+
+    with pytest.raises(CuratorError, match="open children"):
+        c.update_status(UpdateStatusIntent(id=parent.id, new_status="passed"))
+
+    c.update_status(UpdateStatusIntent(id=child.id, new_status="passed"))
+    assert c.update_status(UpdateStatusIntent(id=parent.id, new_status="passed")).status == "passed"
+
+
 def test_obsolete_and_record_commit(tmp_path: Path) -> None:
     c = GraphCurator(_layout(tmp_path))
     n = c.add_subtask(AddSubtaskIntent(parent_id=None, draft=_draft()))

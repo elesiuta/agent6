@@ -1,10 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The order a task graph is read in: one owner for every surface."""
+"""The order a task graph is read in, and what "open" means in it: one owner
+for every surface."""
 
 from __future__ import annotations
 
 from agent6.graph.models import TaskNode
+
+# A task nobody has finished with. The frontier surfaces these, the finish
+# gate counts them, and a parent with one is a container rather than a unit of
+# work: its children are.
+OPEN_STATUSES = frozenset({"pending", "in_progress"})
+
+
+def has_open_child(nodes: dict[str, TaskNode], node: TaskNode) -> bool:
+    """True if any of `node`'s children is still open. A subtask with open
+    children is a container -- its children are the unit of work, not it -- so
+    the frontier surfaces the children's leaves instead, and `passed` on it
+    would claim work no one did."""
+    return any(
+        (c := nodes.get(cid)) is not None and c.status in OPEN_STATUSES for cid in node.children
+    )
 
 
 def tree_order(nodes: dict[str, TaskNode]) -> list[str]:
