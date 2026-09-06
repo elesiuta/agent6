@@ -124,10 +124,12 @@ standing goal** (`run_perf_chatgpt.sh`, official `score.sh`):
 |---|---|---|---|---|---|---|---|
 | 2026-08-20 | agent6 · gpt-5.6-sol max, standing goal | 1270 | 116.33× | 8 | 87 min | 215k / 116k | yes |
 | 2026-09-05 | agent6 · gpt-5.6-sol max, standing goal | 1215 | 121.59× | 8 | 58 min | 303k / 117k | yes |
+| 2026-09-05 | the same run resumed for a second leg | 1132 | 130.51× | 8 | +99 min | 3.76M / 94k | yes |
 
-Plan-metered, $0 (the second run: 10 points of the plan, ended at the
-200-iteration cap); the best of every prior run here is 26.1×, and the
-upstream tests' eleven-hour Opus 4.5 mark is 1487.
+Plan-metered, $0 (the second run: 10 points of the plan for its first leg
+and 7 for the resumed one, each leg ending at the 200-iteration cap); the
+best of every prior run here is 26.1×, and the upstream tests' eleven-hour
+Opus 4.5 mark is 1487.
 
 > **Update (per-call output cap, 32768 → 65536).** Three fresh kimi-k2.6
 > runs all landed at 1.0×, but with two distinct failure modes, both
