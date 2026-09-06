@@ -881,3 +881,17 @@ def test_fold_until_commit_stops_at_that_step() -> None:
     by_prefix = fold_until_commit(events, "b" * 7)
     assert by_prefix is not None and [s.iteration for s in by_prefix.steps] == [1, 2]
     assert fold_until_commit(events, "b" * 6) is None
+
+
+def test_a_cut_log_line_says_it_was_cut() -> None:
+    """Every long field of a log line was bare-sliced ([:160], [:120], [:100],
+    [:80]), so a provider error read as if it ended where the slice did."""
+    error = "E" * 150 + "-TRUNCATION-BOUNDARY-" + "Z" * 60
+    line = format_log_line(
+        {"ts": "2026-09-01T22:00:00.000Z", "type": "role.result", "role": "worker", "error": error}
+    )
+    assert "…" in line and "BOUNDARY" not in line
+    prompt = format_log_line({"ts": "t", "type": "approval.prompt", "prompt": "run " + "x" * 200})
+    assert "…" in prompt
+    short = format_log_line({"ts": "t", "type": "approval.prompt", "prompt": "run ls"})
+    assert "…" not in short

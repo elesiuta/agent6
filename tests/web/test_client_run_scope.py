@@ -89,3 +89,12 @@ def test_the_in_flight_mark_needs_a_live_run() -> None:
     ellipsis beside the word "stale"."""
     body = _paint_run_body()
     assert "r.in_flight && s.live" in body, "the in-flight mark must read liveness too"
+
+
+def test_the_web_tool_row_counts_the_args_lines_it_drops() -> None:
+    """The TUI row folds every args line (`clip_cell`); the web row showed
+    line one and dropped the rest unmarked, counting only the result's."""
+    start = CLIENT_JS.index("// tools: one clipped line per call")
+    body = CLIENT_JS[start : CLIENT_JS.index("// shells:", start)]
+    extra = body[body.index("const extra") : body.index("\n", body.index("const extra"))]
+    assert "args_preview" in extra, extra

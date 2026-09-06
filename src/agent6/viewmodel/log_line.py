@@ -65,6 +65,12 @@ def render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
     return ", ".join(pairs)
 
 
+def _cut(text: str, limit: int) -> str:
+    """*text* to at most *limit* characters, ending in an ellipsis when cut,
+    so a reader can tell a value ended from a value that was clipped."""
+    return text if len(text) <= limit else text[: limit - 1] + "\u2026"
+
+
 def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
     ts = str(event.get("ts", ""))
     etype = str(event.get("type", "?"))
@@ -87,7 +93,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             # the latest stderr (else stdout) so a command's outcome reads in the
             # log without opening the transcript. The full tail is in the event.
             tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "")
-            snippet = " ".join(tail.split())[:100]
+            snippet = _cut(" ".join(tail.split()), 100)
             if snippet:
                 salient = f"{salient.rstrip()} | {snippet}"
         case "role.call":
@@ -96,15 +102,15 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             role = event.get("role", "")
             if event.get("error"):
                 # The error is how a dead run gets diagnosed from the log view.
-                salient = f"{role} error: {str(event.get('error'))[:160]}"
+                salient = f"{role} error: {_cut(str(event.get('error')), 160)}"
             else:
                 tin = event.get("tokens_in")
                 tout = event.get("tokens_out")
                 salient = f"{role} in={tin} out={tout}"
         case "loop.provider.retry":
-            salient = f"attempt {event.get('attempt')}: {str(event.get('error', ''))[:160]}"
+            salient = f"attempt {event.get('attempt')}: {_cut(str(event.get('error', '')), 160)}"
         case "loop.pin.added":
-            salient = f"pinned ({event.get('chars')} chars): {str(event.get('text', ''))[:80]}"
+            salient = f"pinned ({event.get('chars')} chars): {_cut(str(event.get('text', '')), 80)}"
         case "loop.pin.refused":
             salient = f"pin refused: over the {event.get('limit')}-char cap"
         case "loop.pin.restored":
@@ -112,7 +118,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             # resume/fork's snapshot. The event never says which.
             pins = [str(p) for p in _as_list(event.get("pins"))]
             salient = (
-                f"{len(pins)} pinned: " + " | ".join(p[:80] for p in pins)
+                f"{len(pins)} pinned: " + " | ".join(_cut(p, 80) for p in pins)
                 if pins
                 else "no pinned instructions"
             )
@@ -121,13 +127,13 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             named = ", ".join(str(c) for c in calls)
             salient = f"elided {event.get('n')} old tool results"
             if named:
-                salient += f": {named[:160]}"
+                salient += f": {_cut(named, 160)}"
         case "loop.compact.deduped":
             calls = _as_list(event.get("calls"))
             named = ", ".join(str(c) for c in calls)
             salient = f"deduplicated {event.get('n')} identical tool results"
             if named:
-                salient += f": {named[:160]}"
+                salient += f": {_cut(named, 160)}"
         case "loop.compact.thinking_dropped":
             salient = (
                 f"dropped thinking from {event.get('turns')} old turns ({event.get('chars')} chars)"
@@ -136,28 +142,28 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             parts = []
             if event.get("gisted"):
                 paths = ", ".join(str(p) for p in _as_list(event.get("paths")))
-                parts.append(f"{event.get('gisted')} distilled ({paths[:120]})")
+                parts.append(f"{event.get('gisted')} distilled ({_cut(paths, 120)})")
             if event.get("demoted"):
                 dem = ", ".join(str(p) for p in _as_list(event.get("demoted_paths")))
-                parts.append(f"{event.get('demoted')} demoted ({dem[:120]})")
+                parts.append(f"{event.get('demoted')} demoted ({_cut(dem, 120)})")
             salient = "; ".join(parts)
         case "loop.compact.summarise.done":
             salient = f"restarted on a {event.get('summary_chars')}-char progress summary"
         case "loop.compact.summarise.failed" | "loop.compact.gist.failed":
             # Without the reason a 429'd summariser reads as nothing having
             # happened.
-            salient = str(event.get("error", ""))[:160]
+            salient = _cut(str(event.get("error", "")), 160)
         case "loop.compact.requested":
             focus = str(event.get("focus", ""))
-            salient = f"focus: {focus[:120]}" if focus else "no focus"
+            salient = f"focus: {_cut(focus, 120)}" if focus else "no focus"
         case "loop.compact.restored":
             salient = f"{event.get('elided')} elided, {event.get('gists')} gists in context"
         case "loop.compact.refused":
-            salient = str(event.get("reason", ""))[:160]
+            salient = _cut(str(event.get("reason", "")), 160)
         case "mcp.server_unavailable":
-            salient = f"{event.get('server')} unavailable: {str(event.get('error', ''))[:120]}"
+            salient = f"{event.get('server')} unavailable: {_cut(str(event.get('error', '')), 120)}"
         case "loop.skills.warning":
-            salient = str(event.get("warning", ""))[:160]
+            salient = _cut(str(event.get("warning", "")), 160)
         case "loop.resume.start":
             salient = f"iteration={event.get('iteration')} messages={event.get('messages')}"
         case "budget.update":
@@ -167,19 +173,19 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             usd_s = f"${usd:.4f}" if isinstance(usd, (int, float)) else f"${usd}"
             salient = f"in={event.get('input_total')} out={event.get('output_total')} {usd_s}"
         case "session.start":
-            salient = str(event.get("user_task", ""))[:80]
+            salient = _cut(str(event.get("user_task", "")), 80)
         case "verify.end":
             dur = event.get("duration_s")
             dur_s = f"{dur:.1f}s" if isinstance(dur, (int, float)) else f"{dur}s"
             salient = f"exit={event.get('exit_code')} dur={dur_s}"
         case "approval.prompt":
-            salient = str(event.get("prompt", ""))[:80]
+            salient = _cut(str(event.get("prompt", "")), 80)
         case "approval.answer":
             salient = f"id={event.get('id')} approved={event.get('approved')}"
         case "question.prompt":
             qs = _as_list(event.get("questions"))
             first = str(qs[0].get("question", "")) if qs and isinstance(qs[0], dict) else ""
-            salient = (f"[{len(qs)}] " if len(qs) > 1 else "") + first[:80]
+            salient = (f"[{len(qs)}] " if len(qs) > 1 else "") + _cut(first, 80)
         case "question.answer":
             ans = _as_list(event.get("answers"))
             salient = f"id={event.get('id')} answers={len(ans)}"

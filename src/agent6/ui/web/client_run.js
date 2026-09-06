@@ -459,7 +459,7 @@ function paintRun(cards, s) {
     tr.appendChild(el('td', 'name', tc.name));
     const a = el('td', 'args');
     a.textContent = firstLine(tc.args_preview, 90) + (tc.result_summary ? '  → ' + firstLine(tc.result_summary, 90) : '');
-    const extra = String(tc.result_summary || '').split('\n').length - 1;
+    const extra = String(tc.args_preview || '').split('\n').length - 1 + String(tc.result_summary || '').split('\n').length - 1;
     if (extra > 0) a.appendChild(el('span', 'more-note', ` (+${extra} more line${extra === 1 ? '' : 's'})`));
     a.title = tc.args_preview + (tc.result_summary ? '\n→ ' + tc.result_summary : '');
     tr.appendChild(a);
