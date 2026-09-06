@@ -1017,3 +1017,22 @@ quotes most of these literals, so a mechanism that extracts quoted
 literals/expected outputs from the task and checks the change ever
 produces them (a truthful notice when it does not) is the candidate;
 prose asking for verbatim literals already nulled.
+
+### Control prices retry variance: the pilot's arms show no subset effect (2026-08-26)
+
+The same 54 miss ids on the plain master wheel, no prompt mount: 8/54
+converted (pilot: 10/54). Overlap: 6 ids converted in BOTH runs (variance,
+not arms - both zero-F2P "completions" among them: pipecat and sunpy
+re-land the correct gold file on a plain retry too); pilot-only 4
+(3 near-miss, 1 slow-empty); control-only 2. A 2-conversion spread at
+n=54 is noise.
+
+Two consequences. First, the substituted metric is a ratchet that any
+rerun inflates: the CONTROL alone moves 56 -> 64/110 (58.2%); the number
+carries no information about the arms and is retired from this program.
+Second, retry variance on true misses is ~15% per attempt, so
+single-attempt totals and mean-of-5 boards are not directly comparable;
+the honest comparable is a fresh full-110 under one config, which is the
+sequencer's final stage (scoped wheel + prompt v2). The stable-fail
+near-miss block (11/14 identical failure sets across independent runs)
+stands: those ids convert in neither run.
