@@ -28,9 +28,13 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def _checkpoint(layout: SessionLayout, turn: int, *, head_sha: str, ops: int) -> None:
+def _checkpoint(
+    layout: SessionLayout, turn: int, *, head_sha: str, ops: int, at: int | None = None
+) -> None:
     """A checkpoint at *turn* whose conversation holds *ops* operator messages
-    (the task, then steers) and records *head_sha* as the workspace head."""
+    (the task, then steers) and records *head_sha* as the workspace head.
+    *at* is the file it sits in when that is not *turn* (a fork's seed: file 0
+    holding its source's turn)."""
     messages: list[dict[str, object]] = [{"role": "user", "content": "do the thing"}]
     for i in range(1, ops):
         messages.append(
@@ -49,7 +53,9 @@ def _checkpoint(layout: SessionLayout, turn: int, *, head_sha: str, ops: int) ->
         verify_command=(),
         head_sha=head_sha,
     )
-    layout.checkpoint_path(turn).write_text(snap.model_dump_json(), encoding="utf-8")
+    layout.checkpoint_path(turn if at is None else at).write_text(
+        snap.model_dump_json(), encoding="utf-8"
+    )
 
 
 def _run_that_moved_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str, str]:
@@ -244,6 +250,63 @@ def test_undo_of_a_fork_whose_worktree_is_gone_refuses_before_creating_anything(
     )
     assert any(f"merged into main as {_c2[:12]}" in line for line in said)
     assert not any("agent6/run-AAAA11" in line or "refs/agent6" in line for line in said)
+
+
+def test_undo_names_the_turn_every_other_surface_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork's seed checkpoint sits in file 0 but holds its source's turn
+    (`next_iteration`), the number the fork notice, `sessions show` and the
+    child's manifest print. An /undo resolved at it said "turn 0" while the
+    fork it cut read "@turn 3"; the notice and the commit that keeps the tree
+    as it stood name the checkpoint's turn."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("one\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "c1")
+    c1 = _git(repo, "rev-parse", "HEAD")
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    fork = SessionLayout(state_dir=state_dir, session_id="fork-BBBB22")
+    fork.ensure()
+    fork.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "fork-BBBB22",
+                "mode": "run",
+                "user_task": "do the thing",
+                "base_sha": c1,
+                "base_branch": "main",
+                "run_branch": "agent6/fork-BBBB22",
+                "parent_session_id": "src-AAAA11",
+                "forked_from_turn": 3,
+                "forked_from_sha": c1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    _checkpoint(fork, 3, head_sha=c1, ops=2, at=0)  # the seed: the source's turn 3
+    _checkpoint(fork, 4, head_sha=c1, ops=3)  # the fork's own turn after a steer
+    (repo / "a.txt").write_text("two\n", encoding="utf-8")
+    said: list[str] = []
+
+    result = undo_fork(None, "fork-BBBB22", cwd=repo, reporter=Reporter(said.append, said.append))
+
+    assert result is not None
+    child, _text = result
+    text = "\n".join(said)
+    assert f"back to turn 3 ({c1[:12]})" in text and "turn 0" not in text
+    child_manifest = json.loads(
+        SessionLayout(state_dir=state_dir, session_id=child).manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    assert child_manifest["forked_from_turn"] == 3
+    subject = _git(repo, "log", "-1", "--format=%s", chain_ref_for("fork-BBBB22"))
+    assert subject == "agent6 undo: the tree before turn 3 was taken back"
 
 
 def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(

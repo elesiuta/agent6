@@ -107,7 +107,7 @@ from agent6.sessions.manifest import (
 )
 from agent6.types import ResumableMode, session_bucket
 from agent6.viewmodel import newest_session_dir, session_dirs
-from agent6.workflows._session_state import load_session_snapshot
+from agent6.workflows._session_state import SessionSnapshot, load_session_snapshot
 
 # Curator-owned DAG artifacts copied verbatim into the fork; each is a
 # top-level entry under the run dir (`graph/` is a directory).
@@ -268,24 +268,38 @@ def _operator_messages(messages: list[dict[str, Any]]) -> list[str]:
 
 
 @dataclass(frozen=True, slots=True)
+class _Checkpoint:
+    """A checkpoint of *session_id*: the file it sits in (`at_turn`, what
+    `fork --at-turn` addresses) and the turn its conversation stands before
+    (`turn`, the snapshot's `next_iteration`, the number every surface
+    prints). The two differ for a fork's seed, file 0 holding its source's
+    turn N."""
+
+    session_id: str
+    at_turn: int
+    turn: int
+
+
+@dataclass(frozen=True, slots=True)
 class UndoTarget:
     """Where `/undo` forks *session*: *source*'s checkpoint at *at_turn* (the
-    session itself, or an ancestor up its fork lineage), with the message it
+    session itself, or an ancestor up its fork lineage), the turn that
+    checkpoint stands before (see :class:`_Checkpoint`), and the message it
     takes back (composer-refill text)."""
 
     session: SessionLayout
     source_session_id: str
     at_turn: int
+    turn: int
     undone_text: str
 
 
-def _ops_at(layout: SessionLayout, turn: int) -> int | None:
-    """Operator-message count in the checkpoint at *turn*, None if unreadable."""
+def _snapshot_at(layout: SessionLayout, at_turn: int) -> SessionSnapshot | None:
+    """The checkpoint in file *at_turn*, None if unreadable."""
     try:
-        snap = load_session_snapshot(layout.checkpoint_path(turn))
+        return load_session_snapshot(layout.checkpoint_path(at_turn))
     except (OSError, ValueError):
         return None
-    return len(_operator_messages(snap.messages))
 
 
 def undo_target(  # noqa: PLR0911 - each refusal names its own reason
@@ -316,21 +330,25 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
         if len(turns) < 2:
             reporter.err(f"nothing to undo: {src.session_id} is at its opening message.")
             return None
+        first = _snapshot_at(src, turns[0])
+        if first is None:
+            reporter.error(f"cannot read checkpoint {turns[0]} of {src.session_id}.")
+            return None
         try:
             task = read_manifest(src.session_dir).user_task
         except ManifestError:
             task = ops[0] if ops else ""
-        return UndoTarget(src, src.session_id, turns[0], task)
+        return UndoTarget(src, src.session_id, turns[0], first.next_iteration, task)
     target = _newest_checkpoint_below(src, len(ops))
     if target is None:
         reporter.err(f"nothing to undo: no state before the last message of {src.session_id}.")
         return None
-    return UndoTarget(src, target[0], target[1], ops[-1])
+    return UndoTarget(src, target.session_id, target.at_turn, target.turn, ops[-1])
 
 
 def _newest_checkpoint_below(
     layout: SessionLayout, current_ops: int, *, seen: frozenset[str] = frozenset()
-) -> tuple[str, int] | None:
+) -> _Checkpoint | None:
     """The newest checkpoint of *layout* -- or, following fork lineage, of an
     ancestor -- whose conversation holds fewer operator messages than
     *current_ops*. A fork carries one seed checkpoint, so walking back past it
@@ -340,10 +358,10 @@ def _newest_checkpoint_below(
     cycle only exists in a corrupt or hand-edited manifest, and following one
     would recurse until the stack blows. A revisited id ends the walk (no
     resolvable ancestor) instead of crashing."""
-    for turn in sorted(list_checkpoint_turns(layout), reverse=True):
-        ops = _ops_at(layout, turn)
-        if ops is not None and ops < current_ops:
-            return layout.session_id, turn
+    for at_turn in sorted(list_checkpoint_turns(layout), reverse=True):
+        snap = _snapshot_at(layout, at_turn)
+        if snap is not None and len(_operator_messages(snap.messages)) < current_ops:
+            return _Checkpoint(layout.session_id, at_turn, snap.next_iteration)
     try:
         parent = read_manifest(layout.session_dir).parent_session_id
     except ManifestError:
@@ -439,7 +457,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         try:
             kept = chain_commit(
                 checkout,
-                f"agent6 undo: the tree before turn {target.at_turn} was taken back",
+                f"agent6 undo: the tree before turn {target.turn} was taken back",
                 ref=ref,
                 fallback_parent=manifest.base_sha or None,
                 identity=CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email),
@@ -466,7 +484,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
             return None
         child_layout = SessionLayout(state_dir=state_dir, session_id=child, subdir=undone.subdir)
         sha = read_manifest(child_layout.session_dir).forked_from_sha or ""
-        turn = f"turn {target.at_turn} ({sha[:12]})"
+        turn = f"turn {target.turn} ({sha[:12]})"
         try:
             paths = _rewind_checkout(
                 checkout, tip=chain_tip(checkout, ref) or sha, sha=sha, exclude=exclude
