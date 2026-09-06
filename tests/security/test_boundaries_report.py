@@ -207,6 +207,7 @@ def test_boundaries_report_names_each_mcp_server(
                     sandbox=MCPSandbox(read_paths=("/data",), network="none"),
                 ),
                 "off": MCPServerEntry(command=("x",), enabled=False),
+                "plain": MCPServerEntry(command=("y",)),
             },
         )
     )
@@ -215,3 +216,42 @@ def test_boundaries_report_names_each_mcp_server(
     assert "docs: http http://127.0.0.1:9000/mcp" in out
     assert "fs: spawned in the jail" in out and "paths ro+1 rw+0, network none" in out
     assert "off: DISABLED" in out
+    # The network the server GETS, never the configured word: `auto` is a
+    # namespace of its own under strict.
+    assert "plain: spawned in the jail" in out and "paths ro+0 rw+0, network none" in out
+
+
+def test_boundaries_report_prints_the_refusal_for_a_network_the_level_cannot_give(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Hardened clamps `none` and `session` to the host's network, and a run
+    refuses such a server before it starts: the report says that, never a
+    network the server never gets."""
+    from agent6.config._sandbox import MCPConfig, MCPSandbox, MCPServerEntry
+
+    _force(monkeypatch, "hardened", "no user namespaces")
+    cfg = Config(
+        mcp=MCPConfig(
+            enabled=True,
+            servers={"quiet": MCPServerEntry(command=("y",), sandbox=MCPSandbox(network="none"))},
+        )
+    )
+    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert "quiet: a run would refuse: MCP server 'quiet' sets sandbox.network = 'none'" in out
+    assert "network host" not in out
+
+
+def test_boundaries_report_gives_an_mcp_server_the_network_the_level_can(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """On a level with no namespaces, `auto` resolves to the host's network,
+    and the report says so rather than printing the knob."""
+    from agent6.config._sandbox import MCPConfig, MCPServerEntry
+
+    _force(monkeypatch, "hardened", "no user namespaces")
+    cfg = Config(mcp=MCPConfig(enabled=True, servers={"plain": MCPServerEntry(command=("y",))}))
+    check_cmds._check_boundaries_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    assert "plain: spawned in the jail" in out and "network host" in out
+    assert "network auto" not in out

@@ -511,7 +511,7 @@ def _boundaries_commands(
     )
 
 
-def _boundaries_mcp(cfg: Config) -> None:
+def _boundaries_mcp(cfg: Config, root: Path, selected: IsolationLevel) -> None:
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         cause = "[mcp].enabled = false" if not cfg.mcp.enabled else "no servers configured"
         print(f"  mcp servers: none run ({cause})")
@@ -525,15 +525,19 @@ def _boundaries_mcp(cfg: Config) -> None:
         if srv.url:
             where = f"http {srv.url}"
             confinement = "network client only; no filesystem grant"
-        elif sb is not None and sb.unconfined:
+        elif (refusal := mcp_network_refusal(name, srv, selected)) is not None:
+            # The network it asked for is one this level cannot give: a run
+            # refuses, so there is no network to print.
+            print(f"    {name}: a run would refuse: {refusal}")
+            continue
+        elif (policy := mcp_server_policy(cfg, root, selected, srv)) is None:
             where = "spawned UNCONFINED"
             confinement = "full host access (mcp.servers.*.sandbox.unconfined = true)"
         else:
             where = "spawned in the jail"
             ro = len(sb.read_paths) if sb else 0
             rw = len(sb.write_paths) if sb else 0
-            net = sb.network if sb else "auto"
-            confinement = f"paths ro+{ro} rw+{rw}, network {net}"
+            confinement = f"paths ro+{ro} rw+{rw}, network {policy.network}"
         print(f"    {name}: {where}  approve={srv.approve}  {confinement}")
 
 
@@ -563,13 +567,12 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
 
     print()
     try:
-        git_grant = _fork_git_grant(cfg, ws, selected)
+        _boundaries_commands(cfg, ws, selected, _fork_git_grant(cfg, ws, selected))
+        print()
+        _boundaries_mcp(cfg, ws.root, selected)
     except JailUnavailableError as exc:
         print(f"  [FAIL] a run would refuse: {exc}")
         return [_DoctorCheck(name="boundaries", status="FAIL", detail=str(exc))]
-    _boundaries_commands(cfg, ws, selected, git_grant)
-    print()
-    _boundaries_mcp(cfg)
     print()
     print(
         "  agent process: its own egress is NOT bounded (documented in"
