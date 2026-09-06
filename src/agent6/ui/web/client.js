@@ -305,15 +305,52 @@ function listCard(title, entries, empty, paint) {
   return card;
 }
 
+// The fan-outs whose lanes the operator expanded, kept across the hub's repaints.
+const expandedFanouts = new Set();
+
+// One session row; a fan-out's lanes (`r.lanes`, the server's nested rows)
+// fold under it behind a `lanes: N` line, and expand to the same rows indented.
+function paintSession(r, it, g) {
+  it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
+  g.appendChild(el('div', 'title', r.task || '(no task)'));
+  const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
+  // id_cell carries the winner mark the CLI and TUI id cells carry.
+  g.appendChild(el('div', 'sub', `${esc(r.id_cell || r.session_id)} · ${when(r.mtime)}${cost}`));
+  it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
+  const lanes = r.lanes || [];
+  if (!lanes.length) return;
+  const open = expandedFanouts.has(r.session_id);
+  const toggle = el('button', 'lanes-toggle', `lanes: ${lanes.length} · ${open ? 'hide' : 'show'}`);
+  toggle.onclick = (e) => {
+    e.stopPropagation();
+    if (open) expandedFanouts.delete(r.session_id); else expandedFanouts.add(r.session_id);
+    for (const c of [...it.children]) if (c !== g) c.remove();
+    g.innerHTML = '';
+    paintSession(r, it, g);
+  };
+  // The row's key handler (actionable) would open the session on Enter; the
+  // toggle keeps its own keys, so Enter on it toggles.
+  toggle.onkeydown = (e) => e.stopPropagation();
+  g.appendChild(toggle);
+  if (!open) return;
+  const nested = el('div', 'list lanes');
+  for (const lane of lanes) {
+    const li = el('div', 'item');
+    const lg = el('div', 'grow');
+    li.appendChild(lg);
+    paintSession(lane, li, lg);
+    // A lane row is a button like every other row: role, tab stop, name.
+    actionable(li, (e) => {
+      if (e && e.stopPropagation) e.stopPropagation();
+      location.hash = '#/session/' + encodeURIComponent(lane.session_id);
+    }, [...lg.children].map(c => c.textContent).join(' · ').slice(0, 120));
+    nested.appendChild(li);
+  }
+  g.appendChild(nested);
+}
+
 function sessionsCard(sessions) {
-  const card = listCard('Sessions', sessions, 'no sessions yet', (r, it, g) => {
-    it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
-    g.appendChild(el('div', 'title', r.task || '(no task)'));
-    const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
-    // id_cell carries the winner mark the CLI and TUI id cells carry.
-    g.appendChild(el('div', 'sub', `${esc(r.id_cell || r.session_id)} · ${when(r.mtime)}${cost}`));
-    it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
-  });
+  const card = listCard('Sessions', sessions, 'no sessions yet', paintSession);
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
   // The CLI's --delete-squashed, as a flag beside the verb: with the default
   // squash strategy every merged run's branch is unreachable, so a plain prune
