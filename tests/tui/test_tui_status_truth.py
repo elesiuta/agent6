@@ -411,9 +411,11 @@ def test_dead_run_pops_no_approval_modal(tmp_path: Path) -> None:
 
 def _approval_ready(app: Agent6TUI) -> bool:
     # The conversation screen renders an approval inline: the item plus its key
-    # row, mounted and focused (a modal only on the other screens).
+    # row, mounted, with the composer keeping focus (a modal only on the other
+    # screens).
     rows = app._conv.query(ApprovalRow)  # pyright: ignore[reportPrivateUsage]
-    return _screen_is(app, "_conv") and bool(rows) and app.focused is rows.first()  # pyright: ignore[reportPrivateUsage]
+    bar = app._conv.query_one("#conv-input", SteerInput)  # pyright: ignore[reportPrivateUsage]
+    return _screen_is(app, "_conv") and bool(rows) and app.focused is bar
 
 
 def test_screen_probe_tolerates_an_empty_stack(tmp_path: Path) -> None:

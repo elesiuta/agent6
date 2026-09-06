@@ -14,7 +14,7 @@ from rich.markup import escape
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.binding import Binding, BindingType
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.message import Message
 from textual.screen import Screen
@@ -181,17 +181,37 @@ RUN_MENU = Menu(
 )
 
 
+# The answers an open approval offers, in the vocabulary the CLI prompt and the
+# modal speak ("yes" / "no" / "session" / "session-deny"): (key, answer, label,
+# style). The row renders them and answers a click; the composer binds the keys.
+APPROVAL_ANSWERS: tuple[tuple[str, str, str, str], ...] = (
+    ("a", "yes", "allow", "bold green"),
+    ("s", "session", "allow all (session)", "green"),
+    ("d", "no", "deny", "bold red"),
+    ("x", "session-deny", "deny all", "red"),
+)
+# Offered only by a standing approval (one the operator may answer for the session).
+_STANDING_ANSWERS = frozenset({"session", "session-deny"})
+
+
 class SteerInput(TextArea):
     """The bottom composer bar: a TextArea that submits on Enter (Ctrl+J /
     Shift+Enter insert a newline instead) and grows with its content up to
     _INPUT_MAX_ROWS. Two modes (set_mode): steer a LIVE run, or type the
-    follow-up instruction a FINISHED run is resumed with."""
+    follow-up instruction a FINISHED run is resumed with. While an approval
+    row is on the screen and the composer is empty, the row's keys answer it
+    (check_action); anything typed makes them letters again."""
 
     ALLOW_MAXIMIZE = False  # a full-screen composer is never what Maximize means
 
     BINDINGS: ClassVar = [
         # TextArea's own undo stack; ctrl+z is the app's Detach (see Agent6TUI).
         Binding("ctrl+underscore", "undo", "Undo", show=False),
+        # Priority: a plain letter is otherwise text before any binding runs.
+        *(
+            Binding(key, f"answer('{answer}')", label, priority=True, show=False)
+            for key, answer, label, _style in APPROVAL_ANSWERS
+        ),
     ]
 
     class Submitted(Message):
@@ -250,6 +270,17 @@ class SteerInput(TextArea):
                     self.load_text(completed)
                     self.move_cursor(self.document.end)
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "answer":
+            # A declined key falls through as the letter it is.
+            rows = self.screen.query(ApprovalRow)
+            return bool(rows) and rows.first().offers(str(parameters[0])) and not self.text
+
+        return True
+
+    def action_answer(self, answer: str) -> None:
+        self.post_message(ApprovalRow.Answered(answer))
+
     def on_text_area_changed(self, _event: TextArea.Changed) -> None:
         self._resize()
 
@@ -284,22 +315,27 @@ def open_history_search(screen: Screen[Any], field: SteerInput, logs_path: Path)
     screen.app.push_screen(HistorySearchModal(entries), fill)
 
 
-class ApprovalRow(Horizontal, can_focus=True):
-    """The answer row docked above the composer while an approval is open:
-    one key per answer, the same vocabulary the CLI prompt and the modal
-    speak ("yes" / "no" / "session" / "session-deny")."""
+class _AnswerLabel(Static):
+    """One answer of the row: `[key] label`; a click answers."""
+
+    def __init__(self, key: str, answer: str, label: str, style: str) -> None:
+        super().__init__(Text(f"[{key}] {label}", style=style), classes=f"answer-{answer}")
+        self.answer = answer
+
+    def on_click(self) -> None:
+        self.post_message(ApprovalRow.Answered(self.answer))
+
+
+class ApprovalRow(Horizontal):
+    """The answer row docked above the composer while an approval is open.
+    A label answers on click from any focus; its key answers from the
+    composer, which keeps focus, while the composer is empty (SteerInput's
+    bindings), so a typed message never answers."""
 
     DEFAULT_CSS = """
     ApprovalRow { height: auto; padding: 0 1; background: $surface; }
-    ApprovalRow:focus { border-left: thick $warning; }
     ApprovalRow Static { width: auto; padding: 0 2 0 0; }
     """
-    BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("a", "answer('yes')", "allow", show=True),
-        Binding("s", "answer('session')", "allow all (session)", show=True),
-        Binding("d", "answer('no')", "deny", show=True),
-        Binding("x", "answer('session-deny')", "deny all", show=True),
-    ]
 
     class Answered(Message):
         def __init__(self, answer: str) -> None:
@@ -311,14 +347,10 @@ class ApprovalRow(Horizontal, can_focus=True):
         self._standing = standing
 
     def compose(self) -> ComposeResult:
-        yield Static(Text("[a] allow", style="bold green"))
-        if self._standing:
-            yield Static(Text("[s] allow all (session)", style="green"))
-        yield Static(Text("[d] deny", style="bold red"))
-        if self._standing:
-            yield Static(Text("[x] deny all", style="red"))
+        for key, answer, label, style in APPROVAL_ANSWERS:
+            if self.offers(answer):
+                yield _AnswerLabel(key, answer, label, style)
+        yield Static(Text("(keys work while the composer is empty; or click)", style="dim"))
 
-    def action_answer(self, answer: str) -> None:
-        if answer in ("session", "session-deny") and not self._standing:
-            return
-        self.post_message(self.Answered(answer))
+    def offers(self, answer: str) -> bool:
+        return self._standing or answer not in _STANDING_ANSWERS

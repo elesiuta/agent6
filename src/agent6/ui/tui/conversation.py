@@ -512,7 +512,6 @@ class ConversationScreen(ScreenChrome, Screen[None]):
                 self._row = ApprovalRow(standing=standing)
                 self._row_id = aid
                 self.mount(self._row, before=self.query_one("#conv-suggest"))
-                self.call_after_refresh(self._row.focus)
             return
         if self._row is not None:
             self._row.remove()
@@ -527,18 +526,20 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             item.display = False
 
     def on_approval_row_answered(self, message: ApprovalRow.Answered) -> None:
+        """An answer, from a label's click or the composer's key."""
+        answer = message.answer
         if self._approval is None:
             return
         aid = self._approval[0]
         if not self._host_live():
             self.notify("the run is gone: the answer reached nothing", severity="warning")
             return
-        write_answer(self._logs_path.parent, aid, message.answer)
+        write_answer(self._logs_path.parent, aid, answer)
         if self._prompts is not None:
             self._prompts.claim(self._logs_path.parent, aid)
-        self._note_answered(message.answer in ("yes", "session"))
+        self._note_answered(answer in ("yes", "session"))
         self._render_approval()
-        self.notify(f"answered: {message.answer}")
+        self.notify(f"answered: {answer}")
         with contextlib.suppress(NoMatches):
             self.query_one("#conv-input", SteerInput).focus()
 

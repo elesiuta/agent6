@@ -23,6 +23,7 @@ Every image is from a recorded run; click to enlarge.
 Opening a run lands on its conversation (also `agent6 sessions transcript`): the task, the model's reasoning, and every tool call with its complete input and output, following live.
 A live run keeps a steer bar at the bottom.
 An approval shows inline at the conversation's tail (the command, fixed-width) with a key row docked above the bar: `a` allow, `s` allow all this session, `d` deny, `x` deny all; answered, it collapses to one dim line.
+The composer keeps focus and owns the keys: they answer only while it is empty and focused (a typed message never answers); a click on a label answers from anywhere.
 
 ![A run transcript](screenshots/out/05-transcript.png)
 
