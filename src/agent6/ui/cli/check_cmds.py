@@ -324,7 +324,10 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
         checks.extend(_doctor_check_verify(cfg))
         print()
 
-    print("== summary ==")
+    # `check boundaries` alone reports facts and reaches no verdict, so it
+    # prints no summary rather than an empty heading that reads "nothing ran".
+    if checks:
+        print("== summary ==")
     failed = False
     for c in checks:
         print(f"[{c.status}] {c.name}: {c.detail}")

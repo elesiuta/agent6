@@ -105,7 +105,7 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     for verb, blurb in (
         ("set", "Set a leaf to a scalar value (global by default)."),
         ("unset", "Remove a leaf, reverting it to the next-lower layer / default."),
-        ("add", "Append a value to a list field (e.g. sandbox.extra_read_paths)."),
+        ("add", "Append a value to a list field such as sandbox.extra_read_paths."),
         ("remove", "Remove a value from a list field."),
     ):
         p = _sub(config_sub, verb, help=blurb)

@@ -56,3 +56,17 @@ def test_check_verify_says_what_this_repo_infers(
     (tmp_path / "verify.sh").chmod(0o755)
     assert main(["check", "verify"]) == 0
     assert "unset; a run here infers ./verify.sh (from verify.sh)" in capsys.readouterr().out
+
+
+def test_boundaries_alone_prints_no_empty_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The boundaries section reports facts and reaches no verdict, so its own
+    invocation ended on a bare `== summary ==` that read "nothing ran"."""
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    assert main(["check", "boundaries"]) == 0
+    out = capsys.readouterr().out
+    assert "== boundaries ==" in out
+    assert "== summary ==" not in out

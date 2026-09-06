@@ -38,8 +38,8 @@ def _add_system_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
     system_p = _sub(
         sub,
         "system",
-        help="Host/OS setup that needs privileges (e.g. the AppArmor profile for the"
-        " strict sandbox). Uses sudo.",
+        help="Host/OS setup that needs privileges, and uses sudo to get them."
+        " Installs or removes the AppArmor profile the strict sandbox needs.",
     )
     system_sub = system_p.add_subparsers(
         dest="system_command", required=True, metavar="<subcommand>"

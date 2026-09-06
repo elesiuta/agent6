@@ -73,6 +73,11 @@ def test_the_command_list_shows_one_sentence_per_command() -> None:
         description = action.choices[name].description or ""
         assert ". " not in entry, f"{name} lists more than its first sentence"
         assert description.startswith(entry.rstrip(".")), name
+        # An abbreviation ends in a period, so a first sentence containing one
+        # is cut there: `system` listed "Host/OS setup that needs privileges
+        # (e.g." and lost the rest, unbalanced bracket included.
+        assert not entry.rstrip().endswith(("e.g.", "i.e.", "etc.")), f"{name}: {entry}"
+        assert entry.count("(") == entry.count(")"), f"{name}: {entry}"
 
 
 def test_bare_parent_command_error_names_subcommand_not_dest(
