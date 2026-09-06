@@ -247,6 +247,17 @@ def _machine_is_valid(text: str | None) -> bool:
     return True
 
 
+def _leaf_problems(text: str) -> str:
+    """The `leaf: message` lines of a config validation error, one per line:
+    the shape every other config writer prints (no header, no error type)."""
+    leaves = [
+        ln.strip()[2:].split(" (type=", 1)[0]
+        for ln in text.splitlines()
+        if ln.strip().startswith("- ")
+    ]
+    return "\n".join(leaves) if leaves else text
+
+
 def _revalidate_machine(target: Path, prior_text: str | None, *, held: bool = True) -> str | None:
     """Re-validate a machine file after a `[config]`-overlay write; restore
     *prior_text* on failure (kept, saying so, when the lock failed open).
@@ -266,7 +277,7 @@ def _revalidate_machine(target: Path, prior_text: str | None, *, held: bool = Tr
         if "states" in data and _machine_is_valid(prior_text):
             load_machine(target)
     except ConfigError as exc:
-        err = str(exc)
+        err = _leaf_problems(str(exc))
     except MachineError as exc:
         err = "; ".join(exc.problems)
     if err is None:

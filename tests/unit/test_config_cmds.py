@@ -825,3 +825,21 @@ def test_config_show_legend_names_the_flag_file(
     out = capsys.readouterr().out
     assert rc == 0
     assert f"flag = {flag}" in out
+
+
+def test_a_machine_overlay_refusal_reads_like_every_other_writer() -> None:
+    """`config set --machine-file` prints the leaf lines the global and repo
+    writers print: no validation header, no error type."""
+    from agent6.ui.cli.config_cmds import (
+        _leaf_problems,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    raw = (
+        "Config validation failed: (merged config layers + machine overlay)\n"
+        "  - workflow.verify_retries: Input should be greater than or equal to 0"
+        " (type=greater_than_equal)"
+    )
+    assert _leaf_problems(raw) == (
+        "workflow.verify_retries: Input should be greater than or equal to 0"
+    )
+    assert _leaf_problems("machine file unreadable") == "machine file unreadable"
