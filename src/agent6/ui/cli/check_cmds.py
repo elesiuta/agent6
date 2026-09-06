@@ -477,7 +477,7 @@ def _boundaries_commands(
         )
     if selected == "strict":
         print("    rw  /tmp  (a tmpfs the run's commands share, gone at teardown)")
-        print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)} (+ a minimal /etc)")
+        print(f"    ro  system: {' '.join(_STRICT_SYSTEM_BINDS)} (the rest of /etc is empty)")
     else:
         print(f"    ro  system (Landlock): {' '.join(_HARDENED_SYSTEM_RO)}")
     print(_home_line(cfg, selected))

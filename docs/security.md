@@ -20,7 +20,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - No writes outside the workspace
     - `sandbox.extra_write_paths` and the per-repo memory dir widen it, visibly in `config show`; so does the jail's persistent `HOME` (below), visible in `agent6 check boundaries`
 - No reads outside the workspace and a read-only system set for installed toolchains
-    - `strict`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc/alternatives`, a minimal `/etc` the launcher writes, a curated `/dev`
+    - `strict`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, whose `/etc` holds nothing else, plus a curated `/dev`
     - `hardened`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc`, `/dev`
     - `sandbox.extra_read_paths` adds more; `agent6 check boundaries` prints the resolved set
 - `/tmp` is writable at every level
@@ -79,7 +79,9 @@ Its only reach into the machine is agent6's tools served over the sdk MCP tunnel
 
 Every tool call that allows the model to run arbitrary commands (`run_command`, `run_verify_command`, backgrounded commands, and MCP servers) runs in a jail at the effective isolation level.
 
-`agent6 check mcp` and `agent6 mcp connect` start a spawned MCP server under that jail with the repository bound read-only, apply the run's refusals first, and leave a server they cannot hold that way unstarted: `unconfined = true`, a write grant (`write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
+`agent6 check mcp` and `agent6 mcp connect` start a spawned MCP server under that jail with the repository bound read-only.
+`check mcp` applies the run's refusals first and leaves a server it cannot hold that way unstarted: `unconfined = true`, a write grant (`write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
+`mcp connect` probes under the same jail but only skips the probe when there is no jail at all, saying so; it is the operator's own invocation naming the server they are adding.
 A diagnostic hands a server the repository to read and writes nothing but the config it was asked to write.
 
 **Modes** (`[sandbox].isolation`)
@@ -126,7 +128,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute); each must be a char/block device on the host or the launch refuses, and on `hardened` the same grant is a Landlock read+write rule on the node
 - `/proc` (`strict`): fresh and private, empty if that fails
     - the launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`
-- seccomp: deny-list returning `EPERM` for `ptrace`, `pidfd_getfd`, `process_vm_readv`, `process_vm_writev`, `kcmp`, `io_uring_setup`, `userfaultfd`, `mount`, `setns`, `unshare`, `kexec`, `bpf`, `perf`, `keyctl`, module loading, `reboot`, clock-set; everything else allowed
+- seccomp: a 36-syscall deny-list returning `EPERM`, covering process inspection (`ptrace`, `pidfd_getfd`, `process_vm_readv`/`writev`, `kcmp`), `io_uring_setup`, `userfaultfd`, the whole mount family (`mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`), `setns`, `unshare`, `kexec`, `bpf`, `perf_event_open`, the keyring calls (`keyctl`, `add_key`, `request_key`), module loading, `reboot`, swap, and the clock-setting family
+    - anything not on the list is allowed; the list itself is the source (`jail/src/main.rs`), and it grows by syscall, never by class
 - Capabilities: cleared between fork and exec.
 - Timeout: `timeout_s` (verify and metric gates use `[workflow].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124
     - a model's `run_command` is not wall-clock killed: at `[workflow].command_checkin_s` it is handed back as a background job ([Commands and environment](#4-commands-and-environment))
@@ -165,7 +168,7 @@ Every path they take resolves through `Workspace`:
     - `list_dir` drops the entry and reports `hidden: N`
     - the jail masks the path instead (empty dir, empty file; [Sandbox](#2-sandbox))
 - The symbol index skips a hidden file (an indexed one leaks symbol names and line numbers through `find_definition`)
-- The edit tools refuse a write into the project's own `.git`, raw or symlink-resolved, at every isolation level
+- Under `sandbox.protect_git` (the default, and off only where `git.control = "model"` requires it) the edit tools refuse a write into the project's own `.git`, raw or symlink-resolved, at every isolation level
     - the name matches case-folded on every platform (macOS and Windows open `.GIT/config` as `.git/config`; macOS runs unsandboxed)
     - the same refusal covers a `pyvenv.cfg` dir, a `site-packages` ancestor, and an operator protect path
 - Rewriting an editable-install `.pth` corrupts a venv invisibly (venvs are gitignored), so those writes refuse
@@ -184,7 +187,7 @@ Every path they take resolves through `Workspace`:
 
 ### 4. Commands and environment
 
-Every command tool (`run_command`, `run_verify_command`, `stop_background`) answers to `[sandbox].run_commands` and runs jailed.
+Every command tool (`run_command`, `run_verify_command`, `stop_background`) answers to `[sandbox].run_commands`; `run_command` and `run_verify_command` run jailed, and `stop_background` signals a jailed child agent6 already started.
 `run_commands = "no"` withholds the verify gate too, and such a run starts gateless.
 Under `ask`, a denied gate is withheld the same way for the rest of the run (no retry loop can discharge a refusal), and the run ends unverified.
 
@@ -265,7 +268,7 @@ Under `none` isolation nothing is enforced or refused.
   It holds on loopback and behind `tailscale serve`, and does not cover DNS rebinding (that needs a Host allow-list incompatible with the tailnet name).
 - Request framing is bounded: 1 MiB body cap (413), chunked refused (411), and any unread-body refusal closes the connection.
 - The machine write surface (`POST /api/machine/<name>/{poke,stop,steer,approve,answer}`) uses the same guards.
-  `poke` writes only the instance signal file (inert JSON the next `tool` reads); the others write only the current agent state's per-state dir.
+  `poke` writes the instance's signal file (inert JSON the next `tool` reads) and `stop` its stop marker; `steer`, `approve` and `answer` write only the current agent state's per-state dir.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
   No telemetry, no auto-update, no remote control plane.
 
@@ -286,8 +289,8 @@ Under `none` isolation nothing is enforced or refused.
 
 - agent6's own git writes go through `git_ops.py` alone
     - it wraps the safe ops (status, add, commit, diff, branch, checkout)
-    - it refuses `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo`, `branch -D` / `--force`, and any `--force` / `-f` on a destructive verb
-    - read-only exceptions live on the [subprocess allowlist](#12-host-side-subprocess-allowlist): the `review` / `sessions diff` / `ask` collectors carry the same hardening flags; `skills install` clones with fixed argv
+    - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo`, `branch -D` / `--force` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable (pinned by `test_git_ops_never_spells_a_destructive_verb`)
+    - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags: `sessions diff` and `ask` read only, and `review` stages untracked files with `add -N` so they appear in its diff, undoing it with `reset` in a `finally`; `skills install` clones with fixed argv
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch the manifest confirms was squash-merged (the commit survives in the reflog).
 - `git_ops.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
     - PATH, SSH, proxy, and credential-helper vars stay
@@ -340,7 +343,7 @@ Under `none` isolation nothing is enforced or refused.
 
 ### 10. Parallel lanes
 
-`agent6 run --parallel`, `agent6 sessions compare`, and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each spawn subordinate work.
+`agent6 run --parallel` and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each spawn subordinate work.
 
 - Every lane is an ordinary run: a detached `agent6 run` on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy
     - no sandbox socket is shared across lanes or with the parent
@@ -420,7 +423,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 
 ## Prompt-injection tests
 
-[`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py) runs an adversarial corpus through the planner, worker, and reviewer prompts and asserts no exfiltration, no out-of-policy tool calls, and no following of embedded instructions to weaken constraints.
+[`tests/security/test_prompt_injection.py`](https://github.com/agent6-dev/agent6/blob/master/tests/security/test_prompt_injection.py) drives the dispatcher with the calls a compromised model would make: path traversal, a swapped symlink between check and open, an unknown tool name, extra fields, a write outside the workspace.
+It asserts the tool surface refuses them whatever the model says; it does not test the model's judgement, and calls no model.
 It catches prompt regressions; the structural defenses above confine a model that follows an injection.
 
 ## Known limitations
