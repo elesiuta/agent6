@@ -107,6 +107,11 @@ class WorkflowStamp(BaseModel):
         return self.preset if self.preset_from_flag else ""
 
 
+# The `sha` of a merge that added no commit: the target already held the
+# branch's content. Its own tip would name a commit that is not the run's.
+NO_MERGE_COMMIT = "0" * 40
+
+
 class MergeStamp(BaseModel):
     """Recorded once a run branch is merged, so later tooling tells a merged run
     branch from an unmerged one."""
@@ -114,7 +119,7 @@ class MergeStamp(BaseModel):
     model_config = _MODEL_CONFIG
 
     into: str = ""
-    sha: str = ""
+    sha: str = ""  # the merge commit in `into`, or NO_MERGE_COMMIT
     ts: str = ""
     # The RUN BRANCH tip that was merged (`sha` is the commit in the base).
     # `sessions prune --delete-squashed` force-deletes only when the branch still

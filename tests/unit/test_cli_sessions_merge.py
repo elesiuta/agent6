@@ -492,6 +492,87 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     assert stamped == real_sha
 
 
+def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run branch whose tree the target already holds (the same edit landed
+    there by another route) merges nothing, and that IS merged: the content
+    is on the target. Left unstamped, the run listed `unmerged` for good,
+    `prune` kept a fork's worktree forever, and only `sessions rm` released
+    it. The stamp names no merge commit (the all-zero sentinel: the target's
+    own tip would have named an operator's by-hand commit as the run's) and
+    the branch tip it covers; a later merge leaves that record alone, and
+    the readers say the content is already on the target."""
+    from agent6.git_ops import run_branch_tips
+    from agent6.sessions.manifest import NO_MERGE_COMMIT
+    from agent6.viewmodel import summarize_session_dir
+
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-SAME11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")  # the same edit, by hand
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "the same edit, by hand")
+    main_tip = _git(tmp_path, "rev-parse", "main")
+    branch_tip = _git(tmp_path, "rev-parse", "agent6/run-SAME11")
+
+    assert main(["sessions", "merge", "run-SAME11"]) == 0
+    out = capsys.readouterr().out
+    assert "main already has its content" in out and "recorded as merged into main" in out
+    assert _git(tmp_path, "rev-parse", "main") == main_tip  # nothing landed
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-SAME11")
+    stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
+    assert (stamp["into"], stamp["sha"], stamp["tip"]) == ("main", NO_MERGE_COMMIT, branch_tip)
+    row = summarize_session_dir(layout.session_dir, branch_tips=run_branch_tips(tmp_path))
+    assert row.unmerged is False
+
+    assert main(["sessions", "merge", "run-SAME11"]) == 0
+    assert "nothing left to merge" in capsys.readouterr().out
+    assert json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"] == stamp
+
+
+def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run merged, resumed (a new commit), then merged again with nothing to
+    add (the target got the same content by another route) kept its stale
+    stamp: the tip no longer matched the branch, so the run read unmerged for
+    good and prune kept a fork's worktree. A noop whose branch tip differs
+    from the stamp's re-stamps: no merge commit, and the tip it now covers.
+    A noop over the tip already recorded leaves the record alone."""
+    from agent6.git_ops import run_branch_tips
+    from agent6.sessions.manifest import NO_MERGE_COMMIT
+    from agent6.viewmodel import summarize_session_dir
+
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-RSTP11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
+    assert main(["sessions", "merge", "run-RSTP11", "--strategy", "squash"]) == 0
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-RSTP11")
+    first = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
+    _git(tmp_path, "checkout", "-q", "agent6/run-RSTP11")
+    (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "agent6 iter 2: add b")
+    tip2 = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-q", "main")
+    (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")  # the same edit, by hand
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "the same edit, by hand")
+    main_tip = _git(tmp_path, "rev-parse", "main")
+    capsys.readouterr()
+
+    assert main(["sessions", "merge", "run-RSTP11", "--strategy", "squash"]) == 0
+    assert "recorded as merged into main" in capsys.readouterr().out
+    stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
+    assert (stamp["into"], stamp["sha"], stamp["tip"]) == ("main", NO_MERGE_COMMIT, tip2)
+    assert stamp["tip"] != first["tip"] and main_tip[:12] not in stamp["sha"]
+    row = summarize_session_dir(layout.session_dir, branch_tips=run_branch_tips(tmp_path))
+    assert row.unmerged is False
+
+    assert main(["sessions", "merge", "run-RSTP11", "--strategy", "squash"]) == 0
+    assert "nothing left to merge" in capsys.readouterr().out
+    assert json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"] == stamp
+
+
 def test_diff_on_a_session_that_cannot_commit_does_not_show_your_own_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

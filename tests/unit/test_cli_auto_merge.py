@@ -239,6 +239,35 @@ def test_auto_prune_deletes_reachable_merge_branch(
     assert _git(tmp_path, "branch", "--list", "agent6/run-AP1111") == ""  # pruned (reachable)
 
 
+def test_auto_prune_follows_a_recorded_noop_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A recorded merge takes the same post-merge path whatever it added:
+    auto_prune ran only after a moved target, so the branch of a run whose
+    first merge added nothing (main already contained it) stayed behind."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run_on_branch(
+        tmp_path,
+        "run-AP3333",
+        commits=[("a.txt", "a\n", "agent6 iter 1: add a")],
+        run_branch="agent6/run-AP3333",
+    )
+    _git(tmp_path, "update-ref", "refs/heads/main", "agent6/run-AP3333")  # main has it already
+    cfg = load_effective(tmp_path, None).config
+    git2 = cfg.git.model_copy(
+        update={"auto_merge": True, "auto_prune": True, "merge_strategy": "squash"}
+    )
+    finmod.finalize_auto_merge(
+        tmp_path,
+        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AP3333"),
+        cfg=cfg.model_copy(update={"git": git2}),
+        reporter=STDIO_REPORTER,
+    )
+    err = capsys.readouterr().err
+    assert "recorded as merged" in err and "auto_pruned agent6/run-AP3333" in err
+    assert _git(tmp_path, "branch", "--list", "agent6/run-AP3333") == ""
+
+
 def test_auto_prune_keeps_squash_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

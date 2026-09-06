@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app.fork import sweep_fork_worktrees
-from agent6.app.merge import execute_merge
+from agent6.app.merge import execute_merge, noop_merge_line
 from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
@@ -238,15 +238,15 @@ def _cmd_merge(
             file=sys.stderr,
         )
         return 1
-    if outcome.status == "noop":
-        print(f"[agent6] nothing left to merge from {plan.run_branch} into {plan.target}.")
-        return 0
     note = (
         f"\n  (merge record could not be written: {outcome.stamp_error};"
         " `sessions prune` will call this branch unmerged)"
         if outcome.stamp_error
         else ""
     )
+    if outcome.status == "noop":
+        print(f"[agent6] {noop_merge_line(plan.run_branch, plan.target, outcome)}.{note}")
+        return 0
     print(
         f"[agent6] merged {plan.run_branch} into {plan.target} "
         f"({plan.strategy}) -> {outcome.merged_sha[:12]}{note}"

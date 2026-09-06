@@ -40,7 +40,13 @@ from agent6.git_ops import (
 )
 from agent6.providers import TranscriptSink, call_for_text
 from agent6.sessions.layout import SessionLayout
-from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
+from agent6.sessions.manifest import (
+    NO_MERGE_COMMIT,
+    ManifestError,
+    MergeStamp,
+    SessionManifest,
+    read_manifest,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +54,14 @@ class MergeOutcome:
     """Result of execute_merge. `status` is merged / noop / conflict / error; the
     other fields carry that status's detail.
 
-    `noop` is an already-merged branch: git stages nothing and leaves the target
-    where it was, so there is no merge sha to report or record."""
+    `noop` is a branch the target already holds the content of: git stages
+    nothing and leaves the target where it was, so `merged_sha` is the
+    target's own tip. A run whose merge is a noop is merged all the same
+    (its content is on the target), and `recorded` says this call stamped
+    the manifest so, with NO_MERGE_COMMIT for the sha: a first merge, or one
+    covering commits the earlier record does not (a resumed run's, on the
+    target by another route). A noop over the tip already recorded leaves
+    the record of the merge that did happen alone."""
 
     status: Literal["merged", "noop", "conflict", "error"]
     merged_sha: str = ""
@@ -58,6 +70,7 @@ class MergeOutcome:
     # Why the manifest stamp did not land, "" when it did. The merge happened
     # either way; without this, `prune` calls the branch unmerged.
     stamp_error: str = ""
+    recorded: bool = False
 
 
 def record_merge_in_manifest(
@@ -317,15 +330,36 @@ def execute_merge(
         return MergeOutcome("error", error=f"merge failed: {exc}")
     if result.conflicted:
         return MergeOutcome("conflict", conflicts=result.conflicts)
-    if result.merged_sha and result.merged_sha == target_tip_before:
-        # Nothing merged. Reporting the target's own tip as the merge sha
-        # credits the run with whatever was committed there since, and stamping
-        # it destroys the record of the merge that did happen.
+    # Nothing merged when the target did not move: it already holds the
+    # branch's content.
+    noop = bool(result.merged_sha) and result.merged_sha == target_tip_before
+    merged_tip = chain_tip(cwd, run_branch) or ""
+    if noop and manifest.merged is not None and manifest.merged.tip == merged_tip:
+        # The record already covers this tip: stamping the target's own tip
+        # over it would credit the run with whatever was committed there since
+        # and destroy the record of the merge that did happen.
         return MergeOutcome("noop", merged_sha=result.merged_sha)
+    # A merge that added nothing still records the run as merged up to this
+    # tip: the target holds its content, so prune and the listings treat it so.
     stamp_error = record_merge_in_manifest(
         layout,
         merged_into=target,
-        merged_sha=result.merged_sha,
-        merged_tip=chain_tip(cwd, run_branch) or "",
+        merged_sha=NO_MERGE_COMMIT if noop else result.merged_sha,
+        merged_tip=merged_tip,
     )
-    return MergeOutcome("merged", merged_sha=result.merged_sha, stamp_error=stamp_error)
+    return MergeOutcome(
+        "noop" if noop else "merged",
+        merged_sha=result.merged_sha,
+        stamp_error=stamp_error,
+        recorded=noop and not stamp_error,
+    )
+
+
+def noop_merge_line(run_branch: str, target: str, outcome: MergeOutcome) -> str:
+    """The one line for a merge that added nothing, on every surface: what
+    this call recorded, or that the record already stood (a stamp error is
+    the caller's note)."""
+    if outcome.recorded or outcome.stamp_error:
+        recorded = f"; recorded as merged into {target}" if outcome.recorded else ""
+        return f"nothing to add from {run_branch}: {target} already has its content{recorded}"
+    return f"nothing left to merge from {run_branch} into {target}"

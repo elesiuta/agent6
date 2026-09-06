@@ -12,7 +12,7 @@ import subprocess
 from collections.abc import Collection
 from pathlib import Path
 
-from agent6.app.merge import execute_merge
+from agent6.app.merge import execute_merge, noop_merge_line
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
 from agent6.child_env import curated_env
@@ -453,25 +453,8 @@ def finalize_auto_merge(
             f"auto_merged {run_branch} into {base_branch} "
             f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}"
         )
-        if outcome.stamp_error:
-            reporter.note(
-                f"merge record could not be written: {outcome.stamp_error};"
-                " `sessions prune` will call this branch unmerged"
-            )
-        # auto_prune is a branch verb: with branch_per_run off there is no
-        # branch, and the chain ref stays as the run's record (sessions rm).
-        if cfg.git.auto_prune and manifest.run_branch:
-            if delete_branch_if_merged(cwd, run_branch):
-                reporter.note(
-                    f"auto_pruned {run_branch}",
-                )
-            else:
-                reporter.note(
-                    f"auto_prune kept {run_branch} (squash-merged, unreachable; "
-                    f"remove with: git branch -D {run_branch})"
-                )
     elif outcome.status == "noop":
-        reporter.note(f"nothing left to merge from {run_branch} into {base_branch}.")
+        reporter.note(f"{noop_merge_line(run_branch, base_branch, outcome)}.")
     elif outcome.status == "conflict":
         reporter.note(
             f"auto_merge into {base_branch} hit conflicts "
@@ -482,6 +465,23 @@ def finalize_auto_merge(
         reporter.note(
             f"auto_merge failed: {outcome.error}",
         )
+    if outcome.stamp_error:
+        reporter.note(
+            f"merge record could not be written: {outcome.stamp_error};"
+            " `sessions prune` will call this branch unmerged"
+        )
+    # A recorded merge takes one post-merge path, whatever it added.
+    # auto_prune is a branch verb: with branch_per_run off there is no
+    # branch, and the chain ref stays as the run's record (sessions rm).
+    landed = outcome.status == "merged" or outcome.recorded
+    if landed and cfg.git.auto_prune and manifest.run_branch:
+        if delete_branch_if_merged(cwd, run_branch):
+            reporter.note(f"auto_pruned {run_branch}")
+        else:
+            reporter.note(
+                f"auto_prune kept {run_branch} (squash-merged, unreachable; "
+                f"remove with: git branch -D {run_branch})"
+            )
 
 
 def _stash_apply_cmd(cwd: Path, sha: str, base_branch: str) -> str:
