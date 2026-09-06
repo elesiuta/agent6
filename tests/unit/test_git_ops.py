@@ -1693,3 +1693,43 @@ def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: Path) -> None:
     assert chain_tip(tmp_path, "refs/agent6/t2") == second  # the chain still advances
     # By full ref name: `agent6/t2` alone resolves to the CHAIN ref first.
     assert _rev(tmp_path, "refs/heads/agent6/t2") == theirs, "the operator's commit was rewound"
+
+
+def test_a_merge_tree_this_git_cannot_run_names_the_floor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`merge-tree --merge-base` needs git 2.40; an older git exits 129 with a
+    usage error, which read as "merge-tree failed: <usage text>". The refusal
+    names the git found and the floor."""
+    from agent6.types import CommandResult
+
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
+    _commit_file(tmp_path, "README.md", "main change\n", "main edit")
+    real_run = git_ops._run  # pyright: ignore[reportPrivateUsage]
+
+    def old_git(cwd: Path, *args: str, **kw: object) -> CommandResult:
+        if args[:1] == ("merge-tree",):
+            return CommandResult(
+                argv=("git", *args),
+                returncode=129,
+                stdout="",
+                stderr="error: unknown option `merge-base=abc'",
+                duration_s=0.0,
+                exec_failed=False,
+            )
+        if args == ("--version",):
+            return CommandResult(
+                argv=("git", "--version"),
+                returncode=0,
+                stdout="git version 2.39.0\n",
+                stderr="",
+                duration_s=0.0,
+                exec_failed=False,
+            )
+        return real_run(cwd, *args, **kw)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(git_ops, "_run", old_git)
+    with pytest.raises(GitError, match=r"git version 2\.39\.0.*git 2\.40 or newer"):
+        plumb_merge(tmp_path, "main", theirs, strategy="merge", message=None, merge_base=base)

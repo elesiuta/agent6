@@ -1226,6 +1226,35 @@ def fetch_branch(path: Path, remote_path: Path, refspec: str) -> None:
     _run(path, "fetch", str(remote_path), refspec)
 
 
+def _merge_tree(
+    path: Path, ours: str, theirs: str, merge_base: str | None
+) -> tuple[str, tuple[str, ...]]:
+    """`merge-tree --write-tree` of *ours* and *theirs*: the merged tree's oid
+    with no conflicts, or "" with the conflicted paths."""
+    base = [f"--merge-base={merge_base}"] if merge_base else []
+    res = _run(path, "merge-tree", "--write-tree", "--name-only", *base, ours, theirs, check=False)
+    lines = res.stdout.splitlines()
+    if res.returncode == 1:
+        # The tree oid, the conflicted paths, a blank line, then git's
+        # informational messages ("Auto-merging f", "CONFLICT (content) ...").
+        paths: list[str] = []
+        for line in lines[1:]:
+            if not line.strip():
+                break
+            paths.append(line)
+        return "", tuple(paths)
+    if res.returncode == 129:
+        # git's usage exit: an option this git predates (`--merge-base`
+        # arrived in 2.40, the floor docs/installation.md states).
+        version = _run(path, "--version", check=False).stdout.strip() or "this git"
+        raise GitError(
+            f"merge-tree rejected its arguments ({version}); agent6 needs git 2.40 or newer"
+        )
+    if res.returncode != 0 or not lines:
+        raise GitError(f"merge-tree failed: {res.stderr.strip() or 'exit'}")
+    return lines[0].strip(), ()
+
+
 def plumb_merge(
     path: Path,
     target: str,
@@ -1265,23 +1294,9 @@ def plumb_merge(
         if ff_able:
             tree = _run(path, "rev-parse", f"{theirs}^{{tree}}").stdout.strip()
         else:
-            base = [f"--merge-base={merge_base}"] if merge_base else []
-            res = _run(
-                path, "merge-tree", "--write-tree", "--name-only", *base, ours, theirs, check=False
-            )
-            lines = res.stdout.splitlines()
-            if res.returncode == 1:
-                # The tree oid, the conflicted paths, a blank line, then git's
-                # informational messages ("Auto-merging f", "CONFLICT (content) ...").
-                paths: list[str] = []
-                for line in lines[1:]:
-                    if not line.strip():
-                        break
-                    paths.append(line)
-                return MergeResult("", True, tuple(paths))
-            if res.returncode != 0 or not lines:
-                raise GitError(f"merge-tree failed: {res.stderr.strip() or 'exit'}")
-            tree = lines[0].strip()
+            tree, conflicts = _merge_tree(path, ours, theirs, merge_base)
+            if conflicts:
+                return MergeResult("", True, conflicts)
         if tree == _run(path, "rev-parse", f"{ours}^{{tree}}").stdout.strip():
             return MergeResult(ours, False, ())  # content-identical: nothing to land
         text = message or f"Merge {merge_rev}"
