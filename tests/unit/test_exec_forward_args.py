@@ -26,7 +26,7 @@ from agent6.ui import cli
 def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     calls: dict[str, Any] = {}
 
-    def _resolve(target: str) -> SessionLayout:
+    def _resolve(_verb: str, target: str) -> SessionLayout:
         return SessionLayout(state_dir=tmp_path, session_id=target or "newest-run")
 
     def _exec(layout: SessionLayout, cfg: Any, cwd: Path, argv: tuple[str, ...]) -> int:
@@ -188,6 +188,37 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
         net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
     assert captured["isolation"] == "strict"
     assert "recorded no launch policy" in capsys.readouterr().err
+
+
+def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Each rolled its own id lookup, so an ambiguous prefix -- which `attach`
+    and `sessions show` name as ambiguous -- read as "no session 'ambig'",
+    which is false: two matched."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    from agent6.config.layer import resolved_state_dir
+
+    for name in ("ambig-one11", "ambig-two11"):
+        layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=name)
+        layout.ensure()
+        layout.manifest_path.write_text(
+            json.dumps({"version": 3, "session_id": name, "mode": "run", "user_task": "t"}) + "\n",
+            encoding="utf-8",
+        )
+        layout.logs_path.write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+            encoding="utf-8",
+        )
+
+    assert cli.main(["exec", "ambig", "--", "true"]) == 2
+    assert cli.main(["forward", "ambig", "8000"]) == 2
+
+    err = capsys.readouterr().err
+    assert err.count("is ambiguous (2 matches)") == 2, err
 
 
 def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: Path) -> None:

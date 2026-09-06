@@ -355,19 +355,26 @@ def _dispatch_answer(args: argparse.Namespace) -> int:
     return _cmd_answer(args.target, tuple(args.answers))
 
 
-def _resolve_target(target: str) -> SessionLayout | None:
-    """The named session, or the newest when the operator omitted one -- the
-    same resolution `attach` uses, so the verbs agree about "the session"."""
+def _resolve_target(verb: str, target: str) -> SessionLayout | None:
+    """The named session, or the newest when the operator omitted one, through
+    the resolution `attach` and the `sessions` verbs use -- so an ambiguous
+    prefix reads as ambiguous here too, and a husk names itself. Prints the
+    reason and returns None when there is nothing to act on."""
     from agent6.config.layer import resolved_state_dir  # noqa: PLC0415
-    from agent6.sessions.layout import session_layout  # noqa: PLC0415
-    from agent6.ui.cli._common import session_bucket_dirs  # noqa: PLC0415
-    from agent6.viewmodel.listing import newest_session_dir  # noqa: PLC0415
+    from agent6.sessions.id import SessionIdError  # noqa: PLC0415
+    from agent6.ui.cli._common import (  # noqa: PLC0415
+        print_no_session_match,
+        resolve_or_newest_layout,
+    )
 
-    state_dir = resolved_state_dir(Path.cwd())
-    if target:
-        return session_layout(state_dir, target)
-    newest = newest_session_dir(session_bucket_dirs(Path.cwd()))
-    return session_layout(state_dir, newest.name) if newest is not None else None
+    try:
+        layout = resolve_or_newest_layout(Path.cwd(), target)
+    except SessionIdError as exc:
+        print(f"agent6 {verb}: {exc}", file=sys.stderr)
+        return None
+    if layout is None:
+        print_no_session_match(target, resolved_state_dir(Path.cwd()))
+    return layout
 
 
 def _dispatch_exec(args: argparse.Namespace) -> int:
@@ -396,9 +403,8 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
     if not argv:
         print("agent6 exec: give a command (after `--` when naming a session).", file=sys.stderr)
         return 2
-    layout = _resolve_target(target)
+    layout = _resolve_target("exec", target)
     if layout is None:
-        print(f"agent6 exec: no session {target!r}", file=sys.stderr)
         return 2
     try:
         cfg = load_effective(Path.cwd(), args.config).config
@@ -417,9 +423,8 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
         # `forward 8000` means "port 8000 of the newest session": a bare number
         # is a port (the help says so; a numeric session id needs both args).
         target, port = "", int(target)
-    layout = _resolve_target(target)
+    layout = _resolve_target("forward", target)
     if layout is None:
-        print(f"agent6 forward: no session {target!r}", file=sys.stderr)
         return 2
     if port is None:
         ports = listening_ports(layout.session_dir)
