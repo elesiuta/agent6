@@ -15,7 +15,7 @@
 //! Exits 0 if it successfully ran the child (regardless of child exit code).
 //! Exits non-zero only when sandbox SETUP failed — in that case stderr explains why.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::ffi::{CString, OsStr};
 use std::fs::{self, File};
 use std::io::{self, BufRead, Read, Write};
@@ -171,7 +171,8 @@ enum Request {
     /// Report whether a backgrounded command is still running, reaping it and
     /// answering with its exit code once it is not.
     Status { pid: i32 },
-    /// Kill a backgrounded command's process group, then reap it.
+    /// Kill a backgrounded command's process group, then reap it; in a PID
+    /// namespace, also sweep what the command left outside its group.
     Stop { pid: i32 },
 }
 
@@ -483,14 +484,18 @@ fn serve(cwd: &Path, pid_namespaced: bool, interrupt_fd: Option<RawFd>) -> ! {
     }
     let stdin = io::stdin();
     let mut line = String::new();
-    // Backgrounded pids, for the EOF sweep when no PID namespace bounds them.
-    let mut backgrounded: Vec<i32> = Vec::new();
+    // Backgrounded commands in start order, each with the namespace's pids at
+    // its start: what a stop sweeps ends where the next still-running command
+    // began. Without
+    // a PID namespace the snapshot is empty and the Python side sweeps.
+    let mut backgrounded: Vec<(i32, HashSet<i32>)> = Vec::new();
     loop {
         line.clear();
         match stdin.lock().read_line(&mut line) {
             Ok(0) => {
                 if !pid_namespaced {
-                    sweep_backgrounded(&backgrounded);
+                    let pids: Vec<i32> = backgrounded.iter().map(|(pid, _)| *pid).collect();
+                    sweep_backgrounded(&pids);
                 }
                 std::process::exit(0)
             }
@@ -508,17 +513,34 @@ fn serve(cwd: &Path, pid_namespaced: bool, interrupt_fd: Option<RawFd>) -> ! {
             // A run that was handed back keeps running, so it is swept and
             // polled exactly like one that started in the background.
             Request::Run(child) => {
+                let before = if pid_namespaced {
+                    namespace_pids()
+                } else {
+                    HashSet::new()
+                };
                 run_child(&child.child_spec(), cwd, interrupt_fd).map(|handed_back| {
                     if let Some(pid) = handed_back {
-                        backgrounded.push(pid);
+                        backgrounded.push((pid, before));
                     }
                 })
             }
             Request::Background(child) => {
-                spawn_detached(&child.child_spec(), cwd).map(|pid| backgrounded.push(pid))
+                let before = if pid_namespaced {
+                    namespace_pids()
+                } else {
+                    HashSet::new()
+                };
+                spawn_detached(&child.child_spec(), cwd).map(|pid| backgrounded.push((pid, before)))
             }
             Request::Status { pid } => answer_status(pid),
-            Request::Stop { pid } => answer_stop(pid),
+            Request::Stop { pid } => {
+                let mut answer = stop_result(pid);
+                if pid_namespaced {
+                    answer["survivors"] = sweep_escapees_of(pid, &mut backgrounded).into();
+                }
+                println!("{answer}");
+                io::stdout().flush()
+            }
         };
         // A command that could not be EXECUTED (bad path, missing interpreter)
         // is the caller's argv being wrong, not this jail being broken: answer
@@ -2468,36 +2490,149 @@ fn answer_status(pid: i32) -> io::Result<()> {
     io::stdout().flush()
 }
 
-/// Kill a backgrounded command's group and reap it. Idempotent. Bounded: an
-/// unkillable process must not hold the run's only jail process.
-fn answer_stop(pid: i32) -> io::Result<()> {
+/// Kill a backgrounded command's group and reap it: the answer to a stop
+/// request, with the exit code when this call is the one that reaped it.
+/// Idempotent. Bounded: an unkillable process must not hold the run's only
+/// jail process.
+fn stop_result(pid: i32) -> serde_json::Value {
+    // A reaped pid may be recycled, so its group is signalled only while this
+    // launcher still holds it (a zombie keeps its pgid); what a reaped command
+    // left behind is the sweep's, here or in the agent.
+    let held = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
+    match waitid(Id::Pid(Pid::from_raw(pid)), held) {
+        Ok(_) => {}
+        // ECHILD: a status request already reaped it, which is the state
+        // stop is asking for. Its code went out with that answer.
+        Err(nix::errno::Errno::ECHILD) => {
+            return serde_json::json!({"stopped": true, "returncode": null});
+        }
+        Err(e) => return serde_json::json!({"stopped": false, "error": e.to_string()}),
+    }
     // The group, not the pid: spawn_detached gives each one its own, so a
     // server's children go down with it.
     unsafe { libc::killpg(pid, libc::SIGKILL) };
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    let result = loop {
+    loop {
         match waitpid(Pid::from_raw(pid), Some(WaitPidFlag::WNOHANG)) {
             Ok(WaitStatus::StillAlive) => {}
             Ok(status) => {
-                break serde_json::json!({"stopped": true, "returncode": wait_code(status)})
+                return serde_json::json!({"stopped": true, "returncode": wait_code(status)});
             }
-            // ECHILD: a status request already reaped it, which is the state
-            // stop is asking for. Its code went out with that answer.
-            Err(nix::errno::Errno::ECHILD) => {
-                break serde_json::json!({"stopped": true, "returncode": null})
-            }
-            Err(e) => break serde_json::json!({"stopped": false, "error": e.to_string()}),
+            Err(e) => return serde_json::json!({"stopped": false, "error": e.to_string()}),
         }
         if std::time::Instant::now() >= deadline {
-            break serde_json::json!({
+            return serde_json::json!({
                 "stopped": false,
                 "error": format!("pid {pid} did not exit within 5s of SIGKILL"),
             });
         }
         std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Every pid in this PID namespace, read off its private /proc.
+fn namespace_pids() -> HashSet<i32> {
+    let mut pids = HashSet::new();
+    if let Ok(entries) = fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            if let Ok(pid) = entry.file_name().to_string_lossy().parse::<i32>() {
+                pids.insert(pid);
+            }
+        }
+    }
+    pids
+}
+
+/// The state, parent and process group of *pid*: the three fields of
+/// /proc/<pid>/stat after the parenthesised name (comm can hold spaces and
+/// parens, so they are taken after its closing one).
+struct ProcStat {
+    state: char,
+    ppid: i32,
+    pgid: i32,
+}
+
+fn stat_of(pid: i32) -> Option<ProcStat> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let mut fields = stat.rsplit_once(") ")?.1.split_whitespace();
+    Some(ProcStat {
+        state: fields.next()?.chars().next()?,
+        ppid: fields.next()?.parse().ok()?,
+        pgid: fields.next()?.parse().ok()?,
+    })
+}
+
+/// Kill what the stopped command *pid* left outside its process group and
+/// answer the pids still standing. The launcher is this namespace's init, so
+/// a `setsid` daemon reparents onto it, out of reach of the group kill in
+/// `stop_result`. The window is the one the agent applies outside a
+/// namespace: what appeared after the stopped command started and before the
+/// next still-running command did, whichever order the two stop in. A live
+/// command's own children stay under it and are left alone, and a group is
+/// signalled only through the escapee that leads it.
+fn sweep_escapees_of(pid: i32, backgrounded: &mut Vec<(i32, HashSet<i32>)>) -> Vec<i32> {
+    let Some(idx) = backgrounded.iter().position(|(p, _)| *p == pid) else {
+        return Vec::new();
     };
-    println!("{result}");
-    io::stdout().flush()
+    let (_, before) = backgrounded.remove(idx);
+    let now = namespace_pids();
+    // /proc always lists this init, so an empty read is a failed one, and a
+    // sweep bounded by nothing would take every reparented process.
+    if before.is_empty() || now.is_empty() {
+        return Vec::new();
+    }
+    let mut spare = before;
+    let live = |p: i32| stat_of(p).is_some_and(|s| s.state != 'Z');
+    if let Some((_, next)) = backgrounded[idx..].iter().find(|(p, _)| live(*p)) {
+        spare.extend(now.difference(next));
+    }
+    // A command that exited and was reaped is gone from the window list too.
+    backgrounded.retain(|(p, _)| now.contains(p));
+    spare.insert(1);
+    // A pass kills what reparented onto this init and reaps it; a daemon's own
+    // `setsid` child reparents only once its parent is gone, so passes repeat
+    // until one finds nothing, or the deadline leaves the rest standing.
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    let mut standing: Vec<i32> = Vec::new();
+    loop {
+        let escapees: Vec<i32> = namespace_pids()
+            .difference(&spare)
+            .copied()
+            .filter(|p| !standing.contains(p) && stat_of(*p).is_some_and(|s| s.ppid == 1))
+            .collect();
+        if escapees.is_empty() {
+            return standing;
+        }
+        if std::time::Instant::now() >= deadline {
+            standing.extend(escapees);
+            return standing;
+        }
+        for p in &escapees {
+            unsafe {
+                if stat_of(*p).is_some_and(|s| s.pgid == *p) {
+                    libc::killpg(*p, libc::SIGKILL);
+                } else {
+                    libc::kill(*p, libc::SIGKILL);
+                }
+            }
+        }
+        // Reap what was just killed: an orphan would stand as a zombie,
+        // answering `kill -0` as if alive, until reaped.
+        let mut unreaped = escapees;
+        loop {
+            unreaped.retain(|p| {
+                matches!(
+                    waitpid(Pid::from_raw(*p), Some(WaitPidFlag::WNOHANG)),
+                    Ok(WaitStatus::StillAlive)
+                )
+            });
+            if unreaped.is_empty() || std::time::Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        standing.extend(unreaped);
+    }
 }
 
 fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {

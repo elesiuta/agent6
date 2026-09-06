@@ -181,6 +181,185 @@ def test_a_backgrounded_setsid_daemon_dies_at_its_stop(
         session.close()
 
 
+def _alive_in_jail(session: JailSession, pid: int) -> bool:
+    """Whether the namespace-local *pid* still runs, asked from inside; a
+    zombie reads as gone, as `_running` reads one outside."""
+    res = session.run(("/bin/sh", "-c", f"cut -d' ' -f3 /proc/{pid}/stat 2>/dev/null"))
+    assert isinstance(res, CommandResult)
+    return res.returncode == 0 and res.stdout.strip() not in ("", "Z")
+
+
+@pytest.mark.needs_namespaces
+@pytest.mark.parametrize("older_first", [False, True])
+def test_a_strict_stop_sweeps_its_daemon_inside_the_namespace(
+    tmp_path: Path, older_first: bool
+) -> None:
+    """Under `strict` the launcher's stop killed the command's group and a
+    `setsid` daemon inside the PID namespace lived on until the session
+    closed: reparented onto the launcher (the namespace's init), outside
+    every group. The launcher sweeps by the window rule the agent applies
+    outside a namespace: what appeared after the stopped command started and
+    before the next still-running one did, whichever order the two stop in."""
+    from agent6.sandbox.jail import SessionJob
+
+    def daemonising(marker: str) -> tuple[str, ...]:
+        inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
+        return ("/bin/sh", "-c", f"sh -c '{inner}'; sleep 60")
+
+    session = _session(tmp_path, "strict")
+    m1, m2 = tmp_path / "d1.pid", tmp_path / "d2.pid"
+    try:
+        b1 = session.child_snapshot()
+        job1 = SessionJob(
+            session, session.start_background(daemonising(str(m1))), tmp_path / "j1", before=b1
+        )
+        time.sleep(1.0)
+        b2 = session.child_snapshot()
+        job2 = SessionJob(
+            session, session.start_background(daemonising(str(m2))), tmp_path / "j2", before=b2
+        )
+        time.sleep(1.0)
+        assert m1.exists() and m2.exists(), "a daemon never started; the test proves nothing"
+        d1, d2 = int(m1.read_text().strip()), int(m2.read_text().strip())
+        assert _alive_in_jail(session, d1) and _alive_in_jail(session, d2)
+        first, second = (job1, job2) if older_first else (job2, job1)
+        d_first, d_second = (d1, d2) if older_first else (d2, d1)
+        assert first.stop() == ""
+        assert _alive_in_jail(session, d_second), "the sibling's daemon was swept"
+        assert not _alive_in_jail(session, d_first), "the daemon outlived its command's stop"
+        assert second.stop() == ""
+        assert not _alive_in_jail(session, d_second)
+    finally:
+        session.close()
+
+
+@pytest.mark.needs_namespaces
+def test_a_strict_stop_leaves_an_older_commands_late_child_alone(tmp_path: Path) -> None:
+    """The launcher's sweep took every pid that appeared after the stopped
+    command started, an older command's own late child included, and its
+    group kill on that child's pgid took the older command down with it. A
+    live command's children stay under it: the sweep takes only what
+    reparented onto the launcher, and signals a group only through the
+    escapee that leads it."""
+    from agent6.sandbox.jail import SessionJob
+
+    session = _session(tmp_path, "strict")
+    late = tmp_path / "late.pid"
+    try:
+        b1 = session.child_snapshot()
+        older = SessionJob(
+            session,
+            session.start_background(
+                ("/bin/sh", "-c", f"sleep 2; sleep 60 & echo $! > {late}; wait")
+            ),
+            tmp_path / "j1",
+            before=b1,
+        )
+        time.sleep(0.5)
+        b2 = session.child_snapshot()
+        younger = SessionJob(
+            session,
+            session.start_background(("/bin/sh", "-c", "sleep 60")),
+            tmp_path / "j2",
+            before=b2,
+        )
+        time.sleep(2.5)
+        assert late.exists(), "the late child never started; the test proves nothing"
+        assert younger.stop() == ""
+        assert older.status().running, "the older command died with the younger's stop"
+        assert _alive_in_jail(session, int(late.read_text().strip()))
+        assert older.stop() == ""
+    finally:
+        session.close()
+
+
+@pytest.mark.needs_namespaces
+def test_a_strict_stop_sweeps_past_a_sibling_that_exited(tmp_path: Path) -> None:
+    """A background command that exited on its own stayed in the launcher's
+    window list, and its start bounded an older command's sweep: a daemon the
+    older one started after the exited sibling had was spared. Only a command
+    still running ends the window; an exited one, reaped or a zombie, is no
+    edge."""
+    from agent6.sandbox.jail import SessionJob
+
+    session = _session(tmp_path, "strict")
+    marker = tmp_path / "d.pid"
+    inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
+    try:
+        b1 = session.child_snapshot()
+        older = SessionJob(
+            session,
+            session.start_background(("/bin/sh", "-c", f"sleep 2; sh -c '{inner}'; sleep 60")),
+            tmp_path / "j1",
+            before=b1,
+        )
+        time.sleep(0.5)
+        b2 = session.child_snapshot()
+        SessionJob(session, session.start_background(("/bin/true",)), tmp_path / "j2", before=b2)
+        time.sleep(2.5)
+        assert marker.exists(), "the daemon never started; the test proves nothing"
+        daemon = int(marker.read_text().strip())
+        assert _alive_in_jail(session, daemon)
+        assert older.stop() == ""
+        assert not _alive_in_jail(session, daemon), "the daemon outlived its command's stop"
+    finally:
+        session.close()
+
+
+@pytest.mark.needs_namespaces
+def test_a_strict_stop_sweeps_a_daemons_own_setsid_child(tmp_path: Path) -> None:
+    """The sweep took one pass over what had reparented onto the launcher: a
+    daemon's own `setsid` child, still under the daemon at that moment, was
+    missed, and reparented only once the daemon was dead. Passes repeat until
+    one finds nothing."""
+    from agent6.sandbox.jail import SessionJob
+
+    session = _session(tmp_path, "strict")
+    d, g = tmp_path / "d.pid", tmp_path / "g.pid"
+    script = tmp_path / "daemon.sh"
+    script.write_text(f"setsid sh -c 'echo $$ > {g}; sleep 60' &\necho $$ > {d}\nsleep 60\n")
+    try:
+        b1 = session.child_snapshot()
+        pid = session.start_background(("/bin/sh", "-c", f"sh -c 'setsid sh {script} &'; sleep 60"))
+        job = SessionJob(session, pid, tmp_path / "j", before=b1)
+        time.sleep(1.5)
+        assert d.exists() and g.exists(), "the daemons never started; the test proves nothing"
+        daemon, grandchild = int(d.read_text().strip()), int(g.read_text().strip())
+        assert _alive_in_jail(session, daemon) and _alive_in_jail(session, grandchild)
+        assert job.stop() == ""
+        assert not _alive_in_jail(session, daemon)
+        assert not _alive_in_jail(session, grandchild), "the daemon's child outlived the stop"
+    finally:
+        session.close()
+
+
+def test_a_repeat_stop_after_the_launcher_died_keeps_the_recorded_exit(tmp_path: Path) -> None:
+    """A stop asks the launcher every time (its sweep runs for a command that
+    exited on its own too), and a launcher gone by then answered as an error
+    over the exit code the status had recorded. The recorded exit stands."""
+    import os
+    import signal
+
+    from agent6.sandbox.jail import SessionJob
+
+    session = _session(tmp_path, "none")
+    try:
+        b1 = session.child_snapshot()
+        job = SessionJob(
+            session, session.start_background(("/bin/true",)), tmp_path / "j", before=b1
+        )
+        deadline = time.monotonic() + 5
+        while job.status().running and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert job.status().returncode == 0
+        os.kill(session._proc.pid, signal.SIGKILL)  # pyright: ignore[reportPrivateUsage]
+        session._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
+        assert "jail session" in job.stop()
+        assert job.status().returncode == 0
+    finally:
+        session.close()
+
+
 @pytest.mark.parametrize("isolation", _NO_NAMESPACE_LEVELS)
 @pytest.mark.parametrize("older_first", [False, True])
 def test_a_stop_spares_a_sibling_background_commands_daemon(

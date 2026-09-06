@@ -41,7 +41,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable
     - `/tmp` allows exec (toolchain helpers)
     - children write inside the jail's mount namespace (`strict`) or the Landlock write grants (`hardened`)
-    - nothing a command starts outlives it: `strict`'s PID namespace takes the tree down; `hardened` holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command (a `setsid` daemon included)
+    - nothing a command starts outlives it: `strict`'s PID namespace takes the tree down at close, and its launcher, the namespace's init, sweeps what a stopped background command left outside its process group (a `setsid` daemon reparented onto it): what appeared after the command started and before the next still-running one did; `hardened` holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command
     - a survivor the sweep cannot kill fails the command, and a background `stop` answers with its pids
     - one still running when the run's jail session or a spawned MCP server closes is recorded as a `jail.degraded` event
 

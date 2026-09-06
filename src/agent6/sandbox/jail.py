@@ -28,7 +28,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import IO, NoReturn
+from typing import IO, NoReturn, cast
 
 from agent6.child_env import without_provider_keys
 from agent6.paths import hidden_paths, mkdir_for_real_user
@@ -917,6 +917,16 @@ class BackgroundStatus:
     error: str
 
 
+@dataclass(frozen=True, slots=True)
+class Stopped:
+    """A stop request's answer: the exit code when that stop reaped the
+    command, and under a PID namespace the pids the launcher's sweep could not
+    kill."""
+
+    returncode: int | None
+    survivors: frozenset[int]
+
+
 def _write_outcome(outcome_dir: Path, returncode: int) -> None:
     """Record a command's exit code where a surface in ANOTHER process reads
     it: this run answers only its own."""
@@ -1114,18 +1124,19 @@ class SessionJob:
 
     def stop(self) -> str:
         """Kill the command and its group, then sweep what it left outside the
-        group. Idempotent: a command already reaped is not asked again, but its
-        escapees are swept on every stop. Answers "" when the launcher
-        confirmed the group is gone and the sweep killed the rest, else what
-        stands: the launcher's refusal, or the pids the sweep could not kill."""
-        if self._final is None:
-            try:
-                code = self._session.stop_background(self._pid)
-            except JailUnavailableError as exc:
+        group, on every stop: a command that exited on its own can have left a
+        daemon too. Answers "" when the group is gone and the sweeps killed the
+        rest, else what stands: the launcher's refusal, or the pids no sweep
+        could kill."""
+        try:
+            stopped = self._session.stop_background(self._pid)
+        except JailUnavailableError as exc:
+            if self._final is None:
                 self._settle(BackgroundStatus(running=False, returncode=None, error=str(exc)))
-                return str(exc)
-            self._settle(BackgroundStatus(running=False, returncode=code, error=""))
-        survivors = self._session.sweep_for(self._pid, self._before)
+            return str(exc)
+        if self._final is None:
+            self._settle(BackgroundStatus(running=False, returncode=stopped.returncode, error=""))
+        survivors = stopped.survivors | self._session.sweep_for(self._pid, self._before)
         return survivors_message(survivors) if survivors else ""
 
     def _settle(self, status: BackgroundStatus) -> None:
@@ -1405,14 +1416,19 @@ class JailSession:
             error=str(answer.get("error", "")),
         )
 
-    def stop_background(self, pid: int) -> int | None:
-        """Kill a backgrounded command and its group, answering the exit code
-        when this call is the one that reaped it. Idempotent."""
+    def stop_background(self, pid: int) -> Stopped:
+        """Kill a backgrounded command and its group, and under a PID namespace
+        sweep what it left outside the group. Idempotent."""
         answer = self._request({"kind": "stop", "pid": pid})
         if not answer.get("stopped"):
             raise JailUnavailableError(f"jail session could not stop {pid}: {answer}")
         code = answer.get("returncode")
-        return code if isinstance(code, int) else None
+        listed = answer.get("survivors")
+        survivors = cast(list[object], listed) if isinstance(listed, list) else []
+        return Stopped(
+            returncode=code if isinstance(code, int) else None,
+            survivors=frozenset(p for p in survivors if isinstance(p, int)),
+        )
 
     def _request(
         self, request: dict[str, object], *, interrupted: Callable[[], bool] | None = None
