@@ -30,7 +30,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_list = _sub(
         sessions_sub,
         "list",
-        help="List sessions newest-first by update time: updated, status, mode, cost, id, task.",
+        help="List sessions newest-first by update time: updated, status, cost, id, task.",
     )
     sessions_list.add_argument(
         "--json",
