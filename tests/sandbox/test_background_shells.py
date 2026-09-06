@@ -13,15 +13,23 @@ import contextlib
 import os
 import shutil
 import signal
+import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from agent6.sandbox.jail import BackgroundJob, locate_jail_binary, run_in_jail
+from agent6.sandbox.jail import (
+    BackgroundJob,
+    BackgroundStatus,
+    Stopped,
+    locate_jail_binary,
+    run_in_jail,
+)
 from agent6.tools.background import BackgroundError, BackgroundShells, roster_from_dir
-from agent6.types import IsolationLevel, JailPolicy
+from agent6.types import BackgroundHandoff, ChildSnapshot, IsolationLevel, JailPolicy
 
 pytestmark = pytest.mark.needs_namespaces
 
@@ -686,3 +694,46 @@ def test_the_disk_roster_is_in_start_order(tmp_path: Path) -> None:
         assert listed == started, listed
     finally:
         shells.stop_all()
+
+
+class _HostSession:
+    """The JailSession calls a SessionJob makes, over a real host pid."""
+
+    def open_job(self, pid: int, before: ChildSnapshot) -> None:
+        pass
+
+    def status_background(self, pid: int) -> BackgroundStatus:
+        return BackgroundStatus(running=True, returncode=None, error="")
+
+    def stop_background(self, pid: int) -> Stopped:
+        os.kill(pid, signal.SIGKILL)
+        return Stopped(returncode=-9, survivors=frozenset())
+
+    def sweep_for(self, pid: int, before: ChildSnapshot) -> frozenset[int]:
+        return frozenset()
+
+
+def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: Path) -> None:
+    """A hand-back `adopt` refuses is stopped, not left running: the launcher
+    already started the command and this run owns it, so a registration that
+    raised without stopping it left a live process no roster, read_background
+    or stop_all could reach."""
+    proc = subprocess.Popen(["sleep", "60"])
+    try:
+        shells = BackgroundShells(tmp_path / "shells")
+        handoff = BackgroundHandoff(
+            argv=("sleep", "60"),
+            pid=proc.pid,
+            log=str(tmp_path / "logs" / "gone.log"),
+            stdout="",
+            stderr="",
+            duration_s=900.0,
+            before=ChildSnapshot(1, frozenset()),
+        )
+        with pytest.raises(BackgroundError):
+            shells.adopt(handoff, session=cast(Any, _HostSession()))
+        assert shells.roster() == []
+        assert proc.wait(timeout=5) == -signal.SIGKILL
+    finally:
+        proc.kill()
+        proc.wait()

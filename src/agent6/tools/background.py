@@ -196,23 +196,21 @@ class BackgroundShells:
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
         mkdir_for_real_user(shell_dir)
+        job = SessionJob(session, handoff.pid, shell_dir, before=handoff.before)
         # The launcher created this with O_EXCL|O_NOFOLLOW under a name no
         # command can predict (its own pid); this side never resolves it again.
         try:
             log_fd = os.open(handoff.log, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
         except OSError as exc:
+            # Already running and this run's: a registration that refuses it
+            # stops it, or nothing can reach it again.
+            job.stop()
             raise BackgroundError(f"could not open the handed-back command's log: {exc}") from exc
         command = shlex.join(handoff.argv)
         (shell_dir / _META_NAME).write_text(
             json.dumps({"id": shell_id, "command": command}), encoding="utf-8"
         )
-        shell = _Shell(
-            id=shell_id,
-            command=command,
-            dir=shell_dir,
-            job=SessionJob(session, handoff.pid, shell_dir, before=handoff.before),
-            log_fd=log_fd,
-        )
+        shell = _Shell(id=shell_id, command=command, dir=shell_dir, job=job, log_fd=log_fd)
         self._shells[shell_id] = shell
         return self._view(shell)
 
