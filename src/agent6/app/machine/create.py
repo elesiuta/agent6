@@ -14,6 +14,7 @@ separate `EventSink`.
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 from pathlib import Path
 
@@ -156,6 +157,10 @@ def _discard_workspace(workspace: Path, reporter: Reporter) -> None:
         # missing path through onexc like any other failure.
         if path.exists():
             shutil.rmtree(path, onexc=lambda _fn, target, exc: errors.append(f"{target}: {exc}"))
+    # The per-repo base every subordinate tree sits in, like the fan-out's
+    # cleanup: only an empty one goes.
+    with contextlib.suppress(OSError):
+        workspace.parent.rmdir()
     if errors:
         reporter.err(f"machine create: the drafting workspace stays ({errors[0]})")
 

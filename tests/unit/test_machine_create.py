@@ -1177,3 +1177,21 @@ def test_bundle_scripts_take_the_bundles_own_writer_and_mode(tmp_path: Path) -> 
     assert script_mode == stat.S_IMODE((tmp_path / "m.asm.toml").stat().st_mode)
     assert (tmp_path / "scripts" / "helper.py").read_text(encoding="utf-8") == "VALUE = 1\n"
 
+
+def test_discarding_the_workspace_takes_its_empty_base_with_it(tmp_path: Path) -> None:
+    """The fan-out cleanup removes the per-repo workdir base once empty; the
+    drafting workspace's discard left it behind."""
+    from agent6.app.machine.create import _discard_workspace  # pyright: ignore[reportPrivateUsage]
+    from agent6.app.reporter import Reporter
+
+    base = tmp_path / "parallel" / "repo-id"
+    workspace = base / "create-AAAAAA"
+    workspace.mkdir(parents=True)
+    said: list[str] = []
+    _discard_workspace(workspace, Reporter(out=said.append, err=said.append))
+    assert not base.exists()
+    kept = base / "lane-1"
+    kept.mkdir(parents=True)
+    (base / "create-BBBBBB").mkdir()
+    _discard_workspace(base / "create-BBBBBB", Reporter(out=said.append, err=said.append))
+    assert kept.is_dir() and base.is_dir()
