@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import subprocess
@@ -204,9 +205,11 @@ def _kind_rank(hit: _SearchHit) -> int:
 
 
 def _rg_text(field: object) -> str:
-    """rg --json encodes a path/line as {"text": ...} (or {"bytes": ...} for
-    non-UTF8); return the text, empty for the bytes case."""
+    """rg --json encodes a path/line as {"text": ...}, or {"bytes": <base64>}
+    when it is not UTF-8: those decode with U+FFFD for what is not."""
     if isinstance(field, dict):
+        if "bytes" in field:
+            return base64.b64decode(str(field["bytes"])).decode("utf-8", errors="replace")
         return str(field.get("text", ""))
     return str(field or "")
 

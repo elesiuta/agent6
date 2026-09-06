@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -243,3 +244,28 @@ def test_string_walk_survives_nesting_the_parser_accepted() -> None:
     for _ in range(100_000):
         deep = {"a": deep}
     assert list(_strings_in(deep)) == ["NEEDLE"]
+
+
+def test_a_line_that_is_not_utf8_still_parses_from_its_bytes() -> None:
+    """rg --json carries a line that is not UTF-8 as base64 `bytes` in place
+    of `text`; the parser read it as empty, so the hit lost its kind and its
+    snippet. The bytes decode with U+FFFD standing in for what is not UTF-8."""
+    event = (
+        b'{"type": "tool.call", "ts": "2026-09-02T09:15:30+00:00", "name": "run_command",'
+        b' "args": {"argv": ["grep", "caf\xe9 NEEDLE"]}}'
+    )
+    start = event.index(b"NEEDLE")
+    rec = {
+        "type": "match",
+        "data": {
+            "path": {"text": "/s/runs/r1/logs.jsonl"},
+            "lines": {"bytes": base64.b64encode(event).decode("ascii")},
+            "line_number": 1,
+            "absolute_offset": 0,
+            "submatches": [{"match": {"text": "NEEDLE"}, "start": start, "end": start + 6}],
+        },
+    }
+    out = _parse_rg_matches(json.dumps(rec))
+    assert len(out) == 1
+    assert (out[0].session_id, out[0].kind) == ("r1", "tool.call")
+    assert "NEEDLE" in out[0].snippet and "caf\ufffd" in out[0].snippet
