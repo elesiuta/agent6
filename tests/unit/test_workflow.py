@@ -29,6 +29,7 @@ from agent6.workflows.loop import LoopState, TurnState, Workflow
 # strings when the operator sets neither.
 _GIT_STUB = SimpleNamespace(
     control="agent6",
+    commit_per_step=True,
     commit=SimpleNamespace(
         checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
     ),

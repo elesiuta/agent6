@@ -415,9 +415,11 @@ def test_hardened_fs_rule_renders_only_under_hardened(tmp_path: Path) -> None:
     prompt: the rule rendered unconditionally)."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=True)
-    strict = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None, isolation="strict")
+    strict = build_system_prompt(
+        config=cfg, repo=repo, mode="run", skills=None, isolation="strict", protected_paths=True
+    )
     hardened = build_system_prompt(
-        config=cfg, repo=repo, mode="run", skills=None, isolation="hardened"
+        config=cfg, repo=repo, mode="run", skills=None, isolation="hardened", protected_paths=True
     )
     assert "Under hardened isolation" not in strict
     assert "__HARDENED_FS_RULE__" not in strict
@@ -582,3 +584,33 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
     wf._maybe_adopt_verify(MagicMock(), turn)  # pyright: ignore[reportPrivateUsage]
     dispatcher.adopt_verify_command.assert_not_called()
     assert wf.config.workflow.verify_command == ()
+
+
+def test_prompt_says_nothing_commits_under_commit_per_step_off(tmp_path: Path) -> None:
+    """With `[git].commit_per_step = false` nothing commits, and the prompt
+    still promised a commit after every passing verify; the model's work
+    stayed uncommitted in the worktree while it was told otherwise."""
+    repo = _repo(tmp_path)
+    cfg = Config.model_validate(
+        {"workflow": {"verify_command": ["true"]}, "git": {"commit_per_step": False}}
+    )
+    out = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
+    assert "Nothing commits automatically" in out
+    assert "The harness commits" not in out and "You own git" not in out
+
+
+def test_hardened_rule_renders_only_where_the_jail_carries_protect_paths(tmp_path: Path) -> None:
+    """Landlock denies new top-level entries only when it carves around
+    protect paths (a machine's bundle, a read-only session); an ordinary
+    hardened run has none and was told to `apply_edit` placeholders it never
+    needed."""
+    repo = _repo(tmp_path)
+    cfg = Config.model_validate({"workflow": {"verify_command": ["true"]}})
+    plain = build_system_prompt(
+        config=cfg, repo=repo, mode="run", skills=None, isolation="hardened"
+    )
+    assert "cannot CREATE new" not in plain
+    carved = build_system_prompt(
+        config=cfg, repo=repo, mode="run", skills=None, isolation="hardened", protected_paths=True
+    )
+    assert "cannot CREATE new" in carved

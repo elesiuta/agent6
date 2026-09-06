@@ -636,6 +636,7 @@ class Workflow:
             skills=self._load_skills(),
             isolation=self.dispatcher.isolation,
             commands_allowed=self.dispatcher.command_policy() != "no",
+            protected_paths=bool(self.dispatcher.extra_protect_paths),
         )
 
         try:

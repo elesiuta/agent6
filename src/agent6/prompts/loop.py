@@ -55,6 +55,10 @@ AUTO_COMMIT_RULE_GATELESS = """- The harness commits each editing step automatic
   git commit is optional.
 """
 
+NO_AUTO_COMMIT_RULE = """- Nothing commits automatically in this run (`[git].commit_per_step` is
+  off): your work stays in the worktree, uncommitted, for the operator.
+"""
+
 MODEL_GIT_RULE = """- You own git in this run: agent6 keeps no shadow record and nothing
   commits automatically. Commit your own work via `run_command` (branch
   as you see fit); uncommitted changes exist only in the worktree.
@@ -66,7 +70,9 @@ GIT_PROTECT_RULE = """- `.git/` is read-only inside the jail: history-mutating g
 """
 
 # Rendered into run mode's __HARDENED_FS_RULE__ sentinel ONLY when the run's
-# resolved isolation is hardened: under strict (or none) the constraint does
+# resolved isolation is hardened AND its jail carries protect paths (a
+# machine's bundle, a read-only session): Landlock then carves the workspace
+# entry by entry and denies new top-level ones. Elsewhere the constraint does
 # not exist and stating it would misdirect the model.
 HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE new
   top-level files or directories in the workspace root (existing entries

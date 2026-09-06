@@ -31,6 +31,7 @@ from agent6.workflows.loop import (
 # identity (`_commit_identity`), empty as a real Config carries it unset.
 _GIT_STUB = SimpleNamespace(
     control="agent6",
+    commit_per_step=True,
     commit=SimpleNamespace(
         checkpoint=SimpleNamespace(message="agent6"), name="", email="", trailer=""
     ),

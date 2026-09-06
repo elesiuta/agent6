@@ -316,7 +316,9 @@ class ToolDispatcher:
         # the strict-isolation protect_git bind (e.g. a running machine's own
         # .asm.toml + scripts bundle, so an agent state can't rewrite them
         # mid-run).
-        self._extra_protect_paths = extra_protect_paths
+        # Also read by the prompt assembly: under hardened, Landlock carves the
+        # workspace around these and denies new top-level entries.
+        self.extra_protect_paths = extra_protect_paths
         # The repository git dir agent6 recorded for a fork's linked worktree
         # (jail_policy grants it once the worktree's pointer still resolves
         # to it); None for every other checkout.
@@ -664,10 +666,10 @@ class ToolDispatcher:
         return list_dir(self._ws, raw)
 
     def _apply_edit(self, raw: dict[str, Any]) -> ToolResult:
-        return apply_edit(self._ws, self._config, self._extra_protect_paths, self._index, raw)
+        return apply_edit(self._ws, self._config, self.extra_protect_paths, self._index, raw)
 
     def _apply_patch(self, raw: dict[str, Any]) -> ToolResult:
-        return apply_patch(self._ws, self._config, self._extra_protect_paths, self._index, raw)
+        return apply_patch(self._ws, self._config, self.extra_protect_paths, self._index, raw)
 
     # ----- tree-sitter index handlers -----
 
@@ -1143,7 +1145,7 @@ class ToolDispatcher:
             argv,
             timeout_s=timeout_s,
             extra_rw_paths=extra_rw_paths,
-            extra_protect_paths=self._extra_protect_paths,
+            extra_protect_paths=self.extra_protect_paths,
             worktree_git_dir=self._worktree_git_dir,
         )
 

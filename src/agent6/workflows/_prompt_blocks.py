@@ -27,6 +27,7 @@ from agent6.prompts.loop import (
     HARDENED_FS_RULE,
     MACHINE_SYSTEM_PROMPT_BASE,
     MODEL_GIT_RULE,
+    NO_AUTO_COMMIT_RULE,
     PLAN_BUDGET_LINE,
     PLAN_SYSTEM_PROMPT_BASE,
     PLAN_VERIFY_RULE,
@@ -235,6 +236,22 @@ def _plan_budget_line(config: Config) -> str:
     return PLAN_BUDGET_LINE.format(percent_cap=cap)
 
 
+def _commit_rule(config: Config, *, has_gate: bool) -> str:
+    """The commit fact the run prompt states. Auto-commit is the agent6-control
+    chain: under `[git].control = "model"` nothing commits automatically and
+    the model owns the record; with `commit_per_step` off nothing commits at
+    all. Under agent6 control the WHEN is whether a gate judges each step:
+    each passing verify when it does, each editing step when it does not (a
+    gateless run, or a gate the harness runs at finish)."""
+    if config.git.control == "model":
+        return MODEL_GIT_RULE
+    if not config.git.commit_per_step:
+        return NO_AUTO_COMMIT_RULE
+    if has_gate and config.workflow.verify_when != "finish":
+        return AUTO_COMMIT_RULE
+    return AUTO_COMMIT_RULE_GATELESS
+
+
 def build_system_prompt(
     *,
     config: Config,
@@ -247,6 +264,7 @@ def build_system_prompt(
     skills: ResolvedSkills | None,
     isolation: IsolationLevel = "strict",
     commands_allowed: bool | None = None,
+    protected_paths: bool = False,
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
 
@@ -285,9 +303,11 @@ def build_system_prompt(
     # workflow starts; an unresolved "auto" reaching here (bench/embedders)
     # conservatively renders the optional block.
     base = base.replace("__DAG_RULES_BLOCK__", dag_rules_block(config.prompt.decompose == "on"))
-    # The hardened filesystem caveat is real only under hardened; under strict
-    # (or none) stating it would misdirect the model.
-    base = base.replace("__HARDENED_FS_RULE__", HARDENED_FS_RULE if isolation == "hardened" else "")
+    # The hardened filesystem caveat is real only under hardened with protect
+    # paths to carve around (`protected_paths`); elsewhere stating it would
+    # misdirect the model.
+    carved = isolation == "hardened" and protected_paths
+    base = base.replace("__HARDENED_FS_RULE__", HARDENED_FS_RULE if carved else "")
     # The .git read-only bind exists under strict with protect_git on
     # (policy.py), and in a fork's linked worktree under any jail: its `.git`
     # is a pointer file into the repository's, which the leg grants read-only.
@@ -303,18 +323,7 @@ def build_system_prompt(
     allowed = config.sandbox.run_commands != "no" if commands_allowed is None else commands_allowed
     has_gate = bool(config.workflow.verify_command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", PLAN_VERIFY_RULE if has_gate else "")
-    # Auto-commit is the agent6-control chain; under [git].control = "model"
-    # nothing commits automatically and the model owns the record. Under
-    # agent6 control the WHEN is whether a gate judges each step: each
-    # passing verify when it does, each editing step when it does not (a
-    # gateless run, or a gate the harness runs at finish).
-    if config.git.control == "model":
-        commit_rule = MODEL_GIT_RULE
-    elif has_gate and config.workflow.verify_when != "finish":
-        commit_rule = AUTO_COMMIT_RULE
-    else:
-        commit_rule = AUTO_COMMIT_RULE_GATELESS
-    base = base.replace("__AUTO_COMMIT_RULE__", commit_rule)
+    base = base.replace("__AUTO_COMMIT_RULE__", _commit_rule(config, has_gate=has_gate))
     parts = [base]
 
     # When the bench harness sets
