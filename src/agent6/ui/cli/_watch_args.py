@@ -92,7 +92,9 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "target",
         nargs="?",
         default="",
-        help=f"{SESSION_ID} or machine id to open on load; omit for the hub.",
+        help=(
+            f"{SESSION_ID}, machine id or `machine create` draft to open on load; omit for the hub."
+        ),
     )
     web_target.completer = _complete_watch_targets  # type: ignore[attr-defined]
     web_p.add_argument(
