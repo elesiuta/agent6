@@ -172,11 +172,14 @@ def record_billed_usage(
     being told is the failure, and a run can always be resumed.
 
     Records nothing when the provider reported nothing: an unknown amount is
-    not a licence to invent one.
+    not a licence to invent one. A reported plan window is a report: the
+    window moved even when the body carried no token counts.
     """
     if budget is None:
         return
-    if not (input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens):
+    if plan_usage is None and not (
+        input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens
+    ):
         return
     budget.record(
         model=model,

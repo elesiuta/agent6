@@ -773,3 +773,38 @@ def test_preflight_failure_never_blocks(signed_in: ChatGPTCredential) -> None:
         )
         resp = fresh.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "hello"
+
+
+def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
+    signed_in: ChatGPTCredential,
+) -> None:
+    """A `response.completed` with no `usage` body trips the no-input-tokens
+    refusal with `usage == {}`, and the record before it was a no-op: the
+    plan window the headers reported moved, and the ledger never saw it, so
+    every retry burned another round the cap could not count."""
+    from agent6.budget import BudgetTracker
+    from agent6.providers.types import ProviderError
+
+    lines = _evt({"type": "response.output_text.delta", "delta": "hello"})
+    lines += _evt({"type": "response.completed", "response": {"output": [], "status": "completed"}})
+
+    def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        del method, url, kwargs
+        resp = _FakeStreamResponse(status_code=200, lines=lines)
+        resp.headers = {
+            "x-codex-primary-used-percent": "37",
+            "x-codex-primary-window-minutes": "10080",
+            "x-codex-primary-reset-at": "2000000000",
+        }
+        return resp
+
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = _provider(signed_in, budget=budget)
+    with (
+        mock.patch("httpx2.stream", side_effect=stream),
+        pytest.raises(ProviderError, match="no usage input tokens"),
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    snap = budget.snapshot()
+    assert "gpt-5-codex" in snap.per_model, "the refused round is on the ledger"
+    assert snap.plan_latest is not None and snap.plan_latest.used_percent == 37.0

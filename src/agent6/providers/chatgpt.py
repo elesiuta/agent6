@@ -644,7 +644,7 @@ class ChatGPTProvider:
                     return
 
         def _record_billed() -> None:
-            if not usage:
+            if not usage and plan_usage is None:
                 return
             billed = parse_output_items([], usage=usage, stop_reason="")
             record_billed_usage(

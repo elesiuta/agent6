@@ -468,8 +468,12 @@ def test_budget_sums_rounds_and_fails_closed_without_a_reading_or_usage(tmp_path
     assert exc.value.fatal  # a retry replays the round into the same absence
 
     _rescenario(tmp_path, {"turns": [[_round(text="x", usage=_usage(0, 5))]]})
+    refused = _provider(binary)
     with pytest.raises(ProviderError, match="no usage input tokens"):
-        _provider(binary).call(system="s", messages=USER0, tools=None)
+        refused.call(system="s", messages=USER0, tools=None)
+    # The round was generated and the plan window moved: on the ledger before
+    # the refusal, or a retry loop had no ceiling.
+    assert refused.budget is not None and refused.budget.snapshot().output_total == 5
 
 
 def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(tmp_path: Path) -> None:
