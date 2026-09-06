@@ -75,6 +75,32 @@ def test_status_json_is_machine_readable(
     assert obj["elapsed_s"] >= 4
 
 
+def test_status_elapsed_of_a_fork_leg_runs_from_its_first_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fork's log opens with loop.resume.start and never carries a
+    session.start, so its finished leg read `elapsed: -`. With no
+    session.start the scan's start is the first event's timestamp."""
+    _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"type": "loop.resume.start", "ts": "2026-01-01T00:00:00+00:00", "iteration": 2},
+            {"type": "tool.call", "ts": "2026-01-01T00:00:10+00:00", "iteration": 2},
+            {
+                "type": "session.end",
+                "ts": "2026-01-01T00:00:30+00:00",
+                "reason": "finish_session",
+                "all_passed": True,
+            },
+        ],
+    )
+    assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["elapsed_s"] == 30.0
+    assert _cmd_status("winsome-dawn-YWH5ZS") == 0
+    assert "elapsed:    30s" in capsys.readouterr().out
+
+
 def test_status_waiting_when_blocked_on_an_operator_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

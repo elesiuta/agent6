@@ -384,7 +384,9 @@ class LogScan:
     input_tokens: int | None = None
     output_tokens: int | None = None
     iteration: int | None = None  # last event carrying an int iteration
-    start_ep: float | None = None  # session.start ts (epoch seconds)
+    # session.start's ts (epoch seconds), else the first event's: a fork's log
+    # opens with loop.resume.start and never carries a session.start.
+    start_ep: float | None = None
     last_ep: float | None = None  # last event with a parseable ts
     last_type: str | None = None  # last event's type
     operator_blocked: bool = False  # a prompt is still unanswered on this leg
@@ -486,6 +488,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
     output_tokens: int | None = None
     iteration: int | None = None
     start_ep: float | None = None
+    first_ep: float | None = None
     last_ep: float | None = None
     last_type: str | None = None
     # Prompt ids still awaiting their answer. A later event must not clear the
@@ -506,6 +509,8 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
                 ep = event_epoch(ev.get("ts"))
                 if ep is not None:
                     last_ep = ep
+                    if first_ep is None:
+                        first_ep = ep
                 if isinstance(etype, str):
                     last_type = etype
                 if isinstance(ev.get("iteration"), int):
@@ -594,7 +599,7 @@ def scan_session_log(logs: Path) -> LogScan:  # noqa: PLR0912, PLR0915 (linear f
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         iteration=iteration,
-        start_ep=start_ep,
+        start_ep=start_ep if start_ep is not None else first_ep,
         last_ep=last_ep,
         last_type=last_type,
         operator_blocked=bool(pending_prompts),
