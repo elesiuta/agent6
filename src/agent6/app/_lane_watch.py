@@ -5,8 +5,9 @@
 The fan-out's await loop and the single-lane await and drain behind
 `run_lane_to_completion`, the live symlink a lane gets under the origin's
 runs dir while it runs, and the pending-prompt probe the status line uses.
-The types a lane is described with (`LaneSpec`, `LaneResult`) stay in
-`app/parallel.py`, the orchestrator this serves.
+The types a lane is described with (`LaneSpec`, `LaneResult`) are
+`workflows/subrun`'s; `app/parallel.py`, the orchestrator this serves, drives
+the lanes.
 """
 
 from __future__ import annotations

@@ -727,7 +727,8 @@ def run_web(
     config_path: Path | None = None,
 ) -> int:
     """Serve the web UI on host:port until interrupted. `target` deep-links the
-    page to a run id or machine name on load (empty opens the hub)."""
+    page to a run id, a machine name or a `machine create` draft on load
+    (empty opens the hub)."""
     workdir = cwd or Path.cwd()
     bind_host = _bind_host(host)
     try:

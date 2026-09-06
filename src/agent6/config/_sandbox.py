@@ -152,7 +152,8 @@ class SandboxConfig(BaseModel):
     # denial of service against your own machine, and the kernel already
     # handles that. DEFAULT 0 (off) because a cap costs real builds (a large
     # link, a test matrix) more than it buys; set one when a specific task
-    # needs bounding. No effect under `isolation = "none"`.
+    # needs bounding. Applies at every isolation level: the launcher sets the
+    # rlimit on the child before exec, confined or not.
     memory_limit_mb: int = Field(
         default=0,
         ge=0,

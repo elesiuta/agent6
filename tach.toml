@@ -21,7 +21,8 @@ depends_on = []
 # presentation, process-spawn, and run-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, LaneRuntime).
 path = "agent6.app"
-depends_on = ["agent6.commit_message", 
+depends_on = [
+  "agent6.commit_message",
   "agent6.child_env",
   "agent6",
   "agent6.budget",
@@ -61,7 +62,8 @@ depends_on = ["agent6.commit_message",
 
 [[modules]]
 path = "agent6.ui.cli"
-depends_on = ["agent6.commit_message", 
+depends_on = [
+  "agent6.commit_message",
   "agent6.ui.steer",
   "agent6.app",
   "agent6.config",
@@ -103,7 +105,8 @@ depends_on = ["agent6.commit_message",
 
 [[modules]]
 path = "agent6.workflows"
-depends_on = ["agent6.commit_message", 
+depends_on = [
+  "agent6.commit_message",
   "agent6.prompts",  # pure prompt/template text the loop assembles
   # prompt show resolves the isolation a run here would get, so the preview
   # renders the same level-aware blocks the loop does

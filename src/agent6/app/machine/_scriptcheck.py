@@ -126,9 +126,10 @@ def _ruff_invocation(
     """ruff's argv and cwd. Native discovery runs from the bundle dir. A config
     resolved from *ruff_config_from* runs from that config's own directory on
     the absolute scripts path: `--config` anchors a relative pattern
-    (per-file-ignores, extend-exclude) to the cwd, where discovery anchors it to
-    the config's directory, so a glob must not match here and not after
-    publish."""
+    (per-file-ignores, extend-exclude) to the cwd, where discovery anchors it
+    to the config's directory, so a pattern reads here as it does under
+    `machine check`. A pattern keyed to the bundle's published location still
+    matches nothing under the draft's path."""
     argv = [*ruff, "check", "--no-cache", "--output-format", "concise"]
     cwd, target = scripts_dir.resolve().parent, scripts_dir.name
     if ruff_config_from is not None:
