@@ -383,10 +383,11 @@ def test_a_turn_cancelled_while_queued_never_starts(
         wire.prompt(second, "the queued one", req_id=4)
         wire.send(method="session/cancel", params={"sessionId": second})
         release.set()
-        answers = {}
-        for _ in range(2):
-            reply = wire.until("")
-            answers[reply["id"]] = reply["result"]["stopReason"]
+        answers: dict[int, str] = {}
+        while len(answers) < 2:
+            reply = wire.until("")  # replies, past the queued turn's own notice
+            if "result" in reply:
+                answers[reply["id"]] = reply["result"]["stopReason"]
         assert len(ran) == 1, f"the cancelled turn started anyway: {ran}"
         assert answers[4] == "cancelled", answers
         assert answers[3] == "end_turn", answers
@@ -934,3 +935,62 @@ def test_the_editor_gets_each_ending_fact_once(
     assert any("changes are on agent6/run-x" in text for text in said), said
     err = capsys.readouterr().err
     assert "Token + cost summary" in err and "Session passed" in err, err
+
+
+def _two_sessions_one_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[_Wire, str, str, threading.Event]:
+    """Two sessions on one connection, the first's turn holding the run lock."""
+    monkeypatch.setattr(session_mod, "request_stop", _ignore)
+    monkeypatch.chdir(tmp_path)
+    first_started, release = threading.Event(), threading.Event()
+
+    def _blocking_run(*_a: object, **_kw: object) -> int:
+        first_started.set()
+        release.wait(timeout=10.0)
+        return 0
+
+    monkeypatch.setattr(runner, "run_task", _blocking_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    wire = _Wire()
+    first = wire.new_session(_repo(tmp_path))
+    wire.send(id=9, method="session/new", params={"cwd": str(tmp_path)})
+    second = str(wire.recv()["result"]["sessionId"])
+    wire.prompt(first, "the long one", req_id=3)
+    assert first_started.wait(timeout=5.0)
+    wire.prompt(second, "the queued one", req_id=4)
+    return wire, first, second, release
+
+
+def test_a_queued_prompt_says_what_it_waits_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs are serialised on the connection, so a second session's prompt can
+    wait for minutes. It waited in silence: the editor saw a turn that had
+    started and said nothing."""
+    wire, first, second, release = _two_sessions_one_blocked(tmp_path, monkeypatch)
+    try:
+        said = wire.until("session/update", timeout=3.0)
+        assert said["params"]["sessionId"] == second
+        text = said["params"]["update"]["content"]["text"]
+        assert "waiting" in text and first in text, text
+    finally:
+        release.set()
+        wire.close()
+
+
+def test_a_cancel_of_a_queued_prompt_answers_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A queued turn blocked on the run lock noticed its cancel only when the
+    other turn ended, so the editor's stop button answered minutes later."""
+    wire, _first, _second, release = _two_sessions_one_blocked(tmp_path, monkeypatch)
+    try:
+        wire.send(method="session/cancel", params={"sessionId": _second})
+        reply = wire.until("", timeout=3.0)
+        while reply.get("id") != 4:
+            reply = wire.until("", timeout=3.0)
+        assert reply["result"]["stopReason"] == "cancelled"
+    finally:
+        release.set()
+        wire.close()

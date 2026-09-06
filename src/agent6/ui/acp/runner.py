@@ -61,6 +61,9 @@ PERMISSION_TIMEOUT_S = 300.0
 # ends it one read pass after the run returns. This bounds a tail wedged on a
 # filesystem that is not answering.
 DRAIN_S = 5.0
+# How often a queued turn checks for its own cancel while another session's
+# turn holds the run lock.
+QUEUE_POLL_S = 0.1
 
 
 def _stderr(message: str) -> None:
@@ -185,6 +188,8 @@ class RunBridge:
     # One at a time: the chdir in `_run` is process-global, and a run in the
     # wrong directory commits to the wrong repository.
     _runs: threading.Lock = field(default_factory=threading.Lock)
+    # The session whose turn holds `_runs`, named to a turn queued behind it.
+    _running: Session | None = None
     _asks: threading.Lock = field(default_factory=threading.Lock)
     _asked: int = 0
 
@@ -321,7 +326,23 @@ class RunBridge:
             session.session_id = unused_session_id(
                 resolved_state_dir(session.cwd), session_bucket(ACP_MODE)
             )
-        with self._runs:
+        if not self._runs.acquire(blocking=False):
+            # Queued behind another session's turn: say so, and keep listening
+            # for a cancel while waiting (a turn that has not started is
+            # stopped by not starting it).
+            holder = self._running
+            who = f"session {holder.acp_id}" if holder is not None else "another session"
+            self.server.notify_raw(
+                message_update(
+                    session.acp_id,
+                    f"waiting: {who} is running a turn; this prompt starts when it ends",
+                )
+            )
+            while not self._runs.acquire(timeout=QUEUE_POLL_S):
+                if session.cancelled:
+                    return "cancelled"
+        try:
+            self._running = session
             if session.cancelled:
                 # Cancelled while queued. The marker is for a run in flight;
                 # one that has not started is stopped by not starting it.
@@ -340,6 +361,9 @@ class RunBridge:
                         message_update(session.acp_id, f"the run could not start: {exc}")
                     )
                 return "refusal"
+        finally:
+            self._running = None
+            self._runs.release()
 
     def _run(self, session: Session, text: str, *, resuming: bool) -> StopReason:
         layout = session.layout(resolved_state_dir(session.cwd))
