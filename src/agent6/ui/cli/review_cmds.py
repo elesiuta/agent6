@@ -189,7 +189,14 @@ def _cmd_review(  # noqa: PLR0911
     """Print a code review of a diff to stdout. Read-only; no jail. With
     `reviewers >= 1`, runs the grounded adversarial review PANEL instead of the
     single freeform review."""
+    if personas.strip() and reviewers < 1:
+        print(
+            "note: --personas ignored (no --reviewers N; this is the single freeform review).",
+            file=sys.stderr,
+        )
     cfg = load_effective(Path.cwd(), config_path).config
+    if personas.strip() and reviewers >= 1 and cfg.review.seats:
+        print("note: --personas ignored ([review].seats names the roster).", file=sys.stderr)
     cfg.require_runnable("reviewer")
 
     err = check_provider_keys(cfg)

@@ -112,3 +112,16 @@ def test_parallel_refuses_an_explicit_run_id(
     rc = main(["run", "--parallel", "2", "--session-id", "myid", "task"])
     assert rc == 2
     assert "--session-id" in capsys.readouterr().err
+
+
+def test_parallel_refuses_a_standing_goal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--standing` reached no lane (dispatch_parallel takes none), so a
+    fan-out ran with the goal silently dropped; refuse it like --session-id."""
+    monkeypatch.chdir(tmp_path)
+    rc = main(["run", "--parallel", "2", "--standing", "keep tests green", "task"])
+    assert rc == 2
+    assert "--standing" in capsys.readouterr().err

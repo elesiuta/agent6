@@ -97,11 +97,15 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         # the first commit.
         error("-i needs a TTY on stdin (the REPL reads it); drop -i for a headless run.")
         return 2
-    if getattr(args, "parallel", "") and (args.interactive or args.tui):
+    parallel = getattr(args, "parallel", "")
+    if parallel and (args.interactive or args.tui):
         error("--parallel cannot combine with -i or --tui (each lane runs headless and detached).")
         return 2
-    if getattr(args, "parallel", "") and args.session_id:
+    if parallel and args.session_id:
         error("--parallel cannot combine with --session-id (each lane mints its own id).")
+        return 2
+    if parallel and args.standing:
+        error("--parallel cannot combine with --standing (the lanes take no standing goal).")
         return 2
     seed_from = getattr(args, "seed_from", "")
     if not args.task and seed_from:
