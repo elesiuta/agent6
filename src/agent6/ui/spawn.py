@@ -310,10 +310,16 @@ def spawn_and_confirm(
         Path(err.name).unlink(missing_ok=True)
 
 
-def _stderr_tail(err: IO[str]) -> str:
-    """The last 600 chars of a spawn's captured-stderr temp file."""
+def _stderr_tail(err: IO[str], limit: int = 2000) -> str:
+    """The end of a spawn's captured-stderr temp file: at most *limit* chars,
+    cut at a line start so a refusal never begins mid-word."""
     err.flush()
-    return Path(err.name).read_text(encoding="utf-8", errors="replace")[-600:]
+    text = Path(err.name).read_text(encoding="utf-8", errors="replace")
+    if len(text) <= limit:
+        return text
+    tail = text[-limit:]
+    nl = tail.find("\n")
+    return tail[nl + 1 :] if 0 <= nl < len(tail) - 1 else tail
 
 
 def _located(list_dirs: Callable[[], list[Path]], before: set[Path]) -> Path | None:

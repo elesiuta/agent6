@@ -209,3 +209,12 @@ def test_agent6_exe_finds_the_binary_beside_the_interpreter(
     monkeypatch.setattr(spawn.sys, "argv", [str(tmp_path / "ui" / "tui" / "__main__.py")])
     monkeypatch.setattr(spawn.sys, "executable", str(tmp_path / "bin" / "python3"))
     assert spawn.agent6_exe() == str(binary.resolve())
+
+
+def test_stderr_tail_starts_at_a_line(tmp_path: Path) -> None:
+    """A long refusal is clipped at a line start, never mid-word."""
+    f = tmp_path / "err"
+    f.write_text("REFUSING: " + "x" * 50 + "\n" + "y" * 30 + "\n", encoding="utf-8")
+    with f.open("r+", encoding="utf-8") as fh:
+        assert spawn._stderr_tail(fh, limit=40) == "y" * 30 + "\n"  # pyright: ignore[reportPrivateUsage]
+        assert spawn._stderr_tail(fh) == f.read_text(encoding="utf-8")  # pyright: ignore[reportPrivateUsage]
