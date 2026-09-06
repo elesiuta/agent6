@@ -43,9 +43,15 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     if summary.status == "waiting" and summary.reason:
         # Parked on an operator prompt: no boundaries arrive and no steer
         # (--now included) can break that wait; only the answer can.
+        # Only a question takes a written answer; an approval is answered at a
+        # front-end, so naming `answer` for one sent the operator to a refusal.
+        how = (
+            f"agent6 answer {layout.session_id}"
+            if summary.reason.startswith("question")
+            else f"agent6 attach {layout.session_id}"
+        )
         print(
             f"note: the run is waiting ({summary.reason}); the steer stays"
-            f" queued until that is answered: agent6 answer {layout.session_id}"
-            f" (or agent6 attach {layout.session_id})"
+            f" queued until that is answered: {how}"
         )
     return 0

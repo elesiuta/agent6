@@ -26,8 +26,9 @@ from agent6.config import (
     is_loopback_url,
     mcp_server_name_refusal,
 )
-from agent6.config.layer import EffectiveConfig, load_effective
+from agent6.config.layer import EffectiveConfig, load_effective, repo_config_path_for
 from agent6.config.write import ConfigLeafValue, set_config_leaves, unset_config_table
+from agent6.paths import global_config_path
 from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec, MCPToolDescriptor, tool_count
@@ -285,6 +286,18 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
     res = unset_config_table(Path.cwd(), f"mcp.servers.{name}", to_repo=to_repo)
     if res.error is not None:
         print(f"ERROR: removing {name} left an invalid config:\n{res.error}", file=sys.stderr)
+        return 2
+    if not res.removed:
+        # The layer declares it, but not as a `[mcp.servers.<name>]` header the
+        # line surgery can delete (a dotted key, an inline table). Saying
+        # "removed" there left the entry live, and its tools with it.
+        path = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
+        print(
+            f"ERROR: {name} is not written as a [mcp.servers.{name}] table in {path};"
+            " it lives in a dotted key or an inline table, which this verb does not"
+            " rewrite. Edit that file by hand.",
+            file=sys.stderr,
+        )
         return 2
     print(f"removed {name} from the {target} config")
     if other in holders:

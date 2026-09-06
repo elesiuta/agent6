@@ -822,7 +822,9 @@ def create_fork(
         except GitError as exc:
             reporter.error(f"could not add the fork's worktree at {path}: {exc}")
             return "", 1
-    rc = _materialize_fork(plan, cwd=cwd, checkout=checkout, reporter=reporter)
+    rc = _materialize_fork(
+        plan, cwd=cwd, checkout=checkout, fresh_checkout=added, reporter=reporter
+    )
     if rc != 0:
         if added and checkout is not None:
             remove_fork_worktree(cwd, checkout.worktree)
@@ -831,7 +833,12 @@ def create_fork(
 
 
 def _materialize_fork(
-    plan: _ForkPlan, *, cwd: Path, checkout: Checkout | None, reporter: Reporter = STDIO_REPORTER
+    plan: _ForkPlan,
+    *,
+    cwd: Path,
+    checkout: Checkout | None,
+    fresh_checkout: bool,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Write the fork's state on disk: clone the checkpoint + DAG, the manifest
     (naming *checkout*, the worktree the fork works in and its git dir; None
@@ -850,13 +857,19 @@ def _materialize_fork(
     atomic_write(dst.session_dir / "loop_state.json", blob)
     atomic_write(dst.checkpoint_path(0), blob)
     _copy_dag(src, dst, graph_version=plan.graph_version)
-    # The operator's files in the checkout THIS run works in, observed the way
-    # `agent6 run` observes them. Inherited from the source, the set described
-    # a different checkout: a fork's own worktree is a fresh checkout of the
-    # sha, where the source's untracked paths do not exist and a file the
-    # operator drops in before the first leg was swept into its first commit.
-    fork_checkout = checkout.worktree if checkout is not None else cwd
-    write_untracked_at_start(dst.session_dir, untracked_paths(fork_checkout))
+    # The files this fork's commits leave out. A FRESH worktree is a checkout
+    # of the sha and nothing else, so its own untracked set is the answer (and
+    # is normally empty); the source's set names paths that do not exist there.
+    # An /undo fork continues in the source's checkout, where the source's set
+    # is the answer: chain commits never touch the index, so everything the
+    # source run created still reads untracked, and observing there would make
+    # the fork exclude the very work it is continuing.
+    write_untracked_at_start(
+        dst.session_dir,
+        untracked_paths(checkout.worktree)
+        if fresh_checkout and checkout is not None
+        else read_untracked_at_start(src.session_dir),
+    )
 
     run_branch = run_branch_for(dst.session_id) if plan.cfg.git.branch_per_run else None
     write_session_manifest(

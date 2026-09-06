@@ -191,21 +191,32 @@ def stamp_preset(session_dir: Path, name: str) -> None:
     write_manifest(session_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))
 
 
-def stamp_fork_task(session_dir: Path, steer: str) -> None:
-    """Record the steer a fork was resumed with as the fork's own task.
+def stamp_fork_task(session_dir: Path, steer: str, *, source_dir: Path) -> None:
+    """Record the steer that sent a fork somewhere else as the fork's own task.
 
     A fork starts life with its source's `user_task`, which is the truth until
-    the operator sends it somewhere else; from then on that steer is what the
-    fork's listing row shows and what its squashed merge is titled. The source
-    task stays reachable through `parent_session_id`.
+    the operator sends it elsewhere; that first steer is then what the fork's
+    listing row shows and what its squashed merge is titled. Later steers are
+    follow-ups WITHIN that task, exactly as they are for a run of its own, so
+    the stamp fires only while the task is still the source's. The source task
+    stays reachable through `parent_session_id`.
+
+    Errors are the caller's to survive: a manifest this binary may not rewrite
+    (a newer version) leaves the task as it stands rather than failing a resume
+    that is otherwise fine.
     """
-    m = read_manifest(session_dir)
-    if m.parent_session_id is None:
+    try:
+        m = read_manifest(session_dir)
+        if m.parent_session_id is None:
+            return
+        if m.user_task != read_manifest(source_dir).user_task:
+            return  # already sent somewhere; this steer is a follow-up
+        write_manifest(
+            session_dir / "manifest.json",
+            m.model_copy(update={"user_task": operator_task_text(steer)[:4000]}),
+        )
+    except (ManifestError, OSError):
         return
-    write_manifest(
-        session_dir / "manifest.json",
-        m.model_copy(update={"user_task": operator_task_text(steer)[:4000]}),
-    )
 
 
 def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:

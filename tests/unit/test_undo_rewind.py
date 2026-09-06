@@ -382,3 +382,25 @@ def test_an_undo_resolved_in_an_ancestor_keeps_the_undone_sessions_checkout(
     assert child_manifest["worktree"] == str(worktree)
     assert (worktree / "a.txt").read_text(encoding="utf-8") == "one\n"  # the fork's, rewound
     assert (repo / "a.txt").read_text(encoding="utf-8") == "two\n"  # the operator's, untouched
+
+
+def test_an_undo_fork_keeps_the_source_run_untracked_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An /undo fork continues in the source's checkout, where the run's own
+    files still read untracked: chain commits never touch the index. Observing
+    there made the child exclude the very work it continues, so every commit it
+    made silently dropped those paths."""
+    from agent6.sessions.layout import read_untracked_at_start
+
+    repo, _c1, _c2 = _run_that_moved_on(tmp_path, monkeypatch)
+    said: list[str] = []
+
+    result = undo_fork(None, "run-AAAA11", cwd=repo, reporter=Reporter(said.append, said.append))
+
+    assert result is not None
+    child, _text = result
+    child_dir = SessionLayout(state_dir=resolved_state_dir(repo), session_id=child).session_dir
+    assert read_untracked_at_start(child_dir) == frozenset({"notes.md"}), (
+        "the child inherits the operator's set, not the run's own output"
+    )

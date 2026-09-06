@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.sessions.ipc import read_question_answers, write_worker_pid
+from agent6.sessions.ipc import read_question_answers, set_away_mode, write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.answer_cmd import _cmd_answer  # pyright: ignore[reportPrivateUsage]
 
@@ -40,6 +40,8 @@ def _run_with_question(
         encoding="utf-8",
     )
     write_worker_pid(layout.session_dir, os.getpid())  # this process = a live worker
+    # A detached run left on "wait" is the seat this verb exists for.
+    set_away_mode(layout.session_dir, "wait")
     return layout
 
 
@@ -110,6 +112,7 @@ def test_answer_refuses_a_run_that_is_not_waiting(
         encoding="utf-8",
     )
     write_worker_pid(layout.session_dir, os.getpid())
+    set_away_mode(layout.session_dir, "wait")
 
     assert _cmd_answer("curious-fox", ("yes",)) == 2
 
@@ -127,3 +130,19 @@ def test_answer_refuses_a_dead_run(
     assert _cmd_answer("curious-fox", ("9090",)) == 2
 
     assert "not running" in capsys.readouterr().err
+
+
+def test_answer_refuses_a_run_waiting_at_its_own_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A foreground run blocks on its terminal and never reads the answer file;
+    writing one there and printing "answered" left both sides waiting."""
+    layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
+    (layout.session_dir / "approvals" / "away.mode").unlink()  # no away-mode, no front-end
+
+    assert _cmd_answer("curious-fox", ("9090",)) == 2
+
+    err = capsys.readouterr().err
+    assert "waiting at its own terminal" in err
+    assert "agent6 attach curious-fox-AAAA11" in err
+    assert not (layout.session_dir / "questions" / "question-1.answer").exists()

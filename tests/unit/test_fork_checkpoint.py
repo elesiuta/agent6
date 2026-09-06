@@ -1303,6 +1303,26 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
     assert manifest["parent_session_id"] == "sunny-otter-AAAA11", "lineage still names the source"
 
 
+def test_only_the_first_steer_names_a_fork(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The steer that sends a fork elsewhere is its task; a later one is a
+    follow-up within that task, as it is for a run of its own. Stamping every
+    steer re-titled a fork on each resume, and ACP passes every editor prompt
+    as one."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+    dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+
+    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
+    assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="also fix the typo") == 2
+
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["user_task"] == "create README.md only"
+
+
 def test_a_steered_ordinary_run_keeps_its_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

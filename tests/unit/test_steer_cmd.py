@@ -101,3 +101,32 @@ def test_steer_notes_an_unanswered_prompt_park(
     out = capsys.readouterr().out
     assert "the run is waiting (approval" in out
     assert "agent6 attach tiny-run-CCCC33" in out
+
+
+def test_steer_names_the_answer_verb_only_for_a_question_park(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 answer` writes an ask_user answer and nothing else, so naming it
+    for an approval park sent the operator straight to a refusal."""
+    import json
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "tiny-run-DDDD44")
+    write_worker_pid(d, os.getpid())
+    events = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {
+            "type": "question.prompt",
+            "id": "question-1",
+            "questions": [{"question": "Which port?"}],
+            "ts": "2026-08-24T00:00:00+00:00",
+        },
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+    assert main(["steer", "tiny-run-DDDD44", "hello"]) == 0
+
+    out = capsys.readouterr().out
+    assert "the run is waiting (question" in out
+    assert "agent6 answer tiny-run-DDDD44" in out

@@ -547,3 +547,25 @@ def test_remove_names_the_other_layer_rather_than_removing_nothing(
     err = capsys.readouterr().err
     assert "agent6 mcp remove browser" in err
     assert "browser" in load_effective(tmp_path).config.mcp.servers, "nothing was removed"
+
+
+def test_remove_refuses_an_entry_it_cannot_rewrite_instead_of_claiming_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The line surgery deletes a `[mcp.servers.<name>]` header; a dotted key or
+    an inline table is invisible to it. Reporting "removed" there left the entry
+    live and its tools reaching the model."""
+    monkeypatch.chdir(tmp_path)
+    cfg_home = tmp_path / "cfg"
+    cfg_home.mkdir()
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    (cfg_home / "config.toml").write_text(
+        "[agent6]\nconfig_version = 1\n\n[mcp]\nenabled = true\n"
+        'servers.dotted = { command = ["true"] }\n',
+        encoding="utf-8",
+    )
+
+    assert cmd_mcp_remove("dotted") == 2
+
+    assert "not written as a [mcp.servers.dotted] table" in capsys.readouterr().err
+    assert "dotted" in load_effective(tmp_path).config.mcp.servers, "nothing was removed"
