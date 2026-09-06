@@ -36,6 +36,7 @@ def _fake_server_argv(
     crash_after_init: bool = False,
     bad_tool: bool = False,
     newline_tool: bool = False,
+    single_tool: bool = False,
     sleep_on: str = "",
 ) -> tuple[str, ...]:
     """Return argv that runs a tiny Python MCP server inline.
@@ -48,6 +49,7 @@ def _fake_server_argv(
     Knobs:
     * ``hang=True``: never responds (forces client timeout).
     * ``crash_after_init=True``: exits 0 right after handshake.
+    * ``single_tool=True``: advertises ``echo`` alone.
     * ``sleep_on=TEXT``: a ``tools/call`` with that text sleeps 3s before answering.
     """
     script = textwrap.dedent(
@@ -57,6 +59,7 @@ def _fake_server_argv(
         CRASH = {crash_after_init!r}
         BAD_TOOL = {bad_tool!r}
         NEWLINE_TOOL = {newline_tool!r}
+        SINGLE_TOOL = {single_tool!r}
         SLEEP_ON = {sleep_on!r}
         def reply(req_id, result):
             sys.stdout.write(json.dumps({{
@@ -91,6 +94,8 @@ def _fake_server_argv(
                       "inputSchema": {{"type": "object",
                                        "properties": {{"text": {{"type": "string"}}}}}}}},
                 ]
+                if SINGLE_TOOL:
+                    tools = tools[:1]
                 if BAD_TOOL:
                     tools.append({{"name": "has a space", "description": "invalid",
                                    "inputSchema": {{"type": "object"}}}})
@@ -306,6 +311,23 @@ def test_a_timed_out_call_restarts_the_server_before_the_next_call() -> None:
         assert time.monotonic() - started < 0.5, "the second call waited on the wedged server"
     finally:
         mgr.close()
+
+
+def test_the_started_line_counts_one_tool_as_one_tool() -> None:
+    logs: list[str] = []
+    mgr = MCPManager.start(
+        [
+            MCPServerSpec(
+                name="one",
+                command=_fake_server_argv(single_tool=True),
+                startup_timeout_s=5.0,
+                call_timeout_s=5.0,
+            )
+        ],
+        logger=logs.append,
+    )
+    mgr.close()
+    assert any(line.startswith("[mcp] started 'one' (1 tool, network: ") for line in logs), logs
 
 
 def test_manager_close_is_idempotent() -> None:

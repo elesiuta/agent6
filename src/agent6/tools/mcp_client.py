@@ -793,7 +793,10 @@ class MCPManager:
                 # see the app. Named every time, for every server, so nobody has
                 # to know to go looking.
                 where = "unconfined" if srv.policy is None else srv.policy.network
-                logger(f"[mcp] started {name!r} ({len(srv.tools)} tools, network: {where})")
+                n = len(srv.tools)
+                logger(
+                    f"[mcp] started {name!r} ({n} tool{'' if n == 1 else 's'}, network: {where})"
+                )
         mgr.failures = tuple(failures)
         return mgr
 
