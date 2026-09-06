@@ -240,14 +240,10 @@ def test_call_raises_provider_error_on_http_status() -> None:
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
 
-def test_from_env_missing_env_var_yields_no_auth_header(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Empty/unset env var is allowed (Ollama-style local endpoint)."""
-    monkeypatch.delenv("MY_OAI_KEY", raising=False)
-    provider = OpenAIProvider.from_env(model="gpt-x", env_var="MY_OAI_KEY")
-    assert provider.api_key == ""
-
+def test_an_empty_key_sends_no_auth_header() -> None:
+    """An Ollama-style local endpoint takes no key: the provider sends no
+    authorization header rather than an empty bearer."""
+    provider = OpenAIProvider(api_key="", model="gpt-x")
     captured: dict[str, Any] = {}
 
     def fake_post(_url: str, *_a: Any, **kw: Any) -> httpx2.Response:
@@ -263,12 +259,6 @@ def test_from_env_missing_env_var_yields_no_auth_header(
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert "authorization" not in {k.lower() for k in captured["headers"]}
-
-
-def test_from_env_none_env_var_loads(monkeypatch: pytest.MonkeyPatch) -> None:
-    """env_var=None is a valid Ollama/llama.cpp shape."""
-    provider = OpenAIProvider.from_env(model="gpt-x", env_var=None)
-    assert provider.api_key == ""
 
 
 def test_base_url_override_and_extra_headers() -> None:
@@ -295,19 +285,6 @@ def test_base_url_override_and_extra_headers() -> None:
     assert captured["headers"]["x-title"] == "agent6"
     # default auth still present
     assert captured["headers"]["authorization"] == "Bearer or-test"
-
-
-def test_from_env_threads_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OR_KEY", "k")
-    p = OpenAIProvider.from_env(
-        model="m",
-        env_var="OR_KEY",
-        base_url="http://localhost:11434/v1",
-        extra_headers={"X-Title": "t"},
-    )
-    assert p.base_url == "http://localhost:11434/v1"
-    assert p.endpoint == "http://localhost:11434/v1/chat/completions"
-    assert dict(p.extra_headers) == {"X-Title": "t"}
 
 
 # --- : reasoning-model handling -----------------------------------

@@ -270,31 +270,6 @@ class OpenAIProvider:
             headers[k.lower()] = v
         return headers
 
-    @classmethod
-    def from_env(
-        cls,
-        *,
-        model: str,
-        env_var: str | None,
-        base_url: str = OPENAI_DEFAULT_BASE_URL,
-        extra_headers: dict[str, str] | None = None,
-        timeout_s: float = 120.0,
-        transcript_sink: TranscriptRecorder | None = None,
-        budget: BudgetTracker | None = None,
-    ) -> OpenAIProvider:
-        # env_var is optional: Ollama and similar local endpoints take no
-        # API key. If it's set, an empty value is still allowed (treated as "no key").
-        key = "" if env_var is None else os.environ.get(env_var, "").strip()
-        return cls(
-            api_key=key,
-            model=model,
-            base_url=base_url,
-            extra_headers=tuple(sorted((extra_headers or {}).items())),
-            timeout_s=timeout_s,
-            transcript_sink=transcript_sink,
-            budget=budget,
-        )
-
     def call(  # noqa: PLR0912
         self,
         *,
