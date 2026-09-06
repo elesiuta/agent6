@@ -17,6 +17,7 @@ from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
 
+from agent6.config import Config
 from agent6.tools.results import ExecResult, RawResult
 from agent6.workflows._conversation import Conversation
 from agent6.workflows._metric import MetricSample as _MetricSample
@@ -1103,3 +1104,62 @@ def test_a_gate_swapped_between_legs_is_announced_to_the_worker(tmp_path: Path) 
     sent = provider.call.call_args.kwargs["messages"]
     told = json.dumps(sent)
     assert "was `pytest -q`" in told and "now `make check`" in told
+
+
+def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: Path) -> None:
+    """The snapshot's `head_sha` is the run's CHAIN TIP, and a chain commit
+    moves neither HEAD nor the checkout, so a carry gated on `git status`
+    (HEAD equal, tree clean) failed from the run's first commit on: the very
+    case the field exists for. The carry asks what the run asks: the chain
+    tip, and dirt relative to it."""
+    import subprocess
+
+    from agent6.git_ops import chain_commit, chain_tip
+    from agent6.git_ops import status as git_status
+    from agent6.workflows._session_state import SessionSnapshot
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for argv in (
+        ["git", "init", "-q", "-b", "main"],
+        ["git", "config", "user.email", "t@example.com"],
+        ["git", "config", "user.name", "t"],
+    ):
+        subprocess.run(argv, cwd=repo, check=True)
+    (repo / "x.txt").write_text("hi\n", encoding="utf-8")
+    subprocess.run(["git", "add", "x.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    chain = "refs/agent6/run1/head"
+    wf = _wf(
+        root=repo,
+        config=Config.model_validate({"workflow": {"verify_command": ["true"]}}),
+        chain_ref=chain,
+        chain_fallback_parent=base,
+    )
+    # Leg one: the worker edits, the gate goes green, the harness chain-commits.
+    (repo / "x.txt").write_text("the run's work\n", encoding="utf-8")
+    assert chain_commit(repo, "iter 1", ref=chain, fallback_parent=base) is not None
+    snap = SessionSnapshot.model_validate(
+        {
+            "system": "s",
+            "messages": [],
+            "tool_calls": 3,
+            "next_iteration": 4,
+            "root_task_id": None,
+            "original_task": "t",
+            "verify_command": ("true",),
+            "last_verify_ok": True,
+            "edited_since_verify": False,
+            "head_sha": wf._checkpoint_head_sha(),  # pyright: ignore[reportPrivateUsage]
+        }
+    )
+    assert snap.head_sha == chain_tip(repo, chain) != git_status(repo).head_sha
+
+    state = LoopState(original_task="t", tool_calls=0)
+    wf._carry_verify_verdict(state, snap)  # pyright: ignore[reportPrivateUsage]
+
+    assert state.verify.last_ok is True
+    assert state.verify.green_and_untouched is True

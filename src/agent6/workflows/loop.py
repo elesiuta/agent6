@@ -803,11 +803,13 @@ class Workflow:
 
     def _carry_verify_verdict(self, state: LoopState, snap: SessionSnapshot) -> None:
         """Carry the prior leg's verify observation when it still describes THIS
-        tree: HEAD is the snapshot's and the worktree is clean. An operator
-        commit or edit between legs invalidates it -- fails closed, like the
-        baseline probe, so the leg starts unobserved rather than wrongly green
-        or red. `baseline_ok` is about the BASE commit, which resume never
-        moves: it carries unconditionally."""
+        tree: the chain tip is the snapshot's (`_checkpoint_head_sha` wrote
+        it; a chain commit moves neither HEAD nor the checkout) and the
+        worktree holds nothing the chain does not. An operator commit or edit
+        between legs invalidates it -- fails closed, like the baseline probe,
+        so the leg starts unobserved rather than wrongly green or red.
+        `baseline_ok` is about the BASE commit, which resume never moves: it
+        carries unconditionally."""
         state.verify.baseline_ok = snap.baseline_ok
         state.standing_tools_mark = snap.standing_tools_mark
         state.standing_fruitless = snap.standing_fruitless
@@ -815,10 +817,20 @@ class Workflow:
         if snap.last_verify_ok is None or not snap.head_sha:
             return
         try:
-            status = git_status(self.root, exclude=self.untracked_at_start)
+            if snap.head_sha != self._checkpoint_head_sha():
+                return
+            if self.chain_ref is not None:
+                dirty = chain_dirty(
+                    self.root,
+                    self.chain_ref,
+                    self.chain_fallback_parent,
+                    exclude=self.untracked_at_start,
+                )
+            else:
+                dirty = not git_status(self.root, exclude=self.untracked_at_start).is_clean
         except (GitError, OSError):
             return
-        if status.is_clean and status.head_sha == snap.head_sha:
+        if not dirty:
             state.verify.last_ok = snap.last_verify_ok
             state.verify.edited_since = snap.edited_since_verify
 
