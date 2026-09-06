@@ -1900,7 +1900,10 @@ class Workflow:
         (before_finish), metric early-finish, open subtasks, verify
         green, memory backstop. Each clears `turn.finish_signal` and appends
         its nudge; later gates then see the finish as already revoked and stay
-        quiet."""
+        quiet. A revoked finish asks for work whose turns (a note written
+        outside the tree, the finish itself) are idle to the settle guard, so
+        the streak starts over."""
+        asked = turn.finish_signal is not None
         self._gate_finish_contract(turn)
         self._gate_before_finish_review(state, turn)
         self._gate_metric_early_finish(state, turn)
@@ -1908,6 +1911,8 @@ class Workflow:
         self._gate_verify_finish(state, turn)
         self._gate_memory_finish(state, turn)
         self._gate_standing_finish(state, turn)
+        if asked and turn.finish_signal is None:
+            state.restart_settle_streak()
 
     def _gate_before_finish_review(self, state: LoopState, turn: TurnState) -> None:
         """Gate the agent's finish_session on panel approval: an unsatisfied
@@ -2376,8 +2381,7 @@ class Workflow:
             made_progress = turn.committed or turn.edited or tree != state.settled_tree
             state.settled_tree = tree
             if made_progress:
-                state.verify_settled_idle = 0
-                state.verify_settled_nudged = False  # a fresh idle streak may re-nudge
+                state.restart_settle_streak()
             elif not (turn.verify_just_passed or turn.verify_just_failed):
                 state.verify_settled_idle += 1
         turn.verify_settled_stop = (
@@ -2392,8 +2396,7 @@ class Workflow:
                 return aborted
             if turn.end_returned:
                 turn.verify_settled_stop = False
-                state.verify_settled_idle = 0
-                state.verify_settled_nudged = False
+                state.restart_settle_streak()
         if (
             non_metric_run
             and turn.finish_signal is None
@@ -2597,7 +2600,7 @@ class Workflow:
         turn.verify_settled_stop = False
         turn.no_progress_stop = False
         turn.plateau_should_stop = False
-        state.verify_settled_idle = 0
+        state.restart_settle_streak()
         state.verify.fail_streak = 0
         state.no_progress_nudges_used = 0
         state.plateau_nudges_used = 0

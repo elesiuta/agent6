@@ -113,6 +113,12 @@ class LoopState:
     gateless_ever_edited: bool = False
     verify_settled_idle: int = 0
     verify_settled_nudged: bool = False
+
+    def restart_settle_streak(self) -> None:
+        """A fresh idle streak: the settle guard counts from zero and may nudge again."""
+        self.verify_settled_idle = 0
+        self.verify_settled_nudged = False
+
     # Standing-goal re-entry bookkeeping: `ok_tool_calls` at the last
     # absorption (-1 = never absorbed), and the consecutive fruitless
     # re-entries since work last landed. `[workflow].standing_patience`

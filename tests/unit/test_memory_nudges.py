@@ -205,12 +205,17 @@ def test_finish_gate_defers_once_then_honours() -> None:
     wf = _wf()
     state = _state(verify=VerifyVerdict(ever_failed=True, last_ok=True))
 
+    # Five idle turns behind it: the settle guard would have ended the run one
+    # turn later, before the memory note and the re-finish the nudge asks for.
+    state.verify_settled_idle = 5
+    state.verify_settled_nudged = True
     first = _turn(5, finish_signal="done", finish_payload={"k": "v"})
-    wf._gate_memory_finish(state, first)  # pyright: ignore[reportPrivateUsage]
+    wf._turn_finish_gates(state, first)  # pyright: ignore[reportPrivateUsage]
     assert first.finish_signal is None
     assert first.finish_payload is None
     assert MEMORY_FINISH_NUDGE in _notice_texts(first)
     assert state.memory_finish_nudged is True
+    assert state.verify_settled_idle == 0 and state.verify_settled_nudged is False
 
     second = _turn(6, finish_signal="done")
     wf._gate_memory_finish(state, second)  # pyright: ignore[reportPrivateUsage]
