@@ -32,6 +32,14 @@ TASK_STATUS_GLYPH = {
 SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
+def clip_cell(text: str, width: int) -> str:
+    """One line of at most *width* characters, ending in an ellipsis when it
+    was cut. A bare slice reads as the whole value, so a table showed
+    `background=True` and `preview=True` as absent and marked both calls ok."""
+    line = " ".join(text.split())
+    return line if len(line) <= width else line[: max(1, width - 1)] + "\u2026"
+
+
 def spinner_frame(tick: int) -> str:
     """The braille spinner frame for *tick*, one owner for every surface."""
     return SPINNER_FRAMES[tick % len(SPINNER_FRAMES)]

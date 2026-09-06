@@ -750,6 +750,20 @@ def test_dashboard_header_says_what_the_run_serves(tmp_path: Path) -> None:
     assert str(port) in serving and "· agent6 forward serving " in serving
 
 
+def test_a_clipped_table_cell_says_it_was_clipped() -> None:
+    """The dashboard's tools table sliced args and results with no marker, so
+    `background=True` and `preview=True` fell off the end and the row still
+    read ok: the operator could not see that the command was backgrounded or
+    that the edit wrote nothing."""
+    from agent6.viewmodel.format import clip_cell
+
+    assert (
+        clip_cell("argv=/bin/sh -c 'echo hi', background=True", 20) == "argv=/bin/sh -c 'ec\u2026"
+    )
+    assert clip_cell("short", 20) == "short"
+    assert clip_cell("two\nlines", 20) == "two lines"
+
+
 def test_a_parked_sessions_empty_view_names_the_reason() -> None:
     """The dashboard row said "parked · uncommitted changes" while the opened
     conversation said only "(no conversation yet)"; the placeholder now
@@ -761,3 +775,7 @@ def test_a_parked_sessions_empty_view_names_the_reason() -> None:
     assert empty_conversation_note("parked", "", ended=False).startswith("(parked ")
     assert empty_conversation_note("", "", ended=True) == "this session made no conversation"
     assert "appears as the session streams" in empty_conversation_note("", "", ended=False)
+    # A crashed run and one that never started are not "made no conversation":
+    # the dashboard names both, and this view is the default screen.
+    assert "crashed or killed" in empty_conversation_note("stale", "", ended=True)
+    assert "has not started" in empty_conversation_note("created", "", ended=True)

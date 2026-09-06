@@ -141,13 +141,20 @@ def _item_renderables(item: TranscriptItem, *, detail: DetailLevel) -> list[Text
 
 
 def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
-    """The empty-conversation placeholder: a parked run says why it is parked
-    and how to start it (the dashboard row carried the reason; this view said
-    only "no conversation yet"); otherwise past tense only when the session
-    positively ended."""
+    """The empty-conversation placeholder, naming the state the session is in.
+
+    The dashboard says which of these a run is in and this view said only "no
+    conversation yet" or, once the composer flipped, "this session made no
+    conversation": a crashed run and a run that never started both read as an
+    ordinary empty one, on the default screen of `agent6 tui`.
+    """
     if word == "parked":
         why = f": {detail}" if detail else ""
         return f"(parked{why} \u2014 type below to start it)"
+    if word == "created":
+        return "(the run has not started \u2014 type below to start it)"
+    if word == "stale":
+        return "the worker exited without finishing (crashed or killed) \u2014 type below to resume"
     if ended:
         return "this session made no conversation"
     return "(no conversation yet; it appears as the session streams)"

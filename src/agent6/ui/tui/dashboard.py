@@ -64,6 +64,7 @@ from agent6.ui.tui.theme import (
 from agent6.viewmodel import manifest_branches, manifest_header, session_compare
 from agent6.viewmodel.format import (
     TASK_STATUS_GLYPH,
+    clip_cell,
     format_compare,
     format_cost,
     spinner_frame,
@@ -685,7 +686,10 @@ class DashboardScreen(ScreenChrome, Screen[None]):
             for tc in self._visible_tools:
                 ok = "…" if tc.ok is None else ("✓" if tc.ok else "✗")
                 table.add_row(
-                    Text(tc.name), Text(tc.args_preview[:90]), ok, Text(tc.result_summary[:40])
+                    Text(tc.name),
+                    Text(clip_cell(tc.args_preview, 90)),
+                    ok,
+                    Text(clip_cell(tc.result_summary, 40)),
                 )
             table.border_title = f"tools{filt}" if sel else ""
 
