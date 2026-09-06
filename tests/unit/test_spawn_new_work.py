@@ -220,6 +220,9 @@ def test_parallel_partial_spawn_failure_surfaces(
     )
     assert session_dir is None
     assert "boom" in err and "task B" in err
+    # The lane that started is named, so a resend of the message does not
+    # launch it a second time.
+    assert err.index("lane 1 (task A): running as run-A") < err.index("lane 2")  # lane order
 
 
 def test_multi_segment_malformed_spawns_nothing(
@@ -271,3 +274,12 @@ def test_detached_resume_refuses_a_malformed_steer_before_spawning(
     assert "needs a task" in spawn.spawn_detached_resume(
         tmp_path, "runny-one-AAAAAA", steer="/parallel 3"
     )
+
+
+def test_a_timeout_says_what_it_knows(tmp_path: Path) -> None:
+    """A child still starting after the wait is not known to have failed: a
+    slow resume preflight read as "has not started" while the run went on."""
+    err = spawn.spawn_and_confirm(
+        ["sleep", "3"], tmp_path, started=lambda pid: False, timeout_s=0.5
+    )
+    assert "has not reported starting within 0s (`agent6 ps` shows whether it is running)" in err

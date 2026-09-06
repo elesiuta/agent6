@@ -72,22 +72,15 @@ def spawn_new_work(  # noqa: PLR0911
     A `/parallel [spec] <task> ...` message (run mode only) fans out one
     detached `agent6 run --parallel <spec>` per segment (omitted spec = one
     isolated lane); a malformed directive is refused before any spawn, any
-    segment's failure fails the whole message (lanes already launched keep
-    running), and the first segment's dir is returned. A run into a checkout
-    another run is driving is refused here, at once, rather than parked by
-    the child after the locate wait."""
+    segment's failure fails the whole message, naming the lanes already
+    running (they keep running), and the first segment's dir is returned. A
+    plain run into a checkout another run is driving is refused here, at once,
+    rather than parked by the child after the locate wait; a fan-out takes no
+    such lock (its lanes clone the checkout)."""
     if mode not in OPERATOR_MODES:
         return None, f"unknown mode {mode!r}"
     if not task.strip():
         return None, "empty task"
-    if mode == "run":
-        state = resolved_state_dir(cwd)
-        if repo_writer_held(state):
-            holder = repo_writer_holder(state) or "another run"
-            return None, (
-                f"run {holder} is already driving this checkout; steer it with this task"
-                " (or /parallel it) from its run view, or wait for it to finish"
-            )
     segments = None
     if mode == "run":
         try:
@@ -95,24 +88,34 @@ def spawn_new_work(  # noqa: PLR0911
         except DirectiveError as exc:
             return None, str(exc)
     if segments is None:
+        if mode == "run" and repo_writer_held(state := resolved_state_dir(cwd)):
+            holder = repo_writer_holder(state) or "another run"
+            return None, (
+                f"run {holder} is already driving this checkout; steer it with this task"
+                " (or /parallel it) from its run view, or wait for it to finish"
+            )
         return _spawn_run(cwd, mode, task, preset=preset, spec="", config_path=config_path)
     refusal = directive_model_refusal(cwd, segments, config_path)
     if refusal is not None:
         return None, refusal
     first: Path | None = None
-    failures: list[str] = []
+    lines: list[str] = []
+    failed = False
     for i, seg in enumerate(segments, 1):
         session_dir, err = _spawn_run(
             cwd, "run", seg.task, preset=preset, spec=seg.spec or "1", config_path=config_path
         )
         if session_dir is None:
-            failures.append(f"lane {i} ({seg.task}): {err}")
-        elif first is None:
+            lines.append(f"lane {i} ({seg.task}): {err}")
+            failed = True
+            continue
+        lines.append(f"lane {i} ({seg.task}): running as {session_dir.name}")
+        if first is None:
             first = session_dir
-    if failures:
+    if failed:
         # Open the run XOR show the error: a partial failure must not vanish
-        # behind a surviving lane.
-        return None, "\n".join(failures)
+        # behind a surviving lane, and a resend must not double-launch one.
+        return None, "\n".join(lines)
     assert first is not None  # no failures => every segment produced a dir
     return first, ""
 
@@ -228,7 +231,10 @@ def _child_exit_message(label: str, rc: int | None, captured: str) -> str:
 
 def _not_started_message(label: str, timeout_s: float, captured: str) -> str:
     said = capture_message(captured)
-    return f"agent6 {label} has not started after {timeout_s:.0f}s" + (f":\n{said}" if said else "")
+    return (
+        f"agent6 {label} has not reported starting within {timeout_s:.0f}s"
+        " (`agent6 ps` shows whether it is running)" + (f":\n{said}" if said else "")
+    )
 
 
 def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> tuple[bool, str]:
@@ -260,11 +266,9 @@ def spawn_and_confirm(
     extra_env: Mapping[str, str] | None = None,
     timeout_s: float = 25.0,
 ) -> str:
-    """Spawn *argv* detached (non-TTY stdio, new session, so the child never
-    opens its own TUI) with an early-exit stderr capture: return "" once
-    *started(child_pid)* reports the child took ownership of its work, or the
-    stderr tail when the child exits nonzero first / nothing happens by the
-    timeout. A child that exits 0 without the signal is a clean fast completion.
+    """Spawn *argv* detached and return "" once *started(child_pid)* reports
+    the child took ownership of its work, else why it did not (`_spawn_and_wait`).
+    A child that exits 0 without the signal is a clean fast completion.
 
     The child runs under this process's environment plus the away marker
     (`DETACHED_AWAY_ENV`: every child started here is driven from a hub, so
@@ -275,45 +279,15 @@ def spawn_and_confirm(
     bundle, a finished run) print to stderr and exit nonzero without ever
     starting, which a fire-and-forget spawn (stderr to /dev/null) silently
     swallowed."""
-    label = subcommand_label(argv)
-    err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
-        mode="w+", suffix=".agent6-launch.err", delete=False
+    _, err = _spawn_and_wait(
+        argv,
+        cwd,
+        ready=lambda pid: True if started(pid) else None,
+        env={**os.environ, **DETACHED_AWAY_ENV, **(extra_env or {})},
+        timeout_s=timeout_s,
+        clean_exit=True,
     )
-    try:
-        try:
-            proc = subprocess.Popen(
-                argv,
-                cwd=str(cwd),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=err,
-                start_new_session=True,
-                env={**os.environ, **DETACHED_AWAY_ENV, **(extra_env or {})},
-            )
-        except OSError as exc:
-            return f"failed to start agent6 {label}: {exc}"
-        keep_out_of_the_sweep(proc.pid)
-
-        def err_tail() -> str:
-            return _stderr_tail(err)
-
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if started(proc.pid):
-                return ""
-            rc = proc.poll()
-            if rc is not None:
-                # Recheck once: the signal may have landed in the same instant.
-                if started(proc.pid) or rc == 0:
-                    return ""
-                return _child_exit_message(label, rc, err_tail())
-            time.sleep(0.2)
-        return _not_started_message(label, timeout_s, err_tail())
-    finally:
-        # Same lifetime note as spawn_and_locate: the detached child keeps the
-        # unlinked-but-open inode as its stderr until it exits.
-        err.close()
-        Path(err.name).unlink(missing_ok=True)
+    return err
 
 
 def _stderr_tail(err: IO[str], limit: int = 2000) -> str:
@@ -347,13 +321,31 @@ def spawn_and_locate(
 ) -> tuple[Path | None, str]:
     """Spawn *argv* detached, then poll *list_dirs* for a NEW dir (not in *before*)
     whose `logs.jsonl` exists, and return `(dir, "")` so the caller can hand it
-    to the dashboard. If the child exits before producing one (no git repo, bad
-    config, ...), surface its stderr tail instead of waiting out the timeout;
-    return `(None, message)` on any failure.
+    to the dashboard; `(None, message)` on any failure (`_spawn_and_wait`).
 
     The shared launch+watch path behind both "start a run" (hub) and "create a
     machine" (machines page): spawn the same CLI a user would, then watch the new
     log dir live."""
+    return _spawn_and_wait(
+        argv, cwd, ready=lambda _pid: _located(list_dirs, before), env=env, timeout_s=timeout_s
+    )
+
+
+def _spawn_and_wait[T](
+    argv: list[str],
+    cwd: Path,
+    *,
+    ready: Callable[[int], T | None],
+    env: dict[str, str] | None,
+    timeout_s: float,
+    clean_exit: T | None = None,
+) -> tuple[T | None, str]:
+    """Spawn *argv* detached (non-TTY stdio, new session, so the child never
+    opens its own TUI) with an early-exit stderr capture, and poll
+    *ready(child_pid)* until it answers: `(answer, "")`. A child that exits
+    first hands back its stderr tail (its own refusal, or the exit code when it
+    said nothing), unless it exited 0 and *clean_exit* stands in for the
+    answer; nothing by *timeout_s* hands back what the child said so far."""
     label = subcommand_label(argv)
     err = tempfile.NamedTemporaryFile(  # noqa: SIM115 - closed in finally
         mode="w+", suffix=".agent6-launch.err", delete=False
@@ -372,29 +364,23 @@ def spawn_and_locate(
         except OSError as exc:
             return None, f"failed to start agent6 {label}: {exc}"
         keep_out_of_the_sweep(proc.pid)
-
-        def err_tail() -> str:
-            return _stderr_tail(err)
-
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
-            found = _located(list_dirs, before)
-            if found is not None:
+            if (found := ready(proc.pid)) is not None:
                 return found, ""
-            if proc.poll() is not None:
-                # Child exited without a log dir; surface why (recheck once in case
-                # the dir landed in the same instant the process exited).
-                found = _located(list_dirs, before)
-                if found is not None:
+            rc = proc.poll()
+            if rc is not None:
+                # Recheck once: the answer may have landed in the same instant.
+                if (found := ready(proc.pid)) is not None:
                     return found, ""
-                return None, _child_exit_message(label, proc.returncode, err_tail())
+                if rc == 0 and clean_exit is not None:
+                    return clean_exit, ""
+                return None, _child_exit_message(label, rc, _stderr_tail(err))
             time.sleep(0.2)
-        return None, _not_started_message(label, timeout_s, err_tail())
+        return None, _not_started_message(label, timeout_s, _stderr_tail(err))
     finally:
-        # On the success/timeout paths the child is a detached process still
-        # holding this file as its stderr; closing + unlinking is intentional (its
-        # real output is logs.jsonl, this capture only feeds the early-exit /
-        # timeout diagnostic). On Linux the unlinked-but-open inode is freed when
-        # the child exits.
+        # The detached child keeps the unlinked-but-open inode as its stderr
+        # until it exits; its real output is its own log, and this capture
+        # only feeds the early-exit and timeout diagnostics.
         err.close()
         Path(err.name).unlink(missing_ok=True)

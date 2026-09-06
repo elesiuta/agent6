@@ -267,6 +267,38 @@ def test_hub_new_work_preflight_refuses_while_checkout_busy(
     assert "run-LIVE" in err and "checkout" in err
 
 
+def test_hub_new_work_fans_out_while_checkout_busy(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fan-out takes no writer lock (its lanes clone the checkout), and the
+    plain-run refusal told the operator to /parallel instead, yet the same
+    check refused the /parallel message before parsing it."""
+    from agent6.ui import spawn
+
+    spawned: list[str] = []
+
+    def fake_spawn(
+        cwd: Path, mode: str, task: str, *, preset: str, spec: str, config_path: object = None
+    ) -> tuple[Path | None, str]:
+        spawned.append(f"{spec}:{task}")
+        return repo / "run-P", ""
+
+    monkeypatch.setattr(spawn, "_spawn_run", fake_spawn)
+
+    def no_refusal(cwd: Path, segments: object, config_path: object = None) -> None:
+        return None
+
+    monkeypatch.setattr(spawn, "directive_model_refusal", no_refusal)
+    state = resolved_state_dir(repo)
+    holder_fd = acquire_repo_writer(state, "run-LIVE")
+    try:
+        session_dir, err = spawn.spawn_new_work(repo, "run", "/parallel 2 another task")
+    finally:
+        release_single_writer(holder_fd)
+    assert (session_dir, err) == (repo / "run-P", "")
+    assert spawned == ["2:another task"]
+
+
 def test_runs_show_reports_a_parked_run_as_parked(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
