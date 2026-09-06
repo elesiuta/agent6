@@ -2262,3 +2262,18 @@ def test_list_dir_caps_a_huge_listing_and_says_so(tmp_path: Path) -> None:
     out = d.dispatch("list_dir", {"path": "vendored"}).to_wire()
     assert len(out["entries"]) == LIST_DIR_CAP
     assert out["truncated"] is True
+
+
+def test_sizes_on_the_wire_are_bytes(tmp_path: Path) -> None:
+    """`size`, `bytes_written` and the "N bytes" summary counted characters:
+    ten `é` read as 11 bytes where the file holds 21."""
+    cfg = _config(tmp_path)
+    (tmp_path / "u.txt").write_text("é" * 10 + "\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    read = d.dispatch("read_file", {"path": "u.txt"})
+    assert read.to_wire()["size"] == 21 and "21 bytes" in read.summary()
+    patch = "--- a/u.txt\n+++ b/u.txt\n@@ -1,1 +1,1 @@\n-" + "é" * 10 + "\n+" + "é" * 10 + "!\n"
+    preview = d.dispatch("apply_patch", {"patch": patch, "preview": True}).to_wire()
+    assert preview["bytes_after"] == 22
+    written = d.dispatch("apply_patch", {"patch": patch}).to_wire()
+    assert written["bytes_written"] == 22

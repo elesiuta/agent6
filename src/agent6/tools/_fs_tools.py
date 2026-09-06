@@ -121,7 +121,10 @@ def read_file(ws: Workspace, raw: dict[str, Any]) -> ReadFileResult:
     lines = full.splitlines(keepends=True)
     if args.start_line == 1 and args.limit is None:
         return ReadFileResult(
-            content=full, size=len(full), lines_total=len(lines), truncated=read_truncated
+            content=full,
+            size=len(full.encode("utf-8")),
+            lines_total=len(lines),
+            truncated=read_truncated,
         )
     first = args.start_line - 1  # 1-based on the wire, 0-based slice
     end = len(lines) if args.limit is None else min(len(lines), first + args.limit)
@@ -129,7 +132,7 @@ def read_file(ws: Workspace, raw: dict[str, Any]) -> ReadFileResult:
     slice_text = "".join(sliced)
     return ReadFileResult(
         content=slice_text,
-        size=len(slice_text),
+        size=len(slice_text.encode("utf-8")),
         lines_total=len(lines),
         start_line=args.start_line,
         lines_returned=len(sliced),
@@ -460,7 +463,9 @@ def apply_patch(
             changed = f"; already changed: {', '.join(landed)}" if landed else ""
             raise ToolError(f"apply_patch: {sp.rel_path}: {exc.strerror or exc}{changed}") from exc
         landed.append(str(sp.rel_path))
-    rows = tuple((str(sp.rel_path), len(new)) for sp, _t, new in staged if new is not None)
+    rows = tuple(
+        (str(sp.rel_path), len(new.encode("utf-8"))) for sp, _t, new in staged if new is not None
+    )
     deleted = tuple(str(sp.rel_path) for sp, _t, new in staged if new is None)
     return PatchResult(
         path=(rows[0][0] if rows else deleted[0]),

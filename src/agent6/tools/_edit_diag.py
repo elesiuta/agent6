@@ -42,8 +42,8 @@ def preview_result(
         path=path,
         diff=diff or "(no changes)",
         hunks=hunks,
-        bytes_before=len(old_text or ""),
-        bytes_after=len(new_text),
+        bytes_before=len((old_text or "").encode("utf-8")),
+        bytes_after=len(new_text.encode("utf-8")),
         truncated=truncated,
         would_apply=None if applied is None else tuple(applied),
     )
