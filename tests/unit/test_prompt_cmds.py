@@ -162,3 +162,22 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: Path) -> None:
         plain = ToolDispatcher(root=Path(td), config=Config())
         names = [t.name for t in tool_definitions(plain, mode="run")]
     assert "run_metric_command" not in names, "offered with no [workflow.metric]"
+
+
+def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: Path) -> None:
+    """One plan prompt carried both "run_verify_command runs the operator's
+    gate" and "`run_verify_command` is not available", forty lines apart."""
+    from agent6.config import Config
+    from agent6.workflows import model_exchange_for
+
+    gateless = model_exchange_for(Config(), tmp_path, "plan", state_dir=tmp_path).system
+    assert "<no-verify-command>" in gateless
+    assert "run_verify_command runs the operator's gate" not in gateless
+
+    gated = model_exchange_for(
+        Config.model_validate({"workflow": {"verify_command": ["pytest", "-q"]}}),
+        tmp_path,
+        "plan",
+        state_dir=tmp_path,
+    ).system
+    assert "run_verify_command runs the operator's gate" in gated

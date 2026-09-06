@@ -29,6 +29,7 @@ from agent6.prompts.loop import (
     MODEL_GIT_RULE,
     PLAN_BUDGET_LINE,
     PLAN_SYSTEM_PROMPT_BASE,
+    PLAN_VERIFY_RULE,
     SKILLS_HEADER,
     SYSTEM_PROMPT_BASE,
     V2_BUDGET_BLOCK_TEMPLATE,
@@ -294,6 +295,11 @@ def build_system_prompt(
         isolation != "none" and (repo.root / ".git").is_file()
     )
     base = base.replace("__GIT_PROTECT_RULE__", GIT_PROTECT_RULE if git_read_only else "")
+    # The gate a plan pass can actually run: `run_commands = "no"` withholds
+    # every command tool, and with no verify command the same prompt's
+    # `<no-verify-command>` says the tool is not there.
+    has_gate = bool(config.workflow.verify_command) and config.sandbox.run_commands != "no"
+    base = base.replace("__PLAN_VERIFY_RULE__", PLAN_VERIFY_RULE if has_gate else "")
     # Auto-commit is the agent6-control chain; under [git].control = "model"
     # nothing commits automatically and the model owns the record. Under
     # agent6 control the WHEN is whether a gate judges each step: each

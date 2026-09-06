@@ -38,6 +38,13 @@ __DAG_RULES_BLOCK__
 # surface-current-task + finish-gate machinery walks it one focused task at a
 # time. Aimed at small/open models that lose track of multi-part tasks; a capable
 # model needs neither, which is why this is opt-in (measured per model).
+# Rendered into plan mode's __PLAN_VERIFY_RULE__ sentinel when a gate exists.
+# Without one the block would tell the model to call a tool the same prompt's
+# `<no-verify-command>` says it does not have.
+PLAN_VERIFY_RULE = """- run_verify_command runs the operator's gate; a baseline run records the
+  failures that predate the execution pass.
+"""
+
 # Rendered into run mode's __GIT_PROTECT_RULE__ sentinel under strict
 # isolation with protect_git on, and in a fork's linked worktree under any
 # jail (the repository's `.git` is granted read-only there): elsewhere the
@@ -131,9 +138,7 @@ confirm is recorded in the plan for the execution pass.
 </role>
 
 <tool-use-rules>
-- run_verify_command runs the operator's gate; a baseline run records the
-  failures that predate the execution pass.
-- run_command runs jailed in the workspace and is approval-gated; a probe's
+__PLAN_VERIFY_RULE__- run_command runs jailed in the workspace and is approval-gated; a probe's
   writes land in the workspace and nothing carries them forward.
 - The task DAG is a scratchpad here; the execution run builds its own.
 </tool-use-rules>
