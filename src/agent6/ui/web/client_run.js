@@ -56,7 +56,7 @@ async function renderRun(id, opts, gen) {
   // the floating menu; the desktop drawer ignores it.
   const app = el('div', 'run-app paged');
   const prompts = el('div', 'page-pad'); app.appendChild(prompts); // approval/question boxes surface here
-  const cards = { _id: id, _prompts: prompts, _readOnly: readOnly, _crumb: crumbBase };
+  const cards = { _id: id, _base: base, _prompts: prompts, _readOnly: readOnly, _crumb: crumbBase };
   const drawer = el('div', 'grid drawer');
   const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; const h = el('h2', null, title); c.appendChild(h); if (key === 'head') cards._head_title = h; const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
 
@@ -526,9 +526,9 @@ function paintRun(cards, s) {
       body.innerHTML = '';
       if (!sel.value) { cards._stepState = null; paintDetails(cards, s, null); body.appendChild(renderDiff(s.latest_diff || '')); return; }
       try {
-        const d = await getJSON('/api/session/' + encodeURIComponent(cards._id) + '/diff?sha=' + encodeURIComponent(sel.value) + '&cumulative=' + (cum.checked ? '1' : '0'));
+        const d = await getJSON(cards._base + '/diff?sha=' + encodeURIComponent(sel.value) + '&cumulative=' + (cum.checked ? '1' : '0'));
         body.appendChild(renderDiff(d.patch));
-        const st = await getJSON('/api/session/' + encodeURIComponent(cards._id) + '?step=' + encodeURIComponent(sel.value));
+        const st = await getJSON(cards._base + '?step=' + encodeURIComponent(sel.value));
         cards._stepState = st; paintDetails(cards, st, st.as_of);
       } catch (e) { body.appendChild(el('div', 'muted', e.message)); }
     };

@@ -31,7 +31,7 @@ def test_paint_run_reads_no_free_id() -> None:
 
 def test_the_step_picker_fetches_with_the_cards_own_id() -> None:
     body = _paint_run_body()
-    assert body.count("encodeURIComponent(cards._id)") >= 2
+    assert body.count("cards._base") >= 2
 
 
 def test_the_machine_watch_gates_on_the_shared_refusals() -> None:

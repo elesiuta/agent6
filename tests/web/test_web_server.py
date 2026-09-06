@@ -1590,3 +1590,40 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: Path) -> None
     assert frames and frames[0].get("shells") == [
         "[bg1] still running (or the run that owns it ended): python -m http.server"
     ]
+
+
+def test_the_step_picker_fetches_through_the_base_it_was_rendered_with() -> None:
+    """A machine-create draft renders through `/api/draft/<name>`, and its
+    drafting leg commits, so the picker paints; both of its fetches hardcoded
+    `/api/session/`, and every selection read "no session '<name>'"."""
+    from agent6.ui.web.page import CLIENT_JS
+
+    start = CLIENT_JS.index("function paintRun(")
+    body = CLIENT_JS[start : CLIENT_JS.index("function renderDiff(", start)]
+    assert "'/api/session/'" not in body
+    assert body.count("cards._base") >= 2
+
+
+def test_the_draft_route_serves_what_the_step_picker_asks_for(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    _, port = server
+    draft = resolved_state_dir(tmp_path) / "sessions" / "machines" / "draft-AAAAAAAA"
+    draft.mkdir(parents=True)
+    sha = "1" * 40
+    draft.joinpath("logs.jsonl").write_text(
+        "".join(
+            json.dumps(e) + "\n"
+            for e in (
+                {"type": "session.start", "mode": "machine", "user_task": "draft one"},
+                {"type": "loop.auto_commit", "iteration": 1, "sha": sha, "subject": "draft it"},
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    status, body, _ = _get(port, f"/api/draft/draft-AAAAAAAA?step={sha}")
+    assert status == 200 and json.loads(body).get("as_of") is not None
+    status, body, _ = _get(port, f"/api/draft/draft-AAAAAAAA/diff?sha={sha}&cumulative=0")
+    assert status == 422  # no workspace on disk: the reason, not a missing route
+    assert "workspace" in json.loads(body)["error"]

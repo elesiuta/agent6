@@ -17,9 +17,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from agent6.app.parallel import subordinate_workdir_root
 from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
-from agent6.git_ops import commit_diff, diff_range, run_branch_tips
+from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_branch_tips
 from agent6.models.choices import config_value_choices
 from agent6.models.registry import resolved_adaptive_values
 from agent6.sessions.ipc import worker_is_alive
@@ -88,6 +89,32 @@ def draft_dir_for(cwd: Path, name: str) -> Path | None:
         return None
     d = bucket_dir(resolved_state_dir(cwd), "machines") / name
     return d if d.is_dir() else None
+
+
+def draft_workspace(cwd: Path, name: str, config_path: Path | None) -> Path | None:
+    """Where a `machine create` draft's commits live: its drafting workspace, a
+    repo of its own beside the other subordinate working trees. None once it
+    is gone (a published draft's workspace is removed with it)."""
+    try:
+        cfg = load_effective(cwd, config_path).config
+    except ConfigError:
+        return None
+    workspace = subordinate_workdir_root(cfg, cwd, name)
+    return workspace if (workspace / ".git").exists() else None
+
+
+def draft_step_diff_payload(
+    workspace: Path, sha: str, *, cumulative: bool
+) -> tuple[dict[str, Any] | None, str]:
+    """The patch one step of a draft introduced, or the whole bundle as of that
+    step (from the empty tree: a draft starts from nothing) when *cumulative*.
+    (payload, "") or (None, why)."""
+    if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
+        return None, f"not a commit sha: {sha!r}"
+    patch = diff_range(workspace, EMPTY_TREE, sha) if cumulative else commit_diff(workspace, sha)
+    if not patch:
+        return None, f"no diff for {sha[:12]} (not a commit of this draft)"
+    return {"sha": sha, "cumulative": cumulative, "patch": patch}, ""
 
 
 def draft_dir_paths(cwd: Path) -> list[Path]:

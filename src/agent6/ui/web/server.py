@@ -559,9 +559,30 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json({"error": f"no draft {name!r}"}, status=404)
             return
         if sub == "":
-            self._send_json(session_snapshot(draft_dir))
+            step = (parse_qs(urlsplit(self.path).query).get("step") or [""])[0]
+            try:
+                self._send_json(session_snapshot(draft_dir, step=step))
+            except UnknownStepError as e:
+                self._send_json({"error": str(e)}, status=422)
         elif sub == "conversation":
             self._send_json(model.conversation_payload(draft_dir))
+        elif sub == "diff":
+            # The draft's commits live in its drafting workspace, not the repo.
+            q = parse_qs(urlsplit(self.path).query)
+            workspace = model.draft_workspace(self.cwd, name, self.config_path)
+            if workspace is None:
+                gone = "the drafting workspace is gone (removed with a published draft)"
+                payload, why = None, gone
+            else:
+                payload, why = model.draft_step_diff_payload(
+                    workspace,
+                    (q.get("sha") or [""])[0],
+                    cumulative=(q.get("cumulative") or ["0"])[0] in ("1", "true"),
+                )
+            if payload is None:
+                self._send_json({"error": why}, status=422)
+            else:
+                self._send_json(payload)
         elif sub == "events":
             self._sse_session(draft_dir)
         else:

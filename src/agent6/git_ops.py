@@ -998,7 +998,7 @@ def worktree_tree(path: Path, seed: str | None, exclude: Collection[str]) -> str
 
 
 # git's well-known empty tree: the diff base when a chain has no commits yet.
-_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
 def worktree_matches(path: Path, ref: str, paths: Collection[str]) -> bool:
@@ -1016,7 +1016,7 @@ def chain_dirty(
     unborn repo). Raises GitError outside a repo -- callers treat that as
     clean."""
     base = chain_tip(path, ref) or fallback_parent
-    base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
+    base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else EMPTY_TREE
     return base_tree != worktree_tree(path, base, exclude)
 
 
@@ -1032,7 +1032,7 @@ def chain_dirty_paths(
     tip's tree, capped at *limit* (an unborn chain diffs against the empty
     tree)."""
     base = chain_tip(path, ref) or fallback_parent
-    base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
+    base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else EMPTY_TREE
     return tree_diff_paths(path, base_tree, worktree_tree(path, base, exclude))[:limit]
 
 
