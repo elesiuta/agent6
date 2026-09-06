@@ -506,3 +506,22 @@ def test_403_reports_no_retry_worthwhile() -> None:
     cred = ChatGPTCredential("chatgpt", issuer="https://auth.example", client_id="app_X")
     assert cred.invalidate(403) is False
     assert cred.invalidate(401) is True
+
+
+@pytest.mark.parametrize("expires_in", ["soon", int("1" + "0" * 400)])
+def test_an_unusable_expires_in_is_a_provider_error(
+    monkeypatch: pytest.MonkeyPatch, expires_in: object
+) -> None:
+    """A token body whose `expires_in` cannot be a float (text, or an integer
+    too large for a double) fails like its two neighbours (a non-JSON body, a
+    missing access_token): a ProviderError the sign-in prints at exit 2, not a
+    bare ValueError or OverflowError that `_chatgpt_sign_in` never catches."""
+
+    def odd(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": expires_in})
+
+    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", odd)
+    with pytest.raises(ProviderError, match="expires_in"):
+        exchange_code("https://auth.example", "app_X", code="C", verifier="V", provider="chatgpt")
+    with pytest.raises(ProviderError, match="expires_in"):
+        refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")

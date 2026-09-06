@@ -155,10 +155,16 @@ def _grant_from_response(resp: httpx2.Response, *, operation: str) -> TokenGrant
     access = data.get("access_token") if isinstance(data, dict) else None
     if not isinstance(access, str) or not access:
         raise ProviderError(f"ChatGPT token {operation} response carried no access_token")
+    try:
+        expires_in = float(data.get("expires_in") or 3600.0)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ProviderError(
+            f"ChatGPT token {operation} response carried an unusable expires_in"
+        ) from exc
     return TokenGrant(
         access_token=access,
         refresh_token=str(data.get("refresh_token") or ""),
-        expires_in=float(data.get("expires_in") or 3600.0),
+        expires_in=expires_in,
         id_token=str(data.get("id_token") or ""),
     )
 
