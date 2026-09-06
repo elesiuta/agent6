@@ -235,3 +235,43 @@ def test_a_request_names_the_call_the_prompt_carries(tmp_path: Path) -> None:
     assert prompts.ask((UserQuestion(question="Theme?", options=("dark", "light")),), call_id=1)
     prompts.approve("Run commands UNSANDBOXED on this host?")  # gates no call
     assert calls == [1, 1, None]
+
+
+def test_a_multi_question_ask_shares_one_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each question of an ask_user got the whole permission timeout, so a
+    three-question request held a run three times the documented bound when
+    the editor never answered; one deadline covers the request."""
+    from agent6.tools.operator_prompts import QuestionRequest
+    from agent6.ui.acp import frontend as frontend_mod
+
+    monkeypatch.setattr(frontend_mod, "PERMISSION_TIMEOUT_S", 0.0)
+    held: list[bool] = []
+
+    def _ask(
+        _prompt: str,
+        _options: tuple[str, ...],
+        _standing: bool | None,
+        _call_id: int | None,
+        until: Callable[[], bool] | None = None,
+    ) -> str | None:
+        assert until is not None
+        held.append(until())  # the request's deadline has passed: holds at once
+        return None
+
+    front = acp_frontend(
+        ask=_ask,
+        capabilities=FrontendCapabilities(can_ask=True),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _rid, _flags: "",
+    )
+    answer = front.build_questioner(tmp_path)(
+        QuestionRequest(
+            id="question-1",
+            questions=(UserQuestion(question="a?"), UserQuestion(question="b?")),
+            call_id=1,
+        )
+    )
+    assert held == [True, True]
+    assert (answer.answers, answer.source) == (("", ""), "acp")

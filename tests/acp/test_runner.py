@@ -1158,3 +1158,48 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: Path) 
         sent[-1]
     )
     assert all(k == "tool_call" for k in kinds[:2]), kinds
+
+
+def test_a_turn_that_cannot_choose_its_run_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The id is chosen before the run's try, and a global config that cannot
+    be read raises there: the turn ended with a bare "refusal" and not a word,
+    while the same failure a step later was reported."""
+    monkeypatch.chdir(tmp_path)
+
+    def _broken(*_a: object, **_kw: object) -> object:
+        raise ConfigError("Config file cannot be read (config.toml)")
+
+    monkeypatch.setattr(runner, "resolved_state_dir", _broken)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "do the thing")
+        said = wire.until("session/update")
+        text = said["params"]["update"]["content"]["text"]
+        assert "could not start" in text and "config.toml" in text, text
+        assert wire.until("")["result"]["stopReason"] == "refusal"
+    finally:
+        wire.close()
+
+
+def test_an_internal_error_keeps_its_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A handler bug answered the editor with the exception's class name alone
+    (`KeyError`) and wrote nothing to stderr."""
+    from agent6.ui.acp.session import Sessions
+
+    def _boom(self: object, params: object) -> object:
+        raise KeyError("no such row")
+
+    monkeypatch.setattr(Sessions, "get", _boom)
+    wire = _Wire()
+    try:
+        wire.send(id=1, method="initialize", params={"clientCapabilities": {}})
+        wire.recv()
+        wire.send(id=2, method="session/cancel", params={"sessionId": "s"})
+        error = wire.recv()["error"]
+        assert error["code"] == -32603
+        assert "KeyError" in error["message"] and "no such row" in error["message"]
+    finally:
+        wire.close()

@@ -12,8 +12,10 @@ protocol, different methods.
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, BinaryIO
@@ -133,8 +135,9 @@ class ACPServer:
                 self.reply(req_id, error=(exc.code, exc.message))
             return
         except Exception as exc:  # a handler bug must not kill the connection
+            print(f"[agent6] {method}: {traceback.format_exc()}", file=sys.stderr)
             if req_id is not None:
-                self.reply(req_id, error=(INTERNAL_ERROR, f"{type(exc).__name__}"))
+                self.reply(req_id, error=(INTERNAL_ERROR, f"{type(exc).__name__}: {exc}"))
             return
         if result is DEFERRED:
             return  # a worker owns this reply now

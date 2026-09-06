@@ -14,8 +14,9 @@ still gets a working session -- one where the model simply has fewer powers.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Protocol
 
@@ -42,6 +43,12 @@ from agent6.tools.operator_prompts import (
 from agent6.types import AutoCommitDirective, IsolationLevel
 from agent6.ui.steer import file_bridge_steer
 from agent6.workflows.loop import SessionResult, Workflow
+
+# How long a permission request waits for the editor. An operator who has
+# walked away must not hold a run forever, and the seam already reads silence
+# as the cautious answer: an approval becomes a denial, a question becomes no
+# answer at all.
+PERMISSION_TIMEOUT_S = 300.0
 
 
 # What the client is asked, and what an unaskable client is assumed to have
@@ -128,6 +135,9 @@ def acp_frontend(
                 return QuestionAnswer(tuple("" for _ in request.questions), "headless")
             # An unanswered question becomes an empty string, which the loop
             # already treats as "the operator said nothing", not as a value.
+            # One deadline for the request: a timeout per question made an
+            # N-question ask wait N times the documented bound.
+            deadline = time.monotonic() + PERMISSION_TIMEOUT_S
             answers: list[str] = []
             for question in request.questions:
                 answer = ask(
@@ -135,7 +145,10 @@ def acp_frontend(
                     question.options,
                     None,
                     request.call_id,
-                    lambda: question_answers_written(session_dir, request.id),
+                    lambda: (
+                        question_answers_written(session_dir, request.id)
+                        or time.monotonic() >= deadline
+                    ),
                 )
                 if answer is None:
                     filed = read_question_answers(session_dir, request.id, timeout_s=0.0)
@@ -195,7 +208,7 @@ def acp_frontend(
         attach_console_view=lambda _events: None,
         close_console_view=lambda: None,
         loop_logger=lambda _mode: lambda _line: None,
-        tui_session=lambda _session_dir, _enabled: _nullcontext(),
+        tui_session=lambda _session_dir, _enabled: nullcontext(),
         build_approver=_build_approver,
         build_questioner=_build_questioner,
         make_steer_state=_steer,
@@ -233,7 +246,3 @@ def _no_coordinator(
     """`/parallel` fans out sibling runs, which need somewhere to be watched.
     An ACP client renders ONE session; lanes would run invisibly."""
     return None
-
-
-def _nullcontext() -> AbstractContextManager[None]:
-    return nullcontext()

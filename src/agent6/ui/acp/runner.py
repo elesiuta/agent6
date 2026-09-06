@@ -37,7 +37,7 @@ from agent6.app.run import run_task
 from agent6.config.layer import resolved_state_dir
 from agent6.sessions.id import unused_session_id
 from agent6.types import session_bucket
-from agent6.ui.acp.frontend import acp_frontend
+from agent6.ui.acp.frontend import PERMISSION_TIMEOUT_S, acp_frontend
 from agent6.ui.acp.server import ACPServer
 from agent6.ui.acp.session import ACP_MODE, Session, Sessions, StopReason
 from agent6.ui.acp.updates import (
@@ -52,11 +52,6 @@ from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 from agent6.viewmodel.tail import journal_size, tail_events
 from agent6.viewmodel.transcript import TranscriptFold
 
-# How long a permission request waits for the editor. An operator who has
-# walked away must not hold a run forever, and the seam already reads silence
-# as the cautious answer: an approval becomes a denial, a question becomes no
-# answer at all.
-PERMISSION_TIMEOUT_S = 300.0
 # A safety net on joining the streaming tail, not the normal path: `_stop`
 # ends it one read pass after the run returns. This bounds a tail wedged on a
 # filesystem that is not answering.
@@ -371,11 +366,16 @@ class RunBridge:
         # which skips the lifecycle's own minting -- a collision would refuse
         # the turn with "use agent6 resume <id>" over an id the editor never
         # chose.
-        resuming = self._resumable(session)
-        if not resuming:
-            session.session_id = unused_session_id(
-                resolved_state_dir(session.cwd), session_bucket(ACP_MODE)
-            )
+        try:
+            resuming = self._resumable(session)
+            if not resuming:
+                session.session_id = unused_session_id(
+                    resolved_state_dir(session.cwd), session_bucket(ACP_MODE)
+                )
+        except Exception as exc:
+            # A config that cannot be read raises here, before any journal.
+            self._could_not_start(session, exc)
+            return "refusal"
         if not self._runs.acquire(blocking=False):
             # Queued behind another session's turn: say so, and keep listening
             # for a cancel while waiting (a turn that has not started is
@@ -400,20 +400,21 @@ class RunBridge:
             try:
                 return self._run(session, text, resuming=resuming)
             except Exception as exc:
-                # A run that dies before it has a journal has no other way to
-                # say so, and the turn still ends with a stop reason. A broken
-                # config is the ordinary case: the CLI prints it, and here the
-                # editor would have seen a turn end with no words at all.
                 # Once a journal exists the fold has already reported the
                 # ending, and saying this too contradicts it.
                 if not self.had_journal(session):
-                    self.server.notify_raw(
-                        message_update(session.acp_id, f"the run could not start: {exc}")
-                    )
+                    self._could_not_start(session, exc)
                 return "refusal"
         finally:
             self._running = None
             self._runs.release()
+
+    def _could_not_start(self, session: Session, exc: Exception) -> None:
+        """A run that dies before it has a journal has no other way to say so,
+        and the turn still ends with a stop reason. A broken config is the
+        ordinary case: the CLI prints it, and here the editor would have seen
+        a turn end with no words at all."""
+        self.server.notify_raw(message_update(session.acp_id, f"the run could not start: {exc}"))
 
     def _run(self, session: Session, text: str, *, resuming: bool) -> StopReason:
         layout = session.layout(resolved_state_dir(session.cwd))
