@@ -191,6 +191,7 @@ _TOOL_OUTPUT_TAIL = 2000  # chars, matching verify.end's stdout_tail/stderr_tail
 
 # An MCP approval prompt carries the FULL arguments up to this bound; past it
 # the complete payload goes to a session-dir file the prompt points at.
+_PAYLOAD_IDS = itertools.count(1)
 _APPROVAL_PROMPT_MAX_CHARS = 4096
 
 _READ_HEAD_LINES = 6
@@ -791,7 +792,10 @@ class ToolDispatcher:
             # and the prompt carries the head plus where to read the rest.
             # With no session dir the full text stays in the prompt: hiding
             # any of it with nowhere to point is the worse trade.
-            full = self._session_dir / "approval_payload.json"
+            # One file per prompt: concurrent review seats share a dispatcher,
+            # and one shared name had the operator reading call B's payload
+            # while approving call A.
+            full = self._session_dir / f"approval_payload-{next(_PAYLOAD_IDS)}.json"
             full.write_text(args, encoding="utf-8")
             args = (
                 f"{args[:_APPROVAL_PROMPT_MAX_CHARS]}"

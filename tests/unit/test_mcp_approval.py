@@ -372,5 +372,5 @@ def test_a_huge_payload_prompts_with_a_head_and_a_full_file(tmp_path: Path) -> N
     assert len(seen) == 1
     assert big not in seen[0], "the wall of text must not flood the prompt"
     assert "full payload:" in seen[0] and "chars total" in seen[0]
-    payload = session_dir / "approval_payload.json"
-    assert payload.is_file() and big in payload.read_text(encoding="utf-8")
+    (payload,) = session_dir.glob("approval_payload-*.json")
+    assert big in payload.read_text(encoding="utf-8")
