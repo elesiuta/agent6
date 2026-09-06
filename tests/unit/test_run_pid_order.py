@@ -69,12 +69,15 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
     assert run_mod.run_task(cfg, "t", frontend=frontend, mode="run") == 2
     assert order == ["pid", "ask"]
-    # A passing preflight writes the pid, then runs the leg.
-    order.clear()
+    # A passing preflight writes the pid, then runs the leg -- in every mode:
+    # an ask blocks on questions too, and `agent6 ps` and `steer` gate on the
+    # same file. Only run mode took the checkout lock the write sat behind.
     sp.run(["git", "checkout", "-q", "--", "a.py"], cwd=repo, check=True)
-    with pytest.raises(RuntimeError, match="stop here"):
-        run_mod.run_task(cfg, "t", frontend=frontend, mode="run")
-    assert order == ["pid", "leg"]
+    for mode in ("run", "plan", "ask"):
+        order.clear()
+        with pytest.raises(RuntimeError, match="stop here"):
+            run_mod.run_task(cfg, "t", frontend=frontend, mode=mode)
+        assert order == ["pid", "leg"], mode
 
 
 def test_a_cancelled_start_question_leaves_no_pid_behind(
