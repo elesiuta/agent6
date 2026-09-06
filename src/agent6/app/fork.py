@@ -775,7 +775,7 @@ def _still_needs_worktree(repo: Path, session_dir: Path, manifest: SessionManife
     if worker_is_alive(session_dir):
         return "live"
     merged = manifest.merged is not None and merge_stamp_holds(
-        repo, manifest.run_branch or "", manifest.merged.tip
+        repo, session_dir.name, manifest.run_branch or "", manifest.merged.tip
     )
     return "" if merged else "unmerged"
 

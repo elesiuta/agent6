@@ -17,6 +17,7 @@ from agent6.git_ops import (
     CommitIdentity,
     GitError,
     auto_stash_message,
+    chain_ref_for,
     clone_repo,
     commit_all,
     commit_diff,
@@ -31,6 +32,7 @@ from agent6.git_ops import (
     init_repo,
     is_git_repo,
     list_run_commits,
+    merge_stamp_holds,
     modified_paths,
     plumb_merge,
     recent_log,
@@ -890,6 +892,30 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: Path) 
     ).stdout
     assert head_msg.count("Assisted-by: agent6:m1") == 1
     assert status(tmp_path).is_clean  # main is checked out: index brought forward
+
+
+def test_a_merge_stamp_stops_holding_once_the_run_commits_past_it(tmp_path: Path) -> None:
+    """A resumed run keeps committing under a prior leg's stamp, and the run's
+    record is its chain: read from the branch alone, a branchless run
+    (`branch_per_run` off) had nothing to compare and every stamp read as
+    holding, so prune called it merged and the later commits went unnoticed."""
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    tip = _lane_commit(tmp_path, base, "a.txt", "one\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-ref", chain_ref_for("branchless1"), tip], check=True
+    )
+
+    assert merge_stamp_holds(tmp_path, "branchless1", "", tip)
+
+    later = _lane_commit(tmp_path, tip, "b.txt", "two\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-ref", chain_ref_for("branchless1"), later], check=True
+    )
+
+    assert not merge_stamp_holds(tmp_path, "branchless1", "", tip)
+    # No chain and no branch (auto_prune took both): the claim stands.
+    assert merge_stamp_holds(tmp_path, "gone-run111", "", tip)
 
 
 def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(

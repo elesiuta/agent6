@@ -57,7 +57,9 @@ def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[st
     stamp = manifest.merged
     merged_into = ""
     if stamp and stamp.into:
-        holds = repo is None or merge_stamp_holds(repo, manifest.run_branch or "", stamp.tip)
+        holds = repo is None or merge_stamp_holds(
+            repo, manifest.session_id, manifest.run_branch or "", stamp.tip
+        )
         merged_into = stamp.into if holds else ""
     if merged_into:
         out["merged_into"] = merged_into

@@ -277,7 +277,7 @@ def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Ch
         return _Changes(f"{run_branch} (taken back by /undo)", "")
     cwd = Path.cwd()
     stamp = manifest.merged
-    if stamp is not None and merge_stamp_holds(cwd, run_branch, stamp.tip):
+    if stamp is not None and merge_stamp_holds(cwd, session_id, run_branch, stamp.tip):
         into = stamp.into or manifest.base_branch
         return _Changes(format_branch(run_branch, manifest.base_branch, into), into)
     merge_hint = f"merge with: agent6 sessions merge {session_id}"

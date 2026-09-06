@@ -639,17 +639,23 @@ def branch_tip_sha(path: Path, branch: str) -> str | None:
     return sha or None
 
 
-def merge_stamp_holds(path: Path, run_branch: str, merged_tip: str) -> bool:
-    """Does a run's merged stamp still describe its branch? A resumed run keeps
-    committing on its branch under a PRIOR leg's stamp: "merged" holds only
-    while the branch still points at the merged tip (the comparison
-    `sessions prune` trusts). A gone branch (auto_prune), unreadable git, or a
-    pre-`tip` stamp keeps the claim."""
-    if not merged_tip or not run_branch:
+def merge_stamp_holds(path: Path, session_id: str, run_branch: str, merged_tip: str) -> bool:
+    """Does a run's merged stamp still describe everything it committed?
+
+    A resumed run keeps committing under a PRIOR leg's stamp: "merged" holds
+    only while the run's tip is the one that merge landed (the comparison
+    `sessions prune` trusts). The tip is the run's CHAIN -- its record -- and
+    the branch only for a run with no chain: read from the branch alone, a
+    branchless run (`branch_per_run` off) had nothing to compare and every
+    stamp read as holding. A gone chain and branch (auto_prune), unreadable
+    git, or a pre-`tip` stamp keeps the claim."""
+    if not merged_tip:
         return True
     tip = None
     with contextlib.suppress(GitError):
-        tip = branch_tip_sha(path, run_branch)
+        tip = chain_tip(path, chain_ref_for(session_id)) if session_id else None
+        if tip is None and run_branch:
+            tip = branch_tip_sha(path, run_branch)
     return tip is None or tip == merged_tip
 
 

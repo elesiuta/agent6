@@ -97,7 +97,7 @@ def stranded_edits(result: SessionResult, layout: SessionLayout, cwd: Path) -> b
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         merged = manifest.merged is not None and merge_stamp_holds(
-            cwd, run_branch, manifest.merged.tip
+            cwd, manifest.session_id, run_branch, manifest.merged.tip
         )
     if not run_branch or merged or branch_exists(cwd, run_branch):
         return False
@@ -306,7 +306,9 @@ def _print_run_branch_footer(
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
-        if manifest.merged is not None and merge_stamp_holds(cwd, run_branch, manifest.merged.tip):
+        if manifest.merged is not None and merge_stamp_holds(
+            cwd, manifest.session_id, run_branch, manifest.merged.tip
+        ):
             merged_into = manifest.merged.into or base_branch
     if result.completed and manifest is not None and manifest.git_control == "model":
         # The model managed git: report where IT left the checkout; there is

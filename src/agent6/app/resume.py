@@ -56,6 +56,7 @@ from agent6.git_ops import (
     chain_ref_for,
     chain_tip,
     is_ancestor,
+    merge_stamp_holds,
     verify_git_identity,
 )
 from agent6.providers import (
@@ -116,8 +117,8 @@ def covering_stamp(repo: Path, manifest: SessionManifest) -> MergeStamp | None:
     stamp = manifest.merged
     if stamp is None or not stamp.into:
         return None
-    tip = chain_tip(repo, chain_ref_for(manifest.session_id))
-    return stamp if tip is None or not stamp.tip or tip == stamp.tip else None
+    holds = merge_stamp_holds(repo, manifest.session_id, manifest.run_branch or "", stamp.tip)
+    return stamp if holds else None
 
 
 def commits_note(repo: Path, manifest: SessionManifest) -> str:
