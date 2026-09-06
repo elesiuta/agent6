@@ -268,7 +268,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
             file=sys.stderr,
         )
-        return 1
+        return 2
     source_path = root / "machine.asm.toml"
     try:
         spec = load_machine(source_path)
@@ -308,7 +308,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
             file=sys.stderr,
         )
-        return 1
+        return 2
     source_path = root / "machine.asm.toml"
     try:
         spec = load_machine(source_path)
@@ -400,7 +400,7 @@ def _cmd_machine_poke(
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
             file=sys.stderr,
         )
-        return 1
+        return 2
     # An ended machine consumes no signals: a poke would sit unread, so the
     # "it will wake on its next signal check" reply would be a lie. Refuse.
     if refusal := machine_verb_refusal(root, machine_id, "poke"):
@@ -441,7 +441,7 @@ def _cmd_machine_stop(machine_id: str) -> int:
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
             file=sys.stderr,
         )
-        return 1
+        return 2
     if refusal := machine_verb_refusal(root, machine_id, "stop"):
         print(f"ERROR: {refusal}", file=sys.stderr)
         return 1
@@ -493,7 +493,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR09
             f"ERROR: no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}",
             file=sys.stderr,
         )
-        return 1
+        return 2
     source = root / "machine.asm.toml"
     try:
         spec = load_machine(source)

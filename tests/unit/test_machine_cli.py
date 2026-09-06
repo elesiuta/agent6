@@ -277,7 +277,7 @@ def test_status_missing_instance_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     code = main(["machine", "status", "nope"])
-    assert code == 1
+    assert code == 2
     assert "no machine instance" in capsys.readouterr().err
 
 
@@ -314,7 +314,7 @@ def test_status_asm_file_path_hints_the_instance_id(
     capsys.readouterr()
     clear_worker_pid(resolved_state_dir(tmp_path) / "machines" / "waiter_delayed")
     code = main(["machine", "status", "waiter.asm.toml"])
-    assert code == 1
+    assert code == 2
     err = capsys.readouterr().err
     assert "no machine instance" in err
     assert "waiter_delayed" in err  # the did-you-mean names the real instance id
@@ -644,7 +644,7 @@ def test_poke_missing_instance_errors(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     code = main(["machine", "poke", "nope"])
-    assert code == 1
+    assert code == 2
     assert "no machine instance" in capsys.readouterr().err
 
 
