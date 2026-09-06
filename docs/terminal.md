@@ -63,6 +63,7 @@ The config page shows every setting, its effective value, and where that value c
 `agent6 run` executes in the foreground: steer it with Ctrl-C, no TUI required.
 
 - the pause menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages
+- a steer sent from another surface (`agent6 steer`, the web or TUI composer) while the menu is open is taken as the answer
 - Ctrl-Z in a view, or `/detach` in the menu, hands the run to the background after its current step (`agent6 attach` reattaches)
 - `/exit` in the menu or the `run -i` REPL (bare `exit` at the fallback prompt) stops the run and leaves without the follow-up prompt (`agent6 resume` continues it)
 - a viewer opened with `agent6 attach --tui` just closes

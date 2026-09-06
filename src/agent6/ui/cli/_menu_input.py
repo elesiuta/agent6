@@ -30,6 +30,7 @@ import os
 import select
 import sys
 from collections.abc import Callable
+from typing import TextIO
 
 try:  # unix only; Windows callers gate on menu_capable()
     import termios
@@ -74,6 +75,33 @@ def menu_capable() -> bool:
     """True when the fish-style reader can own the terminal line: termios
     exists (Unix) and both std streams are the interactive terminal."""
     return termios is not None and sys.stdin.isatty() and sys.stdout.isatty()
+
+
+class LineSuperseded(Exception):
+    """The line being read was answered by another route: the reader's
+    *until* held while it waited for a key."""
+
+
+def read_line_until(stream: TextIO, fd: int, until: Callable[[], bool] | None) -> str | None:
+    """One line from *stream*, or None at EOF or once *until* holds (polled
+    every 0.2 s while nothing is typed; a line already complete wins)."""
+    if until is not None:
+        while not until():
+            ready, _, _ = select.select([fd], [], [], 0.2)
+            if ready:
+                break
+        else:
+            return None
+    line = stream.readline()
+    return line.rstrip("\n") if line else None
+
+
+def _read_key_until(fd: int, until: Callable[[], bool]) -> str:
+    """`_read_key`, polling *until* every 0.2 s while nothing is typed."""
+    while not select.select([fd], [], [], 0.2)[0]:
+        if until():
+            raise LineSuperseded
+    return _read_key(fd)
 
 
 def _read_escape(fd: int) -> str:
@@ -394,12 +422,14 @@ def menu_input(
     *,
     read_key: Callable[[], str] | None = None,
     write: Callable[[str], None] | None = None,
+    until: Callable[[], bool] | None = None,
 ) -> str:
     """Read one line with a fish-style command preview.
 
     Matches `input()`'s contract: returns the line without the newline,
     raises EOFError on Ctrl-D at an empty line, KeyboardInterrupt on Ctrl-C
-    (via SIGINT in cbreak mode, or the `\\x03` byte where signals are off).
+    (via SIGINT in cbreak mode, or the `\\x03` byte where signals are off),
+    and :class:`LineSuperseded` once *until* holds while nothing is typed.
     Accepted non-empty lines are appended to *history* (deduped against the
     last entry); Ctrl-R searches *history* (Enter/Tab keep the highlighted
     match for editing, Esc cancels). *read_key*/*write* are injectable for
@@ -420,7 +450,11 @@ def menu_input(
         def restore() -> None:
             tio.tcsetattr(fd, drain, old_attrs)
 
-        read_key = lambda: _read_key(fd)  # noqa: E731
+        def terminal_key() -> str:
+            return _read_key(fd) if until is None else _read_key_until(fd, until)
+
+        read_key = terminal_key
+
     if write is None:
 
         def _stdout_write(text: str) -> None:
@@ -436,10 +470,10 @@ def menu_input(
             if r.handle_key(read_key(), write):
                 return r.line
             r.render(write)
-    except KeyboardInterrupt:
-        # A signal-delivered Ctrl-C (cbreak keeps ISIG) raises from inside the
-        # blocking read, skipping handle_key's cleanup: erase the menu rows so
-        # they don't linger under whatever prints next.
+    except (KeyboardInterrupt, LineSuperseded):
+        # A signal-delivered Ctrl-C (cbreak keeps ISIG) and a superseded line
+        # both raise from inside the read, skipping handle_key's cleanup:
+        # erase the menu rows so they don't linger under whatever prints next.
         write("\r\n\x1b[J")
         raise
     finally:

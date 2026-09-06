@@ -712,6 +712,13 @@ def take_steer_answer(session_dir: Path) -> str | None:
     return _consume_answer(session_dir / STEER_ANSWER_FILE)
 
 
+def steer_answer_written(session_dir: Path) -> bool:
+    """Whether a steer answer is on disk: a peek, nothing consumed. The pause
+    menu polls it, so a steer sent from a front-end while the menu is open
+    ends the menu instead of waiting behind it."""
+    return (session_dir / STEER_ANSWER_FILE).exists()
+
+
 def steer_answer_is_abort(session_dir: Path) -> bool:
     """Non-blocking peek: True if a pending steer answer is a stop. Lets a long
     streaming model turn bail immediately instead of only at the between-step

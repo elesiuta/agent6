@@ -10,7 +10,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import select
 import shlex
 import signal
 import subprocess
@@ -19,7 +18,7 @@ import tempfile
 import termios
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any
 
 from agent6.app.frontend import SessionFacts
 from agent6.events import EventSink
@@ -29,13 +28,14 @@ from agent6.sessions.ipc import (
     frontend_is_live,
     read_steer_answer,
     steer_answer_is_abort,
+    steer_answer_written,
     steer_interrupt_pending,
     steer_request_pending,
     take_steer_answer,
     write_steer_answer,
 )
 from agent6.ui.cli._console_view import ConsoleView
-from agent6.ui.cli._menu_input import menu_capable
+from agent6.ui.cli._menu_input import menu_capable, read_line_until
 from agent6.ui.cli._steer_menu import BtwRunner, normalize_steer_choice, pause_menu
 from agent6.ui.steer import SteerState, file_bridge_steer
 from agent6.viewmodel.format import format_cost
@@ -155,20 +155,6 @@ def tty_message(text: str) -> None:
             print(text, file=sys.stderr, flush=True)
 
 
-def _read_line(stream: TextIO, fd: int, until: Callable[[], bool] | None) -> str | None:
-    """One line from *stream*, or None at EOF or once *until* holds (polled
-    every 0.2 s while nothing is typed; a line already complete wins)."""
-    if until is not None:
-        while not until():
-            ready, _, _ = select.select([fd], [], [], 0.2)
-            if ready:
-                break
-        else:
-            return None
-    line = stream.readline()
-    return line.rstrip("\n") if line else None
-
-
 def tty_prompt(
     text: str,
     *,
@@ -207,13 +193,13 @@ def tty_prompt(
                 return input(text if plain is None else plain)
             sys.stdout.write(text if plain is None else plain)
             sys.stdout.flush()
-            return _read_line(sys.stdin, sys.stdin.fileno(), until)
+            return read_line_until(sys.stdin, sys.stdin.fileno(), until)
         except (EOFError, KeyboardInterrupt, OSError, ValueError):
             return None
     try:
         with tty:
             tty.write(text)
-            line = _read_line(tty, fd, until)
+            line = read_line_until(tty, fd, until)
             if line is None and until is not None:
                 # Whatever was typed was aimed at a prompt that is over.
                 with contextlib.suppress(Exception):
@@ -389,12 +375,16 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
                     # The interactive pause menu: line editing, history, and a
                     # fish-style Tab preview of the slash commands.
                     return pause_menu(session_dir, btw_runner=btw_runner, config_path=config_path)
-                return normalize_steer_choice(
-                    tty_prompt(
-                        "[agent6] paused: [enter] continue · type to steer"
-                        " · q stop · exit leave · d detach: "
-                    )
+                typed = tty_prompt(
+                    "[agent6] paused: [enter] continue · type to steer"
+                    " · q stop · exit leave · d detach: ",
+                    until=lambda: steer_answer_written(session_dir),
                 )
+                if typed is None and steer_answer_written(session_dir):
+                    # A front-end's steer landed while the prompt waited.
+                    tty_message("[agent6] a steer arrived from a front-end; taking it\n")
+                    return take_steer_answer(session_dir)
+                return normalize_steer_choice(typed)
         finally:
             state["prompting"] = False
 

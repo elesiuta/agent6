@@ -451,7 +451,9 @@ def test_pause_menu_seeds_recall_from_the_journal(
     monkeypatch.setattr(_steer_menu, "menu_capable", lambda: True)
     seen: list[list[str]] = []
 
-    def fake_menu_input(prompt: str, commands: dict[str, str], history: list[str]) -> str:
+    def fake_menu_input(
+        prompt: str, commands: dict[str, str], history: list[str], **_kw: object
+    ) -> str:
         seen.append(list(history))
         history.append("/status")  # what accepting a line does
         return "go"

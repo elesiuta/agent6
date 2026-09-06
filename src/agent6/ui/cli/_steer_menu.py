@@ -33,6 +33,8 @@ repeat the exact `/parallel` token to queue more tasks in one message. See
 
 from __future__ import annotations
 
+import functools
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,13 +42,18 @@ from pathlib import Path
 from agent6.config.layer import load_effective
 from agent6.directive import STEER_COMMANDS, parse_btw
 from agent6.paths import data_dir
-from agent6.sessions.ipc import request_compact
+from agent6.sessions.ipc import request_compact, steer_answer_written, take_steer_answer
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.skills import operator_skills
 from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.ui.cli._common import plural
-from agent6.ui.cli._menu_input import menu_capable, menu_input
+from agent6.ui.cli._menu_input import (
+    LineSuperseded,
+    menu_capable,
+    menu_input,
+    read_line_until,
+)
 from agent6.viewmodel import (
     fold_session,
     operator_inputs,
@@ -282,6 +289,32 @@ def _run_info_command(
         print(_start_btw(cmd, session_dir, btw_runner))
 
 
+def _plain_line(prompt: str, arrived: Callable[[], bool]) -> str:
+    """`input()` for a terminal the menu reader cannot own, polling the steer
+    file the way the reader does."""
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    line = read_line_until(sys.stdin, sys.stdin.fileno(), arrived)
+    if line is None:
+        if arrived():
+            raise LineSuperseded
+        raise EOFError
+    return line
+
+
+def _line_reader(
+    session_dir: Path, offered: dict[str, str], skills: dict[str, tuple[str, str]]
+) -> Callable[[str], str]:
+    """The terminal's line reader: the fish-style menu where termios can own
+    the line, else a plain prompt. Both poll the session's steer file."""
+    arrived = functools.partial(steer_answer_written, session_dir)
+    if menu_capable():
+        _RECALL.seed(session_dir)
+        display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
+        return lambda p: menu_input(p, display, _RECALL.lines, until=arrived)
+    return lambda p: _plain_line(p, arrived)
+
+
 def pause_menu(  # noqa: PLR0911, PLR0912
     session_dir: Path,
     *,
@@ -293,23 +326,23 @@ def pause_menu(  # noqa: PLR0911, PLR0912
     continue, 'abort' stop now, 'exit' stop-and-leave, 'detach' background,
     else the instruction sent
     verbatim. A command must be the whole line (unique prefixes fire, ambiguous
-    ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues."""
+    ones re-ask); info commands print and re-prompt. EOF (Ctrl-D) continues.
+    A steer a front-end writes while the menu is open (the file bridge every
+    composer uses) ends the menu and IS the answer."""
     skills = skill_menu_table(config_path)
     # A surface that cannot spawn a sibling session never offers `/btw`: an
     # offered command that answers "needs a live run" is not offered.
     offered = MENU_COMMANDS if btw_runner is not None else _without_btw(config_path)
     if input_fn is None:
-        if menu_capable():
-            _RECALL.seed(session_dir)
-            display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
-            input_fn = lambda p: menu_input(p, display, _RECALL.lines)  # noqa: E731
-        else:
-            input_fn = input
+        input_fn = _line_reader(session_dir, offered, skills)
     while True:
         try:
             line = input_fn(PROMPT)
         except EOFError:
             return None
+        except LineSuperseded:
+            print("[agent6] a steer arrived from a front-end; taking it")
+            return take_steer_answer(session_dir) or ""
         stripped = line.strip()
         if not stripped:
             return ""  # Enter: continue the run unchanged

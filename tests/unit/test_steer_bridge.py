@@ -395,3 +395,32 @@ def test_compact_request_publishes_atomically(
     ipc.request_compact(tmp_path, focus="pin the auth decisions")
     assert (tmp_path / "compact.request", "pin the auth decisions") in calls
     assert ipc.read_compact_request(tmp_path) == "pin the auth decisions"
+
+
+def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The plain prompt (no menu-capable terminal) reads the steer file while
+    it waits, like the menu: a front-end's steer ends the prompt and is the
+    answer, not a line the operator never typed."""
+    monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
+    monkeypatch.setattr("agent6.ui.cli._steer.menu_capable", lambda: False)
+
+    def prompt_superseded(text: str, **kw: object) -> str | None:
+        until = kw.get("until")
+        assert callable(until) and not until()
+        submit_steer(tmp_path, "from the web")
+        assert until()  # the prompt would now end
+        return None
+
+    monkeypatch.setattr("agent6.ui.cli._steer.tty_prompt", prompt_superseded)
+    events = EventSink(tmp_path / "logs.jsonl")
+    steer = install_steer_sigint(events, tmp_path)
+    try:
+        import signal
+
+        signal.raise_signal(signal.SIGINT)  # stage 1: the boundary pause
+        assert steer.prompt() == "from the web"
+        steer.clear()
+    finally:
+        steer.restore()

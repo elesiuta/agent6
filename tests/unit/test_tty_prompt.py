@@ -303,3 +303,52 @@ def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: Path) -> None:
         assert b"answered elsewhere" in buf
     finally:
         os.close(master)
+
+
+def test_the_pause_menu_takes_a_steer_written_while_it_is_open(tmp_path: Path) -> None:
+    """A steer sent from a front-end (the web composer, `agent6 steer`) while
+    the Ctrl-C pause menu was open sat in the file until the next boundary:
+    the menu read only the terminal. The menu polls the file and takes it."""
+    from agent6.sessions.ipc import submit_steer
+
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+
+    def child() -> int:
+        # pytest's capture replaced sys.stdin/stdout; the pty is on fds 0-2.
+        sys.stdin = open(0, closefd=False)  # noqa: SIM115
+        sys.stdout = open(1, "w", closefd=False)  # noqa: SIM115
+        from agent6.ui.cli._steer_menu import pause_menu
+
+        return 0 if pause_menu(session_dir) == "from the web" else 13
+
+    pid, master = pty.fork()
+    if pid == 0:  # pragma: no cover - child process
+        os._exit(child())
+    buf = b""
+    deadline = time.monotonic() + 15
+
+    def drain_until(marker: bytes) -> None:
+        nonlocal buf
+        while marker not in buf and time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.5)
+            if ready:
+                try:
+                    buf += os.read(master, 4096)
+                except OSError:
+                    return
+
+    try:
+        drain_until(b"paused:")
+        assert b"paused:" in buf, f"the menu never opened: {buf[-500:]!r}"
+        os.write(master, b"half a")  # the operator was mid-word
+        time.sleep(0.3)
+        submit_steer(session_dir, "from the web")
+        drain_until(b"steer arrived")
+        if b"steer arrived" not in buf:
+            os.kill(pid, 9)  # the menu never looked at the file: do not hang
+        _, status = os.waitpid(pid, 0)
+        assert b"steer arrived" in buf, f"the menu kept waiting on the keyboard: {buf[-800:]!r}"
+        assert os.waitstatus_to_exitcode(status) == 0, buf[-800:]
+    finally:
+        os.close(master)
