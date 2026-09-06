@@ -116,28 +116,45 @@ def _hdr_path(raw: str) -> str:
     return "" if target == "/dev/null" else re.sub(r"^[ab]/", "", target)
 
 
-def diff_touched_ranges(diff: str) -> dict[str, list[tuple[int, int]]]:
-    """Map each touched path to the line ranges its hunks changed, so a finding's
-    `path:line` citation can be grounded: a block may only gate if its cited
-    line is inside a range the diff changed. New-side ranges key the post-image
-    path; old-side ranges key the pre-image path (for an in-place modification,
-    the same key -- overlapping ranges are harmless), so a citation of deleted
-    code at its OLD line number still grounds whether the whole file was deleted
-    (post-image `/dev/null`) or lines were removed from a kept file. A `+++ `
-    line only counts as a header when it follows a `--- ` (an added line whose
-    content happens to start with `++ ` is not mistaken for one). A file the
-    diff touches without hunks (binary, a pure rename, a mode change) is
-    recorded with no ranges, so a path-only citation of it grounds and a line
-    citation does not.
+@dataclass(frozen=True, slots=True)
+class Hunk:
+    """One hunk as it addresses one path: the pre-image lines it replaced and
+    the post-image lines it produced, each an inclusive span (a side with no
+    lines spans the line the change sits at, so a citation of it grounds), or
+    None for a side that is another file's (a rename's other name) or absent
+    (a created or deleted file, filed by its `/dev/null` side)."""
+
+    old: tuple[int, int] | None
+    new: tuple[int, int] | None
+
+
+def _span(start: str, count: str | None) -> tuple[int, int]:
+    s, n = int(start), int(count) if count is not None else 1
+    return (s, s + max(n, 1) - 1)
+
+
+def diff_hunks(diff: str) -> dict[str, list[Hunk]]:
+    """Map each touched path to its hunks, so a finding's `path:line` citation
+    can be grounded (a block may only gate if its cited line is inside a hunk)
+    and keyed (`_dedup_key`). An in-place hunk carries both sides under its
+    path; a rename's, a created file's or a deleted file's hunk carries the
+    post-image side under the post-image path and the pre-image side under
+    the pre-image path, so a citation of deleted code at its OLD line number
+    still grounds and neither name grounds the other's line numbers.
+    A `+++ ` line only counts as a header when it follows a `--- ` (an added
+    line whose content happens to start with `++ ` is not mistaken for one).
+    A file the diff touches without hunks (binary, a pure rename, a mode
+    change) is recorded with none, so a path-only citation of it grounds and
+    a line citation does not.
     """
-    ranges: dict[str, list[tuple[int, int]]] = {}
+    hunks: dict[str, list[Hunk]] = {}
     newpath = oldpath = ""
     prev_minus = False
     lines = diff.splitlines()
     for i, raw in enumerate(lines):
         if g := _GIT_HDR_RE.match(raw):
-            ranges.setdefault(_unquote_git_path(g.group(1)), [])
-            ranges.setdefault(_unquote_git_path(g.group(2)), [])
+            hunks.setdefault(_unquote_git_path(g.group(1)), [])
+            hunks.setdefault(_unquote_git_path(g.group(2)), [])
             oldpath = newpath = ""
             prev_minus = False
             continue
@@ -145,7 +162,7 @@ def diff_touched_ranges(diff: str) -> dict[str, list[tuple[int, int]]]:
         # header. Requiring that lookahead stops a DELETED line whose own text
         # begins with "-- " -- rendered "--- ..." in the diff -- from being
         # misparsed as a file header, which would clobber oldpath/newpath and
-        # mis-attribute every later hunk's ranges (the symmetric "+++ " side is
+        # mis-attribute every later hunk (the symmetric "+++ " side is
         # already guarded by prev_minus).
         if raw.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
             oldpath, newpath, prev_minus = _hdr_path(raw), "", True
@@ -156,15 +173,15 @@ def diff_touched_ranges(diff: str) -> dict[str, list[tuple[int, int]]]:
         prev_minus = False
         m = _HUNK_RE.match(raw)
         if m:
-            o_start = int(m.group(1))
-            o_count = int(m.group(2)) if m.group(2) is not None else 1
-            n_start = int(m.group(3))
-            n_count = int(m.group(4)) if m.group(4) is not None else 1
-            if newpath:
-                ranges.setdefault(newpath, []).append((n_start, n_start + max(n_count, 1) - 1))
-            if oldpath:  # old-side range: grounds citations of pre-image (deleted) lines
-                ranges.setdefault(oldpath, []).append((o_start, o_start + max(o_count, 1) - 1))
-    return ranges
+            old, new = _span(m.group(1), m.group(2)), _span(m.group(3), m.group(4))
+            if newpath and newpath == oldpath:
+                hunks.setdefault(newpath, []).append(Hunk(old=old, new=new))
+            else:
+                if newpath:
+                    hunks.setdefault(newpath, []).append(Hunk(old=None, new=new))
+                if oldpath:
+                    hunks.setdefault(oldpath, []).append(Hunk(old=old, new=None))
+    return hunks
 
 
 def _norm_path(p: str) -> str:
@@ -204,92 +221,104 @@ def _is_span(field: str) -> bool:
     return all(e.isdigit() for e in ends) and bool(ends[0])
 
 
-def is_grounded(file_line: str, ranges: dict[str, list[tuple[int, int]]]) -> bool:
+def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    return a[0] <= b[1] and b[0] <= a[1]
+
+
+def is_grounded(file_line: str, hunks: dict[str, list[Hunk]]) -> bool:
     """True iff the citation refers to something the diff actually changed:
-    a touched path (path-only citation) or a line/range that OVERLAPS a touched
-    range. A range citation "path:A-B" grounds if *any* line in [A, B] falls
-    inside a touched range, not just the start line A -- otherwise a finding that
-    cites a real changed range whose start happens to be unchanged-but-interior
-    (e.g. the hunk modified the middle of the cited span) would be wrongly treated
-    as ungrounded and a legit block silently downgraded to warn."""
+    a touched path (path-only citation) or a line/range that OVERLAPS a hunk,
+    on either side. A range citation "path:A-B" grounds if *any* line in
+    [A, B] falls inside a hunk, not just the start line A -- otherwise a
+    finding that cites a real changed range whose start happens to be
+    unchanged-but-interior (the hunk modified the middle of the cited span)
+    would be wrongly treated as ungrounded and a legit block silently
+    downgraded to warn."""
     path, span = _split_cite(file_line)
     if not path:
         return False
     if span is None:  # path-only: grounded if the diff touched that file at all
-        return path in ranges
-    c_lo, c_hi = span
-    return any(c_lo <= hi and lo <= c_hi for (lo, hi) in ranges.get(path, ()))
+        return path in hunks
+    return any(
+        (h.new is not None and _overlaps(span, h.new))
+        or (h.old is not None and _overlaps(span, h.old))
+        for h in hunks.get(path, ())
+    )
 
 
-DedupKey = tuple[str, str, tuple[int, int] | None]
+DedupKey = tuple[str, str, Hunk | tuple[int, int] | None]
 
 
-def _dedup_key(f: Finding, ranges: dict[str, list[tuple[int, int]]]) -> DedupKey:
+def _dedup_key(f: Finding, hunks: dict[str, list[Hunk]]) -> DedupKey:
     """A finding's identity across seats and iterations: its file, its category
-    and the hunk its citation falls in (the first touched range overlapping the
-    cited span), so a re-citation a few lines off collapses while a second
-    finding in another hunk of the same file stays. A citation outside every
-    hunk keys on its own span, a path-only one on the file."""
+    and the hunk its citation falls in, so a re-citation a few lines off
+    collapses while a second finding in another hunk of the same file stays.
+    The hunk whose post-image span holds the citation decides first (a
+    reviewer cites the file as it reads), else the one whose pre-image span
+    does (deleted code at its old number); the two sides of one hunk key
+    alike. A citation outside every hunk keys on its own span, a path-only
+    one on the file."""
     path, span = _split_cite(f.file_line)
     if span is None:
         return (path, f.category, None)
-    lo, hi = span
-    for r_lo, r_hi in ranges.get(path, ()):
-        if lo <= r_hi and r_lo <= hi:
-            return (path, f.category, (r_lo, r_hi))
+    mine = hunks.get(path, ())
+    for h in mine:
+        if h.new is not None and _overlaps(span, h.new):
+            return (path, f.category, h)
+    for h in mine:
+        if h.old is not None and _overlaps(span, h.old):
+            return (path, f.category, h)
     return (path, f.category, span)
 
 
 _SEV_ORDER = {"block": 0, "warn": 1, "nit": 2}
 
 
-def _ground_severity(
-    f: Finding, ctx: ReviewContext, ranges: dict[str, list[tuple[int, int]]]
-) -> Severity:
+def _ground_severity(f: Finding, ctx: ReviewContext, hunks: dict[str, list[Hunk]]) -> Severity:
     """A `block` survives only if grounded in the diff AND in a gating category
     (and `verify-uncovered-correctness` is coherent only when verify passed);
     otherwise it is downgraded to `warn`. `warn`/`nit` pass through."""
     if f.severity != "block":
         return f.severity
     coherent = f.category != "verify-uncovered-correctness" or ctx.verify_ok is True
-    if f.category in ALLOWED_BLOCK_CATEGORIES and coherent and is_grounded(f.file_line, ranges):
+    if f.category in ALLOWED_BLOCK_CATEGORIES and coherent and is_grounded(f.file_line, hunks):
         return "block"
     return "warn"
 
 
 def _ground_seat(
-    v: ReviewVerdict, ctx: ReviewContext, ranges: dict[str, list[tuple[int, int]]]
+    v: ReviewVerdict, ctx: ReviewContext, hunks: dict[str, list[Hunk]]
 ) -> ReviewVerdict:
     out: list[Finding] = []
     for f in v.findings:
-        sev = _ground_severity(f, ctx, ranges)
+        sev = _ground_severity(f, ctx, hunks)
         out.append(f if sev == f.severity else replace(f, severity=sev))
     return replace(v, findings=tuple(out))
 
 
 def _has_new_block(
-    v: ReviewVerdict, prior_keys: set[DedupKey], ranges: dict[str, list[tuple[int, int]]]
+    v: ReviewVerdict, prior_keys: set[DedupKey], hunks: dict[str, list[Hunk]]
 ) -> bool:
     """True when the seat carries a surviving block that is NOT an already-
     injected prior finding. `prior_findings` is "for dedup (not re-count)":
     a block whose key dedups away is dropped from `merged_findings`, so
     letting it gate would reject the work while reporting no blocking
     findings."""
-    return any(
-        f.severity == "block" and _dedup_key(f, ranges) not in prior_keys for f in v.findings
-    )
+    return any(f.severity == "block" and _dedup_key(f, hunks) not in prior_keys for f in v.findings)
 
 
 def _decide(
     decision: ReviewDecision,
     n_block: int,
     quorum: int,
-    non_abstain: list[ReviewVerdict],
+    *,
+    n_seats_blocking: int,
+    n_responding: int,
     n_total: int,
-    prior_keys: set[DedupKey],
-    ranges: dict[str, list[tuple[int, int]]],
 ) -> bool:
-    if decision == "advisory" or not non_abstain:
+    """*n_block* counts distinct blocking models, *n_seats_blocking* the seats
+    with a surviving non-prior block, *n_responding* the seats that answered."""
+    if decision == "advisory" or not n_responding:
         return False
     if decision == "veto":
         return n_block >= 1
@@ -304,9 +333,7 @@ def _decide(
         # must be non-abstaining. So a panel that mostly failed to respond does
         # NOT block on one vote, but a fully-responding (or majority-responding)
         # panel that unanimously blocks still gates.
-        if not all(_has_new_block(v, prior_keys, ranges) for v in non_abstain):
-            return False
-        return len(non_abstain) * 2 > n_total
+        return n_seats_blocking == n_responding and n_responding * 2 > n_total
     return False  # pragma: no cover - exhaustive
 
 
@@ -335,27 +362,28 @@ def aggregate_verdicts(
        non-abstaining seat to block AND a strict majority of all seats to have
        actually responded (abstentions cannot let a lone blocker gate under "all").
     """
-    ranges = diff_touched_ranges(ctx.diff)
-    prior_keys = {_dedup_key(f, ranges) for f in ctx.prior_findings}
+    hunks = diff_hunks(ctx.diff)
+    prior_keys = {_dedup_key(f, hunks) for f in ctx.prior_findings}
 
     grounded_seats: list[ReviewVerdict] = []
     blocking_models: set[str] = set()  # distinct models with >=1 surviving non-prior block
-    n_abstain = 0
+    n_abstain = n_seats_blocking = 0
     for v in per_seat:
         if v.error is not None:
             n_abstain += 1
             grounded_seats.append(v)
             continue
-        gv = _ground_seat(v, ctx, ranges)
+        gv = _ground_seat(v, ctx, hunks)
         grounded_seats.append(gv)
-        if _has_new_block(gv, prior_keys, ranges):
+        if _has_new_block(gv, prior_keys, hunks):
             blocking_models.add(v.model)
+            n_seats_blocking += 1
 
     # Merge + dedup all findings (post-grounding); drop ones already injected.
     merged: dict[DedupKey, Finding] = {}
     for v in grounded_seats:
         for f in v.findings:
-            key = _dedup_key(f, ranges)
+            key = _dedup_key(f, hunks)
             if key in prior_keys:
                 continue
             cur = merged.get(key)
@@ -366,9 +394,13 @@ def aggregate_verdicts(
     )
 
     n_block = len(blocking_models)  # distinct-model blocking seats
-    non_abstain = [v for v in grounded_seats if v.error is None]
     blocked = _decide(
-        decision, n_block, quorum, non_abstain, len(grounded_seats), prior_keys, ranges
+        decision,
+        n_block,
+        quorum,
+        n_seats_blocking=n_seats_blocking,
+        n_responding=len(grounded_seats) - n_abstain,
+        n_total=len(grounded_seats),
     )
 
     return PanelResult(
@@ -400,12 +432,13 @@ __all__ = [
     "ALLOWED_BLOCK_CATEGORIES",
     "ALL_CATEGORIES",
     "Finding",
+    "Hunk",
     "PanelResult",
     "ReviewContext",
     "ReviewDecision",
     "ReviewVerdict",
     "aggregate_verdicts",
-    "diff_touched_ranges",
+    "diff_hunks",
     "is_grounded",
     "render_findings",
 ]

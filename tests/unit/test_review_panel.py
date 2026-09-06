@@ -10,17 +10,19 @@ gaps, and uncited claims are mechanically downgraded and can never stall a run.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from agent6.workflows._panel import (
     Finding,
+    Hunk,
     PanelResult,
     ReviewContext,
     ReviewDecision,
     ReviewVerdict,
     _dedup_key,  # pyright: ignore[reportPrivateUsage]
     aggregate_verdicts,
-    diff_touched_ranges,
+    diff_hunks,
     is_grounded,
     render_findings,
 )
@@ -70,16 +72,16 @@ def _agg(
 # --- diff grounding primitives ------------------------------------------------
 
 
-def test_diff_touched_ranges_parses_paths_and_new_line_ranges() -> None:
-    ranges = diff_touched_ranges(SAMPLE_DIFF)
-    # New-side range plus the old-side range of the same hunk (pre-image line
-    # numbers must ground too); a created file has no old side.
-    assert ranges["foo.py"] == [(10, 14), (10, 12)]
-    assert ranges["bar.py"] == [(1, 2)]
+def test_diff_hunks_parses_paths_and_both_sides_of_each_hunk() -> None:
+    hunks = diff_hunks(SAMPLE_DIFF)
+    # One hunk, both sides (pre-image line numbers must ground too); a created
+    # file's old side spans the line the change sits at.
+    assert hunks["foo.py"] == [Hunk(old=(10, 12), new=(10, 14))]
+    assert hunks["bar.py"] == [Hunk(old=None, new=(1, 2))]
 
 
 def test_is_grounded_line_in_range_path_only_and_misses() -> None:
-    ranges = diff_touched_ranges(SAMPLE_DIFF)
+    ranges = diff_hunks(SAMPLE_DIFF)
     assert is_grounded("foo.py:11", ranges)  # inside 10..14
     assert is_grounded("foo.py", ranges)  # path-only, file touched
     assert not is_grounded("foo.py:99", ranges)  # outside the touched range
@@ -92,11 +94,15 @@ def test_is_grounded_accepts_a_line_col_citation() -> None:
     copies. The single rpartition read the COLUMN as the line and the rest as
     the path, so the lookup missed and a real block was silently downgraded to
     a warning."""
-    ranges = diff_touched_ranges(SAMPLE_DIFF)
+    ranges = diff_hunks(SAMPLE_DIFF)
     assert is_grounded("foo.py:11:5", ranges)  # line 11 is inside 10..14
     assert not is_grounded("foo.py:99:5", ranges)  # column must not rescue it
     # the dedup key drops the column and lands in the hunk
-    assert _dedup_key(_block("security", "foo.py:11:5"), ranges) == ("foo.py", "security", (10, 14))
+    assert _dedup_key(_block("security", "foo.py:11:5"), ranges) == (
+        "foo.py",
+        "security",
+        Hunk(old=(10, 12), new=(10, 14)),
+    )
 
 
 # --- executable grounding in aggregation --------------------------------------
@@ -252,9 +258,9 @@ def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
         "@@ -1,2 +1,3 @@\n keep\n+++ b/evil.py\n+real = 1\n"
         "@@ -10,2 +10,3 @@\n ctx\n+added\n more\n"
     )
-    ranges = diff_touched_ranges(diff)
+    ranges = diff_hunks(diff)
     assert "evil.py" not in ranges
-    assert ranges["foo.py"] == [(1, 3), (1, 2), (10, 12), (10, 11)]  # new + old side per hunk
+    assert ranges["foo.py"] == [Hunk(old=(1, 2), new=(1, 3)), Hunk(old=(10, 11), new=(10, 12))]
 
 
 def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
@@ -268,7 +274,7 @@ def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
         "@@ -10,3 +10,2 @@\n CREATE TABLE t (\n--- legacy column note\n   id INT\n"
         "@@ -50,2 +50,3 @@\n cols\n+  api_key TEXT\n more\n"
     )
-    ranges = diff_touched_ranges(diff)
+    ranges = diff_hunks(diff)
     assert "legacy column note" not in ranges  # the deletion was not read as a header
     assert is_grounded("schema.sql:51", ranges)  # the later hunk still grounds
 
@@ -280,8 +286,8 @@ def test_in_place_modification_grounds_old_side_lines() -> None:
     # citation was ungrounded and the block silently downgraded to warn (the
     # gate failed open on reviews of deleted code).
     diff = "--- a/mod.py\n+++ b/mod.py\n@@ -100,5 +50,2 @@\n ctx\n-gone1\n-gone2\n-gone3\n ctx2\n"
-    ranges = diff_touched_ranges(diff)
-    assert (100, 104) in ranges["mod.py"]  # old side of the in-place hunk
+    ranges = diff_hunks(diff)
+    assert [h.old for h in ranges["mod.py"]] == [(100, 104)]  # old side of the in-place hunk
     assert is_grounded("mod.py:103", ranges)
     res = _agg(
         [_seat("m1", _block("data-loss", "mod.py:103"))],
@@ -296,13 +302,13 @@ def test_pure_deletion_grounds_on_the_old_path() -> None:
     # A file deleted entirely (post-image /dev/null) must still ground a citation
     # of the deleted file so a data-loss/off-topic block on it can gate.
     diff = "--- a/gone.py\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-a\n-b\n-c\n"
-    ranges = diff_touched_ranges(diff)
-    assert ranges["gone.py"] == [(1, 3)]
+    ranges = diff_hunks(diff)
+    assert ranges["gone.py"] == [Hunk(old=(1, 3), new=None)]
     assert is_grounded("gone.py:2", ranges)
 
 
 def test_grounding_tolerates_trailing_colon_and_line_range() -> None:
-    ranges = diff_touched_ranges(SAMPLE_DIFF)
+    ranges = diff_hunks(SAMPLE_DIFF)
     assert is_grounded("foo.py:11:", ranges)  # ripgrep-style trailing colon
     assert is_grounded("foo.py:11-13", ranges)  # a range fully inside 10..14
 
@@ -311,7 +317,7 @@ def test_grounding_range_overlap_not_just_start_line() -> None:
     # foo.py changed lines 10..14. A range whose START line is unchanged but whose
     # INTERIOR overlaps the touched range must still ground (FINDING 2 regression:
     # previously only the start line was checked, so this was wrongly ungrounded).
-    ranges = diff_touched_ranges(SAMPLE_DIFF)
+    ranges = diff_hunks(SAMPLE_DIFF)
     assert is_grounded("foo.py:8-12", ranges)  # start 8 untouched, but 10..12 overlap
     assert is_grounded("foo.py:13-20", ranges)  # end 20 untouched, but 13..14 overlap
     assert is_grounded("foo.py:1-99", ranges)  # span fully contains the touched range
@@ -569,7 +575,7 @@ def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
         "old mode 100644\n"
         "new mode 100755\n"
     )
-    ranges = diff_touched_ranges(diff)
+    ranges = diff_hunks(diff)
     assert ranges == {"img.png": [], "old.py": [], "new.py": [], "run.sh": []}
     assert is_grounded("img.png", ranges) and is_grounded("new.py", ranges)
     assert not is_grounded("img.png:3", ranges)
@@ -615,3 +621,47 @@ def test_a_re_citation_in_one_hunk_dedups_and_a_prior_one_does_not_gate() -> Non
     assert res.merged_findings == () and not res.blocked
     res = _agg([_seat("m1", a, _block("security", "foo.py"))])
     assert len(res.merged_findings) == 2
+
+
+def test_the_two_sides_of_one_hunk_key_alike_and_a_deletion_does_not_swallow_a_later_hunk() -> None:
+    """The map listed a hunk's old-side and new-side spans as separate ranges,
+    so a pre-image citation (`foo.py:40`) and a post-image one (`foo.py:42`)
+    of one hunk keyed apart (an injected prior finding re-gated the run), and
+    a large deletion's old-side span swallowed a later hunk's new-side
+    citation (the second finding vanished). A hunk is one unit; the new side
+    decides first."""
+    diff = (
+        "--- a/foo.py\n+++ b/foo.py\n"
+        "@@ -40,3 +42,3 @@ def f():\n     a = 1\n-    b = 2\n+    b = 3\n     return a\n"
+        "--- a/bar.py\n+++ b/bar.py\n"
+        "@@ -10,50 +10,2 @@ def g():\n     x = 1\n" + "-    gone\n" * 48 + "     return x\n"
+        "@@ -70,3 +23,4 @@ def h():\n     y = 1\n+    z = 2\n     return y\n"
+    )
+    ctx = ReviewContext(diff=diff)
+    pre, post = _block("security", "foo.py:40"), _block("security", "foo.py:42")
+    res = _agg([_seat("m1", post)], ctx=replace(ctx, prior_findings=(pre,)))
+    assert res.merged_findings == () and not res.blocked
+    seat = _seat("m1", _block("security", "bar.py:23"), _block("security", "bar.py:55"))
+    res = _agg([seat], ctx=ctx)
+    assert [f.file_line for f in res.merged_findings] == ["bar.py:23", "bar.py:55"]
+
+
+def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
+    """One Hunk with both spans was filed under the pre-image and the
+    post-image path alike, so for a rename each name grounded the other's
+    line numbers (`old.py:201`, `new.py:11`) and the gate failed open. Each
+    name carries its own side."""
+    diff = "--- a/old.py\n+++ b/new.py\n@@ -10,3 +200,3 @@\n a\n-b\n+B\n c\n"
+    hunks = diff_hunks(diff)
+    assert hunks == {
+        "new.py": [Hunk(old=None, new=(200, 202))],
+        "old.py": [Hunk(old=(10, 12), new=None)],
+    }
+    assert is_grounded("old.py:11", hunks) and is_grounded("new.py:201", hunks)
+    assert not is_grounded("old.py:201", hunks) and not is_grounded("new.py:11", hunks)
+    assert not is_grounded("new.py:0", hunks)  # the other name's side is None
+    # A pure deletion inside a kept file still grounds the post-image line it
+    # sits at, and a pure insertion the pre-image one.
+    kept = diff_hunks("--- a/k.py\n+++ b/k.py\n@@ -10,5 +9,0 @@\n-a\n-b\n-c\n-d\n-e\n")
+    assert kept["k.py"] == [Hunk(old=(10, 14), new=(9, 9))]
+    assert is_grounded("k.py:9", kept) and is_grounded("k.py:12", kept)
