@@ -498,7 +498,7 @@ class ChatGPTCredential:
         if tokens is None:
             raise ProviderError(
                 f"No ChatGPT sign-in stored for provider {self._provider!r};"
-                " run `agent6 connect chatgpt`.",
+                f" run `agent6 connect {self._provider}`.",
                 status_code=401,
             )
         # The stored id must match the token's own claim: an entry written by

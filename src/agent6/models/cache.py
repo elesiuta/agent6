@@ -208,7 +208,9 @@ def _chatgpt_models_endpoint(
     """
     tokens = load_oauth_tokens(provider_name)
     if tokens is None:
-        raise ProviderError("no ChatGPT sign-in stored; run `agent6 connect chatgpt`")
+        raise ProviderError(
+            f"no ChatGPT sign-in stored for {provider_name!r}; run `agent6 connect {provider_name}`"
+        )
     url = f"{entry.base_url.rstrip('/')}/models?client_version={_CHATGPT_CLIENT_VERSION}"
     headers = dict(entry.extra_headers)
     headers["authorization"] = f"Bearer {tokens.access_token}"

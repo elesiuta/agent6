@@ -296,9 +296,7 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) 
         return f"[providers.{name}]: {err}" if err is not None else None
     if isinstance(entry, ChatGPTProviderEntry):
         if load_oauth_tokens(name, secrets=secrets) is None:
-            return (
-                f"no ChatGPT sign-in stored for [providers.{name}]; run `agent6 connect chatgpt`."
-            )
+            return f"no ChatGPT sign-in stored for [providers.{name}]; run `agent6 connect {name}`."
         list_models(name, entry, None)
         return None
     key = resolve_api_key(name, entry.api_key_env, secrets=secrets)
