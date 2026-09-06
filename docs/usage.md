@@ -85,6 +85,15 @@ agent6 sessions graph         # the persisted task graph
 `agent6 history search <query>` greps across the transcripts of every run.
 `agent6 ps` lists the live sessions of every repository on the machine, with the directory to cd to and the id to attach.
 
+## Answer a parked prompt
+
+A run parked on an approval or a question (`AGENT6_DETACHED_AWAY=wait`, a hub-spawned run, a fan-out lane) takes its answer from a file in its session directory, which is what every front-end writes and what a script can write.
+
+- `agent6 sessions dir <id>` prints the session directory; the prompt's `id` is in its `logs.jsonl` (`approval.prompt`, `question.prompt`)
+- an approval: `<session dir>/approvals/<id>.answer` holding `yes`, `no`, `session` or `session-deny`; anything else denies, and the two `session` answers stand only for a prompt whose event says `standing: true`
+- a question: `<session dir>/questions/<id>.answer` holding a JSON list of answers, one per question in the prompt's order (a bare string is one answer)
+- write the file atomically (a sibling, then rename): the run polls every 0.2s and consumes the file as soon as it exists
+
 ## When a run goes wrong
 
 ```sh
