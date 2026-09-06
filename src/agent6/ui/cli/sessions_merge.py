@@ -268,13 +268,19 @@ def _base_gone(into: str) -> str:
 
 def _squash_unconfirmed(cwd: Path, stamp: MergeStamp) -> str:
     """Why a squash-merge stamp does not prove a force-delete content-safe,
-    "" when it does: the merged tip must be recorded, and the merge commit it
-    records (when the merge made one) must still be reachable from the base,
-    since a reset or rewrite of the base after the merge leaves the branch as
-    the content's only holder."""
+    "" when it does: the merged tip must be recorded, and the base must still
+    hold the commit the record names (the merge commit, or, for a merge that
+    added nothing, the base tip that already held the content), since a reset
+    or rewrite of the base after the merge leaves the branch as the content's
+    only holder."""
     if not stamp.tip:
         return "no merge tip was recorded"
-    if stamp.sha != NO_MERGE_COMMIT and not is_ancestor(cwd, stamp.sha, stamp.into):
+    if stamp.sha == NO_MERGE_COMMIT:
+        if not stamp.into_tip:
+            return "the record names no commit to check"
+        if not is_ancestor(cwd, stamp.into_tip, stamp.into):
+            return f"{stamp.into} no longer holds its content"
+    elif not is_ancestor(cwd, stamp.sha, stamp.into):
         return f"{stamp.into} no longer holds the merge commit"
     return ""
 

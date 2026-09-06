@@ -57,7 +57,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 
 - **Written by:** app/manifest
 - **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{app, dashboard}, ui/web/{actions, model}, viewmodel/{format, listing, policy, snapshot, state}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (13 test files exercise it)
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (14 test files exercise it)
 
 ## SessionSnapshot
 
@@ -110,7 +110,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
 - **Read by:** workflows/{_review, _toolset, _verify_gate, loop}
-- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (22 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (23 test files exercise it)
 
 ## Event union
 

@@ -41,8 +41,11 @@ def _manifest(
     *,
     merged: bool,
     merged_tip: str = "",
-    merged_sha: str = "0" * 40,
+    merged_sha: str | None = None,
 ) -> None:
+    """*merged_sha* defaults to main's tip at stamp time, the merge or squash
+    commit the fixtures make just before stamping; a merge that added nothing
+    names the all-zero sentinel and the base tip it saw (`into_tip`)."""
     layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {
@@ -55,7 +58,8 @@ def _manifest(
     }
     if merged:
         tip = merged_tip or _git(repo, "rev-parse", f"agent6/{session_id}", check=False)
-        data["merged"] = {"into": "main", "sha": merged_sha, "tip": tip}
+        sha = merged_sha if merged_sha is not None else _git(repo, "rev-parse", "main", check=False)
+        data["merged"] = {"into": "main", "sha": sha or "0" * 40, "tip": tip}
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
 
 
@@ -112,7 +116,7 @@ def test_runs_commits_and_diff_after_prune_say_where_the_work_went(
     base = _git(tmp_path, "rev-parse", "HEAD")
     # Manifest says the run branch existed and was squash-merged, but the branch
     # itself is gone (never created here = pruned).
-    _manifest(tmp_path, "gone11", base, merged=True)
+    _manifest(tmp_path, "gone11", base, merged=True, merged_sha="0" * 40)
 
     assert main(["sessions", "commits", "gone11"]) == 0
     out = capsys.readouterr().out
@@ -602,6 +606,8 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     _manifest(tmp_path, "run-RCH111", base, merged=True)
     # squash-merged: content in main via squash; the ref is unreachable.
     _make_branch(tmp_path, "run-SQH111", "b.txt")
+    _git(tmp_path, "merge", "--squash", "agent6/run-SQH111")
+    _git(tmp_path, "commit", "-q", "-m", "squash SQH111")
     _git(tmp_path, "update-ref", chain_ref_for("run-SQH111"), "agent6/run-SQH111")
     _git(tmp_path, "branch", "-D", "agent6/run-SQH111")
     _manifest(
@@ -697,6 +703,60 @@ def test_a_squash_deleted_chain_ref_prints_its_undelete(
     assert not _chain_ref_exists(tmp_path, "run-SQCH11")
     assert f"deleted {chain_ref_for('run-SQCH11')} (squash-merged into main)" in out
     assert f"undelete: git update-ref {chain_ref_for('run-SQCH11')} {tip[:12]}" in out, out
+
+
+def test_a_noop_merge_stamp_is_checked_by_the_base_tip_it_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A merge that added nothing stamps the all-zero sentinel, and the
+    sentinel exempted the run from the base check: once the base was reset
+    past the commit that held the content, `--delete-squashed` deleted the
+    run's only anchor. The stamp records the base tip it saw, and the
+    force-delete checks it the way it checks a merge commit: a later edit of
+    the same file on the base changes nothing, a reset past it keeps the run,
+    and an older record naming no commit is kept too."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _make_branch(tmp_path, "run-NOOP11", "n.txt")
+    (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")  # the same edit, by hand
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "the same edit, by hand")
+    held_by = _git(tmp_path, "rev-parse", "HEAD")
+    _manifest(tmp_path, "run-NOOP11", base, merged=False)
+    assert main(["sessions", "merge", "run-NOOP11"]) == 0
+    capsys.readouterr()
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-NOOP11")
+    stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
+    assert (stamp["sha"], stamp["into_tip"]) == ("0" * 40, held_by)
+
+    (tmp_path / "n.txt").write_text("y\n", encoding="utf-8")  # the base edits it again
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "edit n again")
+    _git(tmp_path, "reset", "-q", "--hard", "HEAD~2")  # main no longer holds either
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert _branch_exists(tmp_path, "agent6/run-NOOP11")
+    assert "main no longer holds its content" in out, out
+
+    _git(tmp_path, "reset", "-q", "--hard", held_by)
+    (tmp_path / "n.txt").write_text("y\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "edit n again")
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    assert not _branch_exists(tmp_path, "agent6/run-NOOP11")  # the base still holds it
+
+    _make_branch(tmp_path, "run-OLD11", "o.txt")
+    _manifest(tmp_path, "run-OLD11", base, merged=True, merged_sha="0" * 40)  # an older record
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert _branch_exists(tmp_path, "agent6/run-OLD11")
+    assert "the record names no commit to check" in out, out
 
 
 def test_prune_with_nothing_at_all_says_so(

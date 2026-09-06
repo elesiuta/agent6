@@ -128,6 +128,10 @@ class MergeStamp(BaseModel):
     # points here: a resumed run keeps committing on the same branch under this
     # stamp, and those commits exist in no other ref.
     tip: str = ""
+    # For a merge that added nothing (`sha` is NO_MERGE_COMMIT): the base's own
+    # tip at the time, the commit that already held the run's content. The
+    # force-delete checks it the way it checks `sha`.
+    into_tip: str = ""
 
     @property
     def commit(self) -> str:

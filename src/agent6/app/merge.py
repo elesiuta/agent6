@@ -75,13 +75,19 @@ class MergeOutcome:
 
 
 def record_merge_in_manifest(
-    layout: SessionLayout, *, merged_into: str, merged_sha: str, merged_tip: str = ""
+    layout: SessionLayout,
+    *,
+    merged_into: str,
+    merged_sha: str,
+    merged_tip: str = "",
+    into_tip: str = "",
 ) -> str:
     """Record a successful merge in the run manifest so later tooling can tell a
     merged run branch from an unmerged one. *merged_tip* is the run-branch tip
     that was merged: `sessions prune --delete-squashed` force-deletes only a branch
-    still pointing there. Best-effort: a missing/corrupt manifest must not fail a
-    merge that already happened.
+    still pointing there. *into_tip* is the base's tip a merge that added nothing
+    saw, the commit that already held the content. Best-effort: a missing/corrupt
+    manifest must not fail a merge that already happened.
 
     Returns "" when the stamp landed, else why it did not. Silence made `prune`
     call a branch agent6 had merged minutes earlier "NOT merged", and left
@@ -96,6 +102,7 @@ def record_merge_in_manifest(
                 into=merged_into,
                 sha=merged_sha,
                 tip=merged_tip,
+                into_tip=into_tip,
                 ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds"),
             )
         }
@@ -386,6 +393,7 @@ def execute_merge(
         merged_into=target,
         merged_sha=NO_MERGE_COMMIT if noop else result.merged_sha,
         merged_tip=merged_tip,
+        into_tip=target_tip_before if noop else "",
     )
     return MergeOutcome(
         "noop" if noop else "merged",
