@@ -164,17 +164,18 @@ def _rc_path(shell: str) -> Path:
     return Path(os.environ.get("ZDOTDIR") or Path.home()) / ".zshrc"
 
 
-def _fish_completions_path() -> Path:
-    xdg = os.environ.get("XDG_CONFIG_HOME")
-    base = Path(xdg) if xdg else Path.home() / ".config"
-    return base / "fish" / "completions" / "agent6.fish"
+# Where a shell that auto-loads its completions reads ours, under the config
+# home (xonsh sources every file in rc.d on start).
+_AUTOLOAD = {
+    "fish": ("fish", "completions", "agent6.fish"),
+    "xonsh": ("xonsh", "rc.d", "agent6.xsh"),
+}
 
 
-def _xonsh_rc_path() -> Path:
-    # Files in $XDG_CONFIG_HOME/xonsh/rc.d are sourced on every xonsh start.
+def _autoload_path(shell: str) -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = Path(xdg) if xdg else Path.home() / ".config"
-    return base / "xonsh" / "rc.d" / "agent6.xsh"
+    return base.joinpath(*_AUTOLOAD[shell])
 
 
 def _install_bash_zsh(shell: str, code: str) -> int:
@@ -242,8 +243,6 @@ def cmd_completions(shell_arg: str | None, *, print_only: bool) -> int:
     if print_only:
         print(code)
         return 0
-    if shell == "fish":
-        return _install_autoloaded(code, _fish_completions_path(), "fish")
-    if shell == "xonsh":
-        return _install_autoloaded(code, _xonsh_rc_path(), "xonsh")
+    if shell in _AUTOLOAD:
+        return _install_autoloaded(code, _autoload_path(shell), shell)
     return _install_bash_zsh(shell, code)

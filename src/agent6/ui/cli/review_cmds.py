@@ -58,29 +58,21 @@ def _collect_review_diff(
     payload on the host the moment the operator reviews it.
     """
     hardening = git_hardening_flags(root)
-    if base:
-        diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, f"{base}..{head}"]
-        if paths:
-            diff_args.extend(["--", *paths])
-        # errors="replace" (implies text mode): git diff emits raw file bytes,
-        # so a changed non-UTF-8 file must not crash the review with a strict
-        # decode. Mirrors git_ops._run.
-        return subprocess.run(
-            diff_args, cwd=root, capture_output=True, errors="replace", check=False
+    untracked: list[str] = []
+    if not base:
+        status = subprocess.run(
+            [git, *hardening, "status", "--porcelain", "-z"],
+            cwd=root,
+            capture_output=True,
+            errors="replace",
+            check=False,
         )
-
-    status = subprocess.run(
-        [git, *hardening, "status", "--porcelain", "-z"],
-        cwd=root,
-        capture_output=True,
-        errors="replace",
-        check=False,
-    )
-    untracked = [entry[3:] for entry in status.stdout.split("\0") if entry.startswith("?? ")]
-    if untracked:
-        subprocess.run([git, *hardening, "add", "-N", "--", *untracked], cwd=root, check=False)
+        untracked = [entry[3:] for entry in status.stdout.split("\0") if entry.startswith("?? ")]
+        if untracked:
+            subprocess.run([git, *hardening, "add", "-N", "--", *untracked], cwd=root, check=False)
     try:
-        diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, "HEAD"]
+        rev = f"{base}..{head}" if base else "HEAD"
+        diff_args = [git, *hardening, "diff", *DIFF_SHOW_SAFETY_FLAGS, rev]
         if paths:
             diff_args.extend(["--", *paths])
         # errors="replace" (implies text mode): git diff emits raw file bytes,

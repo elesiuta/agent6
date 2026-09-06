@@ -34,7 +34,6 @@ repeat the exact `/parallel` token to queue more tasks in one message. See
 from __future__ import annotations
 
 import functools
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,9 +49,7 @@ from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.ui.cli._common import plural
 from agent6.ui.cli._menu_input import (
     LineSuperseded,
-    menu_capable,
     menu_input,
-    read_line_until,
 )
 from agent6.viewmodel import (
     fold_session,
@@ -289,30 +286,16 @@ def _run_info_command(
         print(_start_btw(cmd, session_dir, btw_runner))
 
 
-def _plain_line(prompt: str, arrived: Callable[[], bool]) -> str:
-    """`input()` for a terminal the menu reader cannot own, polling the steer
-    file the way the reader does."""
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
-    line = read_line_until(sys.stdin, sys.stdin.fileno(), arrived)
-    if line is None:
-        if arrived():
-            raise LineSuperseded
-        raise EOFError
-    return line
-
-
 def _line_reader(
     session_dir: Path, offered: dict[str, str], skills: dict[str, tuple[str, str]]
 ) -> Callable[[str], str]:
-    """The terminal's line reader: the fish-style menu where termios can own
-    the line, else a plain prompt. Both poll the session's steer file."""
+    """The terminal's line reader: the fish-style menu, polling the session's
+    steer file (the caller opens the menu only where termios can own the
+    line, `menu_capable`)."""
     arrived = functools.partial(steer_answer_written, session_dir)
-    if menu_capable():
-        _RECALL.seed(session_dir)
-        display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
-        return lambda p: menu_input(p, display, _RECALL.lines, until=arrived)
-    return lambda p: _plain_line(p, arrived)
+    _RECALL.seed(session_dir)
+    display = {**offered, **{c: d[:70] for c, (d, _t) in skills.items()}}
+    return lambda p: menu_input(p, display, _RECALL.lines, until=arrived)
 
 
 def pause_menu(  # noqa: PLR0911, PLR0912

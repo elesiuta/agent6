@@ -16,7 +16,6 @@ from pathlib import Path
 
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import worker_is_alive, write_question_answers
-from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli._common import error, refuse, resolve_session_layout
 from agent6.viewmodel import QuestionPrompt, open_question
 
@@ -30,33 +29,26 @@ def _print_question(session_id: str, prompt: QuestionPrompt) -> None:
     print(f"\nanswer with: agent6 answer {session_id} {' '.join(['TEXT'] * len(prompt.questions))}")
 
 
-def _refuse(reason: str) -> int:
-    refuse(f"{reason}")
-    return 2
-
-
 def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
-    """Answer the run's open question, or print it when no answer is given."""
+    """Answer the run's open question, or print it when no answer is given:
+    the session, its liveness, then the question."""
     try:
         layout = resolve_session_layout(Path.cwd(), target)
     except SessionIdError as exc:
         error(f"{exc}")
         return 2
-    return _answer_resolved(layout, answers)
-
-
-def _answer_resolved(layout: SessionLayout, answers: tuple[str, ...]) -> int:
-    """The verb over a resolved session: liveness, then the open question."""
     if not worker_is_alive(layout.session_dir):
-        return _refuse(
+        refuse(
             f"session {layout.session_id} is not running; only a live run holds a question open."
         )
+        return 2
     prompt = open_question(layout.session_dir)
     if prompt is None:
-        return _refuse(
+        refuse(
             f"{layout.session_id} is not waiting on a question (an approval is answered"
             f" by attaching: agent6 attach {layout.session_id})."
         )
+        return 2
     if not answers or len(answers) != len(prompt.questions):
         # Answers align to the prompt's questions by index, so a short list
         # would answer the wrong one and a long one would be silently cut.

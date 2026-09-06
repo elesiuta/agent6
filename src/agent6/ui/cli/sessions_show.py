@@ -24,9 +24,9 @@ from agent6.sessions.manifest import ManifestError, SessionManifest, read_manife
 from agent6.ui.cli._common import resolve_target
 from agent6.viewmodel import (
     LogScan,
+    SessionSummary,
     existing_run_branch,
     scan_session_log,
-    status_for_session_dir,
     summarize_session_dir,
 )
 from agent6.viewmodel.format import (
@@ -75,27 +75,19 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
         print(f"  judge: {rationale}")
 
 
-def _listing_cell(session_dir: Path) -> str:
-    """The status cell every listing shows for this run.
-
-    Read from the listing's own fold rather than recomputed, so `show` and
-    `list` cannot disagree about the mode fold or the unmerged mark.
-    """
-    row = summarize_session_dir(session_dir, branch_tips=run_branch_tips(Path.cwd()))
-    return listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
-
-
 def _status_state(
-    session_dir: Path, scan: LogScan, *, last_age: float | None, cell: str
+    row: SessionSummary, scan: LogScan, *, last_age: float | None
 ) -> tuple[str, str, str]:
     """This run's state as `(status, label, detail)`.
 
-    `status` is the LISTING's own word (`status_for_session_dir`) and *cell* is
-    the listing's own rendering of it, passed in whole, so no second rule can
-    disagree with the listing. `detail` is this surface's diagnostic: what to do,
-    or why the word applies. The text render joins them; --json emits the
-    three, the word included, so a script never parses prose."""
-    word, reason = status_for_session_dir(session_dir, scan.status_facts())
+    `status` is the LISTING's own word and the label its own rendering of it
+    (*row* is the listing's fold of this run), so no second rule can disagree
+    with the listing about the mode fold or the unmerged mark. `detail` is
+    this surface's diagnostic: what to do, or why the word applies. The text
+    render joins them; --json emits the three, the word included, so a script
+    never parses prose."""
+    word, reason = row.status, row.reason
+    cell = listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
     if scan.finished:
         # The raw end reason is the diagnostic; it is not repeated when the
         # label already carries it (an ask's word, a failure's reason).
@@ -171,7 +163,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
     status, status_cell, status_detail = _status_state(
-        target, scan, last_age=last_age, cell=_listing_cell(target)
+        summarize_session_dir(target, branch_tips=run_branch_tips(Path.cwd())),
+        scan,
+        last_age=last_age,
     )
     state = f"{status_cell} ({status_detail})" if status_detail else status_cell
 
