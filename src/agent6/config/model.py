@@ -106,7 +106,8 @@ class RoleModel(BaseModel):
         le=2.0,
         description=(
             "Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use "
-            "stable; unset leaves the provider's default."
+            "stable. TOML omission uses `0.0`; only the Python API can pass `None` to leave the "
+            "provider's default."
         ),
     )
     # Reasoning effort for this role. `None` leaves the provider default;
@@ -131,8 +132,7 @@ class ModelsConfig(BaseModel):
     Three roles, all optional:
 
     - `worker` drives the single-loop agent (`agent6 run` / ``agent6
-      resume``); its pricing also drives the USD -> token budget
-      conversion.
+      resume``).
     - `planner` drives `agent6 plan` (the planning pass).
       Unset -> falls back to `worker` (set it to a frontier model + high
       thinking for careful up-front planning).
@@ -149,10 +149,7 @@ class ModelsConfig(BaseModel):
 
     worker: RoleModel | None = Field(
         default=None,
-        description=(
-            "The `(provider, model)` driving `agent6 run`/`resume`; its pricing also converts "
-            "the USD budget to tokens."
-        ),
+        description="The `(provider, model)` driving `agent6 run`/`resume`.",
     )
     reviewer: RoleModel | None = Field(
         default=None,

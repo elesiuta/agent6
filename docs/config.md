@@ -22,9 +22,9 @@ It can be empty or absent when the global config supplies a provider and model; 
 
 ## Creating and inspecting
 
-- `agent6 connect`: add a provider + API key (stored `0600`), global.
+- `agent6 connect`: add a provider and, when needed, credentials (stored `0600`), global by default; `--repo` writes the provider entry to the repo config while credentials stay global.
 - `agent6 model <role> <provider> <model> [--effort off|low|medium|high|xhigh|max]`.
-- `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first.
+- `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
 - `agent6 config set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay); `agent6 config get <dotted.key>` prints the effective value and its layer.
@@ -34,8 +34,8 @@ It can be empty or absent when the global config supplies a provider and model; 
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - `agent6 config fill`: materialize defaults + global config into the global file.
   The repo layer and any selected preset are left as-is.
-- `agent6 config fix`: drop invalid entries (unknown keys, stale values), naming each; `--machine-file FILE` repairs an overlay instead.
-- `agent6 check`: validate config + sandbox + provider keys without running.
+- `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values), naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
+- `agent6 check`: validate config + sandbox + provider keys without starting an agent run.
   `config show` prints what an `auto` knob resolved to on this host, tagged `(adaptive)`; `check` adds why a level fell short, live jail probes, and each MCP server's network and `approve`.
 
 ---
@@ -49,7 +49,7 @@ It can be empty or absent when the global config supplies a provider and model; 
 ## `[providers.<name>]`
 
 One backend per block; `<name>` is referenced from `[models.<role>]`.
-Three orthogonal choices describe any backend: **`api_format`** (the wire dialect, the only field that selects code), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env` or `token_command`).
+Three orthogonal choices describe an HTTP backend: **`api_format`** (the wire dialect, the only field that selects code), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env` or `token_command`).
 A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 | Field | Default | Meaning |
@@ -135,7 +135,7 @@ agent6 model worker claude claude-sonnet-4-5
 - Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows, surfaces show the fuller one as `plan usage (<entry>): N% of the 7-day window (seven_day)`, and `[budget].max_percent` caps the points one run may consume (`--max-percent` per run).
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
-  Refused: `effort = "off"` (`--effort` has no off value; use `low`).
+  Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).
 - Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude claude-haiku-4-5`).
   Each side call is one short-lived `claude` process.
 - One `claude` process serves a worker leg.
@@ -176,7 +176,7 @@ It runs in agent6's own process with your environment (operator-only, same trust
 
 ## `[models.<role>]`
 
-Role routing. **`worker`** drives `run`/`resume` (its pricing also drives the USD→token budget conversion); **`planner`** drives `plan`; **`reviewer`** drives `review`, the in-loop review panel, the context summariser and gister, and the prompt reviser.
+Role routing. **`worker`** drives `run`/`resume`; **`planner`** drives `plan`; **`reviewer`** drives `review`, the in-loop review panel, the context summariser and gister, and the prompt reviser.
 `planner`/`reviewer` fall back to `worker`.
 Cross-vendor mixes are fine.
 
@@ -185,7 +185,7 @@ Cross-vendor mixes are fine.
 |---|---|---|
 | `provider` | *(required)* | A `[providers.<name>]` entry, by name. |
 | `model` | *(required)* | Model id as that provider names it (`agent6 model` lists them). |
-| `temperature` | `0.0` | Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use stable; unset leaves the provider's default. |
+| `temperature` | `0.0` | Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use stable. TOML omission uses `0.0`; only the Python API can pass `None` to leave the provider's default. |
 | `effort` | none | Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers where the model offers them; Anthropic collapses them to its highest). Unset: what the wire applies, which `agent6 config show` prints resolved (`low` on openai-compatible reasoning models, no thinking on Anthropic). |
 
 ## `[sandbox]`
