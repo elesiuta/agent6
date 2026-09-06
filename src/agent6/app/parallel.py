@@ -21,11 +21,9 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import json
 import os
 import shutil
 import threading
-import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
@@ -33,6 +31,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from agent6.app._lane_watch import (
+    POLL_INTERVAL_S,
+    await_lane,
+    await_lanes,
+    drain_lane,
+    lane_link,
+    print_lane_status,
+    symlink_lane,
+)
 from agent6.app.compare import (
     BuildProvider,
     JudgingStatus,
@@ -63,10 +70,10 @@ from agent6.memory import merge_decisions, merge_memory, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, repo_id, state_dir
 from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
-from agent6.sessions.layout import LOGS_NAME, SessionLayout, bucket_dir, session_layout
+from agent6.sessions.layout import SessionLayout, bucket_dir, session_layout
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.viewmodel import produced_result, summarize_session_dir
-from agent6.viewmodel.format import format_usd, status_label
+from agent6.viewmodel.format import status_label
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
@@ -78,11 +85,6 @@ from agent6.workflows.subrun import (
     clone_workspace,
     import_run,
 )
-
-# How often the await loop polls lane liveness, and how long Ctrl+C waits for a
-# stop-requested lane to finish its in-flight step before giving up on it.
-_POLL_INTERVAL_S = 2.0
-_STOP_GRACE_S = 30.0
 
 
 class ParallelError(Exception):
@@ -394,60 +396,6 @@ def bridge_spawner(
 # ---------------------------------------------------------------------------
 
 
-def _lane_terminal(session_dir: Path, status: str, worker_is_alive: Callable[[Path], bool]) -> bool:
-    """Terminal gate for an awaited lane: the fold left "running" AND the worker
-    pid is cleared/dead. session.end lands in logs.jsonl before the lane's teardown
-    clears worker.pid, so status alone races the teardown, and importing inside
-    that window would misread a finished lane as still running. A lane that dies
-    WITHOUT a session.end cannot hang this gate: the fold flips a dead recorded pid
-    to "stale" at once, a pid-less silent lane to "stale" after its bounded
-    silence window, and a lane that never wrote logs reads "?" (see
-    `summarize_session_dir`)."""
-    return status != "running" and not worker_is_alive(session_dir)
-
-
-def _await_lane(
-    res: LaneResult,
-    *,
-    poll_interval_s: float = _POLL_INTERVAL_S,
-    should_stop: Callable[[], bool] | None = None,
-) -> bool:
-    """Block until *res*'s lane is terminal (True), awaited on its REAL run
-    dir, or until *should_stop* goes true first (False): the coordinator's
-    abort channel must be able to interrupt a group await that otherwise
-    blocks until every lane ends. Same gate as the fan-out's `_await_lanes`,
-    for a single lane."""
-    while True:
-        summary = summarize_session_dir(res.session_dir)
-        if _lane_terminal(res.session_dir, summary.status, worker_is_alive):
-            return True
-        if should_stop is not None and should_stop():
-            return False
-        time.sleep(poll_interval_s)
-
-
-def _drain_lane(
-    res: LaneResult, *, poll_interval_s: float, hard_stop: threading.Event | None
-) -> bool:
-    """Bounded post-stop grace (mirrors the fan-out's stop_and_drain): True when
-    the lane lands terminal in time, so its finished work still imports; False
-    to leave it running un-imported. A hard stop (process teardown) skips the
-    wait."""
-    deadline = time.monotonic() + _STOP_GRACE_S
-    while time.monotonic() < deadline:
-        if hard_stop is not None and hard_stop.is_set():
-            return False
-        summary = summarize_session_dir(res.session_dir)
-        if _lane_terminal(res.session_dir, summary.status, worker_is_alive):
-            return True
-        if hard_stop is not None:
-            if hard_stop.wait(poll_interval_s):
-                return False
-        else:
-            time.sleep(poll_interval_s)
-    return False
-
-
 def run_lane_to_completion(
     spec: LaneSpec,
     task: str,
@@ -463,7 +411,7 @@ def run_lane_to_completion(
     spawner: LaneSpawner | None = None,
     at: str | None = None,
     import_lock: threading.Lock | None = None,
-    poll_interval_s: float = _POLL_INTERVAL_S,
+    poll_interval_s: float = POLL_INTERVAL_S,
     reporter: Reporter = STDIO_REPORTER,
     should_stop: Callable[[], bool] | None = None,
     hard_stop: threading.Event | None = None,
@@ -504,10 +452,10 @@ def run_lane_to_completion(
     # Symlink the live lane into the origin's runs/ (same as the fan-out path) so
     # a hub can see it and answer its approvals/asks while it runs, not just at
     # import. Dropped just before import so import_run can place the real dir.
-    _symlink_lane(origin_state, res)
-    if not _await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
+    symlink_lane(origin_state, res)
+    if not await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
         request_stop(res.session_dir)
-        if not _drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
+        if not drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
             # Still running: keep the clone + live symlink (they hold the only
             # copy of its branch until an import) and report the truth.
             return LaneResult(
@@ -519,7 +467,7 @@ def run_lane_to_completion(
                 " detached; not imported",
             )
     lock = import_lock if import_lock is not None else contextlib.nullcontext()
-    link = _lane_link(origin_state, res.spec.session_id)
+    link = lane_link(origin_state, res.spec.session_id)
     had_link = link.is_symlink()
     with contextlib.suppress(FileNotFoundError):
         link.unlink()
@@ -528,7 +476,7 @@ def run_lane_to_completion(
             dest = import_run(origin, spec.workdir, res.branch, res.session_dir, origin_state)
     except SubrunError as exc:
         if had_link:
-            _symlink_lane(origin_state, res)  # restore the live view; nothing moved
+            symlink_lane(origin_state, res)  # restore the live view; nothing moved
         return LaneResult(
             spec=spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
         )
@@ -711,136 +659,6 @@ def build_coordinator_spawner(
 
 
 # ---------------------------------------------------------------------------
-# Live view + await
-# ---------------------------------------------------------------------------
-
-
-def _lane_link(origin_state: Path, session_id: str) -> Path:
-    return bucket_dir(origin_state, "runs") / session_id
-
-
-def _symlink_lane(origin_state: Path, res: LaneResult) -> None:
-    """Symlink a located lane's (clone-side) run dir into the origin's `runs/` so
-    `agent6 sessions`/hub shows it live. Replaced by the real imported dir at import."""
-    link = _lane_link(origin_state, res.spec.session_id)
-    link.parent.mkdir(parents=True, exist_ok=True)
-    with contextlib.suppress(FileNotFoundError):
-        link.unlink()
-    with contextlib.suppress(OSError):
-        link.symlink_to(res.session_dir)
-
-
-def _await_lanes(
-    started: list[LaneResult],
-    *,
-    already_interrupted: bool = False,
-    reporter: Reporter = STDIO_REPORTER,
-) -> bool:
-    """Poll every started lane's REAL run dir (in the clone's state; the origin
-    symlink is a view for the hub, never the source of truth) until it is
-    terminal (`_lane_terminal`), printing one line per lane on a status/cost
-    change. Returns True if interrupted (Ctrl+C): request a clean stop on each
-    still-running lane, wait a bounded grace for them to finish their in-flight
-    step, then return so the caller imports what landed.
-
-    `already_interrupted=True` (a Ctrl+C the spawn loop caught before the await
-    even began) skips the normal poll and goes straight into that same stop-grace
-    path, so a mid-spawn interrupt stops the already-started lanes identically."""
-    pending = {r.spec.session_id: r for r in started}
-    seen: dict[str, tuple[str, str, float]] = {}
-
-    def poll_once() -> None:
-        for rid, res in list(pending.items()):
-            summary = summarize_session_dir(res.session_dir)
-            # A "waiting" lane is blocked on an approval/question no detached
-            # lane can answer; point the operator at the hub. _pending_prompt
-            # supplies only the approval-vs-question wording.
-            waiting = _pending_prompt(res.session_dir) if summary.status == "waiting" else ""
-            key = (summary.status, waiting, round(summary.cost_usd, 4))
-            if seen.get(rid) != key:
-                seen[rid] = key
-                _print_lane_status(
-                    res.spec, summary.status, summary.cost_usd, waiting=waiting, reporter=reporter
-                )
-            if _lane_terminal(res.session_dir, summary.status, worker_is_alive):
-                pending.pop(rid)
-
-    def stop_and_drain() -> None:
-        reporter.err("\n[agent6] interrupted; stopping lanes...")
-        for res in pending.values():
-            request_stop(res.session_dir)
-        deadline = time.monotonic() + _STOP_GRACE_S
-        with contextlib.suppress(KeyboardInterrupt):
-            while pending and time.monotonic() < deadline:
-                poll_once()
-                if pending:
-                    time.sleep(_POLL_INTERVAL_S)
-
-    if already_interrupted:
-        stop_and_drain()
-        return True
-    try:
-        while pending:
-            poll_once()
-            if pending:
-                time.sleep(_POLL_INTERVAL_S)
-        return False
-    except KeyboardInterrupt:
-        stop_and_drain()
-        return True
-
-
-# The two prompt/answer event pairs a lane can block on, for `_pending_prompt`.
-_PROMPT_KIND = {"approval.prompt": "approval", "question.prompt": "a question"}
-_ANSWER_EVENTS = frozenset({"approval.answer", "question.answer"})
-
-
-def _pending_prompt(session_dir: Path) -> str:
-    """ "approval" / "a question" if the lane is blocked on an unanswered prompt,
-    else "". The worker emits `approval.prompt`/`question.prompt` then BLOCKS on
-    its `*.answer` (lanes run with AGENT6_DETACHED_AWAY=wait, so a prompt with no
-    hub attached waits rather than denies), so the LAST prompt/answer event in
-    logs.jsonl decides it -- a cheap trailing scan, no `*.request` marker exists
-    for approvals/questions. Deliberately not the heavyweight SessionState fold; the
-    fan-out status line needs only this one bit."""
-    try:
-        lines = (session_dir / LOGS_NAME).read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return ""
-    for raw in reversed(lines):
-        if "approval." not in raw and "question." not in raw:
-            continue  # fast reject before json.loads
-        try:
-            ev = json.loads(raw)
-        except ValueError:
-            continue
-        etype = ev.get("type") if isinstance(ev, dict) else None
-        if etype in _ANSWER_EVENTS:
-            return ""
-        if etype in _PROMPT_KIND:
-            return _PROMPT_KIND[etype]
-    return ""
-
-
-def _print_lane_status(
-    spec: LaneSpec,
-    status: str,
-    cost: float,
-    *,
-    waiting: str = "",
-    reporter: Reporter = STDIO_REPORTER,
-) -> None:
-    model = f" ({spec.model})" if spec.model else ""
-    cost_s = f"  {format_usd(cost)}" if cost > 0 else ""
-    state = (
-        f"waiting on {waiting} (answer via agent6 attach {spec.session_id}, the web or TUI hub)"
-        if waiting
-        else status
-    )
-    reporter.note(f"lane {spec.lane} [{spec.session_id}]{model}: {state}{cost_s}")
-
-
-# ---------------------------------------------------------------------------
 # Import + auto-compare
 # ---------------------------------------------------------------------------
 
@@ -894,7 +712,7 @@ def _stamp_compare_outcomes(
             judge_cost_usd=outcome.judge_cost_usd,
             judge_cost_partial=outcome.judge_cost_partial,
         )
-        err = _stamp(_lane_link(origin_state, session_id), compare=compare)
+        err = _stamp(lane_link(origin_state, session_id), compare=compare)
         if err is not None:
             reporter.note(f"lane [{session_id}]: imported, but the compare stamp failed: {err}")
 
@@ -927,7 +745,7 @@ def _import_lanes(
         if not res.ok:
             failed.append((res, res.error))
             continue
-        link = _lane_link(origin_state, res.spec.session_id)
+        link = lane_link(origin_state, res.spec.session_id)
         if worker_is_alive(res.session_dir):
             failed.append(
                 (
@@ -945,7 +763,7 @@ def _import_lanes(
             dest = import_run(origin, res.spec.workdir, res.branch, res.session_dir, origin_state)
         except SubrunError as exc:
             if had_link:
-                _symlink_lane(origin_state, res)  # restore the live view; nothing moved
+                symlink_lane(origin_state, res)  # restore the live view; nothing moved
             failed.append((res, str(exc)))
             continue
         imported.append(res.spec)
@@ -1108,15 +926,15 @@ def run_parallel(
             res = spawner(spec, task)
             results.append(res)
             if res.ok:
-                _symlink_lane(origin_state, res)
-                _print_lane_status(spec, "started", 0.0, reporter=reporter)
+                symlink_lane(origin_state, res)
+                print_lane_status(spec, "started", 0.0, reporter=reporter)
             else:
                 reporter.note(f"lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}")
-        interrupted = _await_lanes([r for r in results if r.ok], reporter=reporter)
+        interrupted = await_lanes([r for r in results if r.ok], reporter=reporter)
     except KeyboardInterrupt:
         # Ctrl+C mid-spawn (before the await): route the already-started lanes
         # into the same stop-grace path, then import-what-exists + report below.
-        interrupted = _await_lanes(
+        interrupted = await_lanes(
             [r for r in results if r.ok],
             already_interrupted=True,
             reporter=reporter,

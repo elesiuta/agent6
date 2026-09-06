@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from agent6 import memory
+from agent6.app import _lane_watch as lane_watch
 from agent6.app import parallel
 from agent6.app.compare import RankOutcome
 from agent6.app.parallel import (
@@ -583,11 +584,11 @@ def test_pending_prompt_reads_last_prompt_answer_event(tmp_path: Path) -> None:
     start = {"type": "session.start", "mode": "run", "user_task": "t"}
     q = tmp_path / "q"
     _lane_logs(q, start, {"type": "question.prompt", "id": "question-1"})
-    assert parallel._pending_prompt(q) == "a question"  # pyright: ignore[reportPrivateUsage]
+    assert lane_watch.pending_prompt(q) == "a question"
 
     a = tmp_path / "a"
     _lane_logs(a, start, {"type": "approval.prompt", "id": "approval-1"})
-    assert parallel._pending_prompt(a) == "approval"  # pyright: ignore[reportPrivateUsage]
+    assert lane_watch.pending_prompt(a) == "approval"
 
     # answered -> not waiting; and a dir with no prompt events -> "".
     answered = tmp_path / "answered"
@@ -597,10 +598,10 @@ def test_pending_prompt_reads_last_prompt_answer_event(tmp_path: Path) -> None:
         {"type": "question.prompt", "id": "question-1"},
         {"type": "question.answer", "id": "question-1", "answers": ["yes"]},
     )
-    assert parallel._pending_prompt(answered) == ""  # pyright: ignore[reportPrivateUsage]
+    assert lane_watch.pending_prompt(answered) == ""
     plain = tmp_path / "plain"
     _lane_logs(plain, start, {"type": "tool.call", "name": "read_file"})
-    assert parallel._pending_prompt(plain) == ""  # pyright: ignore[reportPrivateUsage]
+    assert lane_watch.pending_prompt(plain) == ""
 
 
 def test_await_lanes_status_line_flags_a_waiting_lane(
@@ -612,7 +613,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     """Since the status unification a lane blocked on an unanswered prompt
     reads "waiting", not "running" -- the word the hint was keyed on, so the
     fan-out sat on a bare "waiting" forever with no pointer at the hub. The
-    hint must fire on the real word, with _pending_prompt supplying only the
+    hint must fire on the real word, with pending_prompt supplying only the
     approval-vs-question wording."""
     from agent6.viewmodel import SessionSummary
 
@@ -626,7 +627,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     res = LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
     # One poll only: "waiting" prints the hint, and the dead worker makes that
-    # same poll terminal (_lane_terminal), so a second status is never read.
+    # same poll terminal (lane_terminal), so a second status is never read.
     statuses = iter(["waiting"])
 
     def fake_summary(rd: Path) -> SessionSummary:
@@ -641,11 +642,11 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     def fake_sleep(*_args: object) -> None:
         return None
 
-    monkeypatch.setattr(parallel, "summarize_session_dir", fake_summary)
-    monkeypatch.setattr(parallel.time, "sleep", fake_sleep)
-    monkeypatch.setattr(parallel, "worker_is_alive", fake_worker_is_alive)
+    monkeypatch.setattr(lane_watch, "summarize_session_dir", fake_summary)
+    monkeypatch.setattr(lane_watch.time, "sleep", fake_sleep)
+    monkeypatch.setattr(lane_watch, "worker_is_alive", fake_worker_is_alive)
 
-    assert parallel._await_lanes([res]) is False  # pyright: ignore[reportPrivateUsage]
+    assert lane_watch.await_lanes([res]) is False
     assert "waiting on a question (answer via agent6 attach" in capsys.readouterr().err
 
 
@@ -1053,7 +1054,7 @@ def test_ctrl_c_during_spawn_loop_stops_imports_and_reports(
             raise KeyboardInterrupt
         return base(spec, task)
 
-    monkeypatch.setattr(parallel, "_POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(lane_watch, "POLL_INTERVAL_S", 0.01)
 
     rc = run_parallel(
         "t",
@@ -1113,7 +1114,8 @@ def test_await_waits_for_worker_pid_to_clear(
         return summary
 
     monkeypatch.setattr(parallel, "summarize_session_dir", summarize_then_clear_pid)
-    monkeypatch.setattr(parallel, "_POLL_INTERVAL_S", 0.01)
+    monkeypatch.setattr(lane_watch, "summarize_session_dir", summarize_then_clear_pid)
+    monkeypatch.setattr(lane_watch, "POLL_INTERVAL_S", 0.01)
 
     rc = run_parallel(
         "t",
@@ -1196,7 +1198,7 @@ def test_await_uses_real_run_dir_not_symlink(
     def _no_symlink(*_a: object, **_k: object) -> None:
         return None
 
-    monkeypatch.setattr(parallel, "_symlink_lane", _no_symlink)
+    monkeypatch.setattr(parallel, "symlink_lane", _no_symlink)
 
     rc = run_parallel(
         "t",
@@ -1248,6 +1250,7 @@ def test_run_lane_to_completion_imports_and_stamps(
         return real_summarize(session_dir)
 
     monkeypatch.setattr(parallel, "summarize_session_dir", observe)
+    monkeypatch.setattr(lane_watch, "summarize_session_dir", observe)
 
     res = parallel.run_lane_to_completion(
         spec,
@@ -1571,12 +1574,7 @@ def test_await_lane_returns_when_should_stop_fires(tmp_path: Path, runtime: Lane
         calls["n"] += 1
         return calls["n"] >= 2
 
-    assert (
-        parallel._await_lane(  # pyright: ignore[reportPrivateUsage]
-            res, poll_interval_s=0.01, should_stop=stop_after_two
-        )
-        is False
-    )
+    assert lane_watch.await_lane(res, poll_interval_s=0.01, should_stop=stop_after_two) is False
 
 
 def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
