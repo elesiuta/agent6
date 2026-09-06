@@ -101,21 +101,14 @@ def apply_spawned_away_default(session_dir: Path, scopes: tuple[str, ...]) -> No
 class FrontendCapabilities:
     """What this surface can actually do, declared once at wiring.
 
-    Every one of these was answered at CALL time by the callable failing, so
-    `/btw` was offered to a run that could never spawn one and answered "needs
-    a live run with a terminal" only once the operator asked. A surface that
-    knows what it cannot do never offers it.
+    A surface that knows what it cannot do never offers it: this one was
+    answered at CALL time by the callable failing, so a headless run with no
+    away-mode fabricated an empty `ask_user` answer instead of denying.
     """
 
-    # A pane that renders as it happens (a console view, the TUI, the web).
-    live_view: bool = True
     # Approvals and ask_user reach a human. False for a headless run with no
     # away-mode -- which is exactly what `headless_approval_refusal` computes.
     can_ask: bool = True
-    # A pause menu exists: mid-run steering, /compact, /pin.
-    can_steer: bool = True
-    # May start sibling sessions: `/btw`, `/parallel`.
-    can_spawn: bool = True
 
 
 @dataclass(frozen=True, slots=True)

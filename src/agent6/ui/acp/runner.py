@@ -216,22 +216,28 @@ class RunBridge:
         then answer "said nothing" regardless. Not asking is the same answer
         immediately, without holding the run for five minutes.
 
-        `toolCall` is required on a permission request. A prompt gating a
-        tool call (*call_id*, the dispatcher's stamp) names THAT call, once
-        the tail has announced it, and carries nothing else: an editor merges
-        the fields a ToolCallUpdate carries into the call it names, and the
-        prompt text is the request's own. The call's lifecycle carries on
-        from there (pending, then its outcome). A prompt gating no call
-        announces an entity of its own, and closes it: an entity ACP models
-        as having a lifecycle needs its end, or an editor keeps one pending
-        tool call per approval for the life of the session.
+        `toolCall` is required on a permission request, and is the only text
+        the editor has to render: it carries the prompt as the call's title,
+        which a ToolCallUpdate exists to update. The announced title is
+        `salient_arg` clipped to 60 chars, so without this the operator
+        approved an argv whose first line looked benign and whose rest they
+        never saw. A prompt gating a tool call (*call_id*, the dispatcher's
+        stamp) names THAT call, once the tail has announced it; its lifecycle
+        carries on from there (pending, then its outcome). A prompt gating no
+        call announces an entity of its own, and closes it: an entity ACP
+        models as having a lifecycle needs its end, or an editor keeps one
+        pending tool call per approval for the life of the session.
         """
         if not options:
             return None
         if call_id is not None:
             gated = wire_call_id(session.session_id, announced.turn, str(call_id))
             announced.wait_for(gated, abandoned=lambda: session.cancelled)
-            tool_call: dict[str, Any] = {"toolCallId": gated, "status": "pending"}
+            tool_call: dict[str, Any] = {
+                "toolCallId": gated,
+                "title": printable(prompt),
+                "status": "pending",
+            }
         else:
             with self._asks:
                 self._asked += 1

@@ -55,31 +55,12 @@ class _Pending:
     answer: dict[str, Any] | None = None
 
 
-def capabilities_from(client: dict[str, Any]) -> FrontendCapabilities:
+def capabilities_from(_client: dict[str, Any]) -> FrontendCapabilities:
     """What the CLIENT said it can do, as the seam every front-end declares.
 
-    The whole reason `FrontendCapabilities` exists: an editor that cannot show
-    a permission prompt must never be asked one, and a surface that knows what
-    it cannot do never offers it. An absent capability reads as absent, so a
-    client that says nothing gets the cautious answer rather than the generous
-    one.
-    """
-    fs = client.get("fs") if isinstance(client.get("fs"), dict) else {}
-    terminal = bool(client.get("terminal"))
-    return FrontendCapabilities(
-        # The editor renders our session/update notifications.
-        live_view=True,
-        # session/request_permission is required of every ACP client, so a
-        # connected one can always be asked.
-        can_ask=True,
-        # A steer arrives through agent6's pause menu, which needs a terminal;
-        # this front-end wires the inert one. Declaring it left the lifecycle
-        # offering a mid-run affordance nothing here can deliver.
-        can_steer=False,
-        # Sibling sessions need somewhere to put them; without a terminal or
-        # filesystem capability the client has nowhere to show one.
-        can_spawn=terminal or bool(fs),
-    )
+    `session/request_permission` is required of every ACP client, so a
+    connected one can always be asked."""
+    return FrontendCapabilities(can_ask=True)
 
 
 @dataclass

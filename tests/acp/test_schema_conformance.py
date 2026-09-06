@@ -142,9 +142,12 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
     bridge.ask(session, announced, "Theme?", ("dark", "light"), None, None)
     assert len(sent) == 2
     assert sent[0]["toolCall"]["toolCallId"] == "run-x:1:7"
-    # ToolCallUpdate: an editor merges the fields a request carries into the
-    # call it names, so a gated request carries nothing that would rename it.
-    assert set(sent[0]["toolCall"]) == {"toolCallId", "status"}, sent[0]["toolCall"]
+    # The toolCall is the only text the editor has to render, and the title is
+    # the field a ToolCallUpdate exists to update. Carrying the id alone left
+    # the operator approving the announced title -- `salient_arg` clipped to 60
+    # chars -- so a long argv was approved unseen past its first line.
+    assert set(sent[0]["toolCall"]) == {"toolCallId", "title", "status"}, sent[0]["toolCall"]
+    assert sent[0]["toolCall"]["title"] == "Allow run_command: ls"
     assert sent[1]["toolCall"]["title"] == "Theme?"  # an entity of its own, announced whole
     validator = _validator("RequestPermissionRequest")
     for params in sent:

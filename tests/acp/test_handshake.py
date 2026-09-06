@@ -53,10 +53,7 @@ def test_session_load_is_reported_absent_rather_than_half_answered() -> None:
 def test_the_clients_capabilities_become_the_frontend_seam() -> None:
     """The whole reason FrontendCapabilities went in first: ACP's handshake IS
     a capability exchange, so it maps rather than needing new plumbing."""
-    rich = capabilities_from({"fs": {"readTextFile": True}, "terminal": True})
-    assert rich.can_spawn is True
     bare = capabilities_from({})
-    assert bare.can_spawn is False, "a client with nowhere to show one is not offered one"
     assert bare.can_ask is True, "every ACP client must answer session/request_permission"
 
 

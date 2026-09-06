@@ -116,8 +116,8 @@ def acp_frontend(
         # resumes the run with its text seeded through the steer files
         # (resume --steer), and the loop's pre-call drain reads THESE hooks --
         # inert ones dropped the seeded instruction, so the resumed model
-        # re-finished the old task. Mid-run nothing here writes steer files
-        # (can_steer stays False), so no new affordance is offered.
+        # re-finished the old task. Mid-run nothing here writes steer files,
+        # so no new affordance is offered.
         return file_bridge_steer(session_dir)
 
     def _no_repl(
