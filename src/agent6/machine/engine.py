@@ -996,9 +996,8 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
         # email) re-fired once per poll for one park.
         already_parked = False
         if isinstance(current, WaitState):
-            with contextlib.suppress(JournalError):
-                pending = journal.read_pending_wait()
-                already_parked = pending is not None and pending.state == state
+            pending = journal.read_pending_wait()
+            already_parked = pending is not None and pending.state == state
         if not already_parked:
             try:
                 _emit_notify(current, blackboard, journal, world, state)

@@ -31,6 +31,7 @@ from agent6.machine.journal import (
     MachineBegin,
     MachineEnd,
     MachineJournal,
+    MachineNotify,
     PendingWait,
     StepEvent,
     ToolFact,
@@ -838,7 +839,6 @@ def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: Path) -> Non
 
 
 def test_notify_journals_event_and_fires_hook(tmp_path: Path) -> None:
-    from agent6.machine.journal import MachineNotify
 
     journal, f = _load(tmp_path, NOTIFIER)
     spec = load_machine(f)
@@ -863,7 +863,6 @@ def test_terminal_notify_render_failure_keeps_status_but_is_never_silent(
     the swallow left no journal entry and no hook fire, so a broken template
     meant notifications silently stopped. The failure is journaled as an
     error-level machine.notify and the hook is told."""
-    from agent6.machine.journal import MachineNotify
 
     journal, f = _load(tmp_path, NOTIFY_FAIL)
     spec = load_machine(f)
@@ -1531,7 +1530,6 @@ def test_parked_wait_notify_fires_once_across_scheduler_ticks(tmp_path: Path) ->
     # re-fire the wait's notify (or the operator hook: a page, an email) once
     # per poll; the notify belongs to state ENTRY, and an armed PendingWait
     # means the state was already entered.
-    from agent6.machine.journal import MachineNotify
 
     journal, f = _load(tmp_path, NOTIFY_WAIT)
     spec = load_machine(f)
@@ -1790,3 +1788,22 @@ def test_a_wait_never_inherits_the_previous_waits_record(tmp_path: Path) -> None
     world = FakeWorld({})
     assert drive(spec, journal, world, live=True).status == "ok"
     assert world.sleep_deadlines == [4600.0]
+
+
+def test_a_corrupt_wait_record_refuses_before_the_notify_re_fires(tmp_path: Path) -> None:
+    """The parked-entry guard read wait.json under a suppressed JournalError and
+    fell open to "a fresh entry", so every scheduler tick over a corrupt record
+    paged the operator and journaled a MachineNotify before the arm refused
+    the same record. The guard refuses where the arm refuses."""
+    from agent6.machine.journal import JournalError, MachineNotify
+
+    journal, f = _load(tmp_path, NOTIFY_WAIT)
+    spec = load_machine(f)
+    assert drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True).status == "waiting"
+    journal.wait_path.write_text("{not json", encoding="utf-8")
+    for _ in range(2):
+        world = FakeWorld({})
+        with pytest.raises(JournalError):
+            drive(spec, journal, world, live=True, exit_on_wait=True)
+        assert world.notifications == []
+    assert sum(1 for e in journal.read() if isinstance(e, MachineNotify)) == 1
