@@ -208,7 +208,7 @@ def format_plain_event(line: str, *, session_start_ts: float | None) -> str:
     if not isinstance(obj, dict):
         return raw
     ts = event_epoch(obj.get("ts"))
-    event = obj.get("event") or obj.get("type") or "?"
+    event = str(obj.get("event") or obj.get("type") or "?")
     if ts is not None and session_start_ts is not None:
         elapsed = max(0.0, ts - session_start_ts)
         ts_str = f"+{elapsed:7.1f}s"
@@ -513,6 +513,7 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
         return 2
 
     try:
+        pending = b""
         if since > 0:
             # Replay the last `since` lines before following.
             try:
@@ -520,6 +521,8 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
             except OSError as exc:
                 error(f"read failed: {exc}")
                 return 2
+            if lines and not lines[-1].endswith(b"\n"):
+                pending = lines.pop()
             for raw in lines[-since:]:
                 line = raw.decode("utf-8", errors="replace")
                 # flush: piped/redirected output must not lose the replay to the
@@ -538,7 +541,6 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
             current_ino = events_path.stat().st_ino
         except OSError:
             current_ino = -1
-        pending = b""
         while True:
             chunk = fh.readline()
             if chunk:
@@ -576,6 +578,9 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
                 current_ino = new_ino
                 pending = b""
                 continue
+            if not worker_is_alive(target):
+                _print_crashed_line(target)
+                return 0
             time.sleep(0.25)
     except KeyboardInterrupt:
         print("\n[agent6] watch: stopped.", file=sys.stderr)
