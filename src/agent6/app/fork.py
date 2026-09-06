@@ -60,6 +60,8 @@ from agent6.git_ops import (
     GitError,
     add_worktree,
     chain_commit,
+    chain_dirty,
+    chain_dirty_paths,
     chain_ref_for,
     chain_tip,
     create_branch_at,
@@ -68,7 +70,6 @@ from agent6.git_ops import (
     remove_worktree,
     run_branch_for,
     set_ref,
-    status,
     sync_worktree,
     tree_diff_paths,
     untracked_paths,
@@ -691,19 +692,20 @@ def _plan_fork(
     )
 
 
-def remove_fork_worktree(repo: Path, worktree: Path) -> tuple[bool, str]:
+def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> tuple[bool, str]:
     """Delete a fork's worktree (only a linked worktree of *repo*, see
     `git_ops.remove_worktree`) and the checkout lock its legs took under the
-    worktree's own state dir. Returns `(removed, note)`: removed is False when
-    *worktree* is not one, or when it holds work no commit has -- the note then
-    says which. On success the note names the state dir when it holds more than
-    the lock (a session the operator ran inside the worktree) and so stays, ""
+    worktree's own state dir, unless it holds work none of *tips* (the commits
+    its sessions landed) has. Returns `(removed, note)`: removed is False when
+    *worktree* is not one, or when it holds such work -- the note then names
+    it. On success the note names the state dir when it holds more than the
+    lock (a session the operator ran inside the worktree) and so stays, ""
     otherwise.
 
     The dirty check is git's own rule for `worktree remove`: prune and rm land
     on a merged fork, and the tree can still carry an uncommitted edit or a
     file that was never added. `rmtree` took both with no way back."""
-    dirt = _uncommitted_in(worktree)
+    dirt = _uncommitted_in(worktree, tips)
     if dirt:
         return False, dirt
     state_dir = resolved_state_dir(worktree)
@@ -712,21 +714,27 @@ def remove_fork_worktree(repo: Path, worktree: Path) -> tuple[bool, str]:
     return True, _drop_checkout_lock(state_dir)
 
 
-def _uncommitted_in(worktree: Path) -> str:
-    """What *worktree* holds that no commit does, as one phrase for a keep
-    line; "" when it is clean or unreadable (a missing dir is not dirt)."""
+def _uncommitted_in(worktree: Path, tips: tuple[str, ...]) -> str:
+    """What *worktree* holds that none of *tips* does, as one phrase for a keep
+    line; "" when a tip covers it or it is unreadable (a missing dir is not
+    dirt).
+
+    A fork's worktree stays detached at its fork point while its run commits to
+    the chain, so `git status` there reports the whole run as dirt: the
+    comparison is against the run's own tips (HEAD when it has none, a run
+    whose commits the model makes itself)."""
+    tips = tips or ("HEAD",)
     try:
-        st = status(worktree)
+        for tip in tips:
+            if not chain_dirty(worktree, tip, None):
+                return ""
+        held = chain_dirty_paths(worktree, tips[-1], None, 5)
     except GitError:
         return ""
-    if st.is_clean:
+    if not held:
         return ""
-    parts = [
-        f"{st.modified_count} modified file(s)" if st.modified_count else "",
-        f"{st.untracked_count} untracked file(s)" if st.untracked_count else "",
-    ]
-    held = ", ".join(p for p in parts if p)
-    return f"holds {held} no commit has"
+    named = ", ".join(held[:4]) + (", ..." if len(held) > 4 else "")
+    return f"holds work no commit has: {named}"
 
 
 def _drop_checkout_lock(state_dir: Path) -> str:
@@ -772,6 +780,17 @@ def _still_needs_worktree(repo: Path, session_dir: Path, manifest: SessionManife
     return "" if merged else "unmerged"
 
 
+def _landed_tips(repo: Path, sessions: Sequence[tuple[Path, SessionManifest]]) -> tuple[str, ...]:
+    """The commits *sessions* landed their work on: each one's chain tip, else
+    the tip its merge stamp recorded (`--delete-squashed` deletes the ref in
+    the same sweep, and the commit outlives it)."""
+    tips = (
+        chain_tip(repo, chain_ref_for(d.name)) or (m.merged.tip if m.merged else "")
+        for d, m in sessions
+    )
+    return tuple(tip for tip in tips if tip)
+
+
 def sweep_fork_worktrees(
     repo: Path, state_dir: Path
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
@@ -790,7 +809,7 @@ def sweep_fork_worktrees(
             first = next(iter(needs))
             kept.extend((d.name, needs.get(d.name, f"shared with {first}")) for d, _ in sessions)
             continue
-        gone, note = remove_fork_worktree(repo, worktree)
+        gone, note = remove_fork_worktree(repo, worktree, _landed_tips(repo, sessions))
         if gone:
             removed.extend((d.name, note) for d, _ in sessions)
         elif note:
@@ -866,7 +885,7 @@ def create_fork(
     )
     if rc != 0:
         if added and checkout is not None:
-            remove_fork_worktree(cwd, checkout.worktree)
+            remove_fork_worktree(cwd, checkout.worktree, (plan.forked_from_sha,))
         return "", rc
     return plan.dst.session_id, 0
 

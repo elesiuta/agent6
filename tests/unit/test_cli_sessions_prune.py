@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.git_ops import chain_ref_for
+from agent6.git_ops import CommitIdentity, chain_commit, chain_ref_for
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 
@@ -918,6 +918,42 @@ def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
     assert merged.is_dir(), "a dirty worktree was deleted"
     assert (merged / "notes.md").exists()
     assert "no commit has" in out
+
+
+def test_prune_removes_a_worktree_whose_content_the_run_committed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fork's worktree stays detached at its fork point while the run commits
+    to the chain, so `git status` there reports the landed run as uncommitted
+    work: every merged fork's worktree was kept forever, told it held work "no
+    commit has" that the merge had just taken."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    worktree = _fork_with_worktree(tmp_path, "fork-landed11", merged=True)
+    # The run's own work: in the worktree, and committed on its chain.
+    (worktree / "README.md").write_text("the run's edit\n", encoding="utf-8")
+    (worktree / "new.md").write_text("added by the run\n", encoding="utf-8")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    tip = chain_commit(
+        worktree,
+        "the run's commit",
+        ref=chain_ref_for("fork-landed11"),
+        fallback_parent=base,
+        identity=CommitIdentity(name="t", email="t@t"),
+    )
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="fork-landed11")
+    data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    data["merged"] = {"into": "main", "sha": "0" * 40, "tip": tip}
+    layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+
+    assert main(["sessions", "prune"]) == 0
+
+    out = capsys.readouterr().out
+    assert not worktree.exists(), "a worktree holding only committed work was kept"
+    assert "removed fork-landed11's worktree (merged)" in out
 
 
 def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(

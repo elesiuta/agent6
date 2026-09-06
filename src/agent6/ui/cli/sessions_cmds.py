@@ -519,7 +519,8 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         verb = "names" if len(sharing) == 1 else "name"
         stays = f"; its worktree stays: {', '.join(sharing)} still {verb} it"
     elif worktree is not None:
-        gone, left = remove_fork_worktree(cwd, worktree)
+        landed = chain_tip(cwd, chain_ref_for(layout.session_id)) or ""
+        gone, left = remove_fork_worktree(cwd, worktree, (landed,) if landed else ())
         if gone:
             went.append("its worktree" + (f" ({left})" if left else ""))
         elif left:
