@@ -827,3 +827,28 @@ Reads:
   is the single-run noise band);
 - the real empty-killer candidate is the approver fix (headless no-away
   parks -> deny loudly, the questioner's shape), not either arm.
+
+### The parked-instance rerun under away=deny: 6/12 resolve, zero empties (2026-08-24)
+
+The 12 unique instances that parked on the off-list fetch approval (19 legs
+across the three fleets), re-run once under the bench-side
+`AGENT6_DETACHED_AWAY=deny` (same 0.0.29 wheel, gate-on config, no arms):
+6/12 resolved, 0 empty, 0 errors, 0 parked again - every leg completed with
+a real patch. Newly solving: astropy-19438, pandas-64797, pypa-build-1027,
+rapid-mlx-228, scikit-learn-33565, sqlglot-7479 (several had produced
+nothing but empties in all three fleets).
+
+Totals with the rerun substituted for those 12 ids (before -> after; the
+gate-on substitution is same-config; the two arm rows mix configs on the
+12 and are so labelled):
+
+| fleet | resolved | empties |
+|---|---|---|
+| gate-on (clean) | 53/110 -> 56/110 | 12 -> 5 |
+| test-first (mixed) | 52/110 -> 55/110 | 8 -> 1 |
+| deadline (mixed) | 54/110 -> 58/110 | 11 -> 1 |
+
+Read: the approval-hang was worth ~+3 resolved and -7 empties on the
+honest same-config comparison (53 -> 56, 50.9%); against the board's
+58-62 (mean of 5, 128K context) the gap is now ~7-11 points. The deny fix
+is bench config; the agent6 wait default stands per the A1 ruling.
