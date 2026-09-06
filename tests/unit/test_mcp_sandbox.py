@@ -101,7 +101,8 @@ def test_a_server_description_cannot_repaint_the_terminal(
     assert (
         cmd_mcp_connect(
             "h",
-            command=[sys.executable, "-c", script],
+            # /usr/bin: the probe runs under the run's jail, which grants /usr, not the venv.
+            command=["/usr/bin/python3", "-c", script],
             url="",
             token_env="",
             pass_env=[],

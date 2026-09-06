@@ -367,8 +367,9 @@ class MCPServerEntry(BaseModel):
 
     The server runs as a long-lived subprocess speaking JSON-RPC 2.0
     over stdio. Its `command` (argv) is operator-controlled and never
-    contains LLM output. The server runs OUTSIDE the agent6 jail, with the
-    same curated environment a `[notify]` hook gets -- never the agent6
+    contains LLM output. The server runs as a jailed child by default (its
+    `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out)
+    with the curated environment a `[notify]` hook gets -- never the agent6
     process's full `os.environ`, which carries the provider API keys -- plus
     whatever `pass_env` names.
 

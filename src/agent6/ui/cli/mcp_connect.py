@@ -17,9 +17,17 @@ import shlex
 import sys
 from pathlib import Path
 
-from agent6.config import Config, is_cleartext_url, is_loopback_url, mcp_server_name_refusal
+from agent6.app._setup import detect_env, mcp_server_policy
+from agent6.config import (
+    Config,
+    MCPServerEntry,
+    is_cleartext_url,
+    is_loopback_url,
+    mcp_server_name_refusal,
+)
 from agent6.config.layer import load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves
+from agent6.sandbox.detect import resolve_isolation
 from agent6.tools.mcp_client import MCPError, MCPServerSpec, MCPToolDescriptor, _MCPServer
 from agent6.tools.mcp_http import HttpTransport
 
@@ -36,6 +44,7 @@ def _probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
         startup_timeout_s=spec.startup_timeout_s,
         call_timeout_s=spec.call_timeout_s,
         pass_env=spec.pass_env,
+        policy=spec.policy,
         http=spec.http,
     )
     try:
@@ -129,18 +138,33 @@ def cmd_mcp_connect(
         print("nothing was written to config.", file=sys.stderr)
         return 1
 
+    # The sandbox the run gives this server, so the handshake proves the
+    # server the run will actually spawn (a script outside the workspace is
+    # invisible inside it).
+    isolation = resolve_isolation(cfg.sandbox.isolation, detect_env())
+    entry = MCPServerEntry.model_validate(
+        {"command": command, "url": url, "token_env": token_env, "pass_env": pass_env}
+    )
     spec = MCPServerSpec(
         name=name,
         command=tuple(command),
         startup_timeout_s=_CONNECT_TIMEOUT_S,
         call_timeout_s=_CONNECT_TIMEOUT_S,
         pass_env=tuple(pass_env),
+        policy=None if url else mcp_server_policy(cfg, Path.cwd(), isolation, entry),
         http=HttpTransport(name=name, url=url, token_env=token_env) if url else None,
     )
     print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)
     tools, error = _probe(spec)
     if error:
         print(f"ERROR: {name} did not answer: {error}", file=sys.stderr)
+        if spec.policy is not None:
+            print(
+                f"       (probed under the run's {isolation} sandbox: a server outside the"
+                f" workspace needs [mcp.servers.{name}.sandbox] read_paths, or"
+                " unconfined = true)",
+                file=sys.stderr,
+            )
         print("       nothing was written to config.", file=sys.stderr)
         return 1
     if not tools:

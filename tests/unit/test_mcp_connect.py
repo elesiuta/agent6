@@ -18,6 +18,10 @@ import pytest
 from agent6.config.layer import load_effective
 from agent6.ui.cli.mcp_connect import cmd_mcp_connect, cmd_mcp_list
 
+# The interpreter a jailed probe can reach: the run's sandbox grants /usr,
+# not the venv (a server there needs `read_paths`, which is the point).
+_JAIL_PYTHON = "/usr/bin/python3"
+
 
 def _server_argv(*, tools: bool = True) -> list[str]:
     """A minimal stdio MCP server: handshake, then one tool (or none)."""
@@ -37,7 +41,7 @@ def _server_argv(*, tools: bool = True) -> list[str]:
         "    elif m.get('method')=='tools/list':\n"
         f"        w({{'jsonrpc':'2.0','id':m['id'],'result':{{'tools':{listed}}}}})\n"
     )
-    return [sys.executable, "-c", script]
+    return [_JAIL_PYTHON, "-c", script]
 
 
 def test_a_server_that_answers_is_written_with_its_tools_shown(
@@ -359,3 +363,42 @@ def test_mcp_connect_without_a_transport_refuses_cleanly(
     err = capsys.readouterr().err
     assert "exactly one" in err
     assert "unexpected" not in err
+
+
+def test_connect_probes_a_spawned_server_under_the_runs_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The handshake proves the server the run will spawn: a spawned server is
+    probed with the run's jail policy, a --url server with none."""
+    from agent6.tools.mcp_client import MCPServerSpec, MCPToolDescriptor
+    from agent6.ui.cli import mcp_connect
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    seen: list[MCPServerSpec] = []
+
+    def _fake_probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
+        seen.append(spec)
+        return (), "did not start"
+
+    monkeypatch.setattr(mcp_connect, "_probe", _fake_probe)
+    assert (
+        cmd_mcp_connect(
+            "calc", command=["python3", "s.py"], url="", token_env="", pass_env=[], to_repo=False
+        )
+        == 1
+    )
+    assert (
+        cmd_mcp_connect(
+            "web",
+            command=[],
+            url="http://127.0.0.1:1/mcp",
+            token_env="",
+            pass_env=[],
+            to_repo=False,
+        )
+        == 1
+    )
+    spawned, connected = seen
+    assert spawned.policy is not None and spawned.policy.cwd == tmp_path
+    assert connected.policy is None
