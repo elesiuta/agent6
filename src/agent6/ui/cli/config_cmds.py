@@ -495,14 +495,6 @@ def _config_list_edit(key: str, value: str, *, repo: bool, machine: Path | None,
     return 0
 
 
-def _cmd_config_add(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
-    return _config_list_edit(key, value, repo=repo, machine=machine, add=True)
-
-
-def _cmd_config_remove(key: str, value: str, *, repo: bool, machine: Path | None) -> int:
-    return _config_list_edit(key, value, repo=repo, machine=machine, add=False)
-
-
 def _entry_is_stale(entry: InvalidEntry) -> bool:
     """Whether *entry*'s key no longer holds the value diagnosis read.
 

@@ -26,7 +26,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Select, Static, TextArea
 
 from agent6.config import ConfigError
-from agent6.config.layer import available_preset_names, load_effective
+from agent6.config.layer import load_effective
 from agent6.directive import spec_fragment
 from agent6.models.validate import known_models
 from agent6.types import OPERATOR_MODES
@@ -44,13 +44,6 @@ _INTRO = (
     "Tab reaches the mode and preset pickers below.\n"
     "/parallel [N|models] <task> fans out isolated lanes (repeat to queue more)."
 )
-
-
-def available_presets(repo_cwd: Path, config_path: Path | None) -> list[str]:
-    """Preset names a chooser offers: the built-ins plus the user's
-    `[presets.<name>]` tables, resolved against the same layers `--preset`
-    resolves against (`--config F` included)."""
-    return available_preset_names(repo_cwd, config_path)
 
 
 def available_models(repo_cwd: Path, config_path: Path | None) -> list[str]:

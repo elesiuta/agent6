@@ -9,6 +9,7 @@ import contextlib
 import sys
 from pathlib import Path
 
+from agent6.app.compare import RankOutcome, manifest_task, print_ranked_candidates
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import (
     GitError,
@@ -27,12 +28,7 @@ from agent6.ui.cli._common import (
     _runs_dir,
     plural,
 )
-from agent6.ui.cli._compare import (
-    RankOutcome,
-    manifest_task,
-    print_ranked_candidates,
-    rank,
-)
+from agent6.ui.cli._compare import rank
 from agent6.ui.cli.sessions_cmds import _resolve_session_manifest
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,

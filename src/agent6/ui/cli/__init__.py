@@ -588,16 +588,15 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
 
 def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
     from agent6.ui.cli.config_cmds import (  # noqa: PLC0415
-        _cmd_config_add,
         _cmd_config_fill,
         _cmd_config_fix,
         _cmd_config_get,
         _cmd_config_path,
         _cmd_config_presets,
-        _cmd_config_remove,
         _cmd_config_set,
         _cmd_config_show,
         _cmd_config_unset,
+        _config_list_edit,
     )
 
     if args.config_command == "show":
@@ -620,10 +619,14 @@ def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
         return _cmd_config_unset(
             args.key, repo=args.repo, machine=args.machine_file, config_path=args.config
         )
-    if args.config_command == "add":
-        return _cmd_config_add(args.key, args.value, repo=args.repo, machine=args.machine_file)
-    if args.config_command == "remove":
-        return _cmd_config_remove(args.key, args.value, repo=args.repo, machine=args.machine_file)
+    if args.config_command in ("add", "remove"):
+        return _config_list_edit(
+            args.key,
+            args.value,
+            repo=args.repo,
+            machine=args.machine_file,
+            add=args.config_command == "add",
+        )
     if args.config_command == "fix":
         return _cmd_config_fix(machine=args.machine_file)
     raise AssertionError("unreachable")  # pragma: no cover -- config subparser is required
@@ -741,15 +744,15 @@ def _dispatch_review(args: argparse.Namespace) -> int:
 
 
 def _dispatch_mcp(args: argparse.Namespace) -> int:
-    from agent6.ui.cli.mcp_cmds import _cmd_mcp_serve  # noqa: PLC0415
     from agent6.ui.cli.mcp_connect import (  # noqa: PLC0415
         cmd_mcp_connect,
         cmd_mcp_list,
         cmd_mcp_remove,
     )
+    from agent6.ui.mcp_server import run_server  # noqa: PLC0415
 
     if args.mcp_command == "serve":
-        return _cmd_mcp_serve(args.config)
+        return run_server(args.config)
     if args.mcp_command == "connect":
         return cmd_mcp_connect(
             args.name,

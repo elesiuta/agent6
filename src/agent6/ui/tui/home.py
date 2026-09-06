@@ -30,7 +30,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 # Safe at module top: the textual guard above runs first, so this (which also
 # needs textual) is only reached when textual is present.
 from agent6.config import ConfigError
-from agent6.config.layer import load_effective
+from agent6.config.layer import available_preset_names, load_effective
 from agent6.git_ops import run_branch_tips
 from agent6.sessions.layout import LOGS_NAME
 from agent6.ui.spawn import agent6_argv, run_cli_capture
@@ -39,7 +39,7 @@ from agent6.ui.tui.logview import LogScreen
 from agent6.ui.tui.machines import MachinesScreen
 from agent6.ui.tui.menubar import Menu, MenuBar, MenuItem, menu_bindings
 from agent6.ui.tui.modals import ConfirmModal
-from agent6.ui.tui.new_work import NewWorkScreen, available_models, available_presets
+from agent6.ui.tui.new_work import NewWorkScreen, available_models
 from agent6.ui.tui.screen_chrome import MenuCommands, ScreenChrome
 from agent6.ui.tui.theme import (
     PALETTE_CSS,
@@ -240,7 +240,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
             NewWorkScreen(
                 self.repo_cwd,
                 self.config_path,
-                presets=available_presets(self.repo_cwd, self.config_path),
+                presets=available_preset_names(self.repo_cwd, self.config_path),
                 models=available_models(self.repo_cwd, self.config_path),
             )
         )

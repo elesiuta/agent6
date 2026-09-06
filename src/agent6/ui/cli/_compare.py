@@ -7,8 +7,7 @@ presentation pieces it cannot: the console `judging...` spinner shown while the
 judge call is in flight, and the reviewer-provider builder wired from the
 configured `reviewer` role. `rank` binds those into `app.compare.rank` so
 `sessions compare` (`sessions_cmds.py`) and the fan-out's auto-compare share one
-implementation. `manifest_task` / `print_ranked_candidates` are re-exported
-from the core so existing call sites import them from here.
+implementation.
 """
 
 from __future__ import annotations
@@ -19,14 +18,8 @@ import threading
 from collections.abc import Generator
 from pathlib import Path
 
-from agent6.app.compare import (
-    RankOutcome,
-    manifest_task,
-    print_ranked_candidates,
-)
-from agent6.app.compare import (
-    rank as core_rank,
-)
+from agent6.app.compare import RankOutcome
+from agent6.app.compare import rank as core_rank
 from agent6.app.providers import build_role_provider
 from agent6.budget import BudgetTracker
 from agent6.config import Config
@@ -35,7 +28,7 @@ from agent6.ui.cli._console_view import _HEARTBEAT_TICK_S
 from agent6.viewmodel.format import spinner_frame
 from agent6.workflows.judge import CandidateBrief
 
-__all__ = ["RankOutcome", "manifest_task", "print_ranked_candidates", "rank"]
+__all__ = ["rank"]
 
 
 @contextlib.contextmanager

@@ -286,7 +286,7 @@ def _cmd_run(  # noqa: PLR0911
     )
     cfg, explicit_leaves = effective.config, effective.explicit_leaves
     if decompose:  # --decompose: plan-first for this run (overrides config)
-        cfg = cfg.model_copy(update={"prompt": cfg.prompt.model_copy(update={"decompose": "on"})})
+        cfg = cfg.with_decompose("on")
     task, compose_err = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
     if compose_err:
         print(f"ERROR: {compose_err}", file=sys.stderr)
