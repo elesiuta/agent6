@@ -48,7 +48,7 @@ def dead_run_note(word: str, detail: str) -> tuple[str, str]:
         why = f" ({detail})" if detail else ""
         return f"parked at submission{why}", "type the go-ahead below (Enter resumes)"
     if word == "created":
-        return "created \u2014 the run has not started", "type a follow-up below (Enter resumes)"
+        return "the run has not started", "type a follow-up below (Enter resumes)"
     if word == "stale":
         return (
             "worker exited without finishing (crashed or killed)",
