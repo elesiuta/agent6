@@ -116,7 +116,7 @@ def test_loop_guard_fires_on_three_identical_calls(tmp_path: Path) -> None:
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t3"),
         _resp_text("ok"),
     ]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
@@ -148,7 +148,7 @@ def test_loop_guard_does_not_fire_when_args_change(tmp_path: Path) -> None:
         _resp_with_tool("read_file", {"path": "d.txt"}, tu_id="t4"),
         _resp_text("ok"),
     ]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
 
     wf = _build_wf(repo, provider, dispatcher)
@@ -170,7 +170,7 @@ def test_loop_guard_does_not_re_fire_back_to_back(tmp_path: Path) -> None:
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(5)
     ] + [_resp_text("ok")]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
@@ -198,7 +198,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: Path) -> No
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(12)
     ] + [_resp_text("never reached")]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = Workflow(
@@ -234,7 +234,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: Path) -> None:
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(6)
     ] + [_resp_text("done")]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = Workflow(
@@ -284,7 +284,7 @@ def _gated_wf(repo: Path, provider: MagicMock, dispatcher: MagicMock, **kw: Any)
 
 def _dirtying_dispatcher(repo: Path) -> MagicMock:
     """A dispatcher whose tool leaves an uncommitted edit, as run_command does."""
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
 
     def dispatch(*_args: Any, **_kwargs: Any) -> RawResult:
         (repo / "edit.txt").write_text("run_command wrote this\n")
@@ -425,7 +425,7 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: Path
         _resp_with_tool("run_verify_command", {}, tu_id="tu2"),
         _resp_text("never reached"),
     ]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
 
     def dispatch(name: str, *_a: Any, **_k: Any) -> RawResult:
         if name == "run_verify_command":
@@ -478,7 +478,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
         _resp_text("ok"),
         _resp_text("ok"),
     ]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
     wf.stagnation_notice_after_s = 1e-9
@@ -487,6 +487,27 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     notices = _stagnation_blocks(_final_messages(provider))
     assert len(notices) == 1, notices
     assert "no edit and no verify" in notices[0]
+
+
+def test_stagnation_ignores_time_blocked_on_the_operator(tmp_path: Path) -> None:
+    """The stagnation clock is the model's own time: an hour spent waiting on
+    an approval never reads as an hour of research."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "a.txt"}, tu_id="t1"),
+        _resp_with_tool("read_file", {"path": "b.txt"}, tu_id="t2"),
+        _resp_text("ok"),
+        _resp_text("ok"),
+    ]
+    dispatcher = MagicMock(operator_wait_s=3600.0)
+    dispatcher.dispatch.return_value = RawResult({"content": "x"})
+    wf = _build_wf(repo, provider, dispatcher)
+    wf.stagnation_notice_after_s = 1e-9
+    result = wf.run("investigate")
+    assert result.completed is True
+    assert _stagnation_blocks(_final_messages(provider)) == []
 
 
 def test_stagnation_notice_suppressed_by_an_edit(tmp_path: Path) -> None:
@@ -500,7 +521,7 @@ def test_stagnation_notice_suppressed_by_an_edit(tmp_path: Path) -> None:
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t2"),
         _resp_text("ok"),
     ]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
     wf.stagnation_notice_after_s = 1e-9
@@ -519,7 +540,7 @@ def test_stagnation_notice_zero_disables(tmp_path: Path) -> None:
         _resp_text("ok"),
         _resp_text("ok"),
     ]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
     wf.stagnation_notice_after_s = 0.0
@@ -539,7 +560,7 @@ def test_unlimited_iterations_is_minus_one(tmp_path: Path) -> None:
         *(_resp_with_tool("read_file", {"path": f"x{i}.txt"}, tu_id=f"t{i}") for i in range(12)),
         _resp_text("ok"),
     ]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
@@ -559,7 +580,7 @@ def test_resume_leg_rearms_the_iteration_allowance(tmp_path: Path) -> None:
     _init_repo(repo)
     provider = MagicMock()
     provider.call.side_effect = [_resp_text("done")]
-    dispatcher = MagicMock()
+    dispatcher = MagicMock(operator_wait_s=0.0)
     dispatcher.dispatch.return_value = RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)

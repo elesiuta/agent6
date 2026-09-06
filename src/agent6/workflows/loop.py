@@ -2141,15 +2141,18 @@ class Workflow:
                 f" {state.spiral.call_streak}x in a row - injecting notice"
             )
             state.spiral.warned_at_iteration = turn.iteration
-        elapsed = time.monotonic() - state.started_monotonic
-        if (
+        attemptless = (
             self.stagnation_notice_after_s > 0
             and not state.stagnation_nudged
-            and elapsed >= self.stagnation_notice_after_s
             and not state.ever_edited
             and state.verify.last_ok is None
             and self.mode == "run"
-        ):
+        )
+        elapsed = time.monotonic() - state.started_monotonic
+        if attemptless and elapsed >= self.stagnation_notice_after_s:
+            # Time blocked on the operator is not the model's.
+            elapsed -= self.dispatcher.operator_wait_s
+        if attemptless and elapsed >= self.stagnation_notice_after_s:
             state.stagnation_nudged = True
             minutes = max(1, int(elapsed // 60))
             turn.tool_results.append(

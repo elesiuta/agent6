@@ -18,6 +18,7 @@ import shlex
 import shutil
 import sys
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -362,6 +363,10 @@ class ToolDispatcher:
         self._extra_protect_paths = extra_protect_paths
         self._approver: Approver = approver or _default_approver
         self._questioner: _Questioner = questioner or _default_questioner
+        # Seconds spent blocked on the operator (approvals, ask_user). The loop
+        # subtracts them from its wall clock: waiting for a human is not the
+        # model stalling.
+        self.operator_wait_s = 0.0
         self._events = events
         # Optional in-process GraphCurator + root-task id for the DAG-as-tool
         # surface. When wired, the dispatcher exposes add_task /
@@ -795,10 +800,17 @@ class ToolDispatcher:
                 f"{args[:_APPROVAL_PROMPT_MAX_CHARS]}"
                 f" ...[{len(args)} chars total; full payload: {full}]"
             )
-        if not self._approver(f"Allow {name}: {args}", scope=f"{MCP_SCOPE_PREFIX}{server}"):
+        if not self._approve(f"Allow {name}: {args}", scope=f"{MCP_SCOPE_PREFIX}{server}"):
             raise ToolDenied(
                 f"{name} not approved (set [mcp.servers.{server}].approve = 'yes' to stop asking)"
             )
+
+    def _approve(self, prompt: str, *, scope: str | None = None) -> bool:
+        started = time.monotonic()
+        try:
+            return self._approver(prompt, scope=scope)
+        finally:
+            self.operator_wait_s += time.monotonic() - started
 
     def _not_approved(self, name: str) -> ToolDenied:
         """The gate cannot tell a human "no" from an unattended run's auto-deny,
@@ -815,7 +827,7 @@ class ToolDispatcher:
         fallback passes the selected test paths); the result's `command`
         carries the argv that actually ran."""
         argv = tuple(self._config.workflow.verify_command) + extra_argv
-        if self.command_policy() == "ask" and not self._approver(
+        if self.command_policy() == "ask" and not self._approve(
             f"Allow run_verify_command: {shlex.join(argv)}", scope=COMMAND_SCOPE
         ):
             raise self._not_approved("run_verify_command")
@@ -855,7 +867,7 @@ class ToolDispatcher:
         if self.command_policy() == "ask":
             # A shell-style command line, not a Python tuple repr: the operator
             # is approving a command, so show it the way they would type it.
-            ok = self._approver(f"Allow run_command: {shlex.join(args.argv)}", scope=COMMAND_SCOPE)
+            ok = self._approve(f"Allow run_command: {shlex.join(args.argv)}", scope=COMMAND_SCOPE)
             if not ok:
                 raise self._not_approved("run_command")
         if args.background:
@@ -969,7 +981,7 @@ class ToolDispatcher:
         # approver refuses without waiting). Nothing has resolved yet: the DNS
         # query itself carries the hostname out, so `fetch` runs it behind
         # this gate.
-        if not host_allowed(checked.host, self._config.sandbox.fetch_hosts) and not self._approver(
+        if not host_allowed(checked.host, self._config.sandbox.fetch_hosts) and not self._approve(
             f"Allow fetch: {checked.prompt()}"
         ):
             raise ToolDenied(
@@ -1028,7 +1040,11 @@ class ToolDispatcher:
         return BackgroundResult(shells=_roster(shells))
 
     def _ask_user(self, raw: dict[str, Any]) -> ToolResult:
-        return ask_user(self._questioner, raw)
+        started = time.monotonic()
+        try:
+            return ask_user(self._questioner, raw)
+        finally:
+            self.operator_wait_s += time.monotonic() - started
 
     def _finish_session(self, raw: dict[str, Any]) -> ToolResult:
         return finish_session(raw)
