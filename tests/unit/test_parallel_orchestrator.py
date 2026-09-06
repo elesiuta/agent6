@@ -1788,3 +1788,30 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     assert (scoped / "fan-a").is_dir()  # unique commits: kept whole
     assert not (scoped / "fan-b").exists()
     assert (foreign / ".git").exists()  # out of scope: untouched
+
+
+def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
+    origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a group dir holding `lane-*` clones is agent6's to judge by commit
+    proof. A directory the operator put under the workdir scope (a clone
+    named otherwise, a plain dir with files) holds no lane clone, and the
+    sweep read that as "nothing to prove" and deleted it."""
+    from agent6.app.parallel import sweep_fanout_clones
+    from agent6.paths import repo_id
+
+    workdir = tmp_path / "cache"
+    cfg = Config.model_validate({"parallel": {"workdir": str(workdir)}})
+    scoped = workdir / repo_id(origin)
+    theirs = scoped / "my-clone"
+    theirs.parent.mkdir(parents=True)
+    clone_workspace(origin, theirs)
+    (theirs / "draft.txt").write_text("uncommitted\n", encoding="utf-8")
+    notes = scoped / "notes"
+    notes.mkdir()
+    (notes / "todo.md").write_text("mine\n", encoding="utf-8")
+
+    swept, kept = sweep_fanout_clones(origin, cfg)
+    assert (swept, kept) == (0, 0)
+    assert (theirs / "draft.txt").read_text(encoding="utf-8") == "uncommitted\n"
+    assert (notes / "todo.md").read_text(encoding="utf-8") == "mine\n"

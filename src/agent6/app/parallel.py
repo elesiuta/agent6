@@ -189,19 +189,20 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
     *origin* (content-safe by commit proof, the prune --delete-squashed
     philosophy). Returns (swept, kept). A lane clone holding any commit the
     origin lacks keeps its whole fan-out dir: the clone may be the only copy.
-    A fork's worktree (a group dir whose `.git` is a file) is
-    `fork.sweep_fork_worktrees`'s, not a fan-out group."""
+    Only a dir holding `lane-*` clones is a fan-out group: anything else
+    under the scope (a fork's worktree, which `fork.sweep_fork_worktrees`
+    owns through its manifest; a directory the operator put there) is left
+    alone."""
     base = workdir_base(cfg, origin)
     if not base.is_dir():
         return 0, 0
     swept = kept = 0
     for fanout in sorted(p for p in base.iterdir() if p.is_dir()):
-        if (fanout / ".git").is_file():
+        clones = [c for c in sorted(fanout.glob("lane-*")) if (c / ".git").is_dir()]
+        if not clones:
             continue
         safe = True
-        for clone in sorted(fanout.glob("lane-*")):
-            if not (clone / ".git").exists():
-                continue
+        for clone in clones:
             try:
                 tips = [chain_tip(clone, br) for br in list_run_branches(clone)]
                 # A machine-state clone's work rides its chain ref, which is
