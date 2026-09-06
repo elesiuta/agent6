@@ -74,7 +74,7 @@ agent6 sessions show          # status, iteration, elapsed, cost, where the chan
 agent6 sessions diff          # the git diff the run produced; --stat for the summary, --path P to narrow
 agent6 sessions commits       # the run's per-step commits
 agent6 sessions merge         # land the run's work on your branch; --strategy, --into BRANCH
-agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N for one turn
+agent6 sessions transcript    # the conversation as text, every tool call with I/O; --no-thinking, --seq N for one turn, --tools calls|none
 agent6 sessions prune         # delete merged agent6/* branches; report the rest
 agent6 sessions dir           # where this repo's run history lives (scriptable)
 agent6 sessions dir <id>      # that session's own directory
@@ -86,7 +86,6 @@ agent6 forward ID 8000        # reach a port inside the run's session network; -
 agent6 history search <text>  # search every session's transcripts; --regex
 agent6 sessions rm            # delete one run's history; --asks clears saved asks
 agent6 sessions compare <ids> # ranked comparison: >=2 runs (judged), or one fan-out id (its recorded verdict; --rejudge for a fresh call)
-agent6 sessions transcript    # the full conversation, every tool call with I/O
 agent6 sessions graph         # the persisted task graph
 ```
 
