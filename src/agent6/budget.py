@@ -591,6 +591,7 @@ class BudgetTracker:
         lines = ["Token + cost summary:"]
         total_usd = 0.0
         any_unknown = False
+        any_estimated = False
         for model, totals in snap.per_model.items():
             cost = _model_cost_usd(model, totals)
             cost_str: str
@@ -600,6 +601,7 @@ class BudgetTracker:
             else:
                 total_usd += cost.usd
                 any_unknown = any_unknown or cost.partial
+                any_estimated = any_estimated or cost.estimated
                 if cost.partial:
                     note = " (reported, some calls unpriced)"
                 elif cost.reported and cost.estimated:
@@ -619,9 +621,10 @@ class BudgetTracker:
                 f"calls={totals.calls} {cost_str}"
             )
         usd_cap = "unlimited" if snap.max_usd == -1 else format_usd(snap.max_usd)
+        approx = "~" if any_unknown or any_estimated else "="
         budget_line = (
             f"  TOTAL: in={snap.input_total} out={snap.output_total} "
-            f"cost~{format_usd(total_usd)} of {usd_cap}"
+            f"cost{approx}{format_usd(total_usd)} of {usd_cap}"
         )
         if snap.unmetered_tokens:
             fb_cap = (

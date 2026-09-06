@@ -156,7 +156,10 @@ def test_reported_cost_overrides_table_estimate() -> None:
     usd, partial = bt.estimate_usd()
     assert usd == 99.99
     assert partial is False
-    assert "(reported)" in bt.format_summary()
+    summary = bt.format_summary()
+    assert "(reported)" in summary
+    # Every call reported its cost: the total is exact, not an estimate.
+    assert "cost=$99.99 of" in summary
 
 
 def test_reported_cost_works_for_unknown_model() -> None:
