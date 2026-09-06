@@ -557,7 +557,7 @@ class BudgetConfig(BaseModel):
     )
 
     max_percent: float = Field(
-        default=-1,
+        default=-1.0,  # the float the loader validates it to, so `config fill` is idempotent
         description=(
             "Cap on the plan percentage points one run may consume on a subscription provider "
             "(the rise in the account's reported used-percent across the run, accumulated across "
