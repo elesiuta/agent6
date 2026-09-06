@@ -749,6 +749,17 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
     the source is the layer that set it (`default` when no layer did).
     """
     leaves = flatten_leaves(eff.config.model_dump(mode="python"))
+    parts = dotted_key.split(".")
+    if parts[0] == "presets" and len(parts) > 2 and ".".join(parts[2:]) in leaves:
+        # A preset's leaf: the value the most specific layer's [presets.<name>]
+        # table holds, or unset. `config get`, `set` and `unset` all address it,
+        # so a preset write has an inverse.
+        name, leaf = parts[1], ".".join(parts[2:])
+        for layer in reversed(eff.layers):
+            table = _file_presets(layer.path).get(name)
+            if isinstance(table, dict) and leaf in flatten_leaves(table):
+                return flatten_leaves(table)[leaf], f"preset {name} ({layer.name})"
+        return None, "unset"
     if dotted_key not in leaves:
         return None
     return leaves[dotted_key], eff.sources.get(dotted_key, "default")

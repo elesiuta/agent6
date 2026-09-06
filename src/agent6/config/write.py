@@ -257,13 +257,13 @@ def written_value_error(
     child is the exception: it only means the written container is partial (a
     provider filled in over several sets), and the merged re-validation still
     catches one that is genuinely absent."""
-    if key == "presets" or key.startswith("presets."):
-        # [presets.*] is meta-config the loader strips BEFORE validation
-        # (_apply_preset), so the Config schema forbids it by design; the
-        # standalone check would falsely reject every legitimate preset write.
-        # The merged re-validation still catches a preset body that breaks.
-        return None
     parts = key.split(".")
+    if parts[0] == "presets":
+        # [presets.<name>] is meta-config the loader strips BEFORE validation
+        # (_apply_preset), so the Config schema forbids the table itself; a
+        # leaf under a preset is a Config leaf and validates as one, since
+        # the merged re-validation sees it only once that preset is selected.
+        return written_value_error(".".join(parts[2:]), value) if len(parts) > 2 else None
     if parts[0] == "providers" and len(parts) == 3:
         return provider_field_error(key, parts[2], value)
     nested: dict[str, object] = {}

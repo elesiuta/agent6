@@ -621,3 +621,25 @@ def test_top_level_help_names_the_directories(
     assert str(iso / "g") in out and str(iso / "st") in out
     assert str(iso / "dt") in out and str(iso / "ch") in out
     assert "agent6 config path" in out
+
+
+def test_a_preset_leaf_is_validated_and_has_an_inverse(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`config set presets.demo.sandbox.network banana` wrote a value the
+    schema forbids (and any key at all), `config fix` called the file clean,
+    `config unset` refused to remove it as "not a config leaf", and the
+    failure surfaced only at `run --preset demo`, naming neither the preset
+    nor the file."""
+    assert _run(["config", "set", "presets.demo.sandbox.network", "banana"]) == 2
+    assert "sandbox.network" in capsys.readouterr().err
+    assert _run(["config", "set", "presets.demo.sandbox.nosuch", "1"]) == 2
+    capsys.readouterr()
+    assert _run(["config", "set", "presets.demo.sandbox.network", "host"]) == 0
+    capsys.readouterr()
+    assert _run(["config", "get", "presets.demo.sandbox.network"]) == 0
+    assert "host" in capsys.readouterr().out
+    assert _run(["config", "unset", "presets.demo.sandbox.network"]) == 0
+    capsys.readouterr()
+    assert _run(["config", "get", "presets.demo.sandbox.network"]) == 0
+    assert "unset" in capsys.readouterr().out
