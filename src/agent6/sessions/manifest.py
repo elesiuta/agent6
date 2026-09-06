@@ -153,6 +153,17 @@ class ParallelLineage(BaseModel):
     coordinator: str = ""
 
 
+class FanoutStamp(BaseModel):
+    """The record a `run --parallel` fan-out leaves on its own session: how
+    many lanes it dispatched and the `--parallel` argument as typed. A
+    `/parallel` group's coordinator is an ordinary run and carries none."""
+
+    model_config = _MODEL_CONFIG
+
+    lanes: int = 0
+    spec: str = ""
+
+
 class CompareStamp(BaseModel):
     """A fan-out lane's auto-compare placement. The lane's lineage lives in
     the top-level `parallel`, not here."""
@@ -231,9 +242,11 @@ class SessionManifest(BaseModel):
     worktree_git_dir: Path | None = None
     # merge stamp (null until the run branch is merged)
     merged: MergeStamp | None = None
-    # a fan-out lane's lineage and its compare stamp (null outside a fan-out)
+    # a fan-out lane's lineage and its compare stamp, and a fan-out's own
+    # record on its coordinator (each null outside a fan-out)
     parallel: ParallelLineage | None = None
     compare: CompareStamp | None = None
+    fanout: FanoutStamp | None = None
 
     def session_mode(self) -> ResumableMode:
         """The session's mode, refusing anything this agent6 does not know.

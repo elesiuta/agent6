@@ -107,6 +107,7 @@ def await_lanes(
     started: list[LaneResult],
     *,
     already_interrupted: bool = False,
+    should_stop: Callable[[], bool] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> bool:
     """Poll every started lane's REAL run dir (in the clone's state; the origin
@@ -118,7 +119,9 @@ def await_lanes(
 
     `already_interrupted=True` (a Ctrl+C the spawn loop caught before the await
     even began) skips the normal poll and goes straight into that same stop-grace
-    path, so a mid-spawn interrupt stops the already-started lanes identically."""
+    path, so a mid-spawn interrupt stops the already-started lanes identically.
+    *should_stop* (the coordinator's own stop request, read between polls) ends
+    the wait the same way."""
     pending = {r.spec.session_id: r for r in started}
     seen: dict[str, tuple[str, str, float]] = {}
 
@@ -155,6 +158,9 @@ def await_lanes(
     try:
         while pending:
             poll_once()
+            if pending and should_stop is not None and should_stop():
+                stop_and_drain()
+                return True
             if pending:
                 time.sleep(POLL_INTERVAL_S)
         return False

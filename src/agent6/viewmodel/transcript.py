@@ -30,6 +30,7 @@ from typing import Any, Literal
 
 from agent6.types import SESSION_KINDS
 from agent6.viewmodel.events import SESSION_START_EVENTS, as_int, event_epoch, tool_result_ok
+from agent6.viewmodel.format import format_usd, lane_count
 
 # Terminal control sequences in MODEL-AUTHORED text and command output.
 # Default-deny, not a CSI-only blocklist: stripping CSI alone left OSC intact
@@ -101,6 +102,8 @@ _END_REASON_LABEL = {
     "ask_repl_empty": "ask ended (empty input)",
     "gate_stale": "finished over a stale gate",
     "gate_red_at_base": "gate was already red before this run",
+    "no_lane_result": "no lane produced a result",
+    "no_lane_passed": "no lane passed its gate",
 }
 
 ItemKind = Literal["thinking", "text", "tool", "commit", "marker", "done", "operator"]
@@ -242,17 +245,39 @@ def _parallel_group_label(event: dict[str, Any]) -> str:
 
 
 def _parallel_dispatched_body(event: dict[str, Any]) -> str:
-    """The coordinator dispatched a `/parallel` group: name how many tasks and
-    which, truthfully (lane ids do not exist yet -- the spawner names them, and
-    each task may expand to several lanes, so this counts TASKS, not lanes)."""
+    """The coordinator dispatched a group: how many lanes (the count every
+    listing shows) for how many tasks, and which tasks; a journal from
+    before the event carried the lane count names the tasks alone (lane ids
+    do not exist yet: the spawner names them)."""
     tasks_raw = event.get("tasks")
     tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
     n = len(tasks)
+    lanes = event.get("lanes")
+    if isinstance(lanes, int) and not isinstance(lanes, bool):
+        what = lane_count(lanes) + (f" for {n} tasks" if n > 1 else "")
+    else:
+        what = f"{n} parallel task{'' if n == 1 else 's'}"
     head = (
-        f"dispatched {n} parallel task{'' if n == 1 else 's'} "
-        f"({_parallel_group_label(event)}); lanes run detached and appear as runs in the hub"
+        f"dispatched {what} ({_parallel_group_label(event)});"
+        " lanes run detached, listed under this session"
     )
     return "\n".join([head, *(f"• {_clip(t, 80)}" for t in tasks if t)])
+
+
+def _parallel_compared_body(event: dict[str, Any]) -> str:
+    """A fan-out ranked its candidates: best first, each with its gate
+    verdict and cost, and who ranked them (the judge or the mechanical
+    fallback)."""
+    raw = event.get("ranking")
+    rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+    by = str(event.get("ranked_by", "")).strip() or "?"
+    head = f"compared {_parallel_group_label(event)}: {len(rows)} candidate(s), ranked by {by}"
+    lines = [head]
+    for rank, r in enumerate(rows, start=1):
+        cost = r.get("cost_usd")
+        cost_s = format_usd(float(cost)) if isinstance(cost, (int, float)) else "?"
+        lines.append(f"{rank}. {r.get('session_id', '?')}  {r.get('verify', '?')}  {cost_s}")
+    return "\n".join(lines)
 
 
 def _parallel_joined_body(event: dict[str, Any]) -> str:
@@ -332,6 +357,7 @@ _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "loop.parallel.dispatched": _parallel_dispatched_body,
     "loop.parallel.joined": _parallel_joined_body,
     "loop.parallel.failed": _parallel_failed_body,
+    "loop.parallel.compared": _parallel_compared_body,
     # Compaction rewrites the history the reader is looking at: the surface
     # that promised a `/compact` "applies before the next model call" is the
     # one that says it did, failed, or was refused.

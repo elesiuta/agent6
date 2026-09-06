@@ -111,6 +111,11 @@ def rank(
     return RankOutcome(mechanical_ranking(candidates), "", "mechanical")
 
 
+def verify_word(verify_ok: bool | None) -> str:
+    """A candidate's gate verdict as the report and the journal word it."""
+    return "passed" if verify_ok else "failed" if verify_ok is False else "no-verify"
+
+
 def print_ranked_candidates(
     candidates: list[CandidateBrief],
     outcome: RankOutcome,
@@ -128,7 +133,7 @@ def print_ranked_candidates(
     reporter.out("ranked candidates (best first):")
     for rnk, rid in enumerate(outcome.ranking, start=1):
         c = by_id[rid]
-        verify = "passed" if c.verify_ok else "failed" if c.verify_ok is False else "no-verify"
+        verify = verify_word(c.verify_ok)
         into = (merged_into or {}).get(rid, "")
         landing = f"merged into {into}" if into else f"merge with: agent6 sessions merge {rid}"
         reporter.out(f"  {rnk}. {rid}  {verify:<9} {format_usd(c.cost_usd)}   {landing}")

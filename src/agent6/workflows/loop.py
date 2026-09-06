@@ -4912,7 +4912,10 @@ class Workflow:
         # event carries the truth it has (per-segment tasks + group), and
         # joined/failed name the real per-lane ids from each LaneResult.
         self._emit(
-            "loop.parallel.dispatched", group=group, tasks=[seg.task[:200] for seg in segments]
+            "loop.parallel.dispatched",
+            group=group,
+            lanes=len(lanes),
+            tasks=[seg.task[:200] for seg in segments],
         )
         parent_id = self._parallel_parent_id(state.root_task_id)
         node_ids = [self._add_parallel_node(seg.task, parent_id) for seg in segments]

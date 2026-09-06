@@ -22,7 +22,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 ## SessionManifest
 
-[`agent6.sessions.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py) &middot; pydantic model + 7 nested models
+[`agent6.sessions.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py) &middot; pydantic model + 8 nested models
 
 Read a session's manifest.json into the typed SessionManifest: the one reader and the on-disk shape, with `app.manifest` as the writer.
 
@@ -53,6 +53,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 | `merged` | `MergeStamp | None` | `None` |
 | `parallel` | `ParallelLineage | None` | `None` |
 | `compare` | `CompareStamp | None` | `None` |
+| `fanout` | `FanoutStamp | None` | `None` |
 
 - **Written by:** app/manifest
 - **Read by:** app/{compare, finalize, fork, merge, parallel, preflight, resume, run}, tools/sessions, ui/mcp_server, ui/cli/{__init__, _ask, _steer_menu, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show}, ui/tui/{app, dashboard}, ui/web/{actions, model}, viewmodel/{format, listing, policy, snapshot, state}

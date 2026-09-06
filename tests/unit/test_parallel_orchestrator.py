@@ -35,9 +35,10 @@ from agent6.directive import DirectiveError
 from agent6.git_ops import branch_exists, commit_all, create_branch
 from agent6.memory import decisions_text, record_decision
 from agent6.paths import state_dir
-from agent6.sessions.manifest import ParallelLineage
+from agent6.sessions.manifest import ParallelLineage, read_manifest
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli.parallel import lane_runtime
+from agent6.viewmodel.listing import summarize_session_dir
 from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask, clone_workspace
 
 
@@ -2012,3 +2013,157 @@ def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
     err = capsys.readouterr().err
     assert "lane 2: memory held back (changed here too, or the name is taken): d-fact" in err
     assert "kept at" not in err and not (dest / "memory-held").exists()
+
+
+def test_run_parallel_is_a_session_of_its_own(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """The fan-out has a session record under the origin's runs: a manifest
+    carrying the fan-out stamp and no run branch, a journal that opens with
+    session.start, records the dispatch and the ranking, and ends with
+    session.end, and no worker pid left behind. Before it, `ps` printed "no
+    live agent6 sessions" through the whole judge call and nothing grouped
+    the lanes."""
+    from agent6.sessions.manifest import FanoutStamp
+    from agent6.viewmodel.listing import scan_session_log
+
+    origin_state = state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "fan", "2")
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+
+    rc = run_parallel(
+        "do the task",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="fan",
+        spec="2",
+    )
+
+    assert rc == 0
+    coordinator = origin_state / "sessions" / "runs" / "fan"
+    manifest = read_manifest(coordinator)
+    assert manifest.fanout == FanoutStamp(lanes=2, spec="2")
+    assert manifest.run_branch is None and manifest.mode == "run"
+    assert manifest.user_task == "do the task" and manifest.parallel is None
+    scan = scan_session_log(coordinator / "logs.jsonl")
+    assert scan.saw_start and scan.finished and scan.end_reason == "finish_session"
+    types = [
+        json.loads(line)["type"]
+        for line in (coordinator / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert types[:2] == ["session.start", "loop.parallel.dispatched"]
+    assert "loop.parallel.compared" in types and types[-1] == "session.end"
+    assert not (coordinator / "worker.pid").exists()
+    assert summarize_session_dir(coordinator).status == "passed"  # a lane's gate went green
+
+
+def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions stop <fan-out>` writes the coordinator's stop marker; the
+    await reads it between polls, asks every live lane to stop, and returns
+    interrupted so the import and the report still run."""
+    from agent6.sessions.ipc import stop_request_pending
+
+    lane = tmp_path / "lane"
+    _write_fake_run(lane, "t", status="running", cost=0.0)
+    spec = LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", model=None)
+    res = LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
+
+    def _no_sleep(*_args: object) -> None:
+        return None
+
+    def _alive(_session_dir: Path) -> bool:
+        return True
+
+    monkeypatch.setattr(lane_watch.time, "sleep", _no_sleep)
+    monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.0)
+    monkeypatch.setattr(lane_watch, "worker_is_alive", _alive)
+
+    assert lane_watch.await_lanes([res], should_stop=lambda: True) is True
+    assert stop_request_pending(lane)
+    assert "interrupted; stopping lanes" in capsys.readouterr().err
+
+
+def test_the_coordinator_journals_a_crash_and_an_interrupt(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An escape after the fan-out's record opens (a spawner fault, Ctrl+C
+    during the judge) still ends the journal (`crashed` / `interrupted`) and
+    clears the pid, the way every other leg does; without the end the
+    operator's own interrupt read as a lost worker ("stale")."""
+    from agent6.viewmodel.listing import scan_session_log
+
+    origin_state = state_dir(origin)
+    cfg = Config()
+
+    def boom(spec: LaneSpec, task: str) -> LaneResult:
+        raise OSError(f"spawn failed for {spec.session_id}: {task}")
+
+    with pytest.raises(OSError):
+        run_parallel(
+            "t",
+            _specs(tmp_path, cfg, "crash", "1"),
+            cfg=cfg,
+            origin=origin,
+            origin_state=origin_state,
+            runtime=runtime,
+            spawner=boom,
+            fanout_id="crash",
+        )
+    coordinator = origin_state / "sessions" / "runs" / "crash"
+    scan = scan_session_log(coordinator / "logs.jsonl")
+    assert scan.finished and scan.end_reason == "crashed"
+    assert not (coordinator / "worker.pid").exists()
+    assert summarize_session_dir(coordinator).status == "failed"
+
+    def interrupted_judge(*_a: object, **_k: object) -> object:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(parallel, "rank", interrupted_judge)
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    with pytest.raises(KeyboardInterrupt):
+        run_parallel(
+            "t",
+            _specs(tmp_path, cfg, "kbi", "1"),
+            cfg=cfg,
+            origin=origin,
+            origin_state=origin_state,
+            runtime=runtime,
+            spawner=spawner,
+            fanout_id="kbi",
+        )
+    coordinator = origin_state / "sessions" / "runs" / "kbi"
+    assert scan_session_log(coordinator / "logs.jsonl").end_reason == "interrupted"
+    assert summarize_session_dir(coordinator).status == "stopped"
+
+
+def test_a_fan_out_leaves_no_stop_marker_behind(
+    origin: Path, tmp_path: Path, runtime: LaneRuntime
+) -> None:
+    """A stop request in the coordinator's dir, honoured or arrived after the
+    lanes ended, is consumed with the session: nothing outlives it there."""
+    from agent6.sessions.ipc import request_stop, stop_request_pending
+
+    origin_state = state_dir(origin)
+    cfg = Config()
+    coordinator = origin_state / "sessions" / "runs" / "fan"
+    coordinator.mkdir(parents=True)
+    request_stop(coordinator)
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    run_parallel(
+        "t",
+        _specs(tmp_path, cfg, "fan", "1"),
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="fan",
+    )
+    assert not stop_request_pending(coordinator)

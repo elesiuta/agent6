@@ -20,6 +20,7 @@ from agent6.portable import atomic_write
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import (
     MANIFEST_VERSION,
+    FanoutStamp,
     ManifestError,
     ModelBrief,
     ModelsBrief,
@@ -83,6 +84,7 @@ def write_session_manifest(
     forked_from_sha: str | None = None,
     worktree: Path | None = None,
     worktree_git_dir: Path | None = None,
+    fanout: FanoutStamp | None = None,
 ) -> None:
     """Write the canonical manifest.json for a run.
 
@@ -96,7 +98,8 @@ def write_session_manifest(
     (source run + the turn forked from + the workspace sha at that turn + the
     gate the source was judged by). A non-forked run leaves them null.
     *worktree* is the fork's own checkout and *worktree_git_dir* the repository
-    git dir it points into (see `SessionManifest.worktree`).
+    git dir it points into (see `SessionManifest.worktree`). *fanout* is a
+    `run --parallel` coordinator's own record.
     """
     lineage = _parallel_lineage()
     # A fork passes the source's pin; a fresh run carries the configured gate
@@ -154,6 +157,7 @@ def write_session_manifest(
         worktree=worktree,
         worktree_git_dir=worktree_git_dir,
         parallel=lineage,
+        fanout=fanout,
     )
     write_manifest(layout.manifest_path, m)
 

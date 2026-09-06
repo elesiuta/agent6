@@ -65,3 +65,21 @@ def test_runs_stop_on_a_dead_run_is_a_noop(
     assert main(["sessions", "stop", "dead-run-BBB222"]) == 0
     assert not stop_request_pending(rd)
     assert "not running" in capsys.readouterr().err
+
+
+def test_runs_stop_on_a_fan_out_says_what_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fan-out coordinator has no step to finish and no loop to resume: the
+    stop asks its lanes to stop and imports what landed, and the message says
+    that instead of promising a resume."""
+    monkeypatch.chdir(tmp_path)
+    rd = _session_dir(tmp_path, "fan-AAAA11")
+    (rd / "manifest.json").write_text(
+        '{"version": 3, "mode": "run", "fanout": {"lanes": 2, "spec": "2"}}', encoding="utf-8"
+    )
+    write_worker_pid(rd, os.getpid())
+    assert main(["sessions", "stop", "fan-AAAA11"]) == 0
+    assert stop_request_pending(rd)
+    out = capsys.readouterr().out
+    assert "its lanes are asked to stop" in out and "resume" not in out

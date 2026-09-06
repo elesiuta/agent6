@@ -41,5 +41,6 @@
   "worktree_git_dir": null,
   "merged": null,
   "parallel": null,
-  "compare": null
+  "compare": null,
+  "fanout": null
 }

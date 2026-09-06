@@ -71,7 +71,7 @@
   },
   {
     "kind": "marker",
-    "body": "dispatched 2 parallel tasks (group p1); lanes run detached and appear as runs in the hub\n• fix the race\n• add a test",
+    "body": "dispatched 2 parallel tasks (group p1); lanes run detached, listed under this session\n• fix the race\n• add a test",
     "name": "",
     "arg": "",
     "ok": null,

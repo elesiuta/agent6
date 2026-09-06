@@ -47,13 +47,15 @@ from agent6.app.compare import (
     manifest_task,
     print_ranked_candidates,
     rank,
+    verify_word,
 )
 from agent6.app.finalize import EXIT_VERIFY_FAILED
-from agent6.app.manifest import write_manifest
+from agent6.app.manifest import write_manifest, write_session_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
 from agent6.config.layer import materialize
 from agent6.directive import parse_spec
+from agent6.events import EventSink, EventWriteError
 from agent6.git_ops import (
     GitError,
     branch_exists,
@@ -69,9 +71,24 @@ from agent6.git_ops import status as git_status
 from agent6.memory import merge_decisions, merge_memory, seed_store
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, repo_id, state_dir
-from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
+from agent6.sessions.ipc import (
+    clear_stop_request,
+    clear_worker_pid,
+    emit_session_start,
+    request_stop,
+    steer_answer_is_abort,
+    stop_request_pending,
+    worker_is_alive,
+)
 from agent6.sessions.layout import SessionLayout, bucket_dir, session_layout
-from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
+from agent6.sessions.manifest import (
+    CompareStamp,
+    FanoutStamp,
+    ManifestError,
+    SessionManifest,
+    read_manifest,
+)
+from agent6.types import session_bucket
 from agent6.viewmodel import produced_result, summarize_session_dir
 from agent6.viewmodel.format import status_label
 from agent6.workflows.judge import CandidateBrief
@@ -910,13 +927,21 @@ def run_parallel(
     fanout_id: str | None = None,
     auto_approve: bool = False,
     pins: Sequence[str] = (),
+    spec: str = "",
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Run *lanes* to completion, import them, and print a ranked comparison.
 
+    The fan-out is a session of its own under the origin's runs (id
+    *fanout_id*): a manifest carrying the fan-out stamp (*spec* is the
+    `--parallel` argument as typed) and no run branch, a journal (the
+    dispatch, the ranking, the end), and a worker pid while the lanes run
+    and the judge ranks them, so every listing shows it live and nests the
+    lanes under it. `sessions stop <fanout_id>` ends it the way Ctrl+C does.
+
     Returns `fanout_exit_code` over the lanes (0 a lane verified green or no
     lane had a gate, 1 nothing rankable, 4 gates ran and none passed), 2 with
-    no lanes or an unreadable origin, 130 on Ctrl+C.
+    no lanes or an unreadable origin, 130 on Ctrl+C or a stop request.
     *spawner* defaults to the real bridge spawner; tests inject a fake.
     `auto_approve` forwards to every lane's argv, same as `max_usd`.
     """
@@ -938,12 +963,84 @@ def run_parallel(
             runtime=runtime,
         )
     try:
-        base_sha = git_status(origin).head_sha
+        origin_status = git_status(origin)
     except GitError as exc:
         reporter.error(str(exc))
         return 2
+    base_sha = origin_status.head_sha
 
-    bucket_dir(origin_state, "runs").mkdir(parents=True, exist_ok=True)
+    layout = SessionLayout(
+        state_dir=origin_state, session_id=fanout_id, subdir=session_bucket("run")
+    )
+    layout.ensure()
+    write_session_manifest(
+        layout,
+        session_id=fanout_id,
+        user_task=task,
+        base_sha=base_sha,
+        base_branch=origin_status.branch,
+        run_branch=None,
+        cfg=cfg,
+        fanout=FanoutStamp(lanes=len(lanes), spec=spec),
+    )
+    events = EventSink(layout.logs_path)
+    emit_session_start(
+        events,
+        layout.session_dir,
+        "session.start",
+        session_id=fanout_id,
+        user_task=task[:200],
+        mode="run",
+    )
+    events.emit("loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[task[:200]])
+    try:
+        return _drive_fanout(
+            task,
+            lanes,
+            spawner=spawner,
+            cfg=cfg,
+            origin=origin,
+            origin_state=origin_state,
+            runtime=runtime,
+            max_usd=max_usd,
+            fanout_id=fanout_id,
+            base_sha=base_sha,
+            events=events,
+            coordinator_dir=layout.session_dir,
+            reporter=reporter,
+        )
+    except KeyboardInterrupt:
+        # Ctrl+C past the await (the judge call, the report): the operator's
+        # own act, journaled so the record reads stopped, never stale.
+        with contextlib.suppress(EventWriteError):
+            events.emit("session.end", reason="interrupted", iterations=0, all_passed=False)
+        raise
+    except Exception:
+        with contextlib.suppress(EventWriteError):
+            events.emit("session.end", reason="crashed", iterations=0, all_passed=False)
+        raise
+    finally:
+        clear_worker_pid(layout.session_dir)
+
+
+def _drive_fanout(
+    task: str,
+    lanes: list[LaneSpec],
+    *,
+    spawner: LaneSpawner,
+    cfg: Config,
+    origin: Path,
+    origin_state: Path,
+    runtime: LaneRuntime,
+    max_usd: float | None,
+    fanout_id: str,
+    base_sha: str,
+    events: EventSink,
+    coordinator_dir: Path,
+    reporter: Reporter,
+) -> int:
+    """Spawn, await, import, rank and report the lanes, journaling the ranking
+    and the end into the fan-out's own session (`run_parallel` opened it)."""
     reporter.note(f"parallel fan-out {fanout_id}: {len(lanes)} lanes")
     if max_usd is not None:
         # The judge is one more capped call series, so the advertised total
@@ -964,7 +1061,11 @@ def run_parallel(
                 print_lane_status(spec, "started", 0.0, reporter=reporter)
             else:
                 reporter.note(f"lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}")
-        interrupted = await_lanes([r for r in results if r.ok], reporter=reporter)
+        interrupted = await_lanes(
+            [r for r in results if r.ok],
+            should_stop=lambda: stop_request_pending(coordinator_dir),
+            reporter=reporter,
+        )
     except KeyboardInterrupt:
         # Ctrl+C mid-spawn (before the await): route the already-started lanes
         # into the same stop-grace path, then import-what-exists + report below.
@@ -974,6 +1075,9 @@ def run_parallel(
             reporter=reporter,
         )
 
+    # The stop request, honoured or arrived too late to matter, is consumed
+    # with the session: nothing outlives the fan-out in its dir.
+    clear_stop_request(coordinator_dir)
     candidates, failed, imported = _import_lanes(
         results,
         origin=origin,
@@ -1008,7 +1112,42 @@ def run_parallel(
         fanout_id=fanout_id,
         reporter=reporter,
     )
+    by_id = {c.session_id: c for c in candidates}
+    events.emit(
+        "loop.parallel.compared",
+        group=fanout_id,
+        ranked_by=outcome.ranked_by,
+        ranking=[
+            {
+                "session_id": rid,
+                "verify": verify_word(by_id[rid].verify_ok),
+                "cost_usd": by_id[rid].cost_usd,
+            }
+            for rid in outcome.ranking
+        ],
+        judge_cost_usd=outcome.judge_cost_usd,
+        judge_cost_partial=outcome.judge_cost_partial,
+    )
+    if outcome.judge_cost_usd > 0 or outcome.judge_cost_partial:
+        # The judge is the fan-out's own spend; each lane's rides its own row.
+        events.emit(
+            "budget.update",
+            usd_total=outcome.judge_cost_usd,
+            usd_partial=outcome.judge_cost_partial,
+        )
+    rc = 130 if interrupted else fanout_exit_code(candidates)
+    reason, all_passed = _fanout_end(rc, candidates)
+    events.emit("session.end", reason=reason, iterations=0, all_passed=all_passed)
+    return rc
 
-    if interrupted:
-        return 130
-    return fanout_exit_code(candidates)
+
+def _fanout_end(rc: int, candidates: list[CandidateBrief]) -> tuple[str, bool | None]:
+    """The `session.end` a fan-out's exit code reads as: interrupted (130),
+    finished (0: passed when a lane's gate went green, ungated when none had
+    one), or failed for want of a result (1) or a green gate (4). The
+    fan-out's own gate verdict is its best lane's: it ran no gate itself."""
+    if rc == 130:
+        return "interrupted", False
+    if rc == 0:
+        return "finish_session", True if any(c.verify_ok for c in candidates) else None
+    return ("no_lane_passed" if rc == EXIT_VERIFY_FAILED else "no_lane_result"), False

@@ -135,7 +135,7 @@ def test_parallel_dispatched_renders_a_truthful_marker() -> None:
     (item,) = items
     assert item.kind == "marker"
     assert "dispatched 2 parallel tasks (group p1)" in item.body
-    assert "appear as runs in the hub" in item.body
+    assert "listed under this session" in item.body
     assert "fix the bug" in item.body and "add tests" in item.body
 
 
@@ -753,3 +753,40 @@ def test_compaction_renders_as_markers_on_the_conversation() -> None:
     assert items[2].body == "compaction requested"
     assert items[3].body == "context compacted: 1,200-char summary, 3 recent turns kept verbatim"
     assert items[4].body == "compaction failed: 429 rate limited"
+
+
+def test_parallel_compared_renders_the_ranking() -> None:
+    """A fan-out's journal records the auto-compare: the marker lists the
+    candidates best first with their gate verdict and cost, and names the
+    judge or the mechanical fallback."""
+    (item,) = fold_transcript(
+        [
+            {
+                "type": "loop.parallel.compared",
+                "group": "fan",
+                "ranked_by": "judge",
+                "ranking": [
+                    {"session_id": "fan-l2", "verify": "passed", "cost_usd": 0.05},
+                    {"session_id": "fan-l1", "verify": "failed", "cost_usd": 0.07},
+                ],
+            }
+        ]
+    )
+    assert item.kind == "marker"
+    assert "compared group fan: 2 candidate(s), ranked by judge" in item.body
+    assert "1. fan-l2  passed  $0.05" in item.body
+    assert "2. fan-l1  failed  $0.07" in item.body
+
+
+def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:
+    """A fan-out (or a group whose lane count is known at dispatch) names its
+    lanes, the count every listing shows; the task count alone said
+    "dispatched 1 parallel task" over two lanes."""
+    (item,) = fold_transcript(
+        [{"type": "loop.parallel.dispatched", "group": "fan", "lanes": 2, "tasks": ["t"]}]
+    )
+    assert "dispatched 2 lanes (group fan)" in item.body
+    (item,) = fold_transcript(
+        [{"type": "loop.parallel.dispatched", "group": "p1", "lanes": 3, "tasks": ["a", "b"]}]
+    )
+    assert "dispatched 3 lanes for 2 tasks (group p1)" in item.body

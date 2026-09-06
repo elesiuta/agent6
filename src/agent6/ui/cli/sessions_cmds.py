@@ -364,6 +364,15 @@ def _cmd_stop(*, session_id: str) -> int:
         print(f"[agent6] {rid} is not running; nothing to stop.", file=sys.stderr)
         return 0
     request_stop(session_dir)
+    fanout = None
+    with contextlib.suppress(ManifestError):
+        fanout = read_manifest(session_dir).fanout
+    if fanout is not None:
+        print(
+            f"[agent6] requested stop for {rid}; its lanes are asked to stop and what"
+            " landed is imported and ranked."
+        )
+        return 0
     print(f"[agent6] requested stop for {rid}; it ends after the current step.")
     print(f"  resume with:  agent6 resume {rid}")
     return 0

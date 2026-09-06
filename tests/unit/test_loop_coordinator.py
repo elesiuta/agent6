@@ -367,7 +367,11 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: Path) -> None:
     # (lane ids do not exist yet); joined names the REAL ids from the results.
     dispatched = events.of("loop.parallel.dispatched")
     joined = events.of("loop.parallel.joined")
-    assert dispatched and dispatched[0] == {"group": "p1", "tasks": ["task one", "task two"]}
+    assert dispatched and dispatched[0] == {
+        "group": "p1",
+        "lanes": 2,
+        "tasks": ["task one", "task two"],
+    }
     assert joined and [ln["status"] for ln in joined[0]["lanes"]] == ["joined", "joined"]
     assert [ln["session_id"] for ln in joined[0]["lanes"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
     # The join names the group the lanes were stamped with -- the id

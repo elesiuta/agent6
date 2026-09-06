@@ -48,6 +48,8 @@ SessionEndReason = Literal[
     "ask_repl_empty",
     "gate_stale",
     "gate_red_at_base",
+    "no_lane_result",  # a run --parallel fan-out: no lane produced a rankable result
+    "no_lane_passed",  # a run --parallel fan-out: gates ran and no lane's went green
 ]
 
 
@@ -112,6 +114,10 @@ class SessionResult:
                           run touched anything (a verify ran against an
                           unmodified tree and failed). "Your run failed" and
                           "your change broke nothing new" are different facts.
+      no_lane_result    - a `run --parallel` fan-out: no lane produced a
+                          rankable result (exit 1).
+      no_lane_passed    - a `run --parallel` fan-out: gates ran and no lane's
+                          went green (exit 4).
     """
 
     completed: bool

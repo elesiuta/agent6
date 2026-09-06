@@ -55,5 +55,6 @@
     "rationale": "cleanest diff",
     "judge_cost_usd": 0.0102,
     "judge_cost_partial": true
-  }
+  },
+  "fanout": null
 }

@@ -695,3 +695,32 @@ def test_a_finished_run_still_resumes_with_a_steer(
     err = capsys.readouterr().err
     assert "already finished" not in err
     assert "no resume snapshot" in err
+
+
+def test_resume_refuses_a_fan_out_coordinator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `run --parallel` fan-out is a session of its own with no loop to
+    continue: resuming it is refused by name, pointing at its lanes, before
+    the snapshot check would call it "no resume snapshot"."""
+    from agent6.paths import state_dir
+    from agent6.sessions.layout import SessionLayout
+
+    monkeypatch.chdir(tmp_path)
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="fan-AAAA11")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "fan-AAAA11",
+                "mode": "run",
+                "user_task": "t",
+                "fanout": {"lanes": 2, "spec": "2"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert _cmd_resume(None, "fan-AAAA11", force=False, steer="") == 2
+    err = capsys.readouterr().err
+    assert "fan-out coordinator is not resumable" in err and "sessions show fan-AAAA11" in err

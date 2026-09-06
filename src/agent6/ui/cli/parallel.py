@@ -143,4 +143,5 @@ def dispatch_parallel(
         fanout_id=fanout_id,
         auto_approve=auto_approve,
         pins=pins,
+        spec=spec,
     )
