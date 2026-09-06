@@ -733,7 +733,7 @@ def _dispatch_history(args: argparse.Namespace) -> int:
 
     if args.history_command == "search":
         if not args.query:
-            print("ERROR: 'history' needs a query (or `history search <query>`).", file=sys.stderr)
+            print("ERROR: 'history' needs a query, the pattern to search for.", file=sys.stderr)
             return 2
         return _cmd_history_search(args.query, fixed=not args.regex, session_id=args.session)
     raise AssertionError("unreachable")  # pragma: no cover -- history subparser is required
