@@ -583,7 +583,7 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
     def _no_away(_d: Path) -> str | None:
         return None
 
-    def _approve_yes(_p: str, *, standing: bool = True) -> str:
+    def _approve_yes(_p: str, **_k: object) -> str:
         return "yes"
 
     monkeypatch.setattr(interactmod, "frontend_is_live", _not_live)
@@ -626,7 +626,7 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
 
-    def _first(_q: tuple[UserQuestion, ...]) -> tuple[str, ...]:
+    def _first(_q: tuple[UserQuestion, ...], **_k: object) -> tuple[str, ...]:
         return ("a",)
 
     monkeypatch.setattr(interactmod, "default_stdin_questioner", _first)

@@ -140,7 +140,7 @@ def test_questioner_marks_headless_defaults(
     the question.answer event carries source=headless-default."""
     from agent6.ui.cli import _interact as interact_mod
 
-    def _no_tty(_q: tuple[UserQuestion, ...]) -> tuple[str, ...] | None:
+    def _no_tty(_q: tuple[UserQuestion, ...], **_kw: object) -> tuple[str, ...] | None:
         return None
 
     monkeypatch.setattr(interact_mod, "default_stdin_questioner", _no_tty)
@@ -204,3 +204,102 @@ def test_a_wait_park_narrates_the_attach_remedy(
     ).approve
     approve("Allow run_command: ls", scope=None)
     assert any("approval awaits a front-end" in ln and "agent6 attach" in ln for ln in lines)
+
+
+def test_tty_prompt_ends_once_until_holds(tmp_path: Path) -> None:
+    """A prompt whose answer arrives by another route ends with None instead of
+    waiting for a line the operator will never type; what they had typed so far
+    is discarded, not left for the next prompt."""
+    flag = tmp_path / "answered"
+
+    def child() -> int:
+        from agent6.ui.cli._steer import tty_prompt
+
+        ans = tty_prompt("PICK> ", fall_back_to_stdin=False, until=flag.exists)
+        if ans is not None:
+            return 13
+        # The half-typed "tw" must not ride into the next prompt as its answer.
+        nxt = tty_prompt("NEXT> ", fall_back_to_stdin=False)
+        return 0 if nxt == "ok" else 14
+
+    pid, master = pty.fork()
+    if pid == 0:  # pragma: no cover - child process
+        os._exit(child())
+    buf = b""
+    deadline = time.monotonic() + 15
+    try:
+        while b"PICK>" not in buf and time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.5)
+            if ready:
+                buf += os.read(master, 4096)
+        assert b"PICK>" in buf, f"prompt never appeared: {buf[-500:]!r}"
+        os.write(master, b"tw")  # a partial line, no newline
+        time.sleep(0.3)
+        flag.write_text("1", encoding="utf-8")
+        while b"NEXT>" not in buf and time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.5)
+            if ready:
+                buf += os.read(master, 4096)
+        assert b"NEXT>" in buf, f"second prompt never appeared: {buf[-500:]!r}"
+        os.write(master, b"ok\n")
+        _, status = os.waitpid(pid, 0)
+        assert os.waitstatus_to_exitcode(status) == 0, buf[-500:]
+    finally:
+        os.close(master)
+
+
+def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: Path) -> None:
+    """A foreground run blocked on its own terminal takes an answer written
+    over the file bridge (`agent6 answer`, the web, a front-end attached after
+    the prompt): the approval and the question both read it, and the journal
+    names the source. Before, that run never looked at the file, so every
+    other seat's "answered" was a lie and the run waited on the terminal."""
+    from agent6.sessions.ipc import write_answer, write_question_answers
+    from agent6.tools.operator_prompts import OperatorPrompts
+    from agent6.ui.cli._interact import build_approver, build_questioner
+
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+
+    def child() -> int:
+        emitted: list[dict[str, Any]] = []
+
+        def _emit(event_type: str, **fields: Any) -> None:
+            if event_type.endswith(".answer"):
+                emitted.append(fields)
+
+        prompts = OperatorPrompts(
+            approver=build_approver(session_dir),
+            questioner=build_questioner(session_dir),
+            journal=_emit,
+            session_dir=session_dir,
+        )
+        approved = prompts.approve("Allow run_command: ls", scope="command")
+        answers = prompts.ask((UserQuestion(question="port?"),))
+        if not approved or answers != ("9090",):
+            return 13
+        return 0 if all(f.get("source") == "frontend" for f in emitted) else 14
+
+    pid, master = pty.fork()
+    if pid == 0:  # pragma: no cover - child process
+        os._exit(child())
+    buf = b""
+    deadline = time.monotonic() + 15
+    try:
+        while b"[y/N/a/d]" not in buf and time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.5)
+            if ready:
+                buf += os.read(master, 4096)
+        assert b"[y/N/a/d]" in buf, f"approval never prompted: {buf[-500:]!r}"
+        write_answer(session_dir, "approval-1", "yes")
+        while b"port?" not in buf and time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.5)
+            if ready:
+                buf += os.read(master, 4096)
+        assert b"port?" in buf, f"question never prompted: {buf[-500:]!r}"
+        write_question_answers(session_dir, "question-1", ["9090"])
+        _, status = os.waitpid(pid, 0)
+        assert os.waitstatus_to_exitcode(status) == 0, buf[-800:]
+        assert b"answered elsewhere" in buf
+    finally:
+        os.close(master)

@@ -341,18 +341,6 @@ def effective_away(session_dir: Path) -> str:
     return os.environ.get("AGENT6_DETACHED_AWAY", "") or away_mode(session_dir)
 
 
-def answer_reaches(session_dir: Path) -> bool:
-    """Whether a written answer will be READ by the run it is written for.
-
-    The run polls the answer file only for a live front-end or an away-mode of
-    "wait"; a foreground run with a terminal is blocked on that terminal and
-    never looks. THE one owner of the question, because writing the file and
-    reporting "answered" to an operator whose run then sits there forever is
-    the same lie on every surface -- the CLI refused it while the web and the
-    TUI both wrote and said "answered"."""
-    return frontend_is_live(session_dir) or away_mode(session_dir) == "wait"
-
-
 def frontend_is_live(session_dir: Path) -> bool:
     """True when ANY registered front-end is a live process agent6 registered. Prunes
     dead claims (hard-killed front-ends, and pids since reused by something
@@ -456,6 +444,13 @@ def write_answer(session_dir: Path, prompt_id: str, answer: str) -> None:
     "yes", "no", "session" or "session-deny"."""
     target = _answer_path(approvals_dir(session_dir), prompt_id)
     _write_answer_atomic(target, answer)
+
+
+def answer_written(session_dir: Path, prompt_id: str) -> bool:
+    """Whether an answer for *prompt_id* is on disk: a peek, nothing consumed.
+    The terminal prompt polls it, so an answer written by another route ends
+    the prompt instead of waiting behind it."""
+    return _answer_path(approvals_path(session_dir), prompt_id).exists()
 
 
 def clear_answer(session_dir: Path, prompt_id: str) -> None:
@@ -655,6 +650,11 @@ def write_question_answers(session_dir: Path, question_id: str, answers: Sequenc
     _write_answer_atomic(
         _answer_path(questions_dir(session_dir), question_id), json.dumps(list(answers))
     )
+
+
+def question_answers_written(session_dir: Path, question_id: str) -> bool:
+    """The `ask_user` analogue of :func:`answer_written`."""
+    return _answer_path(session_dir / QUESTION_DIR_NAME, question_id).exists()
 
 
 def read_question_answers(

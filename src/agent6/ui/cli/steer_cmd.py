@@ -15,7 +15,6 @@ from pathlib import Path
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import submit_steer, worker_is_alive
 from agent6.ui.cli._common import resolve_session_layout
-from agent6.ui.cli.answer_cmd import _unanswerable
 from agent6.viewmodel.listing import summarize_session_dir
 
 
@@ -44,15 +43,10 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     if summary.status == "waiting" and summary.reason:
         # Parked on an operator prompt: no boundaries arrive and no steer
         # (--now included) can break that wait; only the answer can.
-        # `agent6 answer` takes a question, and only from a run that reads the
-        # answer file; keying on the prompt kind alone named it for a run
-        # waiting at its own terminal, which refuses. One owner for that test.
-        deliverable = summary.reason.startswith("question") and not _unanswerable(
-            layout.session_dir, layout.session_id
-        )
+        # `agent6 answer` takes a question; an approval needs a front-end.
         how = (
             f"agent6 answer {layout.session_id}"
-            if deliverable
+            if summary.reason.startswith("question")
             else f"agent6 attach {layout.session_id}"
         )
         print(

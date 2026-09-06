@@ -132,20 +132,20 @@ def test_answer_refuses_a_dead_run(
     assert "not running" in capsys.readouterr().err
 
 
-def test_answer_refuses_a_run_waiting_at_its_own_terminal(
+def test_answer_reaches_a_run_waiting_at_its_own_terminal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A foreground run blocks on its terminal and never reads the answer file;
-    writing one there and printing "answered" left both sides waiting."""
+    """A foreground run's terminal prompt reads the answer file while it waits,
+    so the verb takes a run with no away-mode and no front-end too. It once
+    refused that run as "waiting at its own terminal", while the web and the
+    TUI wrote the file and said "answered" to a run that never looked."""
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
     (layout.session_dir / "approvals" / "away.mode").unlink()  # no away-mode, no front-end
 
-    assert _cmd_answer("curious-fox", ("9090",)) == 2
+    assert _cmd_answer("curious-fox", ("9090",)) == 0
 
-    err = capsys.readouterr().err
-    assert "waiting at its own terminal" in err
-    assert "agent6 attach curious-fox-AAAA11" in err
-    assert not (layout.session_dir / "questions" / "question-1.answer").exists()
+    assert read_question_answers(layout.session_dir, "question-1", timeout_s=1.0) == ("9090",)
+    assert "answered curious-fox-AAAA11" in capsys.readouterr().out
 
 
 def test_a_bare_call_prints_the_question_even_on_a_terminal_bound_run(

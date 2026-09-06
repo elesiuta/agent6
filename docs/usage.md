@@ -89,7 +89,8 @@ agent6 sessions graph         # the persisted task graph
 
 ## Answer a parked prompt
 
-A run parked on an approval or a question (`AGENT6_DETACHED_AWAY=wait`, a hub-spawned run, a fan-out lane) takes its answer from a file in its session directory, which is what every front-end writes and what a script can write.
+A run waiting on an approval or a question takes its answer from a file in its session directory, whichever seat it waits in: a parked run polls it, and a foreground run's own terminal prompt reads it too.
+Every front-end writes that file, and so can a script.
 
 - `agent6 answer <id>` prints the open question and its options; `agent6 answer <id> TEXT...` answers it (one TEXT per question, in order) without a terminal
 - `agent6 sessions dir <id>` prints the session directory; the prompt's `id` is in its `logs.jsonl` (`approval.prompt`, `question.prompt`)

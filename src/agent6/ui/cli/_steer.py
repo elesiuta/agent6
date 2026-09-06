@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import select
 import shlex
 import signal
 import subprocess
@@ -18,7 +19,7 @@ import tempfile
 import termios
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from agent6.app.frontend import SessionFacts
 from agent6.events import EventSink
@@ -154,14 +155,34 @@ def tty_message(text: str) -> None:
             print(text, file=sys.stderr, flush=True)
 
 
+def _read_line(stream: TextIO, fd: int, until: Callable[[], bool] | None) -> str | None:
+    """One line from *stream*, or None at EOF or once *until* holds (polled
+    every 0.2 s while nothing is typed; a line already complete wins)."""
+    if until is not None:
+        while not until():
+            ready, _, _ = select.select([fd], [], [], 0.2)
+            if ready:
+                break
+        else:
+            return None
+    line = stream.readline()
+    return line.rstrip("\n") if line else None
+
+
 def tty_prompt(
-    text: str, *, fall_back_to_stdin: bool = True, plain: str | None = None
+    text: str,
+    *,
+    fall_back_to_stdin: bool = True,
+    plain: str | None = None,
+    until: Callable[[], bool] | None = None,
 ) -> str | None:
     """Prompt on the controlling terminal directly (see `tty_message`).
     Falls back to stdin when there is no controlling terminal, unless the
     caller must never consume piped stdin (`fall_back_to_stdin=False`:
     return None); the fallback prints `plain` when given (the text without
-    terminal escapes, since stdout may be a pipe)."""
+    terminal escapes, since stdout may be a pipe). `until` is polled while
+    the prompt waits: once it holds, the prompt ends with None and a partly
+    typed line is discarded (the answer arrived by another route)."""
     try:
         # The getpass recipe: O_RDWR on the device + an unbuffered FileIO.
         # A plain open("/dev/tty", "r+") NEVER works -- buffered update mode
@@ -182,14 +203,23 @@ def tty_prompt(
         if not fall_back_to_stdin:
             return None
         try:
-            return input(text if plain is None else plain)
-        except (EOFError, KeyboardInterrupt):
+            if until is None:
+                return input(text if plain is None else plain)
+            sys.stdout.write(text if plain is None else plain)
+            sys.stdout.flush()
+            return _read_line(sys.stdin, sys.stdin.fileno(), until)
+        except (EOFError, KeyboardInterrupt, OSError, ValueError):
             return None
     try:
         with tty:
             tty.write(text)
-            line = tty.readline()
-            return line.rstrip("\n") if line else None
+            line = _read_line(tty, fd, until)
+            if line is None and until is not None:
+                # Whatever was typed was aimed at a prompt that is over.
+                with contextlib.suppress(Exception):
+                    termios.tcflush(fd, termios.TCIFLUSH)
+                tty.write("\n")
+            return line
     except OSError:
         # The terminal vanished mid-prompt; the text already printed, so do
         # not prompt again on stdin.

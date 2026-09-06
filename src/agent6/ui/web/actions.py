@@ -30,7 +30,6 @@ from agent6.machine import (
     write_stop_request,
 )
 from agent6.sessions.ipc import (
-    answer_reaches,
     read_worker_pid,
     request_compact,
     request_stop,
@@ -113,14 +112,6 @@ def spawn_machine_run(
     return (err == ""), (err or "started")
 
 
-# A run blocked on its OWN terminal never reads the answer file (`answer_reaches`):
-# writing one there and reporting "answered" left the operator waiting on a run
-# that was waiting on them.
-_AT_ITS_TERMINAL = (
-    "{session_id} is waiting at its own terminal, which is where the answer has to go"
-)
-
-
 def approve(cwd: Path, session_id: str, prompt_id: str, answer: str) -> tuple[bool, str]:
     """Answer a pending approval prompt (the run's `approval.prompt`) with the
     operator's literal choice."""
@@ -133,8 +124,6 @@ def approve(cwd: Path, session_id: str, prompt_id: str, answer: str) -> tuple[bo
         # action: nothing would consume the answer, and the next resume drops
         # it. A session grant would be just as stranded.
         return False, "the session is not live"
-    if not answer_reaches(session_dir):
-        return False, _AT_ITS_TERMINAL.format(session_id=session_id)
     write_answer(session_dir, prompt_id, answer)
     return True, "answered"
 
@@ -148,8 +137,6 @@ def answer_question(
         return False, f"no session {session_id!r}"
     if not session_is_live(session_dir):
         return False, "the session is not live"  # see approve()
-    if not answer_reaches(session_dir):
-        return False, _AT_ITS_TERMINAL.format(session_id=session_id)
     prompt = open_question(session_dir)
     if prompt is None or prompt.id != question_id:
         return False, "that question is no longer open"

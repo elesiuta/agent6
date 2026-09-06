@@ -47,7 +47,6 @@ from agent6.app.reporter import Reporter
 from agent6.config.layer import available_preset_names
 from agent6.directive import parse_btw, parse_compact
 from agent6.sessions.ipc import (
-    answer_reaches,
     register_frontend,
     request_compact,
     request_stop,
@@ -751,11 +750,10 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
 
     def session_controllable(self) -> bool:
         """True while the run can receive operator input over the file bridge:
-        the dir status is a live word AND the run reads that bridge
-        (`answer_reaches`). Parked/created (never started), stale (worker
-        gone), a run waiting at its own terminal, and every end word route the
-        composer to resume -- the one action that will actually be read."""
-        return self.dir_status[0] in LIVE_STATUS_WORDS and answer_reaches(self.session_dir)
+        the dir status is a live word. Parked/created (never started), stale
+        (worker gone) and every end word route the composer to resume -- the
+        one action that will actually be read."""
+        return self.dir_status[0] in LIVE_STATUS_WORDS
 
     def action_toggle_dashboard(self) -> None:
         """Flip between the conversation (the primary view) and the dashboard

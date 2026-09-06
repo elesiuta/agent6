@@ -299,7 +299,7 @@ class _CliFrontEnd:
         if kind == "approval":
             with self._view.pause():
                 answer = default_stdin_approver(str(content))
-            write_answer(self._session_dir, prompt_id, answer)
+            write_answer(self._session_dir, prompt_id, answer or "no")
         else:
             questions = tuple(
                 UserQuestion(

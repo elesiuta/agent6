@@ -9,13 +9,15 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from agent6.sessions.ipc import (
+    answer_written,
     await_frontend_reply,
     away_mode,
     frontend_is_live,
+    question_answers_written,
     read_answer,
     read_question_answers,
     record_answer,
@@ -29,6 +31,7 @@ from agent6.tools.operator_prompts import (
     QuestionAnswer,
     Questioner,
     QuestionRequest,
+    Source,
 )
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._console_view import ConsoleView
@@ -60,10 +63,13 @@ def _has_controlling_tty() -> bool:
     return True
 
 
-def default_stdin_approver(prompt: str, *, standing: bool = True) -> str:
+def default_stdin_approver(
+    prompt: str, *, standing: bool = True, until: Callable[[], bool] | None = None
+) -> str | None:
     """Plain-terminal fallback for tool approval (no live TUI, or its answer
     timed out). Returns "yes", "no", "session" (allow all of this prompt's scope
-    for the rest of the run) or "session-deny" (withhold that scope for it).
+    for the rest of the run) or "session-deny" (withhold that scope for it);
+    None when nothing was typed (no terminal, or `until` held first).
 
     A plain y/n answers ONE call, either way; only the two session choices
     persist, and they mirror each other. `standing=False` is a gate that has no
@@ -90,9 +96,9 @@ def default_stdin_approver(prompt: str, *, standing: bool = True) -> str:
         rendered = plain = f"{prompt} {suffix}"
     # /dev/tty is a terminal by definition; the stdin fallback prints to
     # stdout, which may be a pipe, so it gets the text without escapes.
-    ans = tty_prompt(rendered, plain=plain)
+    ans = tty_prompt(rendered, plain=plain, until=until)
     if ans is None:
-        return "no"
+        return None
     ans = ans.strip().lower()
     if standing and ans in {"a", "all", "always", "session"}:
         return "session"
@@ -149,8 +155,10 @@ def build_approver(
     asked; if a front-end is live (it wrote a `frontends/` claim) the answer
     comes from its Allow/Deny modal via the file bridge
     (`approvals/<id>.answer`), otherwise -- or if the front-end dies / times
-    out -- it falls back to the stdin `[y/N]` prompt. This is what wires the
-    watch/auto-spawn TUI to run_command approval.
+    out -- it falls back to the stdin `[y/N]` prompt. That prompt reads the
+    same file while it waits, so `agent6 answer`, the web, or a front-end
+    attached after the question was put to the terminal answers it too: one
+    bridge, whichever seat the operator is in.
 
     `console_cell` and `steer_cell` are the CLI leg's late-bound console view
     and SteerState, read at prompt time: the view pauses its heartbeat around
@@ -195,7 +203,19 @@ def build_approver(
         with _pause(console_cell[0] if console_cell else None):
             if steer is not None and steer.armed():
                 tty_message("\n[agent6] pause armed: the menu opens after this answer.\n")
-            answer_s = default_stdin_approver(request.prompt, standing=bool(request.scope))
+            answer_s = default_stdin_approver(
+                request.prompt,
+                standing=bool(request.scope),
+                until=lambda: answer_written(session_dir, request.id),
+            )
+        source: Source = "stdin"
+        if answer_s is None:
+            filed = read_answer(session_dir, request.id, timeout_s=0.0)
+            if filed is None:
+                answer_s = "no"
+            else:
+                tty_message("[agent6] answered elsewhere.\n")
+                answer_s, source = filed, "frontend"
         # A session choice persists (across this run's resumes); session-deny
         # WITHDRAWS the scope's tools from the next turn rather than refusing
         # every later call, so the model stops spending turns on a door that
@@ -203,7 +223,7 @@ def build_approver(
         approved = record_answer(session_dir, answer_s, request.scope)
         if steer is not None and steer.armed():
             steer.prompt_now()
-        return ApprovalAnswer(approved, "stdin")
+        return ApprovalAnswer(approved, source)
 
     return approve
 
@@ -216,8 +236,9 @@ def build_questioner(
     The gate has journaled the prompt (`question.prompt`) before this is
     asked; if a TUI is live the answer comes from its question modal via
     `questions/<id>.answer`, otherwise (or if the TUI dies / times out) it
-    falls back to a numbered stdin prompt. A headless run (no TUI, no TTY)
-    gets an empty answer rather than hanging."""
+    falls back to a numbered stdin prompt, which reads that file while it
+    waits (see `build_approver`). A headless run (no TUI, no TTY) gets an
+    empty answer rather than hanging."""
 
     def ask(request: QuestionRequest, /) -> QuestionAnswer:
         questions = request.questions
@@ -243,8 +264,14 @@ def build_questioner(
             answers = reply if isinstance(reply, tuple) else tuple("" for _ in questions)
             return QuestionAnswer(answers, "away-wait")
         with _pause(console_cell[0] if console_cell else None):
-            stdin_answers = default_stdin_questioner(questions)
+            stdin_answers = default_stdin_questioner(
+                questions, until=lambda: question_answers_written(session_dir, request.id)
+            )
         if stdin_answers is None:
+            filed = read_question_answers(session_dir, request.id, timeout_s=0.0)
+            if filed is not None:
+                tty_message("[agent6] answered elsewhere.\n")
+                return QuestionAnswer(filed, "frontend")
             # No front-end and no controlling terminal: nobody saw the
             # question. Answer empty so the run never hangs, and say so
             # where a watcher will see it instead of failing silently.
@@ -258,14 +285,16 @@ def build_questioner(
     return ask
 
 
-def ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
+def ask_one_stdin(
+    q: UserQuestion, prefix: str = "", until: Callable[[], bool] | None = None
+) -> str | None:
     """Prompt one question on /dev/tty; a digit picks an option, else free text.
-    None means no terminal (headless)."""
+    None means no terminal (headless), or `until` held first."""
     lines = [
         f"{prefix}{q.question}",
         *(f"  {i}) {opt}" for i, opt in enumerate(q.options, start=1)),
     ]
-    ans = tty_prompt("\n".join(lines) + "\n> ", fall_back_to_stdin=False)
+    ans = tty_prompt("\n".join(lines) + "\n> ", fall_back_to_stdin=False, until=until)
     if ans is None:
         return None
     ans = ans.strip()
@@ -274,17 +303,20 @@ def ask_one_stdin(q: UserQuestion, prefix: str = "") -> str | None:
     return ans
 
 
-def default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...] | None:
+def default_stdin_questioner(
+    questions: tuple[UserQuestion, ...], until: Callable[[], bool] | None = None
+) -> tuple[str, ...] | None:
     """Ask each question on /dev/tty (visible under a TUI's stream redirect). For a
     series, print a summary afterwards and let the operator revise any answer (type
     its number) before submitting (blank). Returns None without a controlling
     terminal (headless) so the caller can answer empty -- never hanging or eating
-    piped stdin -- and say so."""
+    piped stdin -- and say so, or once `until` holds (the whole prompt was
+    answered by another route)."""
     answers: list[str] = []
     multi = len(questions) > 1
     for i, q in enumerate(questions, start=1):
         prefix = f"[{i}/{len(questions)}] " if multi else ""
-        ans = ask_one_stdin(q, prefix)
+        ans = ask_one_stdin(q, prefix, until)
         if ans is None:
             return None  # no tty: never block
         answers.append(ans)
@@ -296,12 +328,18 @@ def default_stdin_questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, 
         pick = tty_prompt(
             f"Review:\n{summary}\nEnter to submit, or a number to change that answer: ",
             fall_back_to_stdin=False,
+            until=until,
         )
-        if pick is None or not pick.strip():
+        if pick is None:
+            if until is not None and until():
+                return None
+            break
+        if not pick.strip():
             break
         if pick.strip().isdigit() and 1 <= int(pick.strip()) <= len(questions):
             j = int(pick.strip()) - 1
-            revised = ask_one_stdin(questions[j])
-            if revised is not None:
-                answers[j] = revised
+            revised = ask_one_stdin(questions[j], until=until)
+            if revised is None:
+                return None
+            answers[j] = revised
     return tuple(answers)

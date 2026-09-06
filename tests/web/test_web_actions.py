@@ -257,12 +257,14 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
     assert sorted(p.name for p in session_dir.iterdir()) == before, "nothing may be written"
 
 
-def test_approve_and_answer_refuse_a_run_waiting_at_its_own_terminal(tmp_path: Path) -> None:
-    """A foreground run with a terminal is blocked on that terminal and never
-    reads the answer file. `agent6 answer` refuses it; the web wrote the file
-    and said "answered", so an operator answering from their phone left the run
-    waiting on them."""
+def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: Path) -> None:
+    """A foreground run's terminal prompt reads the answer file while it waits,
+    so a live run with no away-mode and no front-end claim takes the web's
+    answer. The web once refused it as "waiting at its own terminal"; before
+    that it wrote the file and said "answered" to a run that never looked."""
     import os
+
+    from agent6.sessions.ipc import read_answer, read_question_answers
 
     session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "tty-run-A1"
     session_dir.mkdir(parents=True)
@@ -271,18 +273,20 @@ def test_approve_and_answer_refuse_a_run_waiting_at_its_own_terminal(tmp_path: P
     )
     (session_dir / "logs.jsonl").write_text(
         '{"type":"session.start","mode":"run","user_task":"t"}\n'
-        '{"type":"approval.prompt","id":"approval-1","prompt":"ok?"}\n',
+        '{"type":"approval.prompt","id":"approval-1","prompt":"ok?"}\n'
+        '{"type":"question.prompt","id":"question-1","questions":[{"question":"port?"}]}\n',
         encoding="utf-8",
     )
     (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
-    before = sorted(p.name for p in session_dir.iterdir())
 
-    ok, msg = actions.approve(tmp_path, "tty-run-A1", "approval-1", "yes")
+    assert actions.approve(tmp_path, "tty-run-A1", "approval-1", "yes") == (True, "answered")
+    assert actions.answer_question(tmp_path, "tty-run-A1", "question-1", ["9090"]) == (
+        True,
+        "answered",
+    )
 
-    assert ok is False and "its own terminal" in msg
-    ok2, msg2 = actions.answer_question(tmp_path, "tty-run-A1", "question-1", ["yes"])
-    assert ok2 is False and "its own terminal" in msg2
-    assert sorted(p.name for p in session_dir.iterdir()) == before, "nothing may be written"
+    assert read_answer(session_dir, "approval-1", timeout_s=1.0) == "yes"
+    assert read_question_answers(session_dir, "question-1", timeout_s=1.0) == ("9090",)
 
 
 def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: Path) -> None:
