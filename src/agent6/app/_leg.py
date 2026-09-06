@@ -178,7 +178,12 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     if console_stream:
         frontend.attach_console_view(events)
     session = build_session_providers(
-        cfg, role=role, events=events, transcript_sink=transcript_sink, stream_text=stream_text
+        cfg,
+        role=role,
+        events=events,
+        transcript_sink=transcript_sink,
+        stream_text=stream_text,
+        reporter=reporter,
     )
     budget = session.budget
     prompt_reviser_provider = build_prompt_reviser_provider(

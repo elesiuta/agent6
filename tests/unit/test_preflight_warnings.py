@@ -119,3 +119,17 @@ def test_an_away_mode_that_is_honored_starts_the_run() -> None:
             headless_approval_refusal(_ask_cfg(), tui_enabled=False, away=away, can_ask=False)
             is None
         )
+
+
+def test_the_preflight_notices_go_through_the_injected_reporter() -> None:
+    """`agent6 acp` injects a Reporter so what the lifecycle says reaches the
+    editor; these notices called `print` directly, so an editor's operator
+    never learned the run had started gateless or that its spend was unmetered.
+    """
+    import inspect
+
+    from agent6.app import preflight
+
+    source = inspect.getsource(preflight)
+    body = source[source.index("def budget_preflight") :]
+    assert "print(" not in body, "a preflight notice still bypasses the Reporter"

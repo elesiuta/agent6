@@ -338,7 +338,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 reporter.err(missing)
                 return 2
             # After check_provider_keys so the price cache has been refreshed.
-            budget_err = budget_preflight(cfg, extra_routes=pinned_routes)
+            budget_err = budget_preflight(cfg, extra_routes=pinned_routes, reporter=reporter)
             if budget_err is not None:
                 reporter.refuse(budget_err)
                 return 2

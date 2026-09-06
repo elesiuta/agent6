@@ -424,7 +424,13 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             # inference found.
             configured_gate = bool(cfg.workflow.verify_command)
             cfg = infer_verify_if_unset(
-                cfg, cwd, mode=mode, events=events, transcript_sink=transcript_sink, budget=budget
+                cfg,
+                cwd,
+                mode=mode,
+                events=events,
+                transcript_sink=transcript_sink,
+                budget=budget,
+                reporter=reporter,
             )
             cfg = drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
             # After resolution, never before: preflight can DROP the gate (a

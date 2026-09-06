@@ -8,7 +8,6 @@ terminal) and are injected by the front-end."""
 from __future__ import annotations
 
 import contextlib
-import sys
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,7 +18,7 @@ from agent6.app.providers import (
     InstrumentedProvider,
     build_role_provider,
 )
-from agent6.app.reporter import Reporter
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config, plan_metered
 from agent6.events import EventSink
@@ -55,7 +54,12 @@ class SessionRefused(Exception):
         self.rc = rc
 
 
-def budget_preflight(cfg: Config, extra_routes: Iterable[tuple[str, str]] = ()) -> str | None:
+def budget_preflight(
+    cfg: Config,
+    extra_routes: Iterable[tuple[str, str]] = (),
+    *,
+    reporter: Reporter = STDIO_REPORTER,
+) -> str | None:
     """Budget refusals + notices over every statically reachable model,
     before any spend: the resolved role models, any model a `[review].seats`
     spec pins, and *extra_routes* (a machine's per-state `(provider, model)`
@@ -103,25 +107,23 @@ def budget_preflight(cfg: Config, extra_routes: Iterable[tuple[str, str]] = ()) 
     if unpriced and cfg.budget.max_usd != 0.0:
         fb = cfg.budget.max_tokens_fallback
         bound = "unlimited tokens" if fb == -1 else f"{fb:,} fallback tokens"
-        print(
-            f"[agent6] NOTE: {', '.join(repr(m) for m in unpriced)} ha"
+        reporter.note(
+            f"{', '.join(repr(m) for m in unpriced)} ha"
             f"{'s' if len(unpriced) == 1 else 've'} no price data: that spend is not"
-            f" metered by max_usd and is bounded by {bound} instead.",
-            file=sys.stderr,
+            f" metered by max_usd and is bounded by {bound} instead."
         )
     if plan_models:
         pct = cfg.budget.max_percent
         bound = "the plan itself" if pct == -1 else f"max_percent {pct:g} points per run"
-        print(
-            f"[agent6] NOTE: {', '.join(repr(m) for m in plan_models)} draw"
+        reporter.note(
+            f"{', '.join(repr(m) for m in plan_models)} draw"
             f"{'s' if len(plan_models) == 1 else ''} on a subscription plan"
-            f" (no dollars; bounded by {bound}).",
-            file=sys.stderr,
+            f" (no dollars; bounded by {bound})."
         )
     return None
 
 
-def warn_if_prompt_override_incomplete(cfg: Config) -> None:
+def warn_if_prompt_override_incomplete(cfg: Config, *, reporter: Reporter = STDIO_REPORTER) -> None:
     """Warn when a custom `prompt.system_prompt_file` omits the core tool
     contracts the worker needs: `finish_session` is the only clean exit, and an
     edit primitive (`apply_edit`/`apply_patch`) is needed to do work. The
@@ -145,13 +147,12 @@ def warn_if_prompt_override_incomplete(cfg: Config) -> None:
             actions.append("terminate")
         if "apply_edit/apply_patch" in missing:
             actions.append("make edits")
-        print(
-            f"[agent6] WARNING: custom system_prompt_file ({path}) does not mention "
+        reporter.warn(
+            f"custom system_prompt_file ({path}) does not mention "
             f"{', '.join(missing)}; the worker may not know how to "
             f"{' or '.join(actions)}. The override "
             "replaces the built-in run-mode base, so the tool contracts are yours "
-            "to preserve. Inspect the assembled prompt with `agent6 prompt show`.",
-            file=sys.stderr,
+            "to preserve. Inspect the assembled prompt with `agent6 prompt show`."
         )
 
 
@@ -346,12 +347,12 @@ def git_repo_refusal(cwd: Path) -> str | None:
     )
 
 
-def require_git_repo(cwd: Path) -> bool:
+def require_git_repo(cwd: Path, *, reporter: Reporter = STDIO_REPORTER) -> bool:
     """:func:`git_repo_refusal` for a front-end that prints and branches."""
     refusal = git_repo_refusal(cwd)
     if refusal is None:
         return True
-    print(f"ERROR: {refusal}", file=sys.stderr)
+    reporter.refuse(refusal)
     return False
 
 
@@ -438,6 +439,7 @@ def infer_verify_if_unset(
     events: EventSink,
     transcript_sink: TranscriptSink,
     budget: BudgetTracker,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> Config:
     """When `workflow.verify_command` is unset for a run/plan, infer one and
     inject it IN-MEMORY (never persisted -- runs do not mutate config).
@@ -458,10 +460,9 @@ def infer_verify_if_unset(
         # mid-run adoption stays off too (the loop reads the same knob).
         events.emit("loop.verify_inferred", command=[], source="disabled")
         if mode == "run":
-            print(
-                "[agent6] verify_infer = false: running gateless"
-                " (per-step commits, no green gate; nothing is inferred or adopted).",
-                file=sys.stderr,
+            reporter.note(
+                "verify_infer = false: running gateless"
+                " (per-step commits, no green gate; nothing is inferred or adopted)."
             )
         return cfg
     agents_md = read_agents_md(cwd)
@@ -490,19 +491,17 @@ def infer_verify_if_unset(
     if inferred is None:
         events.emit("loop.verify_inferred", command=[], source="none")
         if mode == "run":
-            print(
-                "[agent6] no verify_command set and none could be inferred; running"
+            reporter.note(
+                "no verify_command set and none could be inferred; running"
                 " gateless\n         (per-step commits, no green gate). If the run"
                 " creates a recognizable project, a verify\n         command is"
-                " adopted mid-run; pin one with workflow.verify_command.",
-                file=sys.stderr,
+                " adopted mid-run; pin one with workflow.verify_command."
             )
         return cfg
     events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
-    print(
-        f"[agent6] verify_command not set; inferred from {inferred.source}:"
+    reporter.note(
+        f"verify_command not set; inferred from {inferred.source}:"
         f" {' '.join(inferred.argv)}\n         (this run only; pin it with"
-        " workflow.verify_command in your per-repo config)",
-        file=sys.stderr,
+        " workflow.verify_command in your per-repo config)"
     )
     return cfg.with_verify_command(inferred.argv)

@@ -34,7 +34,7 @@ from agent6.app.providers import (
     resolve_compaction_thresholds,
     resolve_decompose,
 )
-from agent6.app.reporter import Reporter
+from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.events import EventSink
@@ -122,7 +122,7 @@ def select_isolation(
     if cfg_err is not None:
         reporter.refuse(cfg_err)
         raise SessionRefused(2)
-    budget_err = budget_preflight(cfg)
+    budget_err = budget_preflight(cfg, reporter=reporter)
     if budget_err is not None:
         reporter.refuse(budget_err)
         raise SessionRefused(2)
@@ -177,6 +177,7 @@ def build_session_providers(
     events: EventSink,
     transcript_sink: TranscriptSink,
     stream_text: bool,
+    reporter: Reporter = STDIO_REPORTER,
 ) -> SessionProviders:
     budget = BudgetTracker(
         max_usd=cfg.budget.max_usd,
@@ -187,7 +188,7 @@ def build_session_providers(
     inner = build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
     rm_role = cfg.models.resolve(role)
     assert rm_role is not None  # require_runnable validated this
-    warn_if_prompt_override_incomplete(cfg)
+    warn_if_prompt_override_incomplete(cfg, reporter=reporter)
     provider: Provider = InstrumentedProvider(
         inner=inner,
         role=role,

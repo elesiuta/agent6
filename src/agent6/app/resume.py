@@ -447,7 +447,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         writes_code = mode != "ask"
         # The no-repo guard runs BEFORE any git-touching check (which would
         # otherwise print zeroed-out heads first, then the real error).
-        if writes_code and not require_git_repo(cwd):
+        if writes_code and not require_git_repo(cwd, reporter=reporter):
             return 2
 
         # Snapshot version guard in preflight: a v1 snapshot cannot be resumed,
