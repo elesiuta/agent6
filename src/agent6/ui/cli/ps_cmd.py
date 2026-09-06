@@ -50,6 +50,24 @@ def cmd_ps() -> int:
                             "attached" if frontend_is_live(sdir) else "",
                         )
                     )
+            # A machine instance is a live session too: its worker.pid sits at
+            # the instance root, one dir per machine name.
+            machines = repo_dir / "machines"
+            if machines.is_dir():
+                for mdir in sorted(machines.iterdir()):
+                    if not mdir.is_dir() or not worker_is_alive(mdir):
+                        continue
+                    pid = read_worker_pid(mdir)
+                    rows.append(
+                        (
+                            where,
+                            mdir.name,
+                            "machine",
+                            "running",
+                            str(pid) if pid is not None else "?",
+                            "",
+                        )
+                    )
     if not rows:
         print("no live agent6 sessions.")
         return 0
@@ -60,6 +78,7 @@ def cmd_ps() -> int:
         print("  ".join(c.ljust(widths[i]) for i, c in enumerate(r)).rstrip())
     print(
         "\nattach with: cd <directory> && agent6 attach <id>"
-        "  (? = directory not recoverable from the id)"
+        "  (a machine: agent6 machine status <id>;"
+        " ? = directory not recoverable from the id)"
     )
     return 0
