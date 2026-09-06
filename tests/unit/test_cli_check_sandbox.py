@@ -11,6 +11,8 @@ never use there.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from agent6.config import Config, SandboxConfig
@@ -197,3 +199,36 @@ def test_check_sandbox_names_which_opt_out_left_nothing_to_probe(
     assert "sandbox.isolation = 'none': commands run unconfined" in out
     assert "no kernel sandbox" not in out
     assert stub_jail == []
+
+
+def test_check_config_runs_the_refusal_ladder_a_run_applies(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`check config` FAILS on an explicit knob the selected isolation cannot
+    honour, with the run's own refusal text: hardened + network = session."""
+    env = SimpleNamespace(
+        kernel=SimpleNamespace(raw="6.8"),
+        userns_supported=True,
+        sandbox_available=True,
+        landlock_abi=5,
+    )
+
+    def _no_reason(_env: object) -> str | None:
+        return None
+
+    def _as_requested(requested: str, _env: object) -> str:
+        return requested
+
+    monkeypatch.setattr(check_cmds, "detect_env", lambda: env)
+    monkeypatch.setattr(check_cmds, "degrade_reason", _no_reason)
+    monkeypatch.setattr(check_cmds, "resolve_isolation", _as_requested)
+    cfg = Config.model_validate({"sandbox": {"isolation": "hardened", "network": "session"}})
+    checks = check_cmds._check_config_section(cfg)  # pyright: ignore[reportPrivateUsage]
+    out = capsys.readouterr().out
+    refusal = next(c for c in checks if c.name == "config.refusal")
+    assert refusal.status == "FAIL"
+    assert "sandbox.network = 'session' requires the strict isolation" in refusal.detail
+    assert "[FAIL] a run would refuse" in out
+    ok = Config.model_validate({"sandbox": {"isolation": "hardened"}})
+    checks = check_cmds._check_config_section(ok)  # pyright: ignore[reportPrivateUsage]
+    assert next(c for c in checks if c.name == "config.refusal").status == "PASS"

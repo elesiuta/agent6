@@ -19,6 +19,7 @@ from agent6.app._setup import (
     start_mcp_manager_if_enabled,
     wants_session_network,
 )
+from agent6.app.confine import check_network_support, config_refusal
 from agent6.config import (
     Config,
     ConfigError,
@@ -258,9 +259,11 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
     # Every section needs the config: the sandbox probes run under the isolation
     # it selects, so they test the jail a run here would use.
     cfg: Config | None = None
+    explicit_leaves: frozenset[str] = frozenset()
     load_error: str | None = None
     try:
-        cfg = load_effective(Path.cwd(), config_path).config
+        effective = load_effective(Path.cwd(), config_path)
+        cfg, explicit_leaves = effective.config, effective.explicit_leaves
     except (ConfigError, OSError) as exc:
         load_error = str(exc)
 
@@ -284,7 +287,7 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
 
     if cfg is not None and section in {"all", "config"}:
         print("== config ==")
-        checks.extend(_check_config_section(cfg))
+        checks.extend(_check_config_section(cfg, explicit_leaves))
         print()
 
     if cfg is not None and section in {"all", "boundaries"}:
@@ -310,8 +313,11 @@ def _cmd_check(config_path: Path | None, *, section: str) -> int:
     return 1 if failed else 0
 
 
-def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
-    """Environment detection + isolation selection + static config checks."""
+def _check_config_section(
+    cfg: Config, explicit_leaves: frozenset[str] = frozenset()
+) -> list[_DoctorCheck]:
+    """Environment detection + isolation selection + the refusal ladder a run
+    would apply + static config checks."""
     env = detect_env()
     print(f"  kernel: {env.kernel.raw}")
     print(f"  userns supported: {env.userns_supported}")
@@ -345,6 +351,22 @@ def _check_config_section(cfg: Config) -> list[_DoctorCheck]:
         out.append(
             _DoctorCheck(name="config.isolation", status="PASS", detail=f"selected {selected}")
         )
+        # The same ladder every run, resume and ask applies to the selected
+        # level: an explicit knob this host cannot honour refuses there too.
+        refusal = check_network_support(cfg, selected) or config_refusal(
+            cfg, selected, Path.cwd(), explicit_leaves=explicit_leaves
+        )
+        if refusal is not None:
+            print(f"  [FAIL] a run would refuse: {refusal}")
+            out.append(_DoctorCheck(name="config.refusal", status="FAIL", detail=refusal))
+        else:
+            out.append(
+                _DoctorCheck(
+                    name="config.refusal",
+                    status="PASS",
+                    detail=f"every explicit knob is honoured on {selected}",
+                )
+            )
     except IsolationUnavailableError as exc:
         print(f"  [FAIL] isolation selection: {exc}")
         out.append(_DoctorCheck(name="config.isolation", status="FAIL", detail=str(exc)))
