@@ -24,7 +24,7 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         help=(
             "Planning pass: same loop, no edit tools, writes plan.md."
             ' A configured `run_commands = "yes"` clamps to `"ask"`.'
-            " Pair with `agent6 run --from-plan <run-id>` to execute."
+            " Pair with `agent6 run --from <run-id>` to execute."
             " Inspect with `plan show <id>` / `plan edit <id>`."
         ),
     )

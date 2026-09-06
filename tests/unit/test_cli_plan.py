@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 plan show/edit` and `agent6 run --from-plan` CLI smoke."""
+"""`agent6 plan show/edit` and `agent6 run --from` CLI smoke."""
 
 from __future__ import annotations
 
@@ -156,16 +156,58 @@ def test_plan_edit_honors_a_multi_word_editor(
     assert "edited" in plan.read_text(encoding="utf-8")
 
 
-def test_run_from_plan_and_task_mutually_exclusive(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+def test_run_from_a_plan_with_no_task_runs_that_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--from` folded into `--from`: a plan id alone is the task (the
+    plan's own text), and the seed is not digested a second time."""
+    from agent6.ui import cli
+
+    monkeypatch.chdir(tmp_path)
+    _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: do it\n\n1. step\n")
+    seen: dict[str, object] = {}
+
+    def _fake_run(_cfg: object, task: str, **kw: object) -> int:
+        seen.update(kw, task=task)
+        return 0
+
+    def _no_prompt(_args: object, rc: int, _sid: str) -> int:
+        return rc
+
+    monkeypatch.setattr("agent6.ui.cli.run._cmd_run", _fake_run)
+    monkeypatch.setattr(cli, "_prompt_for_the_next_input", _no_prompt)
+    assert main(["run", "--from", "happy-tree-abcd"]) == 0
+    assert "do it" in str(seen["task"]) and "1. step" in str(seen["task"])
+    assert seen["seed_from"] == ""
+
+
+def test_run_from_a_run_with_no_task_names_what_it_needs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _seed_plan(tmp_path, "happy-tree-abcd", "x\n")
-    rc = main(["run", "do thing", "--from-plan", "happy-tree-abcd"])
-    assert rc == 2
-    assert "mutually exclusive" in capsys.readouterr().err
+    run_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "busy-fox-abcd"
+    run_dir.mkdir(parents=True)
+    (run_dir / "manifest.json").write_text('{"mode": "run"}', encoding="utf-8")
+    assert main(["run", "--from", "busy-fox-abcd"]) == 2
+    assert "needs a task" in capsys.readouterr().err
+
+
+def test_seeding_from_a_plan_carries_its_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With a task, `--from <plan>` digests the plan session, plan.md included;
+    the digest of a session that wrote no code said nothing about the plan."""
+    import json
+
+    from agent6.ui.cli._ask import build_ask_session_digest
+
+    monkeypatch.chdir(tmp_path)
+    plan = _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: do it\n\n1. step\n")
+    (plan.parent / "manifest.json").write_text(
+        json.dumps({"mode": "plan", "user_task": "plan it"}), encoding="utf-8"
+    )
+    digest = build_ask_session_digest(tmp_path, "happy-tree-abcd", latest=False)
+    assert digest is not None and "## Plan" in digest and "1. step" in digest
 
 
 def test_an_unreadable_plan_refuses_rather_than_crashing(
@@ -181,8 +223,8 @@ def test_an_unreadable_plan_refuses_rather_than_crashing(
     plan.chmod(0o000)
     try:
         with pytest.raises(OperatorError, match="could not read"):
-            main(["run", "--from-plan", "quiet-fox-abcd"])
-        assert cli_main(["run", "--from-plan", "quiet-fox-abcd"]) == 2
+            main(["run", "--from", "quiet-fox-abcd"])
+        assert cli_main(["run", "--from", "quiet-fox-abcd"]) == 2
         err = capsys.readouterr().err
         assert "could not read" in err
         assert str(plan) in err
@@ -195,7 +237,7 @@ def test_an_unreadable_plan_refuses_rather_than_crashing(
 def test_an_unreadable_plan_refuses_in_plan_show_too(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`plan show` reads the same operator file `--from-plan` does; the same
+    """`plan show` reads the same operator file `--from` does; the same
     refusal, from the same shared reader."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)

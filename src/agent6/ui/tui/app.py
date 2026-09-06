@@ -692,7 +692,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         )
 
     def action_run_plan(self) -> None:
-        """Execute a finished plan: spawn `agent6 run --from-plan <id>` detached
+        """Execute a finished plan: spawn `agent6 run --from <id>` detached
         (the hub lists and opens it). The plan session is untouched, so the
         composer keeps revising it."""
         if self.mode != "plan":
@@ -704,7 +704,7 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
         runs = bucket_dir(layout_of(self.session_dir).state_dir, "runs")
         runs.mkdir(parents=True, exist_ok=True)
         new_dir, err = spawn_and_locate(
-            [*agent6_argv(self.config_path), "run", "--from-plan", self.session_dir.name],
+            [*agent6_argv(self.config_path), "run", "--from", self.session_dir.name],
             Path.cwd(),
             before={p for p in runs.iterdir() if p.is_dir()},
             list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],

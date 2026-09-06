@@ -302,7 +302,7 @@ Ids are one namespace across every bucket, since every surface addresses a sessi
 
 `loop_state.json` is the latest pointer for resume; `checkpoints/` is the per-turn history `fork --at-turn` addresses, kept in full.
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor; the planner re-reads it before every turn and is shown it whenever it differs from what it last saw, so answers written there survive the next `finish_planning`.
-`agent6 run --from-plan` feeds it as a new run's task.
+`agent6 run --from` feeds it as a new run's task.
 
 **A fork** clones a source run's state as of a checkpoint into a new session dir with a new id, and gives it a linked git worktree of its own.
 It adds the worktree detached at the turn's sha (`<[parallel].workdir>/<repo-id>/<new>`), copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`, rebuilds the curator DAG at the checkpoint's `graph_version`, writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `worktree` / `worktree_git_dir` (the repository git dir the worktree points into, recorded here so the jail grant never depends on the worktree's own `.git` pointer), and cuts `agent6/<new>` at the turn's sha.

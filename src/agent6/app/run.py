@@ -155,7 +155,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     pass instead of an execution pass: planning system prompt,
     edit-tools filtered out, `finish_planning` instead of
     `finish_session`, no auto-commit. The plan markdown lands at
-    `<run-dir>/plan.md` and is consumed by `agent6 run --from-plan`.
+    `<run-dir>/plan.md` and is consumed by `agent6 run --from`.
     The `planner` model role drives plan mode (falls back to `worker`).
     """
     role = session_kind(mode).role

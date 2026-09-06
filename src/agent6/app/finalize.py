@@ -155,7 +155,7 @@ def _print_next_session(layout: SessionLayout, *, reporter: Reporter) -> None:
                     reporter.out(f"\n{plan}")
             reporter.out(f"\nedit:     agent6 plan edit {session_id}")
             reporter.out(f'revise:   agent6 resume {session_id} --steer "<what to change>"')
-            reporter.out(f"execute:  agent6 run --from-plan {session_id}")
+            reporter.out(f"execute:  agent6 run --from {session_id}")
         elif mode == "ask":
             reporter.out(f'\nnext:  agent6 run --from {session_id} "<what to do with it>"')
 

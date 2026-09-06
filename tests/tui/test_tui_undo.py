@@ -268,8 +268,8 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
     asyncio.run(scenario())
 
 
-def test_run_this_plan_spawns_from_plan_detached(tmp_path: Path, monkeypatch: Any) -> None:
-    """Run > Run this plan on a finished plan spawns `agent6 run --from-plan
+def test_run_this_plan_spawns_the_run_detached(tmp_path: Path, monkeypatch: Any) -> None:
+    """Run > Run this plan on a finished plan spawns `agent6 run --from
     <id>` with the detached env; a non-plan session refuses without spawning."""
     seen: dict[str, Any] = {}
 
@@ -296,7 +296,7 @@ def test_run_this_plan_spawns_from_plan_detached(tmp_path: Path, monkeypatch: An
             await pilot.pause()
 
     asyncio.run(scenario())
-    assert seen["argv"][-3:] == ["run", "--from-plan", "planny-one-AAAAAA"]
+    assert seen["argv"][-3:] == ["run", "--from", "planny-one-AAAAAA"]
     assert seen["env"]["AGENT6_DETACHED_AWAY"] == "wait"
 
     seen.clear()

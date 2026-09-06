@@ -48,7 +48,7 @@ from agent6.viewmodel.events import SESSION_START_EVENTS
 def _resolve_plan_session_id(session_id: str) -> str | None:
     """Resolve a (possibly prefix) plan id under the per-repo state dir.
 
-    Prints an error and returns None on failure. Used by `run --from-plan`,
+    Prints an error and returns None on failure. Used by `run --from`,
     `plan show`, and `plan edit`. An empty *session_id* resolves the most recent
     plan, matching the omit-for-latest convention of the sessions commands.
     """

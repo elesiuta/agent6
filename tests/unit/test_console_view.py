@@ -332,7 +332,7 @@ def test_the_policy_line_is_read_when_the_task_prints() -> None:
 
 
 def test_the_task_headline_is_the_first_line_clipped() -> None:
-    """A `--from-plan` task carries the whole plan; flattening it made the
+    """A `--from` task carries the whole plan; flattening it made the
     headline one endless line. The first user-authored line, clipped, is the
     headline every other surface shows."""
     out = _render(

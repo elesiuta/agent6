@@ -191,7 +191,7 @@ class ConsoleView:
                 self._end_block()
                 return
             if etype == "session.start":
-                # The first user-authored line, clipped: a `--from-plan` task
+                # The first user-authored line, clipped: a `--from` task
                 # carries the whole plan and flattened it into one endless line.
                 task = task_snippet(str(event.get("user_task", "")), max_chars=200)
                 self._line(self._c("bold", self._c("cyan", DONE) + " " + task) + "\n")

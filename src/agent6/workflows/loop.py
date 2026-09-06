@@ -306,7 +306,7 @@ def _summarise_assistant_text_for_commit(
 
 def _plan_is_title_only(plan_md: str) -> bool:
     """True when plan_markdown has no body: only heading lines (`# ...`) and
-    blanks, so `--from-plan` would get a stub. Weak models leave it a bare title
+    blanks, so `--from` would get a stub. Weak models leave it a bare title
     and put the plan in `summary`; the caller salvages that case."""
     return not any(
         line.strip() and not line.lstrip().startswith("#") for line in plan_md.splitlines()
@@ -1506,7 +1506,7 @@ class Workflow:
                 plan_md = str(tool_input.get("plan_markdown", ""))
                 summary = str(tool_input.get("summary", ""))
             # Salvage a title-only plan_markdown: weak models put the real plan
-            # in `summary`, leaving plan.md a stub that --from-plan must
+            # in `summary`, leaving plan.md a stub that --from must
             # re-derive. Fold the summary under the title so the plan
             # carries content. The review gate judged content quality; this only
             # rescues field misuse.

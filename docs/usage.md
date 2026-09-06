@@ -129,7 +129,7 @@ Exit codes for `agent6 run` and `resume`, for scripts to branch on:
 ## Plan, review, and ask
 
 ```sh
-agent6 plan "refactor the config loader"      # edit-free plan; run --from-plan
+agent6 plan "refactor the config loader"      # edit-free plan; run --from
 agent6 plan edit <session-id>                 # answer the plan's open questions
 agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
 agent6 review --base origin/main --head HEAD  # read-only diff review

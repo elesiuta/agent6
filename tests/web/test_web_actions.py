@@ -408,7 +408,7 @@ def test_machine_stop_refuses_ended_and_marks_a_live_one(tmp_path: Path) -> None
 def test_run_plan_spawns_from_plan_and_refuses_non_plans(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ "Run this plan" spawns `agent6 run --from-plan <id>` detached and hands
+    """ "Run this plan" spawns `agent6 run --from <id>` detached and hands
     back the new run id; a non-plan session and a plan with no plan.md refuse
     without spawning (the plan itself is untouched either way)."""
     import json
@@ -445,7 +445,7 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
     payload, err = actions.run_plan(tmp_path, "planny-one-AAAAAA")
     assert err == "" and payload == {"run_id": "fresh-run-BBBBBB"}
     argv = seen["argv"]
-    assert isinstance(argv, list) and argv[-3:] == ["run", "--from-plan", "planny-one-AAAAAA"]
+    assert isinstance(argv, list) and argv[-3:] == ["run", "--from", "planny-one-AAAAAA"]
     env = seen["env"]
     assert isinstance(env, dict) and env["AGENT6_DETACHED_AWAY"] == "wait"
 

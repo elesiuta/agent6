@@ -153,7 +153,7 @@ __PLAN_VERIFY_RULE__- run_command runs jailed in the workspace and is approval-g
 
 <plan-output>
 The markdown passed to `finish_planning(plan_markdown=...)` is written to
-`<run-dir>/plan.md` and fed verbatim to `agent6 run --from-plan <run-id>`
+`<run-dir>/plan.md` and fed verbatim to `agent6 run --from <run-id>`
 as the new run's task description. The skeleton that pass reads:
 
 ```

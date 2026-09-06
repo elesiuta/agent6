@@ -97,7 +97,7 @@ async function renderRun(id, opts, gen) {
         location.hash = '#/';
       } catch (e) { toast(e.message, true); }
     };
-    // Execute a finished plan: spawns `agent6 run --from-plan <id>` detached
+    // Execute a finished plan: spawns `agent6 run --from <id>` detached
     // and opens the run; the plan itself is untouched (the composer keeps
     // revising it). paintRun shows this only on a plan with a plan.md.
     const planBtn = el('button', null, 'Run this plan');

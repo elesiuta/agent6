@@ -231,7 +231,7 @@ def resume_run(
 def run_plan(
     cwd: Path, session_id: str, config_path: Path | None = None
 ) -> tuple[dict[str, str] | None, str]:
-    """Execute a finished plan: spawn `agent6 run --from-plan <id>` detached and
+    """Execute a finished plan: spawn `agent6 run --from <id>` detached and
     return {"run_id": ...} to open, or (None, why). The plan session itself is
     untouched, so revising it (the composer) keeps working."""
     session_dir = model.session_dir_for(cwd, session_id)
@@ -247,7 +247,7 @@ def run_plan(
     runs = bucket_dir(resolved_state_dir(cwd), "runs")
     runs.mkdir(parents=True, exist_ok=True)
     new_dir, err = spawn_and_locate(
-        [*agent6_argv(config_path), "run", "--from-plan", session_id],
+        [*agent6_argv(config_path), "run", "--from", session_id],
         cwd,
         before={p for p in runs.iterdir() if p.is_dir()},
         list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],

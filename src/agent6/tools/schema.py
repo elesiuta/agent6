@@ -312,7 +312,7 @@ class FinishPlanningInput(_ToolInput):
         "criteria, any open questions for the user as `**Q:** ...` blocks "
         "with blank `**A:**` lines, and the verification approach. The "
         "operator can edit this file (`agent6 plan edit <run-id>`) to "
-        "fill in answers, then hand it to `agent6 run --from-plan "
+        "fill in answers, then hand it to `agent6 run --from "
         "<run-id>` to start execution. `summary` is a one-paragraph "
         "description surfaced to the operator at exit. Do not call any "
         "other tools after finish_planning."
@@ -335,7 +335,7 @@ class FinishPlanningInput(_ToolInput):
         min_length=1,
         description=(
             "The FULL plan document in markdown, saved verbatim to plan.md and fed "
-            "to `agent6 run --from-plan`. This is the deliverable: put the entire "
+            "to `agent6 run --from`. This is the deliverable: put the entire "
             "plan here (title, task, context, ordered task list with acceptance "
             "criteria, open questions, verification) -- not a short blurb, and not "
             "in summary."

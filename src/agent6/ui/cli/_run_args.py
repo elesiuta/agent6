@@ -17,7 +17,6 @@ from agent6.ui.cli._common import (
 )
 from agent6.ui.cli.completers import (
     _complete_parallel_models,
-    _complete_plan_session_ids,
     _complete_presets,
     _complete_resumable_ids,
     _complete_session_ids,
@@ -43,8 +42,9 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="SESSION_ID",
         help=(
             "Seed a new run from another session (a run, a plan or an ask):"
-            " its task, outcome, diff and key events. The source is untouched;"
-            " use `fork` to clone a session at a past turn instead."
+            " its task, outcome, diff, key events and a plan's own text. With"
+            " no task, a plan id runs that plan. The source is untouched; use"
+            " `fork` to clone a session at a past turn instead."
         ),
     )
     run_from.completer = _complete_session_ids  # type: ignore[attr-defined]
@@ -91,17 +91,6 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " (Or run `agent6 tui` and start the run from there.)"
         ),
     )
-    run_from_plan = run_p.add_argument(
-        "--from-plan",
-        default="",
-        metavar="RUN_ID",
-        help=(
-            "Use the plan.md from a prior `agent6 plan` run (resolved"
-            " under the per-repo run-state dir, exact or unambiguous prefix) as the"
-            " task description. Mutually exclusive with a positional task."
-        ),
-    )
-    run_from_plan.completer = _complete_plan_session_ids  # type: ignore[attr-defined]
     run_p.add_argument(
         "--decompose",
         action="store_true",

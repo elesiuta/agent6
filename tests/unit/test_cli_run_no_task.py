@@ -79,7 +79,7 @@ def test_run_no_task_points_at_most_recent_plan(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # No task given but a prior plan exists: non-interactively (pytest stdin is
-    # not a TTY) refuse, but point the user at the plan + the --from-plan form.
+    # not a TTY) refuse, but point the user at the plan + the --from form.
     monkeypatch.chdir(tmp_path)
     session_dir = resolved_state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
@@ -88,7 +88,7 @@ def test_run_no_task_points_at_most_recent_plan(
     assert rc == 2
     err = capsys.readouterr().err
     assert "tidy-otter-AB12CD" in err
-    assert "--from-plan" in err
+    assert "--from" in err
 
 
 def test_run_continue_flag_is_gone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

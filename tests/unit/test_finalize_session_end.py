@@ -681,7 +681,7 @@ def test_stash_recovery_hint_is_identity_stable(tmp_path: Path) -> None:
             [
                 "agent6 plan edit quiet-fox-AAAAAA",
                 "agent6 resume quiet-fox-AAAAAA --steer",
-                "agent6 run --from-plan quiet-fox-AAAAAA",
+                "agent6 run --from quiet-fox-AAAAAA",
             ],
         ),
         ("ask", ["agent6 run --from quiet-fox-AAAAAA"]),

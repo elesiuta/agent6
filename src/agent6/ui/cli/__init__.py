@@ -37,7 +37,7 @@ def _first_markdown_line(text: str, max_len: int = 80) -> str:
 
 
 def _from_plan_task(plan_md: str, session_id: str) -> str:
-    """The execution prompt for `run --from-plan`, LEADING with the plan title so
+    """The execution prompt for `run --from <plan>`, LEADING with the plan title so
     a listing (the runs table, the DAG root, attach --json) shows the plan, not
     the 'The following plan was prepared...' boilerplate as the run's task."""
     title = _first_markdown_line(plan_md)
@@ -91,7 +91,6 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     from agent6.ui.cli._common import _plans_dir  # noqa: PLC0415
     from agent6.ui.cli.plan_watch import (  # noqa: PLC0415
         _most_recent_plan_session_id,
-        _resolve_plan_session_id,
     )
     from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
 
@@ -117,18 +116,28 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
             file=sys.stderr,
         )
         return 2
-    if args.from_plan:
-        if args.task:
+    seed_from = getattr(args, "seed_from", "")
+    if not args.task and seed_from:
+        # A plan id alone runs that plan: its text is the task, and digesting
+        # the same text as a seed would double it.
+        from agent6.config.layer import resolved_state_dir  # noqa: PLC0415
+        from agent6.sessions.id import SessionIdError, resolve_session  # noqa: PLC0415
+
+        try:
+            layout = resolve_session(resolved_state_dir(Path.cwd()), seed_from)
+        except SessionIdError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        plan_path = layout.session_dir / "plan.md"
+        if not plan_path.is_file():
             print(
-                "ERROR: --from-plan is mutually exclusive with a task argument.",
+                "ERROR: 'run' needs a task; --from <id> seeds one, and a plan id alone runs"
+                " that plan.",
                 file=sys.stderr,
             )
             return 2
-        resolved = _resolve_plan_session_id(args.from_plan)
-        if resolved is None:
-            return 2
-        plan_md = read_operator_file(_plans_dir(Path.cwd()) / resolved / "plan.md")
-        task = _from_plan_task(plan_md, resolved)
+        task = _from_plan_task(read_operator_file(plan_path), layout.session_id)
+        seed_from = ""
     elif not args.task:
         # No task: fall back to the most recent plan run, the common
         # "I just ran `agent6 plan`, now execute it" flow. At a TTY,
@@ -137,7 +146,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         last_plan = _most_recent_plan_session_id(_plans_dir(Path.cwd()))
         if last_plan is None:
             print(
-                "ERROR: 'run' needs a task (or --from-plan <id>); no prior plan found to execute.",
+                "ERROR: 'run' needs a task (or --from <plan-id>); no prior plan found to execute.",
                 file=sys.stderr,
             )
             return 2
@@ -146,7 +155,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         if not sys.stdin.isatty():
             print(
                 f"ERROR: 'run' needs a task. Most recent plan is {last_plan}"
-                f" ({title}); execute it with: agent6 run --from-plan {last_plan}",
+                f" ({title}); execute it with: agent6 run --from {last_plan}",
                 file=sys.stderr,
             )
             return 2
@@ -156,7 +165,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         except (EOFError, KeyboardInterrupt):
             ans = "n"
         if ans in ("n", "no"):
-            print(f"Aborted. Run it later: agent6 run --from-plan {last_plan}")
+            print(f"Aborted. Run it later: agent6 run --from {last_plan}")
             return 0
         task = _from_plan_task(plan_md, last_plan)
     else:
@@ -169,7 +178,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         interactive=args.interactive,
         tui=args.tui,
         decompose=args.decompose,
-        seed_from=getattr(args, "seed_from", ""),
+        seed_from=seed_from,
         skills=tuple(args.skill),
         budget_overrides=BudgetOverrides.from_args(args),
         sandbox_overrides=SandboxOverrides.from_args(args),

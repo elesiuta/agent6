@@ -323,7 +323,7 @@ def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
 
 @_never_raises
 def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: plan ids (for --from-plan / plan show/edit)."""
+    """argcomplete: plan ids (for plan show/edit)."""
     plans = _plans_dir(Path.cwd())
     if not plans.is_dir():
         return []

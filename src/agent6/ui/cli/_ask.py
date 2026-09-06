@@ -14,6 +14,7 @@ from typing import Any
 
 from agent6.budget import BudgetTracker
 from agent6.config.layer import resolved_state_dir
+from agent6.errors import read_operator_file
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
@@ -181,6 +182,8 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
             cap = 8000
             tail = "\n... (diff truncated; read more with git)" if len(diff) > cap else ""
             diff_body = f"```diff\n{diff[:cap]}{tail}\n```"
+    plan_path = layout.session_dir / "plan.md"
+    plan_section = f"\n## Plan\n{read_operator_file(plan_path)}\n" if plan_path.is_file() else ""
     return (
         f'<prior-run id="{target}">\n'
         "This question is about a PRIOR agent6 run. Its run state lives outside the"
@@ -189,6 +192,7 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
         f"## Run task\n{manifest.user_task}\n\n"
         f"## Outcome / key events\n{summarize_session_log(layout.logs_path)}\n\n"
         f"## Diff {diff_label}\n{diff_body}\n"
+        f"{plan_section}"
         f"</prior-run>"
     )
 
