@@ -1003,3 +1003,17 @@ rerun: the mechanism is proven, conversion is a separate question. Note
 for graders of run.log: harness notices do not render there; the
 logs.jsonl events are the truth (two earlier "never fired" reads were
 grep-of-the-wrong-surface errors).
+
+### Near-miss failures are stable contracts, not variance (2026-08-25)
+
+The 14 near-misses the pilot did not convert, gate-on vs pilot F2P
+failure sets: 11 identical, 3 overlapping (one grew, two shrank by one),
+0 disjoint. Two independent legs (different wheel, different prompt)
+converge on the same partial solution and miss the same assertions, so
+the residual is a property of the task, not retry luck; retries alone
+will not clear this block (~14 instances, the largest left). The
+class's lever must surface the missing contract itself: the issue text
+quotes most of these literals, so a mechanism that extracts quoted
+literals/expected outputs from the task and checks the change ever
+produces them (a truthful notice when it does not) is the candidate;
+prose asking for verbatim literals already nulled.
