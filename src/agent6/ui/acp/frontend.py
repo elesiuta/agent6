@@ -14,6 +14,7 @@ still gets a working session -- one where the model simply has fewer powers.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
@@ -23,6 +24,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.sessions.layout import SessionLayout
+from agent6.tools.dispatch import Approver
 from agent6.tools.schema import UserQuestion
 from agent6.types import AutoCommitDirective, IsolationLevel
 from agent6.ui.steer import file_bridge_steer
@@ -59,14 +61,53 @@ def acp_frontend(
         answer = ask(prompt, options, standing)
         return bool(answer) and answer.startswith("allow")
 
-    def _questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
-        answers: list[str] = []
-        for question in questions:
-            reply = ask(question.question, question.options, None) if capabilities.can_ask else None
-            # An unanswered question becomes an empty string, which the loop
-            # already treats as "the operator said nothing", not as a value.
-            answers.append(reply or "")
-        return tuple(answers)
+    def _build_approver(_session_dir: Path, events: EventSink) -> Approver:
+        """The run's approver. It journals the prompt/answer pair every front-end
+        journals: the fold marks the gated call "awaiting approval" on those
+        events and nothing else, so without them no surface (attach, the web,
+        this wire's own `pending`) ever shows the wait."""
+        numbers = itertools.count(1)
+
+        def approve(prompt: str, /, *, scope: str | None = None) -> bool:
+            prompt_id = f"approval-{next(numbers)}"
+            events.emit("approval.prompt", id=prompt_id, prompt=prompt, standing=bool(scope))
+            # A client that cannot be asked denies as a headless run does, and
+            # the journal names that: nobody answered.
+            if capabilities.can_ask:
+                approved = _approve(prompt, scope=scope)
+                source = "acp"
+            else:
+                approved, source = False, "headless"
+            events.emit("approval.answer", id=prompt_id, approved=approved, source=source)
+            return approved
+
+        return approve
+
+    def _build_questioner(
+        _session_dir: Path, events: EventSink
+    ) -> Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]:
+        numbers = itertools.count(1)
+
+        def ask_questions(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
+            question_id = f"question-{next(numbers)}"
+            events.emit(
+                "question.prompt",
+                id=question_id,
+                questions=[{"question": q.question, "options": list(q.options)} for q in questions],
+            )
+            answers: list[str] = []
+            for question in questions:
+                reply = (
+                    ask(question.question, question.options, None) if capabilities.can_ask else None
+                )
+                # An unanswered question becomes an empty string, which the loop
+                # already treats as "the operator said nothing", not as a value.
+                answers.append(reply or "")
+            source = "acp" if capabilities.can_ask else "headless"
+            events.emit("question.answer", id=question_id, answers=answers, source=source)
+            return tuple(answers)
+
+        return ask_questions
 
     def _confirm_unconfined(isolation: IsolationLevel, cfg: Config) -> bool:
         """Only ask when it is actually true.
@@ -117,8 +158,8 @@ def acp_frontend(
         close_console_view=lambda: None,
         loop_logger=lambda _mode: lambda _line: None,
         tui_session=lambda _session_dir, _enabled: _nullcontext(),
-        build_approver=lambda _session_dir, _events: _approve,
-        build_questioner=lambda _session_dir, _events: _questioner,
+        build_approver=_build_approver,
+        build_questioner=_build_questioner,
         make_steer_state=_steer,
         confirm_unconfined_autorun=_confirm_unconfined,
         confirm_run_on_run_branch=lambda branch: _approve(

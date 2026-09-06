@@ -29,6 +29,7 @@ A tool call arrives twice, as ACP models it.
 
 `session/request_permission` carries every approval the CLI would prompt for: `run_commands = "ask"`, a `fetch` to a host outside the allow-list, an unsandboxed autorun.
 The editor renders the buttons.
+The prompt and its answer are journaled as `approval.prompt` / `approval.answer` (`question.*` for an `ask_user`), the same events the CLI writes, the answer with `source: "acp"` (`"headless"` when the client declared it cannot be asked), so `agent6 attach` and the web show the run as awaiting the answer.
 
 Two rules hold whoever is driving:
 
