@@ -1114,3 +1114,47 @@ def test_an_answer_file_ends_the_editors_pending_request(tmp_path: Path) -> None
         QuestionRequest(id="question-1", questions=(UserQuestion(question="port?"),), call_id=2)
     )
     assert (answer.answers, answer.source) == (("9090",), "frontend")
+
+
+def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: Path) -> None:
+    """The lifecycle speaks from the run thread while the tail projects the
+    journal a poll behind: an ending line ("no changes were committed") reached
+    the editor before the turn's last tool calls, and a stop notice before the
+    work it stopped."""
+    import time
+
+    from agent6.events import EventSink
+    from agent6.ui.acp.runner import ProseOrder
+
+    sent: list[dict[str, Any]] = []
+    server = ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge = RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", turn=1)
+    log = tmp_path / "logs.jsonl"
+    events = EventSink(log)
+    events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
+    events.emit("tool.call", name="run_command", args={"argv": ["true"]}, call_id=2)
+    order = ProseOrder(server, "s", log)
+    said: list[str] = []
+    reporter = forwarding_reporter(server, "s", said, order=order)
+    reporter.out("no changes were committed")  # said after both calls, before the tail read them
+    assert sent == []
+    done = threading.Event()
+    tail = threading.Thread(
+        target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
+        args=(session, log, done.is_set, False, Announced(turn=1), order),
+        daemon=True,
+    )
+    tail.start()
+    for _ in range(100):
+        if len(sent) >= 3:
+            break
+        time.sleep(0.05)
+    done.set()
+    tail.join(timeout=5.0)
+    kinds = [s["params"]["update"].get("sessionUpdate") for s in sent]
+    assert kinds[-1] == "agent_message_chunk" and "no changes were committed" in json.dumps(
+        sent[-1]
+    )
+    assert all(k == "tool_call" for k in kinds[:2]), kinds

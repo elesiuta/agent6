@@ -19,8 +19,12 @@ def tail_events(
     stop_when_finished: bool = False,
     should_stop: Callable[[], bool] | None = None,
     start_at_end: bool = False,
+    on_position: Callable[[int], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield JSON-decoded events from *path* as they are appended.
+
+    *on_position* hears the byte offset each yielded event ends at, so a
+    caller can order its own lines against the journal.
 
     - Waits for the file to appear (up to forever if follow=True).
     - Yields each existing line on startup, then tails for new ones.
@@ -46,8 +50,9 @@ def tail_events(
     if not path.exists():
         return
 
-    pos = _size_or_zero(path) if start_at_end else 0
+    pos = journal_size(path) if start_at_end else 0
     pending = b""
+    heard = on_position or _ignore_position
     final_drain = False  # should_stop fired: read what is already appended, then stop
     while True:
         if should_stop is not None and not final_drain and should_stop():
@@ -69,17 +74,16 @@ def tail_events(
             continue
 
         if chunk:
-            pending += chunk
-            lines = pending.split(b"\n")
-            pending = lines[-1]  # last fragment may be incomplete
-            parsed = [e for e in map(_parse_event_line, lines[:-1]) if e is not None]
+            base = pos - len(chunk) - len(pending)  # where the first line below starts
+            parsed, pending = _complete_lines(pending + chunk, base)
             # stop_when_finished halts at a session.end only when nothing follows it
             # in this batch: a resume appends events AFTER a session.end (a stopped
             # run's steer_abort, or the resume of a finished one), and stopping
             # at that superseded end would silently drop everything the resumed
             # run does. A live run's real end is the batch's last event.
-            for i, evt in enumerate(parsed):
+            for i, (end, evt) in enumerate(parsed):
                 yield evt
+                heard(end)
                 if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "session.end":
                     return
 
@@ -87,11 +91,30 @@ def tail_events(
             evt = _parse_event_line(pending)
             if evt is not None:
                 yield evt
+                heard(pos)
             return
         time.sleep(poll_s)
 
 
-def _size_or_zero(path: Path) -> int:
+def _ignore_position(_end: int) -> None:
+    return None
+
+
+def _complete_lines(buffer: bytes, base: int) -> tuple[list[tuple[int, dict[str, Any]]], bytes]:
+    """*buffer*'s complete lines as (end offset, event), malformed ones skipped,
+    and the trailing fragment; *base* is the offset the buffer starts at."""
+    lines = buffer.split(b"\n")
+    parsed: list[tuple[int, dict[str, Any]]] = []
+    end = base
+    for raw in lines[:-1]:
+        end += len(raw) + 1
+        if (event := _parse_event_line(raw)) is not None:
+            parsed.append((end, event))
+    return parsed, lines[-1]
+
+
+def journal_size(path: Path) -> int:
+    """The journal's size in bytes, 0 when it does not exist yet."""
     try:
         return path.stat().st_size
     except OSError:

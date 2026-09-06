@@ -49,7 +49,7 @@ from agent6.ui.acp.updates import (
     wire_call_id,
 )
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
-from agent6.viewmodel.tail import tail_events
+from agent6.viewmodel.tail import journal_size, tail_events
 from agent6.viewmodel.transcript import TranscriptFold
 
 # How long a permission request waits for the editor. An operator who has
@@ -70,9 +70,48 @@ def _stderr(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-def forwarding_reporter(server: ACPServer, acp_session_id: str, said: list[str]) -> Reporter:
+@dataclass
+class ProseOrder:
+    """The lifecycle's lines, queued for the journal tail to emit in order.
+
+    The lifecycle speaks from the run thread while the tail projects the
+    journal from its own, a poll behind; sent as they are said, an ending
+    line landed before the turn's last tool calls. Each line is stamped with
+    the journal's size when said, and the tail emits it once it has read
+    past that point (everything, once the tail is done).
+    """
+
+    server: ACPServer
+    acp_session_id: str
+    logs_path: Path
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _pending: list[tuple[int, str]] = field(default_factory=list)
+
+    def say(self, text: str) -> None:
+        with self._lock:
+            self._pending.append((journal_size(self.logs_path), text))
+
+    def flush(self, consumed: int | None) -> None:
+        """Emit every line stamped at or before *consumed* bytes of journal; all of
+        them for None."""
+        with self._lock:
+            due = [t for stamp, t in self._pending if consumed is None or stamp <= consumed]
+            self._pending = [
+                (s, t) for s, t in self._pending if consumed is not None and s > consumed
+            ]
+        for text in due:
+            # `note`/`warn` already carry the marker `message_update` adds.
+            self.server.notify_raw(
+                message_update(self.acp_session_id, text.removeprefix("[agent6] "))
+            )
+
+
+def forwarding_reporter(
+    server: ACPServer, acp_session_id: str, said: list[str], *, order: ProseOrder | None = None
+) -> Reporter:
     """The lifecycle's reporter: stderr (the editor's agent log), and the same
-    line to the editor as agent6's own prose.
+    line to the editor as agent6's own prose, in journal order through *order*
+    when a tail is projecting the journal (else as it is said).
 
     What the lifecycle says is stated nowhere else: no journal event carries a
     refusal's reason (a missing git identity, another writer holding the
@@ -85,9 +124,12 @@ def forwarding_reporter(server: ACPServer, acp_session_id: str, said: list[str])
     def _say(message: str) -> None:
         _stderr(message)
         text = message.strip()
-        if text:
-            said.append(text)
-            # `note`/`warn` already carry the marker `message_update` adds.
+        if not text:
+            return
+        said.append(text)
+        if order is not None:
+            order.say(text)
+        else:
             server.notify_raw(message_update(acp_session_id, text.removeprefix("[agent6] ")))
 
     return Reporter(out=_say, err=_say, receipt=_stderr)
@@ -398,14 +440,15 @@ class RunBridge:
             drained.set()
             return False
 
+        order = ProseOrder(self.server, session.acp_id, layout.logs_path)
         tail = threading.Thread(
             target=self._stream,
-            args=(session, layout.logs_path, _stop, resuming, announced),
+            args=(session, layout.logs_path, _stop, resuming, announced, order),
             name=f"acp-tail-{session.acp_id}",
             daemon=True,
         )
         tail.start()
-        reporter = forwarding_reporter(self.server, session.acp_id, said)
+        reporter = forwarding_reporter(self.server, session.acp_id, said, order=order)
         try:
             if resuming:
                 # The prompt rides in as the resumed run's first steering
@@ -433,6 +476,7 @@ class RunBridge:
         finally:
             ended.set()
             tail.join(timeout=DRAIN_S)
+            order.flush(None)  # a tail that outlived the drain still owes these
         if code != 0 and not said and not self.had_journal(session):
             # A stop before the run had anything to say for itself.
             self.server.notify_raw(message_update(session.acp_id, f"the run stopped (exit {code})"))
@@ -445,8 +489,10 @@ class RunBridge:
         stop: Callable[[], bool],
         resuming: bool,
         announced: Announced,
+        order: ProseOrder | None = None,
     ) -> None:
-        """Project the run's journal into `session/update` as it is written.
+        """Project the run's journal into `session/update` as it is written,
+        the lifecycle's own lines taking their place between events.
 
         A resumed run appends to the journal its prior legs already fill, and
         the editor rendered those turns as they happened -- start at the end,
@@ -454,9 +500,18 @@ class RunBridge:
         stderr, the editor's agent log: the editor is the live view, so the
         lifecycle prints no ending of its own."""
         fold = TranscriptFold()
+        consumed = [0]
+
+        def _at(position: int) -> None:
+            consumed[0] = position
+
         try:
             for event in tail_events(
-                logs_path, stop_when_finished=True, should_stop=stop, start_at_end=resuming
+                logs_path,
+                stop_when_finished=True,
+                should_stop=stop,
+                start_at_end=resuming,
+                on_position=_at,
             ):
                 for item in fold.feed(event):
                     wire_id = (
@@ -475,8 +530,12 @@ class RunBridge:
                         announced.add(wire_id)
                     elif item.kind == "done":
                         _stderr(ending(item))
+                if order is not None:
+                    order.flush(consumed[0])
         finally:
             announced.close()
+            if order is not None:
+                order.flush(None)
 
 
 def serve_acp(
