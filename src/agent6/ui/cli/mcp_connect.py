@@ -17,7 +17,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from agent6.app._setup import detect_env, mcp_server_policy
+from agent6.app._setup import detect_env, mcp_server_spec, no_jail_cause
 from agent6.config import (
     Config,
     MCPServerEntry,
@@ -29,8 +29,8 @@ from agent6.config.layer import load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError
-from agent6.tools.mcp_client import MCPError, MCPServerSpec, MCPToolDescriptor, _MCPServer
-from agent6.tools.mcp_http import HttpTransport
+from agent6.tools.mcp_client import MCPManager, MCPServerSpec, MCPToolDescriptor, tool_count
+from agent6.types import IsolationLevel
 
 # Long enough for a cold `npx` to fetch and boot a server, which is the slow
 # case an operator actually hits; the per-run default stays 10s.
@@ -38,23 +38,13 @@ _CONNECT_TIMEOUT_S = 60.0
 
 
 def _probe(spec: MCPServerSpec) -> tuple[tuple[MCPToolDescriptor, ...], str]:
-    """Start the server, take its tool list, stop it. Returns (tools, error)."""
-    server = _MCPServer(
-        name=spec.name,
-        command=spec.command,
-        startup_timeout_s=spec.startup_timeout_s,
-        call_timeout_s=spec.call_timeout_s,
-        pass_env=spec.pass_env,
-        policy=spec.policy,
-        http=spec.http,
-    )
+    """Start the server as a run does, take its tool list, stop it. Returns
+    (tools, error)."""
+    manager = MCPManager.start([spec])
     try:
-        server.start()
-        return server.tools, ""
-    except MCPError as exc:
-        return (), str(exc)
+        return manager.descriptors(), manager.failures[0].error if manager.failures else ""
     finally:
-        server.close()
+        manager.close()
 
 
 def _refuse_bad_flags(
@@ -117,7 +107,7 @@ def _describe(spec: MCPServerSpec) -> str:
     return f"spawning {shlex.join(spec.command)}"
 
 
-def cmd_mcp_connect(  # noqa: PLR0911
+def cmd_mcp_connect(
     name: str,
     *,
     command: list[str],
@@ -139,51 +129,30 @@ def cmd_mcp_connect(  # noqa: PLR0911
         print("nothing was written to config.", file=sys.stderr)
         return 1
 
-    # The sandbox the run gives this server, so the handshake proves the
-    # server the run will actually spawn (a script outside the workspace is
-    # invisible inside it).
-    isolation = resolve_isolation(cfg.sandbox.isolation, detect_env())
     entry = MCPServerEntry.model_validate(
-        {"command": command, "url": url, "token_env": token_env, "pass_env": pass_env}
+        {
+            "command": command,
+            "url": url,
+            "token_env": token_env,
+            "pass_env": pass_env,
+            "startup_timeout_s": _CONNECT_TIMEOUT_S,
+        }
     )
-    try:
-        policy = None if url else mcp_server_policy(cfg, Path.cwd(), isolation, entry)
-    except JailUnavailableError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-    spec = MCPServerSpec(
-        name=name,
-        command=tuple(command),
-        startup_timeout_s=_CONNECT_TIMEOUT_S,
-        call_timeout_s=_CONNECT_TIMEOUT_S,
-        pass_env=tuple(pass_env),
-        policy=policy,
-        http=HttpTransport(name=name, url=url, token_env=token_env) if url else None,
-    )
-    print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)
-    tools, error = _probe(spec)
-    if error:
-        print(f"ERROR: {name} did not answer: {error}", file=sys.stderr)
-        if spec.policy is not None:
-            print(
-                f"       (probed under the run's {isolation} sandbox: a server outside the"
-                f" workspace needs [mcp.servers.{name}.sandbox] read_paths, or"
-                " unconfined = true)",
-                file=sys.stderr,
-            )
-        print("       nothing was written to config.", file=sys.stderr)
-        return 1
-    if not tools:
-        print(f"ERROR: {name} started but exposed no tools; nothing was written.", file=sys.stderr)
-        return 1
-
-    print(f"\n{name}: {len(tools)} tool{'' if len(tools) == 1 else 's'}")
-    for tool in tools:
-        # The server chose this text. Collapsing whitespace stops a forged
-        # extra line; dropping the other control characters stops ESC
-        # sequences repainting the operator's terminal.
-        summary = "".join(c for c in " ".join(tool.description.split()) if c.isprintable())[:80]
-        print(f"  mcp__{name}__{tool.tool_name}{'  ' + summary if summary else ''}")
+    env = detect_env()
+    isolation = resolve_isolation(cfg.sandbox.isolation, env)
+    if command and isolation == "none":
+        # No jail means no read-only workspace to probe under, and a probe
+        # never runs a server unconfined in the repository: the entry is
+        # written unproved, said out loud.
+        print(
+            f"WARNING: {name} not probed: no jail ({no_jail_cause(cfg, env)}); a run starts"
+            " it unconfined.",
+            file=sys.stderr,
+        )
+    else:
+        rc = _prove(cfg, name, entry, isolation)
+        if rc is not None:
+            return rc
 
     # Values, not TOML text: `format_toml_value` serializes each one, so a
     # list stays a list. Handing it a pre-quoted string wrote an argv as one
@@ -206,6 +175,41 @@ def cmd_mcp_connect(  # noqa: PLR0911
     print(f"\nwritten to {'the repo' if to_repo else 'the global'} config.")
     print("enable MCP for runs with:  agent6 config set mcp.enabled true")
     return 0
+
+
+def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLevel) -> int | None:
+    """Start the server as a run would (its sandbox, the workspace bound
+    read-only: a probe never writes the repository) and print its tools; the
+    exit code when it gave no proof, else None."""
+    try:
+        spec = mcp_server_spec(cfg, Path.cwd(), isolation, name, entry, readonly=True)
+    except JailUnavailableError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)
+    tools, error = _probe(spec)
+    if error:
+        print(f"ERROR: {name} did not answer: {error}", file=sys.stderr)
+        if spec.policy is not None:
+            print(
+                f"       (probed under the run's {isolation} sandbox: a server outside the"
+                f" workspace needs [mcp.servers.{name}.sandbox] read_paths, or"
+                " unconfined = true)",
+                file=sys.stderr,
+            )
+        print("       nothing was written to config.", file=sys.stderr)
+        return 1
+    if not tools:
+        print(f"ERROR: {name} started but exposed no tools; nothing was written.", file=sys.stderr)
+        return 1
+    print(f"\n{name}: {tool_count(len(tools))}")
+    for tool in tools:
+        # The server chose this text. Collapsing whitespace stops a forged
+        # extra line; dropping the other control characters stops ESC
+        # sequences repainting the operator's terminal.
+        summary = "".join(c for c in " ".join(tool.description.split()) if c.isprintable())[:80]
+        print(f"  mcp__{name}__{tool.tool_name}{'  ' + summary if summary else ''}")
+    return None
 
 
 def cmd_mcp_list(config_path: Path | None = None) -> int:

@@ -4,9 +4,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import shlex
 import shutil
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -15,15 +15,16 @@ from agent6.app._setup import (
     check_provider_keys,
     detect_env,
     mcp_server_policy,
-    readonly_probe_refusal,
-    start_mcp_manager_if_enabled,
+    mcp_server_spec,
+    no_jail_cause,
     wants_session_network,
 )
-from agent6.app.confine import check_network_support, config_refusal
+from agent6.app.confine import check_network_support, config_refusal, mcp_network_refusal
 from agent6.app.fork import worktree_owners
 from agent6.config import (
     Config,
     ConfigError,
+    MCPServerEntry,
 )
 from agent6.config.layer import (
     load_effective,
@@ -37,12 +38,14 @@ from agent6.sandbox import (
     run_in_jail,
 )
 from agent6.sandbox.detect import (
+    Environment,
     IsolationUnavailableError,
     degrade_reason,
     resolve_isolation,
     sandbox_disabled_by_env,
 )
 from agent6.sandbox.jail import SessionNetwork, tool_mount_notes
+from agent6.tools.mcp_client import MCPManager, tool_count
 from agent6.tools.policy import (
     JAIL_TMP_HOME,
     Workspace,
@@ -250,19 +253,21 @@ class _DoctorCheck:
     INFO (advisory, e.g. "run `agent6 connect`") must never render as PASS."""
 
     name: str
-    status: Literal["PASS", "FAIL", "INFO"]
+    status: Literal["PASS", "FAIL", "WARN", "INFO"]
     detail: str
 
 
 def _cmd_check(config_path: Path | None, *, section: str) -> int:
     """Consolidated pre-flight (sandbox + config + MCP + verify).
 
-    All checks are read-only. The command never spawns the agent loop and
-    never writes to the repo: MCP servers are started in a throwaway
-    directory just long enough to enumerate their tool descriptors, then
-    closed, and one that would need write access to start is reported, not
-    started. The one network call is the provider's model listing, refreshed
-    for pricing when a key resolves (TTL-gated, ~1.5s, never fatal).
+    The command never spawns the agent loop and never writes to the repo:
+    MCP servers are started as a run here starts them (the same workspace
+    root, sandbox and network) with the workspace bound read-only, just long
+    enough to enumerate their tool descriptors, then closed; one a run would
+    refuse, or one this diagnostic must not start (`_probe_refusal`), is
+    reported, not started. The one network call is the provider's model
+    listing, refreshed for pricing when a key resolves (TTL-gated, ~1.5s,
+    never fatal).
 
     Returns 0 when every selected check passes, 1 otherwise.
     """
@@ -577,17 +582,46 @@ def _check_boundaries_section(cfg: Config) -> list[_DoctorCheck]:
     return [_DoctorCheck(name="boundaries", status="PASS", detail="reported (informational)")]
 
 
-def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
-    """Start each checkable MCP server, enumerate its tools, then close it.
+def _probe_refusal(
+    cfg: Config, env: Environment, name: str, srv: MCPServerEntry, isolation: IsolationLevel
+) -> str | None:
+    """Why the diagnostic leaves *srv* unstarted, or None when a read-only
+    probe (the run's sandbox, workspace bound read-only) holds it. The rule:
+    a diagnostic never starts a server outside the confinement a run gives
+    it and never writes anything but the config it was asked to write, so a
+    write grant of any kind, or no jail at all, means no probe."""
+    if srv.url:
+        return None
+    if isolation == "none":
+        return f"not probed: no jail ({no_jail_cause(cfg, env)}); a run starts it unconfined"
+    sb = srv.sandbox
+    if sb is not None and sb.unconfined:
+        return (
+            f"not probed: mcp.servers.{name}.sandbox.unconfined = true; a run starts it"
+            " as configured, unconfined"
+        )
+    grants = (
+        (f"mcp.servers.{name}.sandbox.write_paths", sb.write_paths if sb else ()),
+        ("sandbox.extra_write_paths", cfg.sandbox.extra_write_paths),
+        ("sandbox.extra_device_paths", cfg.sandbox.extra_device_paths),
+    )
+    for leaf, paths in grants:
+        if paths:
+            return (
+                f"not probed: {leaf} grants writes ({', '.join(paths)}); a run starts it"
+                " as configured"
+            )
+    return None
 
-    Read-only: the servers run in a throwaway directory, never the repo, so a
-    startup write lands nowhere real. A server that would need write access to
-    start (`sandbox.unconfined`, or a `sandbox.write_paths` grant) can't be
-    verified without side effects, so it is reported INFO and left unstarted (it
-    starts normally in a real run). When `[mcp]` is disabled or empty, returns a
-    single skip-style PASS so the doctor doesn't fail an unconfigured-by-design
-    feature.
-    """
+
+def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
+    """Start each enabled MCP server as a run here would (the same workspace
+    root, sandbox and network) with the workspace read-only, enumerate its
+    tools, then close it. A server a run would refuse is a FAIL row with the
+    refusal; one this diagnostic must not start (`_probe_refusal`) is a WARN
+    row saying why; neither is started. When `[mcp]` is disabled or empty,
+    returns a single skip-style PASS so the doctor doesn't fail an
+    unconfigured-by-design feature."""
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         print("(MCP disabled or no servers configured; skipping)")
         return [
@@ -598,82 +632,68 @@ def _doctor_check_mcp(cfg: Config) -> list[_DoctorCheck]:
             )
         ]
     try:
-        isolation = resolve_isolation("auto", detect_env())
-    except JailUnavailableError as exc:
+        env = detect_env()
+        isolation = resolve_isolation(cfg.sandbox.isolation, env)
+    except (IsolationUnavailableError, JailUnavailableError) as exc:
+        print(f"[FAIL] mcp: {exc}")
         return [_DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
+    root = Path.cwd()
     out: list[_DoctorCheck] = []
-    refused = {
-        name: reason
-        for name, srv in cfg.mcp.servers.items()
-        if srv.enabled and (reason := readonly_probe_refusal(srv)) is not None
-    }
-    for name in sorted(refused):
-        print(f"[INFO] mcp.{name}: {refused[name]}")
-        out.append(_DoctorCheck(name=f"mcp.{name}", status="INFO", detail=refused[name]))
-    # A server set to `session` joins the run's network, so `check` has to make
-    # one the same way a run does -- otherwise checking such a server reports a
-    # failure that only `check` would ever see.
-    session_net = SessionNetwork.open() if wants_session_network(cfg, isolation) else None
-    # The checkable servers run in a throwaway directory, never the repo, so a
-    # startup write to cwd lands nowhere real on every isolation level (`none`
-    # has no jail to hold a read-only bind).
-    with tempfile.TemporaryDirectory(prefix="agent6-check-mcp-") as probe_dir:
-        probe_root = Path(probe_dir)
+    probed: dict[str, MCPServerEntry] = {}
+    for name, srv in sorted(cfg.mcp.servers.items()):
+        if not srv.enabled:
+            continue
+        if (refusal := mcp_network_refusal(name, srv, isolation)) is not None:
+            detail = f"a run would refuse: {refusal}"
+            print(f"[FAIL] mcp.{name}: {detail}")
+            out.append(_DoctorCheck(name=f"mcp.{name}", status="FAIL", detail=detail))
+        elif (reason := _probe_refusal(cfg, env, name, srv, isolation)) is not None:
+            print(f"[WARN] mcp.{name}: {reason}")
+            out.append(_DoctorCheck(name=f"mcp.{name}", status="WARN", detail=reason))
+        else:
+            probed[name] = srv
+    if not probed:
+        return out or [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
+    with contextlib.ExitStack() as stack:
+        # A server set to `session` joins the run's network, so `check` has to
+        # make one the same way a run does -- otherwise checking such a server
+        # reports a failure that only `check` would ever see.
+        session_net = None
+        if wants_session_network(cfg, isolation):
+            session_net = stack.enter_context(contextlib.closing(SessionNetwork.open()))
         try:
-            manager = start_mcp_manager_if_enabled(
-                cfg, probe_root, isolation, session_net=session_net, probe=True
-            )
+            specs = [
+                mcp_server_spec(cfg, root, isolation, name, srv, readonly=True)
+                for name, srv in probed.items()
+            ]
         except JailUnavailableError as exc:
             # The policy builder refused: the jail's HOME cannot be made.
-            if session_net is not None:
-                session_net.close()
             print(f"[FAIL] mcp: {exc}")
             return [*out, _DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
-        if manager is None:
-            if session_net is not None:
-                session_net.close()
-            return out or [_DoctorCheck(name="mcp", status="PASS", detail="no enabled servers")]
-        try:
-            descriptors = manager.descriptors()
-            by_server: dict[str, list[str]] = {}
-            for d in descriptors:
-                by_server.setdefault(d.server_name, []).append(d.tool_name)
-            checked = {
-                name: srv
-                for name, srv in cfg.mcp.servers.items()
-                if srv.enabled and name not in refused
-            }
-            # What `auto` RESOLVED to on this host, which is the whole reason to run
-            # a check: `config show` can only report the word the operator wrote.
-            networks = {
-                name: "unconfined"
-                if (pol := mcp_server_policy(cfg, probe_root, isolation, srv)) is None
-                else pol.network
-                for name, srv in checked.items()
-            }
-            why_missing = {f.name: f.error for f in manager.failures}
-            for name in sorted(checked):
-                tools = by_server.get(name, [])
-                ok = bool(tools)
-                # A server that never started is not one that "exposed no tools":
-                # the reason the operator needs is the spawn error, not a symptom.
-                # `approve` belongs in a pre-flight for the same reason the network
-                # does: it is standing consent for every call this server's tools
-                # make, and the operator set it once, possibly a while ago.
-                detail = (
-                    f"{len(tools)} tool(s), network: {networks.get(name, '?')},"
-                    f" approve: {cfg.mcp.servers[name].approve}"
-                    if ok
-                    else why_missing.get(name, "started but exposed no tools")
-                )
-                print(f"[{'PASS' if ok else 'FAIL'}] mcp.{name}: {detail}")
-                out.append(
-                    _DoctorCheck(name=f"mcp.{name}", status="PASS" if ok else "FAIL", detail=detail)
-                )
-        finally:
-            manager.close()
-            if session_net is not None:
-                session_net.close()
+        manager = MCPManager.start(specs, session_net=session_net)
+        stack.callback(manager.close)
+        by_server: dict[str, list[str]] = {}
+        for d in manager.descriptors():
+            by_server.setdefault(d.server_name, []).append(d.tool_name)
+        why_missing = {f.name: f.error for f in manager.failures}
+        for name in sorted(probed):
+            tools = by_server.get(name, [])
+            ok = bool(tools)
+            # A server that never started is not one that "exposed no tools":
+            # the reason the operator needs is the spawn error, not a symptom.
+            # `approve` belongs in a pre-flight for the same reason the network
+            # does: it is standing consent for every call this server's tools
+            # make, and the operator set it once, possibly a while ago.
+            detail = (
+                f"{tool_count(len(tools))}, network: {manager.networks[name]},"
+                f" approve: {cfg.mcp.servers[name].approve}"
+                if ok
+                else why_missing.get(name, "started but exposed no tools")
+            )
+            print(f"[{'PASS' if ok else 'FAIL'}] mcp.{name}: {detail}")
+            out.append(
+                _DoctorCheck(name=f"mcp.{name}", status="PASS" if ok else "FAIL", detail=detail)
+            )
     return out
 
 

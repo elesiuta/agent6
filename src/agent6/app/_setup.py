@@ -31,7 +31,7 @@ from agent6.git_ops import set_provider_key_env, set_repo_filter_policy, set_rep
 from agent6.models.cache import list_models, refresh_pricing_catalog
 from agent6.providers.claude_code import login_status
 from agent6.sandbox import strict_namespaces_work
-from agent6.sandbox.detect import Environment, detect
+from agent6.sandbox.detect import Environment, degrade_reason, detect, sandbox_disabled_by_env
 from agent6.sandbox.jail import SessionNetwork
 from agent6.secrets import SecretsError, load_oauth_tokens, load_secrets, resolve_api_key
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
@@ -330,14 +330,21 @@ def wants_session_network(cfg: Config, isolation: IsolationLevel) -> bool:
 
 
 def mcp_server_policy(
-    cfg: Config, root: Path, isolation: IsolationLevel, srv: MCPServerEntry
+    cfg: Config,
+    root: Path,
+    isolation: IsolationLevel,
+    srv: MCPServerEntry,
+    *,
+    readonly: bool = False,
 ) -> JailPolicy | None:
     """The sandbox for one spawned server, or None when the operator opted it
     out with `unconfined = true`.
 
     The same `jail_policy` a jailed command gets, plus this server's additive
     grants -- so the block names only what is extra and never has to describe
-    the interpreter, the tool dirs, or a writable HOME.
+    the interpreter, the tool dirs, or a writable HOME. `readonly` binds the
+    workspace read-only on top (the re-bind `.git` gets, applied to the
+    root): a diagnostic's probe, which must not write the repository.
 
     Its env is the CURATED set rather than a command's passthrough: a server
     is third-party code that may log or forward what it was given, so it gets
@@ -362,34 +369,56 @@ def mcp_server_policy(
         srv.command,
         extra_ro_paths=tuple(Path(p).expanduser() for p in read_paths),
         extra_rw_paths=tuple(Path(p).expanduser() for p in write_paths),
+        extra_protect_paths=(root,) if readonly else (),
         network=network,
         env_base=curated_env(passthrough=srv.pass_env, desktop=False),
     )
 
 
-def readonly_probe_refusal(srv: MCPServerEntry) -> str | None:
-    """Why a read-only diagnostic can't start *srv*, or None when it can.
+def mcp_server_spec(
+    cfg: Config,
+    root: Path,
+    isolation: IsolationLevel,
+    name: str,
+    srv: MCPServerEntry,
+    *,
+    readonly: bool = False,
+) -> MCPServerSpec:
+    """What starting *srv* as *name* takes. One builder for a run, `agent6
+    check` and `agent6 mcp connect`, so every surface spawns the server the
+    same way: the same workspace root, sandbox and network. The two probes
+    (`check mcp`, `mcp connect`) pass `readonly` (see `mcp_server_policy`)."""
+    return MCPServerSpec(
+        name=name,
+        command=srv.command,
+        startup_timeout_s=srv.startup_timeout_s,
+        call_timeout_s=srv.call_timeout_s,
+        pass_env=srv.pass_env,
+        # A `url` server is the operator's own process: nothing to confine.
+        policy=(
+            None if srv.url else mcp_server_policy(cfg, root, isolation, srv, readonly=readonly)
+        ),
+        http=(
+            HttpTransport(
+                name=name,
+                url=srv.url,
+                token_env=srv.token_env,
+                httpx_trust_env=srv.httpx_trust_env,
+            )
+            if srv.url
+            else None
+        ),
+    )
 
-    `agent6 check` starts each server only to enumerate its tools, in a
-    throwaway directory so a startup write lands nowhere real (see
-    `_doctor_check_mcp`). A server that runs unconfined (no jail to hold it to
-    that directory) or asks for write grants can still write elsewhere, so the
-    check reports it and leaves it unstarted; it starts normally in a real run.
-    """
-    sandbox = srv.sandbox
-    if sandbox is None:
-        return None
-    if sandbox.unconfined:
-        return (
-            "runs unconfined (sandbox.unconfined = true), which a read-only check"
-            " cannot confine; not started. Set unconfined = false to check it."
-        )
-    if sandbox.write_paths:
-        return (
-            "requests write access (sandbox.write_paths), which a read-only check"
-            " does not grant; not started. It starts normally in a run."
-        )
-    return None
+
+def no_jail_cause(cfg: Config, env: Environment) -> str:
+    """Why this host resolved to isolation `none`: the env override, the
+    config leaf, or what the host lacks (`degrade_reason`)."""
+    if sandbox_disabled_by_env():
+        return "AGENT6_DANGEROUSLY_DISABLE_SANDBOX=1 is set"
+    if cfg.sandbox.isolation == "none":
+        return "sandbox.isolation = none"
+    return degrade_reason(env) or "this host has no jail"
 
 
 def start_mcp_manager_if_enabled(
@@ -400,7 +429,6 @@ def start_mcp_manager_if_enabled(
     reporter: Reporter = STDIO_REPORTER,
     events: EventSink | None = None,
     session_net: SessionNetwork | None = None,
-    probe: bool = False,
 ) -> MCPManager | None:
     """Spawn all enabled MCP servers from `cfg.mcp`. Returns None when
     MCP is disabled or no servers are configured (so callers can skip
@@ -411,38 +439,17 @@ def start_mcp_manager_if_enabled(
     when *events* is given. Stderr is only visible from a terminal -- under an
     editor it is a log pane, and the operator sees a run quietly missing the
     tools they configured.
-
-    `probe` is the read-only diagnostic (`agent6 check`): a server that would
-    need write access to start (`readonly_probe_refusal`) is left unstarted, so
-    starting it in a throwaway *root* keeps the check from writing anywhere real.
     """
     if not cfg.mcp.enabled or not cfg.mcp.servers:
         return None
     configs = [
-        MCPServerSpec(
-            name=name,
-            command=srv.command,
-            startup_timeout_s=srv.startup_timeout_s,
-            call_timeout_s=srv.call_timeout_s,
-            pass_env=srv.pass_env,
-            policy=mcp_server_policy(cfg, root, isolation, srv),
-            http=(
-                HttpTransport(
-                    name=name,
-                    url=srv.url,
-                    token_env=srv.token_env,
-                    httpx_trust_env=srv.httpx_trust_env,
-                )
-                if srv.url
-                else None
-            ),
-        )
+        mcp_server_spec(cfg, root, isolation, name, srv)
         for name, srv in cfg.mcp.servers.items()
-        if srv.enabled and not (probe and readonly_probe_refusal(srv))
+        if srv.enabled
     ]
     if not configs:
         return None
-    _warn_servers_that_keep_the_network(cfg, isolation, reporter=reporter, probe=probe)
+    _warn_servers_that_keep_the_network(cfg, isolation, reporter=reporter)
     manager = MCPManager.start(configs, logger=reporter.err, session_net=session_net)
     if events is not None:
         for failure in manager.failures:
@@ -451,18 +458,15 @@ def start_mcp_manager_if_enabled(
 
 
 def _warn_servers_that_keep_the_network(
-    cfg: Config, isolation: IsolationLevel, *, reporter: Reporter, probe: bool = False
+    cfg: Config, isolation: IsolationLevel, *, reporter: Reporter
 ) -> None:
     """`network = "auto"` is the secure default and cannot be honoured without
     a network namespace, so where it degrades it says so -- per server, here,
     where the operator is already being told about their servers. An explicit
-    `none` or `session` refused long before this (check_mcp_network_support). A
-    `probe` warns only about servers it actually starts."""
+    `none` or `session` refused long before this (check_mcp_network_support)."""
     if isolation == "strict":
         return
     for name, srv in sorted(cfg.mcp.servers.items()):
-        if probe and readonly_probe_refusal(srv):
-            continue
         if srv.enabled and srv.effective_network == "auto":
             reporter.warn(
                 f"MCP server {name!r} keeps this host's network:"

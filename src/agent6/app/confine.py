@@ -17,7 +17,7 @@ from pathlib import Path
 
 from agent6.app._setup import mcp_server_policy
 from agent6.app.reporter import STDIO_REPORTER, Reporter
-from agent6.config import Config
+from agent6.config import Config, MCPServerEntry
 from agent6.paths import hidden_paths, is_root, jail_cache_home, private_dirs
 from agent6.sandbox.detect import Environment, degrade_reason
 from agent6.sandbox.jail import JailUnavailableError, tool_mount_notes
@@ -378,29 +378,34 @@ def check_hide_paths_support(
     return None
 
 
-def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
-    """A refusal when a server EXPLICITLY named a network this host cannot
-    give it, else None.
+def mcp_network_refusal(name: str, srv: MCPServerEntry, isolation: IsolationLevel) -> str | None:
+    """A refusal when *srv* EXPLICITLY named a network this host cannot give
+    it, else None.
 
-    Per-server, same rule and same vocabulary as `[sandbox].network`, and
-    therefore the same guard: a network namespace needs user namespaces, which
-    only `strict` has, so `none` and `session` refuse on `hardened` while the
-    `auto` default degrades with a warning. Under `none` nothing is confined at all
-    and the blanket unsandboxed warning covers it -- the same answer
-    `protect_git` and `memory_limit_mb` give, and the same answer the sibling
-    knob gives, which this did not until a matrix of the two side by side
-    showed them disagreeing.
+    Same rule and same vocabulary as `[sandbox].network`, and therefore the
+    same guard: a network namespace needs user namespaces, which only `strict`
+    has, so `none` and `session` refuse on `hardened` while the `auto` default
+    degrades with a warning. Under `none` nothing is confined at all and the
+    blanket unsandboxed warning covers it. One owner: the run's preflight
+    (`check_mcp_network_support`) and `agent6 check` both ask here.
     """
-    if isolation != "hardened":
+    if isolation != "hardened" or not srv.enabled:
         return None
+    if srv.effective_network not in ("none", "session"):
+        return None
+    return (
+        f"MCP server {name!r} sets sandbox.network = {srv.effective_network!r},"
+        " which needs a network namespace and so the strict isolation; this"
+        f" host resolved to {isolation!r}. Use 'auto' to run with a warning,"
+        " or 'host' to accept the machine's network."
+    )
+
+
+def check_mcp_network_support(cfg: Config, isolation: IsolationLevel) -> str | None:
+    """The first server's `mcp_network_refusal`, else None."""
     for name, srv in sorted(cfg.mcp.servers.items()):
-        if srv.enabled and srv.effective_network in ("none", "session"):
-            return (
-                f"MCP server {name!r} sets sandbox.network = {srv.effective_network!r},"
-                " which needs a network namespace and so the strict isolation; this"
-                f" host resolved to {isolation!r}. Use 'auto' to run with a warning,"
-                " or 'host' to accept the machine's network."
-            )
+        if (refusal := mcp_network_refusal(name, srv, isolation)) is not None:
+            return refusal
     return None
 
 

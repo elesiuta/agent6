@@ -79,6 +79,9 @@ Its only reach into the machine is agent6's tools served over the sdk MCP tunnel
 
 Every tool call that allows the model to run arbitrary commands (`run_command`, `run_verify_command`, backgrounded commands, and MCP servers) runs in a jail at the effective isolation level.
 
+`agent6 check mcp` and `agent6 mcp connect` start a spawned MCP server under that jail with the repository bound read-only, apply the run's refusals first, and leave a server they cannot hold that way unstarted: `unconfined = true`, a write grant (`write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
+A diagnostic hands a server the repository to read and writes nothing but the config it was asked to write.
+
 **Modes** (`[sandbox].isolation`)
 
 | Mode | Applies |

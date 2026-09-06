@@ -117,6 +117,10 @@ def _bounded_result(result: dict[str, Any]) -> dict[str, Any]:
 MCP_TOOL_PREFIX = "mcp__"
 
 
+def tool_count(n: int) -> str:
+    return f"{n} tool{'' if n == 1 else 's'}"
+
+
 def split_tool_name(qualified_name: str) -> tuple[str, str]:
     """`mcp__<server>__<tool>` -> (server, tool).
 
@@ -756,6 +760,11 @@ class MCPManager:
     _servers: dict[str, _MCPServer] = field(default_factory=dict)
     # Configured servers that did not start, in configuration order.
     failures: tuple[MCPStartFailure, ...] = ()
+    # The network each started server got, by name: the RESOLVED word (`auto`
+    # means nothing to a reader wondering why their browser server cannot see
+    # the app), `unconfined`, or `remote (not jailed)` for a `url` server, the
+    # operator's own process on whatever network it has.
+    networks: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def start(
@@ -794,15 +803,19 @@ class MCPManager:
                 srv.close()
                 continue
             mgr._servers[name] = srv
+            mgr.networks[name] = (
+                "remote (not jailed)"
+                if srv.http is not None
+                else "unconfined"
+                if srv.policy is None
+                else srv.policy.network
+            )
             if logger is not None:
-                # The RESOLVED network, not the configured word: `auto` means
-                # nothing to a reader wondering why their browser server cannot
-                # see the app. Named every time, for every server, so nobody has
-                # to know to go looking.
-                where = "unconfined" if srv.policy is None else srv.policy.network
-                n = len(srv.tools)
+                # Named every time, for every server, so nobody has to know
+                # to go looking.
                 logger(
-                    f"[mcp] started {name!r} ({n} tool{'' if n == 1 else 's'}, network: {where})"
+                    f"[mcp] started {name!r} ({tool_count(len(srv.tools))},"
+                    f" network: {mgr.networks[name]})"
                 )
         mgr.failures = tuple(failures)
         return mgr

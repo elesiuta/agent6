@@ -9,7 +9,6 @@ discovered mid-task, if at all.
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -183,7 +182,7 @@ def test_the_listing_of_nothing_says_how_to_add_one(
 
 
 def test_the_probe_leaves_no_server_running(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """It starts one to ask what it can do, and must not leak it into the
     operator's session."""
@@ -192,17 +191,16 @@ def test_the_probe_leaves_no_server_running(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
-    marker = tmp_path / "alive"
     # The token rides the -c script, so a leaked server's /proc cmdline would
     # carry it and pgrep -f would find it; pid-suffixed so parallel runs and
-    # stale processes cannot collide. The marker file proves the probe really
-    # spawned this argv.
+    # stale processes cannot collide. The tool it lists proves the probe really
+    # spawned this argv (its workspace is read-only, so no marker file can).
     token = f"agent6-leak-probe-{os.getpid()}"
     argv = _server_argv()
-    argv[2] = f"# {token}\nopen({json.dumps(str(marker))}, 'w').close()\n" + argv[2]
+    argv[2] = f"# {token}\n" + argv[2]
 
     assert cmd_mcp_connect("p", command=argv, url="", token_env="", pass_env=[], to_repo=False) == 0
-    assert marker.exists(), "the probe really did start it"
+    assert "mcp__p__read_page" in capsys.readouterr().out, "the probe really did start it"
     left = subprocess.run(["pgrep", "-f", token], capture_output=True, check=False)
     assert left.returncode != 0, f"probe server leaked: pids {left.stdout.decode()!r}"
 

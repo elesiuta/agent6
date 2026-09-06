@@ -67,6 +67,7 @@ def test_agent6_connects_instead_of_spawning() -> None:
     whatever container they chose; agent6 owning its lifetime is the wrong
     owner. The handshake and a call go over one POST each."""
     url, _seen, httpd = _serve(_mcp_reply)
+    logs: list[str] = []
     try:
         mgr = MCPManager.start(
             [
@@ -77,10 +78,13 @@ def test_agent6_connects_instead_of_spawning() -> None:
                     call_timeout_s=10.0,
                     http=HttpTransport(name="remote", url=url),
                 )
-            ]
+            ],
+            logger=logs.append,
         )
         try:
             assert [(d.server_name, d.tool_name) for d in mgr.descriptors()] == [("remote", "ping")]
+            # Its network is its own: agent6 jails nothing about it.
+            assert logs == ["[mcp] started 'remote' (1 tool, network: remote (not jailed))"]
             assert mgr.call("mcp__remote__ping", {}) == {
                 "content": [{"type": "text", "text": "pong"}]
             }
