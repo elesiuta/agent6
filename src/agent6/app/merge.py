@@ -158,16 +158,26 @@ def dispatch_merge(
 def landed_base(
     cwd: Path, layout: SessionLayout, manifest: SessionManifest, target: str, tip: str
 ) -> str | None:
-    """The merge base for a fork whose ancestor run *target* already holds as a
-    squash, or None where git's own base serves.
+    """The merge base for a run whose chain *target* already holds as a squash,
+    from its own stamp (a resumed leg merging again) or an ancestor's (a fork),
+    or None where git's own base serves.
 
     A squash commit is content git cannot relate to the chain it came from, so
-    a fork's merge read every commit of the ancestor as the fork's own change
-    and conflicted with the squash that holds the same lines. The base is the
-    ancestor's merged tip when the fork continues past it, else the point the
-    fork left its chain (the merged tip holds that point's content)."""
-    node = manifest
+    the merge read every commit before it as new work and conflicted with the
+    squash that holds the same lines. The base is the merged tip when the chain
+    continues past it, else the point a fork left its ancestor's chain (the
+    merged tip holds that point's content)."""
+    node, fork_point = manifest, ""
     for _ in range(64):  # a lineage deeper than this is not a fork chain
+        stamp = node.merged
+        if stamp is not None and stamp.into == target and stamp.tip:
+            if is_ancestor(cwd, stamp.tip, target):
+                break  # a real merge: git relates the two histories itself
+            if is_ancestor(cwd, stamp.tip, tip):
+                return stamp.tip
+            if fork_point and is_ancestor(cwd, fork_point, stamp.tip):
+                return fork_point
+            break
         fork_point = node.forked_from_sha
         if not node.parent_session_id:
             break
@@ -175,16 +185,6 @@ def landed_base(
             node = read_manifest(layout.session_dir.parent / node.parent_session_id)
         except (ManifestError, OSError):
             break
-        stamp = node.merged
-        if stamp is None or stamp.into != target or not stamp.tip:
-            continue
-        if is_ancestor(cwd, stamp.tip, target):
-            break  # a real merge: git relates the two histories itself
-        if is_ancestor(cwd, stamp.tip, tip):
-            return stamp.tip
-        if fork_point and is_ancestor(cwd, fork_point, stamp.tip):
-            return fork_point
-        break
     return None
 
 

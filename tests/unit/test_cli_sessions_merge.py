@@ -1047,3 +1047,31 @@ def test_diff_explains_an_ask_the_same_way_merge_does(
     captured = capsys.readouterr()
     assert "an ask does not write to the repo" in captured.out
     assert "base_sha" not in captured.err
+
+
+def test_a_resumed_run_merges_again_from_its_own_landed_tip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run is squash-merged, resumed, and merged again: the second leg's
+    commits sit on the same chain above a tip git relates to nothing on the
+    base, so the merge read the first leg as new work and conflicted with the
+    squash holding the same lines. The base is the run's own landed tip."""
+    monkeypatch.chdir(tmp_path)
+    guarded = "def f(x):\n    if not x:\n        return 0\n    return 1\n"
+    base = _setup_run(tmp_path, "resume-run1", commits=[("f.py", guarded, "guard")])
+    _git(tmp_path, "update-ref", chain_ref_for("resume-run1"), "agent6/resume-run1")
+    assert main(["sessions", "merge", "resume-run1"]) == 0
+    # The resumed leg keeps committing on the same branch and chain.
+    _git(tmp_path, "checkout", "-q", "agent6/resume-run1")
+    documented = guarded.replace("def f(x):\n", 'def f(x):\n    """Zero for empty."""\n')
+    (tmp_path / "f.py").write_text(documented, encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "docstring")
+    _git(tmp_path, "checkout", "-q", "main")
+    _git(tmp_path, "update-ref", chain_ref_for("resume-run1"), "agent6/resume-run1")
+
+    assert main(["sessions", "merge", "resume-run1"]) == 0, capsys.readouterr().out
+
+    landed = _git(tmp_path, "show", "main:f.py")
+    assert '"""Zero for empty."""' in landed and "return 0" in landed
+    assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "2"

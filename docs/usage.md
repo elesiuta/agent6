@@ -109,7 +109,7 @@ agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
 - `fork` rolls a copy back to a turn and continues it as a new run in its own git worktree (under `[parallel].workdir`), so the original run and your checkout stay as they are; `sessions merge <fork>` lands it, `sessions prune` removes the worktree once it is merged (`sessions rm <fork>` removes it with the record)
     - the fork's tree is the turn's committed content, and the files its commits leave out are the ones untracked in its own checkout when it was created (a fresh worktree usually has none)
     - a `--steer`ed fork takes that steer as its own task: its listing row and its squashed merge subject read as the work you sent it to do
-    - a fork of a run that was squash-merged merges from that run's landed tip, so the work the target already holds is not merged twice
+    - a run that was squash-merged merges again from its landed tip (a resumed leg, or a fork continuing its chain), so the work the target already holds is not merged twice
 - `/undo` (a composer, the pause menu, `run -i`; a hub on a finished run) takes back the last message in place: the tree as it stands is committed on the run's chain ref (and branch), every tracked path that differs from the turn before is put back, and a fork continues in the same checkout with the message back in the composer
     - the run's untracked-at-start files stay, and so do HEAD and the index; the later commits and the pre-undo commit stay on the run's ref
     - refused while another live run drives the checkout
