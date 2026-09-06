@@ -561,6 +561,18 @@ def test_bad_post_body_is_400_with_the_field_named(server: tuple[WebServer, int]
     assert (status, body["error"]) == (400, "bogus: extra inputs are not permitted")
 
 
+def test_a_post_on_an_unknown_session_or_machine_is_404_like_its_get(
+    server: tuple[WebServer, int],
+) -> None:
+    """The verbs answered 422 (`no session 'x'`) where the GET of the same id
+    answers 404: one status per fact."""
+    _srv, port = server
+    status, body = _post(port, "/api/session/nope/steer", {"text": "x"})
+    assert (status, body["error"]) == (404, "no session 'nope'")
+    status, body = _post(port, "/api/machine/nope/stop", {})
+    assert (status, body["error"]) == (404, "no machine 'nope'")
+
+
 def _read_until(
     resp: Any, cond: Callable[[dict[str, object]], bool], *, deadline_s: float = 10.0
 ) -> dict[str, object]:

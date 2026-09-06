@@ -397,15 +397,18 @@ class _Handler(BaseHTTPRequestHandler):
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "machine":
             self._route_machine_post(parts[2], parts[3])
             return
-        self._post_not_found(path)
+        self._post_not_found(f"not found: {path}")
 
-    def _post_not_found(self, what: str) -> None:
+    def _post_not_found(self, message: str) -> None:
         """404 for a POST whose body was never read: close the connection so the
         unread body cannot be parsed as the next request on keep-alive."""
         self.close_connection = True
-        self._send_json({"error": f"not found: {what}"}, status=404)
+        self._send_json({"error": message}, status=404)
 
     def _route_session_post(self, session_id: str, verb: str) -> None:
+        if model.session_dir_for(self.cwd, session_id) is None:
+            self._post_not_found(f"no session {session_id!r}")  # as its GET answers
+            return
         if verb == "steer":
             body = SteerBody.model_validate(self._read_body())
             ok, msg = actions.steer(self.cwd, session_id, body.text)
@@ -445,11 +448,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._ok_or_err(payload is not None, payload or {}, err)
             return
         else:
-            self._post_not_found(f"run/{session_id}/{verb}")
+            self._post_not_found(f"not found: run/{session_id}/{verb}")
             return
         self._ok_or_err(ok, {"message": msg}, msg)
 
     def _route_machine_post(self, name: str, verb: str) -> None:
+        if model.machine_dir_for(self.cwd, name) is None:
+            self._post_not_found(f"no machine {name!r}")  # as its GET answers
+            return
         if verb == "poke":
             pb = MachinePokeBody.model_validate(self._read_body())
             ok, msg = actions.machine_poke(self.cwd, name, data=pb.data, message=pb.message)
@@ -465,7 +471,7 @@ class _Handler(BaseHTTPRequestHandler):
             qb = AnswerBody.model_validate(self._read_body())
             ok, msg = actions.machine_answer(self.cwd, name, qb.id, qb.answers, state=qb.state)
         else:
-            self._post_not_found(f"machine/{name}/{verb}")
+            self._post_not_found(f"not found: machine/{name}/{verb}")
             return
         self._ok_or_err(ok, {"message": msg}, msg)
 
