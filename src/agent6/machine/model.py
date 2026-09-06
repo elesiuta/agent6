@@ -393,6 +393,9 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "git.run_repo_filters": (
         "honoring the repo's content drivers runs repo-controlled code on the host outside the jail"
     ),
+    "prompt.system_prompt_file": (
+        "the system prompt is read from the host, outside the jail, and sent to the provider"
+    ),
 }
 
 

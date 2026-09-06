@@ -533,6 +533,15 @@ def test_machine_overlay_cannot_set_the_completion_hook(tmp_path: Path) -> None:
     assert any("notify.on_complete" in p for p in problems)
 
 
+def test_machine_overlay_cannot_name_a_system_prompt_file(tmp_path: Path) -> None:
+    # The file is read on the HOST, outside the jail, and its contents are sent
+    # to the provider as the system prompt: an untrusted machine file naming a
+    # path is a host-file read the sandbox does not bound.
+    body = VALID_MACHINE + '\n[config.prompt]\nsystem_prompt_file = "/etc/shadow"\n'
+    problems = _problems(tmp_path, body)
+    assert any("prompt.system_prompt_file" in p for p in problems)
+
+
 def test_machine_overlay_cannot_define_a_preset(tmp_path: Path) -> None:
     # A `[config.presets.<name>]` table would splice operator-only sandbox /
     # providers / machine.notify policy into the effective config (the selected
