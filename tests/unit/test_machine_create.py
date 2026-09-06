@@ -15,6 +15,7 @@ import pytest
 
 from agent6.app import machine_agent
 from agent6.app.machine import create as _create
+from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
 from agent6.machine import (
     AgentExecResult,
@@ -102,22 +103,16 @@ def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
 
 
 def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _require_runnable(*_a: object, **_k: object) -> None:
-        return None
-
-    def _resolve(_role: object) -> object:
-        return SimpleNamespace(model="test-model")
-
     def _load(_root: object, _explicit: object = None) -> object:
-        cfg = SimpleNamespace(
-            sandbox=SimpleNamespace(isolation="none"),
-            budget=SimpleNamespace(max_usd=10.0),
-            # The drafting workspace lives where every subordinate working tree
-            # does; the default base is the cache dir, which the tests redirect.
-            parallel=SimpleNamespace(workdir=""),
-            require_runnable=_require_runnable,
-            models=SimpleNamespace(resolve=_resolve),
-            cleartext_credential_endpoints=lambda: (),
+        # A REAL Config: the authoring leg materializes it as its overlay
+        # (`cfg.model_dump`), so a stand-in namespace would dodge that path.
+        cfg = Config.model_validate(
+            {
+                "sandbox": {"isolation": "none"},
+                "budget": {"max_usd": 10.0},
+                "providers": {"openrouter": {"api_format": "openai", "api_key_env": "OR_KEY"}},
+                "models": {"worker": {"provider": "openrouter", "model": "test-model"}},
+            }
         )
         return SimpleNamespace(config=cfg, explicit_leaves=frozenset())
 
@@ -1098,11 +1093,16 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     _stub_preflight(monkeypatch)
     captured: list[tuple[AgentRequest, Path, object]] = []
 
+    seen: list[bool] = []
+
     def fake_build(
         cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             captured.append((request, root, cfg))
+            # Read while the leg is running: a published create removes the
+            # workspace, so nothing about it survives to assert on afterwards.
+            seen.append((root / ".git").exists())
             for rel, content in _draft(VALID_MACHINE).items():
                 (root / rel).write_text(content, encoding="utf-8")
             return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
@@ -1115,11 +1115,18 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     req, root, cfg = captured[0]
     assert req.mode == "run", "the authoring agent writes files"
     assert req.output_schema is None, "no finish payload: the bundle is on disk"
-    assert (root / ".git").exists(), "the workspace is a repo, like any run's"
+    assert seen == [True], "the workspace is a repo, like any run's"
+    assert not root.exists(), "and it is gone once its bundle is published"
     assert root != tmp_path, "never the operator's checkout"
     # The jail masks the state dir, so a workspace inside it would be hidden
     # from the run that must write there (a live create burned 200 iterations
     # on `list_dir: Path is hidden from this run`).
     state_dir = resolved_state_dir(tmp_path)
     assert state_dir not in root.parents, "the workspace sits outside the state dir"
-    assert cfg == {"sandbox": {"run_commands": "no"}}
+    assert isinstance(cfg, dict)
+    # The operator's own settings ride as the overlay: the workspace's per-repo
+    # layer is empty, so without them a repo-pinned worker model is invisible
+    # to the leg and every attempt fails.
+    assert cfg["models"] == {"worker": {"provider": "openrouter", "model": "test-model"}}
+    assert cfg["sandbox"]["run_commands"] == "no", "and it still carries no command tool"
+    assert "state_dir" not in cfg.get("agent6", {}), "global-only; the overlay forbids it"

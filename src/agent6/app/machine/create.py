@@ -5,27 +5,31 @@ language task, validate each attempt (structural + bundle + lint + offline
 tests + dry-run), and write the first fully-valid draft.
 
 Authoring runs the same confined agent subprocess a running machine's `agent`
-state uses (`build_machine_agent_runner`), in `mode="machine"` with a
-finish_session-focused prompt. Output goes through the injected `MachineFrontend`
-reporter; the watchable per-draft event log is a separate `EventSink`.
+state uses (`build_machine_agent_runner`), in `mode="run"` over a drafting
+workspace of its own: the agent writes the bundle there with the edit tools and
+agent6 validates what is on disk between attempts. Output goes through the
+injected `MachineFrontend` reporter; the watchable per-draft event log is a
+separate `EventSink`.
 """
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from agent6.app._session import select_isolation
 from agent6.app._setup import check_provider_keys
-from agent6.app.machine._bundle import validate_bundle
+from agent6.app.machine._bundle import referenced_scripts, validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.app.machine_agent import build_machine_agent_runner
 from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.preflight import SessionRefused
+from agent6.app.reporter import Reporter
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.events import EventSink
-from agent6.git_ops import GitError, init_repo
+from agent6.git_ops import CommitIdentity, GitError, init_repo, verify_git_identity
 from agent6.machine import (
     AgentRequest,
     MachineError,
@@ -50,7 +54,7 @@ _CREATE_STOP_REASONS = frozenset(
 
 def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
     """Write the bundle's helper scripts (keys are bundle-relative, already
-    validated by extract_scripts to live under scripts/ with no `..`).
+    validated by `_read_scripts` to live under scripts/ with no `..`).
 
     Defense-in-depth: unlink a pre-existing symlink at the target before writing
     so a planted `scripts/<name>` -> elsewhere link can't redirect the write out
@@ -93,14 +97,27 @@ def _check_bundle(path: Path) -> tuple[MachineSpec | None, list[str]]:
     return spec, []
 
 
-def _read_scripts(workspace: Path) -> dict[str, str]:
-    """The bundle's `scripts/` tree as {bundle-relative path: source}."""
-    root = workspace / "scripts"
-    return {
-        str(p.relative_to(workspace)): p.read_text(encoding="utf-8")
-        for p in sorted(root.rglob("*"))
-        if p.is_file()
-    }
+def _read_scripts(workspace: Path, keep: set[str] | None = None) -> dict[str, str]:
+    """The bundle's `scripts/` tree as {bundle-relative path: source}.
+
+    *keep*, when given, is the set the machine references: an attempt that
+    renamed a script leaves the old one on disk, and publishing it put a file
+    in the operator's bundle that nothing runs. Anything that is not a plain
+    readable text file is left out; `validate_bundle` refuses a bundle that
+    needed it.
+    """
+    out: dict[str, str] = {}
+    for path in sorted((workspace / "scripts").rglob("*")):
+        rel = str(path.relative_to(workspace))
+        if keep is not None and rel not in keep:
+            continue
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            out[rel] = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+    return out
 
 
 def _attempt_reason(problems: list[str]) -> str:
@@ -123,6 +140,20 @@ def _attempt_reason(problems: list[str]) -> str:
         head = head[:157] + "..."
     extra = f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""
     return f"{head}{extra}"
+
+
+def _discard_workspace(workspace: Path, reporter: Reporter) -> None:
+    """Remove a drafting workspace whose bundle is published.
+
+    Nothing else would: the prune sweep knows fan-out clones (a group dir of
+    `lane-*` checkouts) and fork worktrees (a manifest names them), and a
+    drafting workspace is neither. Its own per-repo state dir goes with it.
+    """
+    for path in (resolved_state_dir(workspace), workspace):
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+        except OSError as exc:  # pragma: no cover - rmtree already swallows these
+            reporter.err(f"machine create: could not remove {path}: {exc}")
 
 
 def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
@@ -196,20 +227,45 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # masks that dir, so a workspace inside it is hidden from the very run that
     # is supposed to write there.
     workspace = subordinate_workdir_root(cfg, cwd, scratch.name)
-    workspace.mkdir(parents=True)
     try:
+        workspace.mkdir(parents=True)
         init_repo(workspace)
-    except GitError as exc:
+    except (OSError, GitError) as exc:
         reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
+        events.emit("session.end", reason="workspace_failed", iterations=0, all_passed=False)
         return 1
-    # Authoring drafts a machine; it has no machine [config] overlay of its own.
-    # No command tools: the agent writes files, and agent6 runs the validators
-    # (they need agent6 itself, which no jailed command can reach).
+    # The workspace is a fresh repo, so its own per-repo config layer is empty:
+    # carry the operator's effective settings as the leg's overlay, the way a
+    # fan-out lane materializes them into its clone. Without it a repo-pinned
+    # worker model is invisible to the leg and every attempt fails.
+    overlay = cfg.model_dump(mode="json", exclude_defaults=True)
+    overlay.pop("preset", None)  # the overlay layer forbids both of these
+    overlay.get("agent6", {}).pop("state_dir", None)
+    # The leg writes files and nothing else. `run_commands = "no"` withholds
+    # the three command tools; the operator's metric goes too, since
+    # `run_metric_command` runs its command in the jail and authoring has no
+    # metric to chase; an unlisted host makes every `fetch` a prompt, which a
+    # headless create denies. agent6 runs the validators itself: they need
+    # agent6, which no jailed command can reach.
+    overlay["sandbox"] = {**overlay.get("sandbox", {}), "run_commands": "no", "fetch_hosts": []}
+    overlay["workflow"] = {**overlay.get("workflow", {}), "metric": None}
+    # Resolved on the host, where the global git config is visible: the confined
+    # leg cannot read ~/.gitconfig, and its per-iteration commits are how a
+    # draft survives a failure.
+    try:
+        name, email = verify_git_identity(
+            workspace, CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
+        )
+    except GitError as exc:
+        reporter.error(str(exc))
+        events.emit("session.end", reason="no_git_identity", iterations=0, all_passed=False)
+        return 2
     runner = build_machine_agent_runner(
-        {"sandbox": {"run_commands": "no"}},
+        overlay,
         workspace,
         isolation,
         scratch / "agent_transcripts",
+        commit_identity=CommitIdentity(name=name, email=email),
     )
 
     diagnostics: list[str] | None = None
@@ -288,14 +344,15 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             problems = lint_and_typecheck(
                 workspace / "scripts",
                 fix=True,
-                # The workspace lives under the state dir, where ruff's discovery
-                # finds no config; resolve from where the bundle publishes so
-                # this gate and the operator's later `machine check` agree.
+                # ruff discovers no config in the workspace; resolve from where
+                # the bundle publishes so this gate and the operator's later
+                # `machine check` agree.
                 ruff_config_from=output.parent if output is not None else cwd,
             )
             # ruff --fix rewrote the workspace copies, so those are the bytes
-            # that passed; publish what validated, not what the model first wrote.
-            candidate_scripts = _read_scripts(workspace)
+            # that passed; publish what validated, not what the model first wrote,
+            # and only the files this machine actually references.
+            candidate_scripts = _read_scripts(workspace, keep=referenced_scripts(candidate_spec))
             offline = run_offline_tests(workspace, isolation)
             problems.extend(offline.problems)
             if offline.skipped:
@@ -368,7 +425,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err("REFUSING to overwrite existing file(s):")
             for clash in clashes:
                 reporter.err(f"  {clash}")
-            reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
+            reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
             reporter.out(payload.removesuffix("\n"))
             return 2
     # The writes decide the outcome, so session.end waits for them.
@@ -382,7 +439,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     except OSError as exc:
         events.emit("session.end", reason="write_failed", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
-        reporter.err("The validated draft is on stdout; redirect it or re-run with -o <file>.")
+        reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
         reporter.out(payload.removesuffix("\n"))
         return 1
     # The destination can differ from the validated scratch copy (e.g. a
@@ -405,4 +462,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states){scripts_note}."
     )
     reporter.err("Review and commit it; `machine run` only accepts committed machines.")
+    # The published bundle is the deliverable, so the workspace has no reader
+    # left. A failure keeps it: the draft in it is what the operator reads.
+    _discard_workspace(workspace, reporter)
     return 0

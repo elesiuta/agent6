@@ -615,7 +615,7 @@ Sizing for long-running machines:
 
 Describe a loop in plain language and get a first-cut bundle back.
 It is an ordinary agent6 run handed this document's grammar, working in a drafting workspace of its own: the model writes the `.asm.toml` and every `scripts/...` file there with `apply_edit`, one file at a time, and finishes when the bundle is complete.
-No new tool; the leg has the edit tools and no command tool, and it never sees the operator's checkout.
+No new tool. The leg has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command` and `stop_background`, the operator's `[workflow].metric` is dropped so `run_metric_command` has nothing to run, and no host is pre-allowed so a headless `fetch` denies. It never sees the operator's checkout, and its writes are bounded by the workspace the way any run's are by its repo.
 
 - the workspace is an empty git repo under `[parallel].workdir` (where lane clones and fork worktrees live), so each iteration commits and the draft survives a failure for the operator to read
 - every draft is gated: `machine check`, ruff (the destination's ruff config), ty, mock tests in a no-network jail
@@ -657,7 +657,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 
 - **No new LLM tool surface**
     - the fixed set in `tools/schema.py` is unchanged; machines orchestrate existing capabilities
-    - `machine create` is no exception: the drafting agent has the same edit tools any run has, pointed at a drafting workspace of its own, and no command tool at all
+    - `machine create` is no exception: the drafting agent has the same edit tools any run has, pointed at a drafting workspace of its own, with every command tool withheld and its own `[workflow].metric` and `fetch` reach removed
 - **No arbitrary code execution from a file**
     - predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`
     - dotted references are agent6-interpreted data navigation, not Python attribute resolution

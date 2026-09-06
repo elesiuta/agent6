@@ -283,7 +283,7 @@ offline.
     timeout_secs = 10
     on = { ok = "wait_tick", nonzero = "wait_tick", timeout = "wait_tick" }
 
-### …and the scripts it references (return ALL of these in `result.scripts`)
+### …and the scripts it references (write ALL of these under `scripts/`)
 
 Real, typed scripts plus an offline test per seam (the network seam in
 `fetch_price`, the filesystem seam in `record_buy`).
