@@ -471,8 +471,8 @@ class AskUserInput(_ToolInput):
         " web also take typed text; an editor over ACP answers only with an"
         " option, and skips a question that offers none); batch related"
         " questions into one call. Returns"
-        " {answers: [...]} aligned to questions. Headless runs with nobody"
-        " watching return empty answers."
+        " {answers: [...]} aligned to questions; an unattended run returns"
+        " empty answers with a `note`."
     )
 
     questions: tuple[UserQuestion, ...] = Field(min_length=1, max_length=8)

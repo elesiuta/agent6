@@ -75,7 +75,7 @@ from agent6.tools.mcp_client import (
     MCPToolDescriptor,
     split_tool_name,
 )
-from agent6.tools.operator_prompts import OperatorPrompts
+from agent6.tools.operator_prompts import OperatorPrompts, unanswered_note
 from agent6.tools.policy import jail_policy, resolve_network, workspace_for
 from agent6.tools.results import (
     AnswersResult,
@@ -1052,10 +1052,10 @@ class ToolDispatcher:
         args = AskUserInput.model_validate(raw)
         started = time.monotonic()
         try:
-            answers = self._prompts.ask(args.questions, call_id=self._gating_call_id())
+            answer = self._prompts.ask(args.questions, call_id=self._gating_call_id())
         finally:
             self.operator_wait_s += time.monotonic() - started
-        return AnswersResult(answers=answers)
+        return AnswersResult(answers=answer.answers, note=unanswered_note(answer))
 
     def resolved_skills(self) -> ResolvedSkills:
         """Discover + state-resolve operator skills, once per dispatcher.

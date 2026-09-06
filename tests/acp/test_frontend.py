@@ -84,13 +84,15 @@ def test_a_question_carries_its_options_and_an_unanswered_one_is_empty(tmp_path:
     which is different from a value."""
     front, asked = _frontend(reply="dark")
     ask_user = _prompts(front, tmp_path).ask
-    assert ask_user((UserQuestion(question="Theme?", options=("dark", "light")),)) == ("dark",)
+    assert ask_user((UserQuestion(question="Theme?", options=("dark", "light")),)).answers == (
+        "dark",
+    )
     assert asked[0] == ("Theme?", ("dark", "light"), None)
     assert _journal(tmp_path / "logs.jsonl")[-1]["source"] == "acp"
 
     mute, _ = _frontend(can_ask=False)
     silent = _prompts(mute, tmp_path, "silent.jsonl").ask
-    assert silent((UserQuestion(question="Theme?"),)) == ("",)
+    assert silent((UserQuestion(question="Theme?"),)).answers == ("",)
     assert _journal(tmp_path / "silent.jsonl")[-1]["source"] == "headless"
 
 

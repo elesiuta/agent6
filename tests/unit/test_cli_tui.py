@@ -446,8 +446,8 @@ def test_a_stop_request_ends_an_away_wait(tmp_path: Path, monkeypatch: pytest.Mo
     threading.Thread(target=stop_it, daemon=True).start()
     ask = _prompts(tmp_path, events).ask
     started = time.monotonic()
-    answers = ask((UserQuestion(question="stash?", options=("stash", "cancel")),))
-    assert answers == ("",)
+    answer = ask((UserQuestion(question="stash?", options=("stash", "cancel")),))
+    assert answer.answers == ("",) and answer.unseen
     assert time.monotonic() - started < 10
 
 
@@ -641,7 +641,7 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
     fe.attach_console_view(events)  # the leg attaches the view after the gate exists
     try:
         assert prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
-        assert prompts.ask((UserQuestion(question="pick?", options=("a", "b")),)) == ("a",)
+        assert prompts.ask((UserQuestion(question="pick?", options=("a", "b")),)).answers == ("a",)
     finally:
         fe.close_console_view()
     assert len(paused) == 2, "both prompts pause the view the leg attached"

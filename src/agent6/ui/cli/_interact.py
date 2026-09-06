@@ -264,8 +264,9 @@ def build_questioner(
                     session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0
                 ),
             )
-            answers = reply if isinstance(reply, tuple) else tuple("" for _ in questions)
-            return QuestionAnswer(answers, "away-wait")
+            if isinstance(reply, tuple):
+                return QuestionAnswer(reply, "frontend")
+            return QuestionAnswer(tuple("" for _ in questions), "away-wait", unseen=True)
         with _pause(console_cell[0] if console_cell else None):
             stdin_answers = default_stdin_questioner(
                 questions, until=lambda: question_answers_written(session_dir, request.id)
@@ -282,7 +283,7 @@ def build_questioner(
                 "[agent6] no front-end attached and no terminal to answer the"
                 " question; returning empty answers\n"
             )
-            return QuestionAnswer(tuple("" for _ in questions), "headless-default")
+            return QuestionAnswer(tuple("" for _ in questions), "headless-default", unseen=True)
         return QuestionAnswer(stdin_answers, "stdin")
 
     return ask

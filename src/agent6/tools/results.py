@@ -428,9 +428,13 @@ class FinishPlanningResult(ToolResult):
 @dataclass(frozen=True, slots=True)
 class AnswersResult(ToolResult):
     answers: tuple[str, ...]
+    note: str = ""  # why the answers are empty when nobody saw the questions
 
     def to_wire(self) -> dict[str, Any]:
-        return {"answers": list(self.answers)}
+        wire: dict[str, Any] = {"answers": list(self.answers)}
+        if self.note:
+            wire["note"] = self.note
+        return wire
 
     def summary(self) -> str:
         answered = sum(1 for a in self.answers if str(a).strip())

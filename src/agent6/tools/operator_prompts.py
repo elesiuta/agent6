@@ -40,6 +40,11 @@ Source = Literal[
     "acp",
 ]
 
+UNANSWERED_NOTE = (
+    "no operator is attached to this run, so the questions went unanswered;"
+    " decide on your own judgment and go on"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ApprovalRequest:
@@ -80,6 +85,9 @@ class QuestionAnswer:
     # rest unanswered ("").
     answers: tuple[str, ...]
     source: Source
+    # Nobody could see the questions: no terminal and no front-end, or a park
+    # that ended empty. A person who left them blank is not unseen.
+    unseen: bool = False
 
 
 class Approver(Protocol):
@@ -117,7 +125,7 @@ def _default_questioner(request: QuestionRequest, /) -> QuestionAnswer:  # pragm
     prompts, one per question. A non-TTY/headless stdin answers "" for each so a
     run never hangs (mirrors ui/cli/_interact.py's default_stdin_questioner)."""
     if not sys.stdin.isatty():
-        return QuestionAnswer(tuple("" for _ in request.questions), "headless-default")
+        return QuestionAnswer(tuple("" for _ in request.questions), "headless-default", unseen=True)
     answers: list[str] = []
     for q in request.questions:
         lines = [q.question, *(f"  {i}) {opt}" for i, opt in enumerate(q.options, start=1))]
@@ -188,9 +196,9 @@ class OperatorPrompts:
 
     def ask(
         self, questions: tuple[UserQuestion, ...], *, call_id: int | None = None
-    ) -> tuple[str, ...]:
+    ) -> QuestionAnswer:
         """Put *questions* to the operator; the answers align to them by index
-        (a question the front-end left unanswered is "")."""
+        (a question the front-end left unanswered is ""), with who answered."""
         request = QuestionRequest(
             id=f"question-{next(self._questions)}", questions=questions, call_id=call_id
         )
@@ -210,4 +218,10 @@ class OperatorPrompts:
             )
         answers = answer.answers + ("",) * (len(questions) - len(answer.answers))
         self._journal("question.answer", id=request.id, answers=list(answers), source=answer.source)
-        return answers
+        return QuestionAnswer(answers, answer.source, answer.unseen)
+
+
+def unanswered_note(answer: QuestionAnswer) -> str:
+    """What the model is told when nobody saw its questions; "" when someone
+    answered, or declined by leaving them blank."""
+    return UNANSWERED_NOTE if answer.unseen else ""

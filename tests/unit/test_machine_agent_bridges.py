@@ -71,7 +71,7 @@ def test_headless_defaults_when_no_frontend(tmp_path: Path) -> None:
     b = _build_machine_bridges(instance, state, events)
     # No front-end claim on the instance dir: deny approvals, empty answers, no steer.
     assert b.prompts.approve("run rm -rf?") is False
-    assert b.prompts.ask((UserQuestion(question="pick", options=("a", "b")),)) == ("",)
+    assert b.prompts.ask((UserQuestion(question="pick", options=("a", "b")),)).answers == ("",)
     assert b.steer_requested() is False
     assert b.steer_prompt() is None
 
@@ -99,7 +99,7 @@ def test_question_answer_read_from_per_state_dir(tmp_path: Path) -> None:
         daemon=True,
     ).start()
     question = UserQuestion(question="which?", options=("chosen", "other"))
-    assert b.prompts.ask((question,)) == ("chosen",)
+    assert b.prompts.ask((question,)).answers == ("chosen",)
 
 
 def test_machine_approval_ignores_a_premature_answer(tmp_path: Path) -> None:
@@ -239,7 +239,7 @@ def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: Path) -> None:
     t2 = threading.Thread(target=_answer_question_late)
     t2.start()
     q = UserQuestion(question="colour?", options=("blue", "red"))
-    assert b.prompts.ask((q,)) == ("blue",)
+    assert b.prompts.ask((q,)).answers == ("blue",)
     t2.join()
 
 

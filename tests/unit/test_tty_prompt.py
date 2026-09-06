@@ -155,7 +155,7 @@ def test_questioner_marks_headless_defaults(
         journal=_Events().emit,
         session_dir=tmp_path,
     ).ask
-    answers = ask((UserQuestion(question="pick?", options=("a", "b")),))
+    answers = ask((UserQuestion(question="pick?", options=("a", "b")),)).answers
     assert answers == ("",)
     answer_events = [f for t, f in emitted if t == "question.answer"]
     assert answer_events and answer_events[0]["source"] == "headless-default"
@@ -275,7 +275,7 @@ def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: Path) -> None:
             session_dir=session_dir,
         )
         approved = prompts.approve("Allow run_command: ls", scope="command")
-        answers = prompts.ask((UserQuestion(question="port?"),))
+        answers = prompts.ask((UserQuestion(question="port?"),)).answers
         if not approved or answers != ("9090",):
             return 13
         return 0 if all(f.get("source") == "frontend" for f in emitted) else 14

@@ -391,8 +391,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                     choice = "include"
                 else:
                     question = dirty_tree_question(modified, unmerged_run=unmerged_run)
-                    answers = prompts.ask((question,))
-                    choice = dirty_tree_choice(answers[0] if answers else "")
+                    answer = prompts.ask((question,))
+                    choice = dirty_tree_choice(answer.answers[0])
                     stash_pop = stash_pop or choice == "stash"
                 if choice == "cancel":
                     settle = (

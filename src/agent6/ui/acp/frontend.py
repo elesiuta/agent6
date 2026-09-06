@@ -132,7 +132,7 @@ def acp_frontend(
     def _build_questioner(session_dir: Path) -> Questioner:
         def ask_questions(request: QuestionRequest, /) -> QuestionAnswer:
             if not capabilities.can_ask:
-                return QuestionAnswer(tuple("" for _ in request.questions), "headless")
+                return QuestionAnswer(tuple("" for _ in request.questions), "headless", unseen=True)
             # An unanswered question becomes an empty string, which the loop
             # already treats as "the operator said nothing", not as a value.
             # One deadline for the request: a timeout per question made an

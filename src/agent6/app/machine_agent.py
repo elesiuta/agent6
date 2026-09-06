@@ -284,8 +284,10 @@ def _build_machine_bridges(
                     agent_state, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
                 ),
             )
-            return QuestionAnswer(reply if isinstance(reply, tuple) else empty, "await-frontend")
-        return QuestionAnswer(empty, "headless")
+            if isinstance(reply, tuple):
+                return QuestionAnswer(reply, "frontend")
+            return QuestionAnswer(empty, "await-frontend", unseen=True)
+        return QuestionAnswer(empty, "headless", unseen=True)
 
     prompts = OperatorPrompts(
         approver=approve, questioner=ask, journal=events.emit, session_dir=agent_state

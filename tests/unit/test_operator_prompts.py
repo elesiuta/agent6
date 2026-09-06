@@ -206,7 +206,7 @@ def test_answers_align_to_the_questions(tmp_path: Path) -> None:
     def _short(_request: QuestionRequest, /) -> QuestionAnswer:
         return QuestionAnswer((), "frontend")
 
-    assert _prompts(session_dir, events, questioner=_short).ask(questions) == ("", "")
+    assert _prompts(session_dir, events, questioner=_short).ask(questions).answers == ("", "")
     (answer,) = _of(session_dir, "question.answer")
     assert answer["answers"] == ["", ""]
 
@@ -233,3 +233,28 @@ def test_every_prompt_event_has_exactly_one_emitter() -> None:
         "question.prompt": {"tools/operator_prompts.py"},
         "question.answer": {"tools/operator_prompts.py"},
     }
+
+
+def test_an_unseen_question_says_so_in_its_result(tmp_path: Path) -> None:
+    """A headless run answered `ask_user` with bare empty strings, and the
+    model asked again: the reason (nobody attached) reached the console only.
+    The result carries it; a blank a person left does not."""
+    from agent6.tools.operator_prompts import UNANSWERED_NOTE, unanswered_note
+
+    session_dir = tmp_path / "s"
+    session_dir.mkdir()
+    events = _sink(session_dir)
+
+    def _nobody(request: QuestionRequest, /) -> QuestionAnswer:
+        return QuestionAnswer(tuple("" for _ in request.questions), "headless-default", unseen=True)
+
+    def _blank(request: QuestionRequest, /) -> QuestionAnswer:
+        return QuestionAnswer(tuple("" for _ in request.questions), "stdin")
+
+    questions = (UserQuestion(question="which?", options=("a", "b")),)
+    unseen = _prompts(session_dir, events, questioner=_nobody).ask(questions)
+    assert unanswered_note(unseen) == UNANSWERED_NOTE
+    assert unanswered_note(_prompts(session_dir, events, questioner=_blank).ask(questions)) == ""
+    d = _dispatcher(session_dir, events, _prompts(session_dir, events, questioner=_nobody))
+    wire = d.dispatch("ask_user", {"questions": [{"question": "which?"}]}).to_wire()
+    assert wire == {"answers": [""], "note": UNANSWERED_NOTE}
