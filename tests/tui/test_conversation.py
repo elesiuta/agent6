@@ -568,7 +568,12 @@ def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: Pat
         [
             _EVENTS[0],
             {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1},
-            {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls"},
+            {
+                "type": "approval.prompt",
+                "id": "ap1",
+                "prompt": "Allow run_command: ls",
+                "call_id": 1,
+            },
         ],
     )
 

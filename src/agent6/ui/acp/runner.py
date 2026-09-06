@@ -203,7 +203,7 @@ class RunBridge:
         prompt: str,
         options: tuple[str, ...],
         standing: bool | None,
-        call_id: str | None,
+        call_id: int | None,
     ) -> str | None:
         """Put one approval or question to the editor.
 
@@ -229,7 +229,7 @@ class RunBridge:
         if not options:
             return None
         if call_id is not None:
-            gated = wire_call_id(session.session_id, announced.turn, call_id)
+            gated = wire_call_id(session.session_id, announced.turn, str(call_id))
             announced.wait_for(gated, abandoned=lambda: session.cancelled)
             tool_call: dict[str, Any] = {"toolCallId": gated, "status": "pending"}
         else:

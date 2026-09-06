@@ -138,7 +138,7 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
     session = Session(acp_id="s", cwd=Path("/x"), session_id="run-x", turn=1)
     announced = Announced(turn=1)
     announced.add("run-x:1:7")
-    bridge.ask(session, announced, "Allow run_command: ls", ("allow", "deny"), True, "7")
+    bridge.ask(session, announced, "Allow run_command: ls", ("allow", "deny"), True, 7)
     bridge.ask(session, announced, "Theme?", ("dark", "light"), None, None)
     assert len(sent) == 2
     assert sent[0]["toolCall"]["toolCallId"] == "run-x:1:7"

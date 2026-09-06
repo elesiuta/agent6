@@ -24,9 +24,8 @@ from agent6.sessions.ipc import (
     set_session_allow,
 )
 from agent6.sessions.layout import SessionLayout
-from agent6.tools.dispatch import Approver
 from agent6.tools.mcp_client import MCPManager
-from agent6.tools.schema import UserQuestion
+from agent6.tools.operator_prompts import Approver, Questioner
 from agent6.types import AutoCommitDirective, IsolationLevel
 from agent6.workflows.loop import SessionResult, Workflow
 from agent6.workflows.subrun import GroupLaneSpawner
@@ -139,11 +138,10 @@ class SessionFrontend:
     close_console_view: Callable[[], None]
     loop_logger: Callable[[str], Callable[[str], None]]
     tui_session: Callable[[Path, bool], AbstractContextManager[None]]
-    # operator interaction
-    build_approver: Callable[[Path, EventSink], Approver]
-    build_questioner: Callable[
-        [Path, EventSink], Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]
-    ]
+    # operator interaction: the callables that ANSWER a prompt the gate
+    # (`tools.operator_prompts`) has journaled, keyed on the run dir's bridge.
+    build_approver: Callable[[Path], Approver]
+    build_questioner: Callable[[Path], Questioner]
     make_steer_state: Callable[[EventSink, Path, Callable[[], SessionFacts]], SteerHooks]
     confirm_unconfined_autorun: Callable[[IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]

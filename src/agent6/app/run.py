@@ -90,6 +90,7 @@ from agent6.sessions.lock import (
     repo_writer_holder,
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import ResumableMode, session_bucket, session_kind
 from agent6.workflows._context import agents_md_notices
 
@@ -314,6 +315,14 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
+        # The leg's one gate to the operator: every prompt journals and takes
+        # its id here, whichever front-end answers.
+        prompts = OperatorPrompts(
+            approver=frontend.build_approver(layout.session_dir),
+            questioner=frontend.build_questioner(layout.session_dir),
+            journal=events.emit,
+            session_dir=layout.session_dir,
+        )
 
         warn_install_inside_workspace(cwd, reporter=reporter)
         for line in agents_md_notices(cwd):
@@ -378,8 +387,8 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 elif not cfg.git.require_clean_worktree:
                     choice = "include"
                 else:
-                    ask = frontend.build_questioner(layout.session_dir, events)
-                    answers = ask((dirty_tree_question(modified, unmerged_run=unmerged_run),))
+                    question = dirty_tree_question(modified, unmerged_run=unmerged_run)
+                    answers = prompts.ask((question,))
                     choice = dirty_tree_choice(answers[0] if answers else "")
                     stash_pop = stash_pop or choice == "stash"
                 if choice == "cancel":
@@ -457,6 +466,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # Written for every mode: `agent6 resume` reaches an ask too.
                 resume_state_path=layout.session_dir / "loop_state.json",
                 undo_forker=_undo_forker,
+                prompts=prompts,
                 # The REPL already printed + saved each turn.
                 ask_transcript_task=None if interactive else task,
                 budget_overrides=budget_overrides,

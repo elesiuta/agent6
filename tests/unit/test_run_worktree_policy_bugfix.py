@@ -37,6 +37,7 @@ from agent6.config.layer import EffectiveConfig
 from agent6.git_ops import status as git_status
 from agent6.sessions.layout import read_untracked_at_start
 from agent6.sessions.manifest import read_manifest
+from agent6.tools.operator_prompts import QuestionAnswer, QuestionRequest
 from agent6.tools.schema import UserQuestion
 
 
@@ -117,10 +118,10 @@ def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[Us
     def _frontend(config_path: Path | None = None) -> object:
         fe = real(config_path)
 
-        def _questioner(_sd: Path, _ev: object) -> object:
-            def _ask(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
-                asked.extend(questions)
-                return tuple(answer for _ in questions)
+        def _questioner(_sd: Path) -> object:
+            def _ask(request: QuestionRequest, /) -> QuestionAnswer:
+                asked.extend(request.questions)
+                return QuestionAnswer(tuple(answer for _ in request.questions), "stdin")
 
             return _ask
 

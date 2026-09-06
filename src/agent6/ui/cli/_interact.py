@@ -9,35 +9,35 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from agent6.events import EventSink
 from agent6.sessions.ipc import (
     await_frontend_reply,
     away_mode,
-    clear_answer,
-    clear_question_answers,
     frontend_is_live,
     read_answer,
     read_question_answers,
     record_answer,
-    session_allow_set,
     set_away_mode,
     set_session_allow,
 )
+from agent6.tools.operator_prompts import (
+    ApprovalAnswer,
+    ApprovalRequest,
+    Approver,
+    QuestionAnswer,
+    Questioner,
+    QuestionRequest,
+)
 from agent6.tools.schema import UserQuestion
+from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._steer import (
     tty_message,
     tty_prompt,
 )
 from agent6.ui.steer import SteerState
 from agent6.viewmodel import approval_parts
-
-if TYPE_CHECKING:
-    from agent6.tools.dispatch import Approver
-from agent6.ui.cli._console_view import ConsoleView
 
 
 def _pause(cv: ConsoleView | None) -> contextlib.AbstractContextManager[None]:
@@ -140,58 +140,39 @@ def prompt_detach_away_mode(session_dir: Path, scopes: tuple[str, ...]) -> None:
 
 def build_approver(
     session_dir: Path,
-    events: EventSink,
-    console_view: ConsoleView | None = None,
+    console_cell: Sequence[ConsoleView | None] | None = None,
     steer_cell: Sequence[SteerState | None] | None = None,
 ) -> Approver:
     """Build the command approver, bridged to a live TUI when present.
 
-    Emits an `approval.prompt` event; if a TUI is live (it wrote `front-end claim`) the
-    answer comes from its Allow/Deny modal via the file bridge
-    (`approvals/<id>.answer`), otherwise -- or if the TUI dies / times out -- it
-    falls back to the stdin `[y/N]` prompt. Emits `approval.answer` either way.
-    This is what wires the watch/auto-spawn TUI to run_command approval.
+    The gate has journaled the prompt (`approval.prompt`) before this is
+    asked; if a front-end is live (it wrote a `frontends/` claim) the answer
+    comes from its Allow/Deny modal via the file bridge
+    (`approvals/<id>.answer`), otherwise -- or if the front-end dies / times
+    out -- it falls back to the stdin `[y/N]` prompt. This is what wires the
+    watch/auto-spawn TUI to run_command approval.
 
-    `steer_cell` (the CLI leg's late-bound SteerState): an operator prompt
-    counts as a Ctrl-C boundary, so with a pause armed the terminal prompt says
-    so and the pause menu opens right after the answer (its action seeds the
-    steer the next between-steps boundary consumes)."""
-    counter = {"n": 0}
+    `console_cell` and `steer_cell` are the CLI leg's late-bound console view
+    and SteerState, read at prompt time: the view pauses its heartbeat around
+    the terminal prompt, and an operator prompt counts as a Ctrl-C boundary,
+    so with a pause armed the prompt says so and the pause menu opens right
+    after the answer (its action seeds the steer the next between-steps
+    boundary consumes)."""
 
-    def approve(prompt: str, *, scope: str | None = None) -> bool:
-        counter["n"] += 1
-        prompt_id = f"approval-{counter['n']}"
-        # Already granted for THIS scope (this run + its resumes) -> auto-pass.
-        # Only the scope the operator answered about: "allow every command" is
-        # what that prompt and that modal said, and reading it as consent for
-        # the network too turned one keystroke into unlimited egress.
-        if scope and session_allow_set(session_dir, scope):
-            events.emit("approval.answer", id=prompt_id, approved=True, source="session")
-            return True
-        # Clear any premature answer for this id, then emit the prompt so ANY live
-        # front-end (a re-attached `agent6 attach`, the TUI, the web) can render and
-        # answer it. clear_answer stops a pre-written answer (a premature approve
-        # POST, ids being predictable) from silently auto-passing.
-        clear_answer(session_dir, prompt_id)
-        # `standing` tells every front-end whether to OFFER an "allow all": a
-        # button that silently answers only this call would lie about itself.
-        events.emit("approval.prompt", id=prompt_id, prompt=prompt, standing=bool(scope))
+    def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
         # A live front-end ALWAYS gets asked, in its own UI, regardless of the
         # detach away-mode: away-mode governs only the window when nothing is
         # attached. (A foreground run writes no front-end claim, so it falls through
         # to the stdin prompt below.)
         if frontend_is_live(session_dir):
-            answer = read_answer(session_dir, prompt_id)
+            answer = read_answer(session_dir, request.id)
             if answer is not None:
-                approved = record_answer(session_dir, answer, scope)
-                events.emit("approval.answer", id=prompt_id, approved=approved, source="frontend")
-                return approved
+                return ApprovalAnswer(record_answer(session_dir, answer, request.scope), "frontend")
         # Nothing attached (or the front-end died mid-prompt): the detached run's
         # chosen away-mode governs. deny/wait are only reached headless.
         away = away_mode(session_dir)
         if away == "deny":
-            events.emit("approval.answer", id=prompt_id, approved=False, source="away-deny")
-            return False
+            return ApprovalAnswer(False, "away-deny")
         wait_for_frontend = away == "wait" or not _has_controlling_tty()
         if wait_for_frontend:
             # away="wait", OR an unattended run with no away-mode and no terminal
@@ -204,61 +185,49 @@ def build_approver(
             )
             reply = await_frontend_reply(
                 session_dir,
-                lambda: read_answer(session_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0),
+                lambda: read_answer(session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0),
             )
-            approved = reply is not None and record_answer(session_dir, reply, scope)
-            events.emit("approval.answer", id=prompt_id, approved=approved, source="await-frontend")
-            return approved
+            approved = reply is not None and record_answer(session_dir, reply, request.scope)
+            return ApprovalAnswer(approved, "await-frontend")
         # Foreground (a controlling tty, no away-mode): prompt on it directly.
         steer = steer_cell[0] if steer_cell else None
-        with _pause(console_view):
+        # The view is attached after the prompts are built: read it now.
+        with _pause(console_cell[0] if console_cell else None):
             if steer is not None and steer.armed():
                 tty_message("\n[agent6] pause armed: the menu opens after this answer.\n")
-            answer_s = default_stdin_approver(prompt, standing=bool(scope))
+            answer_s = default_stdin_approver(request.prompt, standing=bool(request.scope))
         # A session choice persists (across this run's resumes); session-deny
         # WITHDRAWS the scope's tools from the next turn rather than refusing
         # every later call, so the model stops spending turns on a door that
         # will not open.
-        approved = record_answer(session_dir, answer_s, scope)
-        events.emit("approval.answer", id=prompt_id, approved=approved, source="stdin")
+        approved = record_answer(session_dir, answer_s, request.scope)
         if steer is not None and steer.armed():
             steer.prompt_now()
-        return approved
+        return ApprovalAnswer(approved, "stdin")
 
     return approve
 
 
 def build_questioner(
-    session_dir: Path, events: EventSink, console_view: ConsoleView | None = None
-) -> Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]:
+    session_dir: Path, console_cell: Sequence[ConsoleView | None] | None = None
+) -> Questioner:
     """Build the `ask_user` questioner, bridged to a live TUI when present.
 
-    Emits a `question.prompt` event; if a TUI is live the answer comes from its
-    question modal via `questions/<id>.answer`, otherwise (or if the TUI dies /
-    times out) it falls back to a numbered stdin prompt. A headless run (no TUI,
-    no TTY) gets an empty answer rather than hanging. Emits `question.answer`."""
-    counter = {"n": 0}
+    The gate has journaled the prompt (`question.prompt`) before this is
+    asked; if a TUI is live the answer comes from its question modal via
+    `questions/<id>.answer`, otherwise (or if the TUI dies / times out) it
+    falls back to a numbered stdin prompt. A headless run (no TUI, no TTY)
+    gets an empty answer rather than hanging."""
 
-    def ask(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
-        counter["n"] += 1
-        question_id = f"question-{counter['n']}"
-        # Clear a pre-written answer before emitting (see build_approver): an
-        # ask_user answer that arrived before the prompt must not be consumed.
-        clear_question_answers(session_dir, question_id)
-        events.emit(
-            "question.prompt",
-            id=question_id,
-            questions=[{"question": q.question, "options": list(q.options)} for q in questions],
-        )
-        answers: tuple[str, ...] | None = None
-        source = "stdin"
+    def ask(request: QuestionRequest, /) -> QuestionAnswer:
+        questions = request.questions
         # A live front-end (re-attached CLI watch, TUI, web) always gets asked,
         # whatever the away-mode; away-mode is the no-front-end fallback.
         if frontend_is_live(session_dir):
-            answers = read_question_answers(session_dir, question_id)
+            answers = read_question_answers(session_dir, request.id)
             if answers is not None:
-                source = "frontend"
-        if answers is None and away_mode(session_dir) == "wait":
+                return QuestionAnswer(answers, "frontend")
+        if away_mode(session_dir) == "wait":
             # Detached 'wait', nothing attached: block until a front-end answers.
             tty_message(
                 f"[agent6] waiting: a question awaits a front-end; answer it with:"
@@ -267,28 +236,23 @@ def build_questioner(
             reply = await_frontend_reply(
                 session_dir,
                 lambda: read_question_answers(
-                    session_dir, question_id, timeout_s=20.0, dead_grace_s=8.0
+                    session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0
                 ),
             )
             answers = reply if isinstance(reply, tuple) else tuple("" for _ in questions)
-            source = "away-wait"
-        if answers is None:
-            with _pause(console_view):
-                stdin_answers = default_stdin_questioner(questions)
-                if stdin_answers is None:
-                    # No front-end and no controlling terminal: nobody saw the
-                    # question. Answer empty so the run never hangs, and say so
-                    # where a watcher will see it instead of failing silently.
-                    answers = tuple("" for _ in questions)
-                    source = "headless-default"
-                    tty_message(
-                        "[agent6] no front-end attached and no terminal to answer the"
-                        " question; returning empty answers\n"
-                    )
-                else:
-                    answers = stdin_answers
-        events.emit("question.answer", id=question_id, answers=list(answers), source=source)
-        return answers
+            return QuestionAnswer(answers, "away-wait")
+        with _pause(console_cell[0] if console_cell else None):
+            stdin_answers = default_stdin_questioner(questions)
+        if stdin_answers is None:
+            # No front-end and no controlling terminal: nobody saw the
+            # question. Answer empty so the run never hangs, and say so
+            # where a watcher will see it instead of failing silently.
+            tty_message(
+                "[agent6] no front-end attached and no terminal to answer the"
+                " question; returning empty answers\n"
+            )
+            return QuestionAnswer(tuple("" for _ in questions), "headless-default")
+        return QuestionAnswer(stdin_answers, "stdin")
 
     return ask
 

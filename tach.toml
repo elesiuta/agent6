@@ -218,10 +218,9 @@ depends_on = [
   # not a kill, so the finished step lands first.
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
-  # The approver the seam takes is `tools.dispatch.Approver`; building one
-  # names it.
+  # The approver and questioner the seam takes are
+  # `tools.operator_prompts` protocols; building them names their values.
   "agent6.tools",
-  "agent6.tools.schema",
   "agent6.types",
   # The same detached-resume spawner ui.cli uses: `--detach` is a lifecycle
   # affordance, not a CLI one.

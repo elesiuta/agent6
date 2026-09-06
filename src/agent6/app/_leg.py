@@ -62,6 +62,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import AutoCommitDirective, IsolationLevel, ResumableMode
 from agent6.workflows._session_state import SessionEndReason
 from agent6.workflows.loop import ResumeError, SessionResult, Workflow
@@ -95,6 +96,10 @@ class LegInputs:
     # message and rewinds the checkout; the leg body records the outcome for
     # its end block.
     undo_forker: Callable[[], tuple[str, str] | None]
+    # The leg's one gate to the operator: built by the lifecycle, so a question
+    # it asks before the loop (the dirty-tree start question) and the
+    # dispatcher's approvals share one journal and one id sequence.
+    prompts: OperatorPrompts
     # A one-shot ask records its answer under this question; None when the
     # REPL already saved each turn.
     ask_transcript_task: str | None
@@ -225,8 +230,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             isolation=inputs.isolation,
             mode=mode,
             events=events,
-            approver=frontend.build_approver(layout.session_dir, events),
-            questioner=frontend.build_questioner(layout.session_dir, events),
+            prompts=inputs.prompts,
             loop_log=loop_log,
             mcp_manager=mcp_manager,
             session_net=session_net,

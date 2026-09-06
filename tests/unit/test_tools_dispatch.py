@@ -11,6 +11,13 @@ import pytest
 
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher, ToolError
+from agent6.tools.operator_prompts import (
+    ApprovalAnswer,
+    ApprovalRequest,
+    OperatorPrompts,
+    QuestionAnswer,
+    QuestionRequest,
+)
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel
 
@@ -182,11 +189,12 @@ def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
     cfg = _config(tmp_path)
     seen: dict[str, object] = {}
 
-    def questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
-        seen["questions"] = questions
-        return tuple(q.options[1] if q.options else "typed" for q in questions)
+    def questioner(request: QuestionRequest, /) -> QuestionAnswer:
+        seen["questions"] = request.questions
+        answers = tuple(q.options[1] if q.options else "typed" for q in request.questions)
+        return QuestionAnswer(answers, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=cfg, questioner=questioner)
+    d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(questioner=questioner))
     out = d.dispatch(
         "ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}]}
     ).to_wire()
@@ -196,17 +204,23 @@ def test_ask_user_routes_to_questioner(tmp_path: Path) -> None:
 
 def test_default_questioner_headless_returns_empty(tmp_path: Path) -> None:
     # No injected questioner + EOF on stdin (headless) -> empty answers, no hang.
-    from agent6.tools.dispatch import _default_questioner  # pyright: ignore[reportPrivateUsage]
+    from agent6.tools.operator_prompts import (
+        _default_questioner,  # pyright: ignore[reportPrivateUsage]
+    )
 
+    request = QuestionRequest(
+        id="question-1", questions=(UserQuestion(question="q?", options=("a", "b")),), call_id=1
+    )
     with mock.patch("builtins.input", side_effect=EOFError):
-        assert _default_questioner((UserQuestion(question="q?", options=("a", "b")),)) == ("",)
+        assert _default_questioner(request).answers == ("",)
 
 
 def test_ask_user_refused_outside_run_mode(tmp_path: Path) -> None:
     # ask_user is a run-mode tool; the dispatcher backstops it in other modes
     # so a tool-list regression can't pause a plan/ask/machine loop.
     cfg = _config(tmp_path)
-    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan", questioner=lambda questions: ("x",))
+    prompts = OperatorPrompts(questioner=lambda request: QuestionAnswer(("x",), "stdin"))
+    d = ToolDispatcher(root=tmp_path, config=cfg, mode="plan", prompts=prompts)
     with pytest.raises(ToolError, match="not available in plan mode"):
         d.dispatch("ask_user", {"questions": [{"question": "q?"}]})
 
@@ -955,10 +969,10 @@ def test_run_command_denial_is_typed_and_names_the_knob(tmp_path: Path) -> None:
 
     cfg = _config_with_run_commands(tmp_path, "ask")
 
-    def _no(_prompt: str, /, *, scope: str | None = None) -> bool:
-        return False
+    def _no(_request: ApprovalRequest, /) -> ApprovalAnswer:
+        return ApprovalAnswer(False, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=cfg, approver=_no)
+    d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(approver=_no))
     with pytest.raises(ToolDenied, match=r"not approved \(sandbox.run_commands='ask'\)"):
         d.dispatch("run_command", {"argv": ["echo", "hi"]})
 
@@ -1684,10 +1698,11 @@ def test_ask_user_accepts_flat_single_question(tmp_path: Path) -> None:
     # A model that sends a lone question flat (not wrapped in `questions`) still works.
     cfg = _config(tmp_path)
 
-    def questioner(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
-        return tuple(q.options[0] if q.options else "typed" for q in questions)
+    def questioner(request: QuestionRequest, /) -> QuestionAnswer:
+        answers = tuple(q.options[0] if q.options else "typed" for q in request.questions)
+        return QuestionAnswer(answers, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=cfg, questioner=questioner)
+    d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(questioner=questioner))
     out = d.dispatch(
         "ask_user", {"question": "Which theme?", "options": ["dark", "light"]}
     ).to_wire()
@@ -1748,12 +1763,14 @@ def test_ask_prompts_before_the_verify_gate_runs(tmp_path: Path) -> None:
 
     asked: list[str] = []
 
-    def refuse(prompt: str, /, *, scope: str | None = None) -> bool:
-        asked.append(prompt)
-        return False
+    def refuse(request: ApprovalRequest, /) -> ApprovalAnswer:
+        asked.append(request.prompt)
+        return ApprovalAnswer(False, "stdin")
 
     d = ToolDispatcher(
-        root=tmp_path, config=_config_with_run_commands(tmp_path, "ask"), approver=refuse
+        root=tmp_path,
+        config=_config_with_run_commands(tmp_path, "ask"),
+        prompts=OperatorPrompts(approver=refuse),
     )
     with pytest.raises(ToolDenied):
         d.dispatch("run_verify_command", {})

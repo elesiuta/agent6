@@ -203,6 +203,9 @@ class ApprovalPrompt:
     # When it was asked (epoch), for the waiting status's age; None on a log
     # whose line carried no parseable ts.
     asked_ep: float | None = None
+    # The dispatched tool call the prompt gates; None for one gating no call
+    # (a verify the harness runs itself) or a log written before the field.
+    call_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +225,7 @@ class QuestionPrompt:
     id: str
     questions: tuple[EventQuestion, ...]
     asked_ep: float | None = None  # asked-at epoch, for the waiting status's age
+    call_id: int | None = None  # the gated `ask_user` call; None for a pre-run question
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,6 +459,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
                 prompt=str(raw.get("prompt", "")),
                 standing=bool(raw.get("standing", True)),
                 asked_ep=event_epoch(raw.get("ts")),
+                call_id=_call_id(raw),
             )
         case "approval.answer":
             return ApprovalAnswer(
@@ -470,7 +475,10 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: PLR0911, PLR0912
                 if isinstance(q, dict)
             )
             return QuestionPrompt(
-                id=str(raw.get("id", "")), questions=questions, asked_ep=event_epoch(raw.get("ts"))
+                id=str(raw.get("id", "")),
+                questions=questions,
+                asked_ep=event_epoch(raw.get("ts")),
+                call_id=_call_id(raw),
             )
         case "question.answer":
             raw_ans = raw.get("answers", ()) or ()

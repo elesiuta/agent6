@@ -105,10 +105,11 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
     close over its cell, so the lifecycle never holds a UI type. The lifecycle
     owns egress (`app.egress`) itself; only the two exe-spawn primitives it
     can't reach (`ui.spawn`) are injected."""
+    # Both late-bound: the lifecycle builds the approver and questioner before
+    # the leg attaches the console view or the steer state exists; they read
+    # the cells at prompt time (an operator prompt pauses the view's heartbeat
+    # and counts as a Ctrl-C boundary, see build_approver).
     console_cell: list[ConsoleView | None] = [None]
-    # Late-bound: the leg builds the approver before the steer state exists;
-    # the approver reads the cell at approval time (an operator prompt counts
-    # as a Ctrl-C boundary, see build_approver).
     steer_cell: list[SteerState | None] = [None]
 
     def attach_console_view(events: EventSink) -> None:
@@ -137,12 +138,8 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
         close_console_view=close_console_view,
         loop_logger=lambda mode: loop_logger(mode, console_cell[0]),
         tui_session=lambda session_dir, enabled: tui_session(session_dir, enabled=enabled),
-        build_approver=lambda session_dir, events: build_approver(
-            session_dir, events, console_cell[0], steer_cell
-        ),
-        build_questioner=lambda session_dir, events: build_questioner(
-            session_dir, events, console_cell[0]
-        ),
+        build_approver=lambda session_dir: build_approver(session_dir, console_cell, steer_cell),
+        build_questioner=lambda session_dir: build_questioner(session_dir, console_cell),
         make_steer_state=lambda events, session_dir, facts: _remember_steer(
             steer_cell,
             make_steer_state(

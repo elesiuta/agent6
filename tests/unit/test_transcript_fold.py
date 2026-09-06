@@ -599,7 +599,12 @@ def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
     from agent6.viewmodel.transcript import TranscriptFold
 
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
-    prompt = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: ls"}
+    prompt = {
+        "type": "approval.prompt",
+        "id": "approval-1",
+        "prompt": "Allow run_command: ls",
+        "call_id": 1,
+    }
     answer = {"type": "approval.answer", "id": "approval-1", "approved": True}
     fold = TranscriptFold()
     fold.feed(call)
@@ -614,6 +619,33 @@ def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
     assert fold_transcript([prompt]) == []  # a prompt gating no call (a pre-run confirmation)
 
 
+def test_a_prompt_marks_the_call_it_names_not_the_newest_in_flight() -> None:
+    """Two calls in flight (a concurrent review seat's read beside the gated
+    command): the prompt carries the gated call's id, and only that call
+    waits; the answer releases the same call. A prompt naming no call (an
+    id-less historical journal, a verify the harness runs itself) marks
+    nothing."""
+    from agent6.viewmodel.transcript import TranscriptFold
+
+    gated = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
+    newest = {"type": "tool.call", "name": "read_file", "args": {"path": "x"}, "call_id": 2}
+    prompt = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow", "call_id": 1}
+    answer = {"type": "approval.answer", "id": "approval-1", "approved": True}
+    fold = TranscriptFold()
+    fold.feed(gated)
+    fold.feed(newest)
+    (waiting,) = fold.feed(prompt)
+    assert (waiting.name, waiting.call_id) == ("run_command", "1")
+    assert waiting.detail == "awaiting approval"
+    (running,) = fold.feed(answer)
+    assert (running.name, running.call_id, running.detail) == ("run_command", "1", "")
+    items = fold_transcript([gated, newest, prompt])
+    assert {i.call_id: i.detail for i in items} == {"1": "awaiting approval", "2": ""}
+    unnamed = {"type": "approval.prompt", "id": "approval-2", "prompt": "Allow"}
+    (item,) = fold_transcript([gated, unnamed])
+    assert item.detail == ""
+
+
 def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
     """ask_user's call is journaled before its prompt, so while the operator
     answers the call is in flight: every surface read it as running (the
@@ -626,7 +658,12 @@ def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
         "args": {"questions": ["which?"]},
         "call_id": 1,
     }
-    prompt = {"type": "question.prompt", "id": "question-1", "questions": ["which?"]}
+    prompt = {
+        "type": "question.prompt",
+        "id": "question-1",
+        "questions": ["which?"],
+        "call_id": 1,
+    }
     answer = {"type": "question.answer", "id": "question-1", "answers": ["a"]}
     fold = TranscriptFold()
     fold.feed(call)

@@ -16,13 +16,12 @@ import json
 import os
 import shlex
 import shutil
-import sys
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -53,7 +52,7 @@ from agent6.skills import (
     resolve_states,
     skill_search_dirs,
 )
-from agent6.tools._control_tools import ask_user, finish_planning, finish_session
+from agent6.tools._control_tools import finish_planning, finish_session
 from agent6.tools._dag_tools import add_task, list_tasks, update_task
 from agent6.tools._fs_tools import agent6_docs, apply_edit, apply_patch, list_dir, read_file
 from agent6.tools._nav_tools import (
@@ -77,8 +76,10 @@ from agent6.tools.mcp_client import (
     MCPToolDescriptor,
     split_tool_name,
 )
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.tools.policy import jail_policy, workspace_for
 from agent6.tools.results import (
+    AnswersResult,
     BackgroundResult,
     ExecResult,
     FetchResult,
@@ -111,7 +112,6 @@ from agent6.tools.schema import (
     RunMetricInput,
     RunVerifyInput,
     StopBackgroundInput,
-    UserQuestion,
     UseSkillInput,
     mode_tools,
 )
@@ -227,51 +227,6 @@ def _clip_tail(text: str, limit: int = 20_000) -> str:
     return f"... {len(text) - limit} earlier chars clipped ...\n" + text[-limit:]
 
 
-class Approver(Protocol):
-    """Asks the operator, and says what an "allow all" would cover.
-
-    `scope` is what the prompt is ABOUT -- "command" for the command tools,
-    "mcp.<server>" for one server's -- and is what a standing answer grants.
-    The default is None: no standing answer on offer, so the operator is asked
-    every time. Nothing else may read one scope's grant as consent for another.
-    """
-
-    def __call__(self, prompt: str, /, *, scope: str | None = None) -> bool: ...
-
-
-def _default_approver(prompt: str, /, *, scope: str | None = None) -> bool:  # pragma: no cover
-    try:
-        ans = input(f"{prompt} [y/N] ").strip().lower()
-    except EOFError:
-        return False
-    return ans in {"y", "yes"}
-
-
-class _Questioner(Protocol):
-    def __call__(self, questions: tuple[UserQuestion, ...], /) -> tuple[str, ...]: ...
-
-
-def _default_questioner(  # pragma: no cover — interactive
-    questions: tuple[UserQuestion, ...],
-) -> tuple[str, ...]:
-    """Fallback for `ask_user` when no TUI/CLI bridge is wired: numbered stdin
-    prompts, one per question. A non-TTY/headless stdin returns "" for each so a run
-    never hangs (mirrors ui/cli/_interact.py's default_stdin_questioner)."""
-    if not sys.stdin.isatty():
-        return tuple("" for _ in questions)
-    answers: list[str] = []
-    for q in questions:
-        lines = [q.question, *(f"  {i}) {opt}" for i, opt in enumerate(q.options, start=1))]
-        try:
-            ans = input("\n".join(lines) + "\n> ").strip()
-        except EOFError:
-            ans = ""
-        if ans.isdigit() and 1 <= int(ans) <= len(q.options):
-            ans = q.options[int(ans) - 1]
-        answers.append(ans)
-    return tuple(answers)
-
-
 # Every tool that runs a command in the jail. They all execute model-influenced
 # argv with the same reach, so one knob governs them: `run_commands = "no"`
 # hides them, "ask" prompts (the session-allow marker keeps that to one prompt
@@ -319,8 +274,7 @@ class ToolDispatcher:
         root: Path,
         config: Config,
         isolation: IsolationLevel = "strict",
-        approver: Approver | None = None,
-        questioner: _Questioner | None = None,
+        prompts: OperatorPrompts | None = None,
         events: EventSink | None = None,
         curator: GraphCurator | None = None,
         run_root_node_id: str | None = None,
@@ -366,13 +320,21 @@ class ToolDispatcher:
         # (jail_policy grants it once the worktree's pointer still resolves
         # to it); None for every other checkout.
         self._worktree_git_dir = worktree_git_dir
-        self._approver: Approver = approver or _default_approver
-        self._questioner: _Questioner = questioner or _default_questioner
+        self._events = events
+        # The gate every approval and ask_user goes through: it journals the
+        # prompt/answer pair and names the call it gates. A bare dispatcher
+        # (a one-off tool, tests) gets one over its own journal and the stdin
+        # fallbacks.
+        self._prompts = prompts or OperatorPrompts(journal=self._emit, session_dir=session_dir)
+        # The call being dispatched on this thread, stamped on the prompts its
+        # handler raises. Per thread: concurrent review seats share one
+        # dispatcher, and a shared attribute would stamp seat A's prompt with
+        # seat B's call.
+        self._gating = threading.local()
         # Seconds spent blocked on the operator (approvals, ask_user). The loop
         # subtracts them from its wall clock: waiting for a human is not the
         # model stalling.
         self.operator_wait_s = 0.0
-        self._events = events
         # Optional in-process GraphCurator + root-task id for the DAG-as-tool
         # surface. When wired, the dispatcher exposes add_task /
         # update_task / list_tasks.
@@ -546,6 +508,8 @@ class ToolDispatcher:
         # name-based pairing cross-stamps same-name calls.
         cid = next(self._call_seq)
         self._emit("tool.call", name=name, args=preview, call_id=cid)
+        outer = self._gating_call_id()
+        self._gating.call_id = cid
         try:
             result = self._dispatch_inner(name, raw_input)
         except ToolError as exc:
@@ -565,6 +529,8 @@ class ToolDispatcher:
         except Exception as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise ToolError(f"failed: {exc}") from exc
+        finally:
+            self._gating.call_id = outer
         self._emit(
             "tool.result",
             name=name,
@@ -661,6 +627,11 @@ class ToolDispatcher:
     def _emit(self, event_type: str, /, **fields: Any) -> None:
         if self._events is not None:
             self._events.emit(event_type, **fields)
+
+    def _gating_call_id(self) -> int | None:
+        """The call this thread is dispatching; None outside a dispatch (a
+        verify the harness runs itself)."""
+        return getattr(self._gating, "call_id", None)
 
     # ----- handlers -----
 
@@ -813,7 +784,7 @@ class ToolDispatcher:
     def _approve(self, prompt: str, *, scope: str | None = None) -> bool:
         started = time.monotonic()
         try:
-            return self._approver(prompt, scope=scope)
+            return self._prompts.approve(prompt, scope=scope, call_id=self._gating_call_id())
         finally:
             self.operator_wait_s += time.monotonic() - started
 
@@ -1045,11 +1016,13 @@ class ToolDispatcher:
         return BackgroundResult(shells=_roster(shells))
 
     def _ask_user(self, raw: dict[str, Any]) -> ToolResult:
+        args = AskUserInput.model_validate(raw)
         started = time.monotonic()
         try:
-            return ask_user(self._questioner, raw)
+            answers = self._prompts.ask(args.questions, call_id=self._gating_call_id())
         finally:
             self.operator_wait_s += time.monotonic() - started
+        return AnswersResult(answers=answers)
 
     def _finish_session(self, raw: dict[str, Any]) -> ToolResult:
         return finish_session(raw)

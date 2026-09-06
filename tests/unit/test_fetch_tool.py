@@ -20,6 +20,7 @@ import pytest
 from agent6.config import Config
 from agent6.tools.dispatch import ToolDenied, ToolDispatcher, ToolError
 from agent6.tools.fetch import MAX_BYTES, FetchRefused, check_url, fetch, host_allowed
+from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
 
 
 class _Body(httpx2.SyncByteStream):
@@ -128,11 +129,11 @@ def test_a_host_the_operator_never_named_is_asked_about(tmp_path: Path) -> None:
     GET's exfil channel), never the raw URL."""
     asked: list[str] = []
 
-    def _deny(prompt: str, /, *, scope: str | None = None) -> bool:
-        asked.append(prompt)
-        return False
+    def _deny(request: ApprovalRequest, /) -> ApprovalAnswer:
+        asked.append(request.prompt)
+        return ApprovalAnswer(False, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=Config(), approver=_deny)
+    d = ToolDispatcher(root=tmp_path, config=Config(), prompts=OperatorPrompts(approver=_deny))
     with pytest.raises(ToolDenied, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://example.com/x?k=v"})
     assert asked == ["Allow fetch: example.com /x?k=v"]
@@ -144,7 +145,7 @@ def test_an_allowed_host_is_never_prompted_for(
     from agent6.tools import dispatch as dispatch_mod
     from agent6.tools.fetch import Checked, Fetched
 
-    def _loud(_prompt: str, /, *, scope: str | None = None) -> bool:
+    def _loud(_request: ApprovalRequest, /) -> ApprovalAnswer:
         return pytest.fail("an allowed host must not prompt")
 
     def _fetched(checked: Checked) -> Fetched:
@@ -152,7 +153,7 @@ def test_an_allowed_host_is_never_prompted_for(
 
     monkeypatch.setattr(dispatch_mod, "fetch", _fetched)
     cfg = Config.model_validate({"sandbox": {"fetch_hosts": ["example.com"]}})
-    d = ToolDispatcher(root=tmp_path, config=cfg, approver=_loud)
+    d = ToolDispatcher(root=tmp_path, config=cfg, prompts=OperatorPrompts(approver=_loud))
     assert d.dispatch("fetch", {"url": "https://example.com/x"}).to_wire()["body"] == "hello"
 
 
@@ -196,12 +197,17 @@ def test_allowing_every_command_does_not_allow_the_network(
     the prompt and the modal say so."""
     from agent6.events import EventSink
     from agent6.sessions.ipc import COMMAND_SCOPE, set_away_mode, set_session_allow
+    from agent6.tools.operator_prompts import OperatorPrompts
     from agent6.ui.cli._interact import build_approver
 
     session_dir = tmp_path / "run"
     (session_dir / "approvals").mkdir(parents=True)
     set_session_allow(session_dir, COMMAND_SCOPE)
-    approve = build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
+    approve = OperatorPrompts(
+        approver=build_approver(session_dir),
+        journal=EventSink(session_dir / "logs.jsonl").emit,
+        session_dir=session_dir,
+    ).approve
 
     assert approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
     # away-mode deny, so the opted-out call refuses instead of polling for a
@@ -220,6 +226,7 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
     with no scope has nothing to grant."""
     from agent6.events import EventSink
     from agent6.sessions.ipc import COMMAND_SCOPE, session_allow_set
+    from agent6.tools.operator_prompts import OperatorPrompts
     from agent6.ui.cli import _interact as interactmod
 
     session_dir = tmp_path / "run"
@@ -232,7 +239,11 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
 
     monkeypatch.setattr(interactmod, "_has_controlling_tty", lambda: True)
     monkeypatch.setattr(interactmod, "tty_prompt", _typed)
-    approve = interactmod.build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
+    approve = OperatorPrompts(
+        approver=interactmod.build_approver(session_dir),
+        journal=EventSink(session_dir / "logs.jsonl").emit,
+        session_dir=session_dir,
+    ).approve
 
     approve("Allow fetch: evil.example /x")
     assert not session_allow_set(session_dir, COMMAND_SCOPE)
@@ -296,10 +307,10 @@ def test_a_denied_fetch_never_touches_the_resolver(
 
     monkeypatch.setattr(socket, "getaddrinfo", _spy)
 
-    def _deny(_prompt: str, /, *, scope: str | None = None) -> bool:
-        return False
+    def _deny(_request: ApprovalRequest, /) -> ApprovalAnswer:
+        return ApprovalAnswer(False, "stdin")
 
-    d = ToolDispatcher(root=tmp_path, config=Config(), approver=_deny)
+    d = ToolDispatcher(root=tmp_path, config=Config(), prompts=OperatorPrompts(approver=_deny))
     with pytest.raises(ToolDenied, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://payload.exfil.attacker.example/x"})
     assert resolved == []

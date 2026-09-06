@@ -43,9 +43,9 @@ from agent6.providers import CLAUDE_CODE_RESULT_CAP_CHARS, Provider, TranscriptS
 from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, SessionNetwork
 from agent6.sessions.layout import SessionLayout
-from agent6.tools.dispatch import Approver, ToolDispatcher
+from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
-from agent6.tools.schema import UserQuestion
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import IsolationLevel, ResumableMode
 from agent6.workflows._compaction import TOOL_RESULT_CHAR_CAP
 from agent6.workflows.review import ReviewSeat
@@ -237,8 +237,7 @@ def build_session_tools(
     isolation: IsolationLevel,
     mode: ResumableMode,
     events: EventSink,
-    approver: Approver,
-    questioner: Callable[[tuple[UserQuestion, ...]], tuple[str, ...]],
+    prompts: OperatorPrompts,
     loop_log: Callable[[str], None],
     mcp_manager: MCPManager | None,
     rm_role: RoleModel,
@@ -252,8 +251,7 @@ def build_session_tools(
         root=cwd,
         config=cfg,
         isolation=isolation,
-        approver=approver,
-        questioner=questioner,
+        prompts=prompts,
         events=events,
         curator=curator,
         run_root_node_id=None,  # Workflow seeds the root + calls set_run_root_node_id

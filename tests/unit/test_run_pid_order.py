@@ -14,6 +14,7 @@ import pytest
 
 from agent6.app import run as run_mod
 from agent6.config import Config
+from agent6.tools.operator_prompts import QuestionAnswer, QuestionRequest
 
 
 def _repo(root: Path) -> None:
@@ -50,12 +51,19 @@ def test_run_writes_its_worker_pid_only_after_the_preflight_passed(
 
     monkeypatch.setattr(run_mod, "run_leg", _leg)
     cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+
+    def _cancel(_request: QuestionRequest, /) -> QuestionAnswer:
+        return QuestionAnswer(("cancel",), "stdin")
+
+    # A front-end whose operator cancels the dirty-tree start question.
+    frontend = MagicMock()
+    frontend.build_questioner.return_value = _cancel
     # A dirty tree refuses before any pid lands.
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
-    assert run_mod.run_task(cfg, "t", frontend=MagicMock(), mode="run") == 2
+    assert run_mod.run_task(cfg, "t", frontend=frontend, mode="run") == 2
     assert order == []
     # A passing preflight writes the pid, then runs the leg.
     sp.run(["git", "checkout", "-q", "--", "a.py"], cwd=repo, check=True)
     with pytest.raises(RuntimeError, match="stop here"):
-        run_mod.run_task(cfg, "t", frontend=MagicMock(), mode="run")
+        run_mod.run_task(cfg, "t", frontend=frontend, mode="run")
     assert order == ["pid", "leg"]

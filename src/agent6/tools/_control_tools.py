@@ -1,30 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run-control signal handlers: ask_user, finish_session, finish_planning.
+"""Run-control signal handlers: finish_session, finish_planning.
 
-finish_session/finish_planning don't act; the workflow checks for the tool name in
-the response's tool_uses and exits the loop after dispatching it. ask_user
-poses the validated questions to the injected questioner (TUI modal / stdin /
-headless skip), which owns the question.prompt/answer events itself."""
+Neither acts; the workflow checks for the tool name in the response's
+tool_uses and exits the loop after dispatching it."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 
-from agent6.tools.results import AnswersResult, FinishPlanningResult, FinishSessionResult
-from agent6.tools.schema import AskUserInput, FinishPlanningInput, FinishSessionInput, UserQuestion
-
-
-def ask_user(
-    questioner: Callable[[tuple[UserQuestion, ...]], tuple[str, ...]],
-    raw: dict[str, Any],
-) -> AnswersResult:
-    """Pose one or more questions to the operator and return the answers.
-    Answers align to `questions` by index."""
-    args = AskUserInput.model_validate(raw)
-    answers = questioner(args.questions)
-    return AnswersResult(answers=tuple(answers))
+from agent6.tools.results import FinishPlanningResult, FinishSessionResult
+from agent6.tools.schema import FinishPlanningInput, FinishSessionInput
 
 
 def finish_session(raw: dict[str, Any]) -> FinishSessionResult:

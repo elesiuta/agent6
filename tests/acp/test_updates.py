@@ -75,7 +75,12 @@ def test_an_approval_wait_reads_pending_then_in_progress() -> None:
     gated call while its prompt is open, and the projection follows it,
     updating the call it announced rather than announcing it again."""
     call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
-    prompt = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: ls"}
+    prompt = {
+        "type": "approval.prompt",
+        "id": "approval-1",
+        "prompt": "Allow run_command: ls",
+        "call_id": 1,
+    }
     answer = {"type": "approval.answer", "id": "approval-1", "approved": True}
     result = {"type": "tool.result", "name": "run_command", "ok": True, "call_id": 1}
     updates = updates_for_events([call, prompt, answer, result], acp_session_id="s")

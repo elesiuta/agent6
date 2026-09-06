@@ -72,9 +72,7 @@ from agent6.sandbox.jail import die_with_parent
 from agent6.sessions.ipc import (
     await_frontend_reply,
     away_mode,
-    clear_answer,
     clear_pending_answers,
-    clear_question_answers,
     clear_steer_answer,
     clear_steer_request,
     frontend_is_live,
@@ -82,11 +80,16 @@ from agent6.sessions.ipc import (
     read_question_answers,
     read_steer_answer,
     record_answer,
-    session_allow_set,
     steer_request_pending,
 )
-from agent6.tools.dispatch import Approver, ToolDispatcher
-from agent6.tools.schema import UserQuestion
+from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.operator_prompts import (
+    ApprovalAnswer,
+    ApprovalRequest,
+    OperatorPrompts,
+    QuestionAnswer,
+    QuestionRequest,
+)
 from agent6.types import IsolationLevel
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import SubrunError, clone_workspace
@@ -226,59 +229,10 @@ class _MachineBridges:
     already tails, so its SessionState fold surfaces them like a run's.
     """
 
-    approve: Approver
-    ask: Callable[[tuple[UserQuestion, ...]], tuple[str, ...]]
+    prompts: OperatorPrompts
     steer_requested: Callable[[], bool]
     steer_clear: Callable[[], None]
     steer_prompt: Callable[[], str | None]
-
-
-def _machine_approver(
-    instance_dir: Path, state_dir: Path, events: EventSink, counters: dict[str, int]
-) -> Approver:
-    """The approval bridge for one machine agent state.
-
-    A live front-end is asked in its own UI. Otherwise the instance's
-    away-mode governs, exactly as for a detached run: a hub-spawned machine
-    carries "wait" (park for the front-end -- the claim's TIMING no longer
-    decides; an approval that fired before the hub's viewer registered used
-    to be denied on the spot), and a pure headless machine keeps the safe
-    deny."""
-
-    def approve(prompt: str, /, *, scope: str | None = None) -> bool:
-        counters["approval"] += 1
-        prompt_id = f"approval-{counters['approval']}"
-        # A prior "allow session" for THIS scope auto-passes its later prompts.
-        if scope and session_allow_set(state_dir, scope):
-            events.emit("approval.answer", id=prompt_id, approved=True, source="session")
-            return True
-        # Clear a pre-written answer for this id before emitting (see the run
-        # approver): a premature /api/machine/<name>/approve must not auto-pass.
-        clear_answer(state_dir, prompt_id)
-        events.emit("approval.prompt", id=prompt_id, prompt=prompt, standing=bool(scope))
-        approved: bool | None = None
-        source = "headless"
-        if frontend_is_live(instance_dir):
-            answer = read_answer(state_dir, prompt_id, live_dir=instance_dir)
-            if answer is not None:
-                approved = record_answer(state_dir, answer, scope)
-                source = "frontend"
-        if approved is None and away_mode(instance_dir) == "wait":
-            reply = await_frontend_reply(
-                instance_dir,
-                lambda: read_answer(
-                    state_dir, prompt_id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
-                ),
-            )
-            if reply is not None:
-                approved = record_answer(state_dir, reply, scope)
-            source = "await-frontend"
-        if approved is None:
-            approved = False  # headless machine: no operator to ask, deny safely
-        events.emit("approval.answer", id=prompt_id, approved=approved, source=source)
-        return approved
-
-    return approve
 
 
 def _build_machine_bridges(
@@ -286,47 +240,54 @@ def _build_machine_bridges(
 ) -> _MachineBridges:
     """Wire run-level approval/question/steer bridges to a machine agent state.
 
-    No live front-end (a `frontends/` claim on the instance dir) makes each bridge a
-    safe headless default: deny an approval, answer a question with "", no steer.
+    A live front-end (a `frontends/` claim on the instance dir) is asked in its
+    own UI. Otherwise the instance's away-mode governs, exactly as for a
+    detached run: a hub-spawned machine carries "wait" (park for the front-end,
+    so the claim's timing never decides), and a pure headless machine keeps the
+    safe default: deny an approval, answer a question with "", no steer.
     """
     # Crash recovery re-executes the same `<seq>-<state>` dir and its prompt-id
     # counters restart at 1, so an answer file left by the aborted attempt would
     # satisfy this execution's first prompt unseen. Drop the stale bridge state
     # first (front-end claims live on the instance dir, so this touches none).
     clear_pending_answers(state_dir)
-    counters = {"approval": 0, "question": 0}
-    approve = _machine_approver(instance_dir, state_dir, events, counters)
 
-    def ask(questions: tuple[UserQuestion, ...]) -> tuple[str, ...]:
-        counters["question"] += 1
-        question_id = f"question-{counters['question']}"
-        clear_question_answers(state_dir, question_id)  # drop any premature answer
-        events.emit(
-            "question.prompt",
-            id=question_id,
-            questions=[{"question": q.question, "options": list(q.options)} for q in questions],
-        )
-        answers: tuple[str, ...] | None = None
-        source = "headless"
+    def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
         if frontend_is_live(instance_dir):
-            answers = read_question_answers(state_dir, question_id, live_dir=instance_dir)
+            answer = read_answer(state_dir, request.id, live_dir=instance_dir)
+            if answer is not None:
+                return ApprovalAnswer(record_answer(state_dir, answer, request.scope), "frontend")
+        if away_mode(instance_dir) == "wait":
+            reply = await_frontend_reply(
+                instance_dir,
+                lambda: read_answer(
+                    state_dir, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
+                ),
+            )
+            approved = reply is not None and record_answer(state_dir, reply, request.scope)
+            return ApprovalAnswer(approved, "await-frontend")
+        return ApprovalAnswer(False, "headless")  # no operator to ask: deny safely
+
+    def ask(request: QuestionRequest, /) -> QuestionAnswer:
+        empty = tuple("" for _ in request.questions)
+        if frontend_is_live(instance_dir):
+            answers = read_question_answers(state_dir, request.id, live_dir=instance_dir)
             if answers is not None:
-                source = "frontend"
-        if answers is None and away_mode(instance_dir) == "wait":
+                return QuestionAnswer(answers, "frontend")
+        if away_mode(instance_dir) == "wait":
             # Hub-spawned: park for the front-end rather than inventing "".
             reply = await_frontend_reply(
                 instance_dir,
                 lambda: read_question_answers(
-                    state_dir, question_id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
+                    state_dir, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
                 ),
             )
-            if isinstance(reply, tuple):
-                answers = reply
-            source = "await-frontend"
-        if answers is None:
-            answers = tuple("" for _ in questions)
-        events.emit("question.answer", id=question_id, answers=list(answers), source=source)
-        return answers
+            return QuestionAnswer(reply if isinstance(reply, tuple) else empty, "await-frontend")
+        return QuestionAnswer(empty, "headless")
+
+    prompts = OperatorPrompts(
+        approver=approve, questioner=ask, journal=events.emit, session_dir=state_dir
+    )
 
     def steer_requested() -> bool:
         return steer_request_pending(state_dir)
@@ -344,7 +305,7 @@ def _build_machine_bridges(
             clear_steer_request(state_dir)
         return answer
 
-    return _MachineBridges(approve, ask, steer_requested, steer_clear, steer_prompt)
+    return _MachineBridges(prompts, steer_requested, steer_clear, steer_prompt)
 
 
 def _build_agent_providers(
@@ -465,8 +426,7 @@ def run_one(
         root=req.root,
         config=cfg,
         isolation=isolation,
-        approver=bridges.approve if bridges is not None else None,
-        questioner=bridges.ask if bridges is not None else None,
+        prompts=bridges.prompts if bridges is not None else None,
         events=events_sink,
         curator=None,
         run_root_node_id=None,

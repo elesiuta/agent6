@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._interact import build_questioner
 
@@ -149,7 +150,11 @@ def test_questioner_marks_headless_defaults(
         def emit(self, event_type: str, **fields: Any) -> None:
             emitted.append((event_type, fields))
 
-    ask = build_questioner(tmp_path, _Events())  # type: ignore[arg-type]
+    ask = OperatorPrompts(
+        questioner=build_questioner(tmp_path),
+        journal=_Events().emit,
+        session_dir=tmp_path,
+    ).ask
     answers = ask((UserQuestion(question="pick?", options=("a", "b")),))
     assert answers == ("",)
     answer_events = [f for t, f in emitted if t == "question.answer"]
@@ -181,13 +186,21 @@ def test_a_wait_park_narrates_the_attach_remedy(
         def emit(self, event_type: str, **fields: Any) -> None:
             pass
 
-    ask = build_questioner(tmp_path, _Events())  # type: ignore[arg-type]
+    ask = OperatorPrompts(
+        questioner=build_questioner(tmp_path),
+        journal=_Events().emit,
+        session_dir=tmp_path,
+    ).ask
     ask((UserQuestion(question="pick?", options=("a", "b")),))
     assert any("question awaits a front-end" in ln and "agent6 attach" in ln for ln in lines)
 
     from agent6.ui.cli._interact import build_approver
 
     lines.clear()
-    approve = build_approver(tmp_path, _Events())  # type: ignore[arg-type]
+    approve = OperatorPrompts(
+        approver=build_approver(tmp_path),
+        journal=_Events().emit,
+        session_dir=tmp_path,
+    ).approve
     approve("Allow run_command: ls", scope=None)
     assert any("approval awaits a front-end" in ln and "agent6 attach" in ln for ln in lines)

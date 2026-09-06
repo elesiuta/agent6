@@ -17,9 +17,10 @@ import pytest
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.sessions.ipc import COMMAND_SCOPE, set_session_allow, set_session_deny
-from agent6.tools.dispatch import Approver, ToolDispatcher
+from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.errors import ToolDenied, ToolError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
+from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
 
 
@@ -33,16 +34,27 @@ def _manager() -> MCPManager:
     )
 
 
-def _recording(asked: list[tuple[str, str | None]]) -> Approver:
-    def approve(prompt: str, /, *, scope: str | None = None) -> bool:
-        asked.append((prompt, scope))
-        return True
+def _recording(asked: list[tuple[str, str | None]]) -> OperatorPrompts:
+    def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
+        asked.append((request.prompt, request.scope))
+        return ApprovalAnswer(True, "stdin")
 
-    return approve
+    return OperatorPrompts(approver=approve)
 
 
-def _deny(_prompt: str, /, *, scope: str | None = None) -> bool:
-    return False
+def _deny(_request: ApprovalRequest, /) -> ApprovalAnswer:
+    return ApprovalAnswer(False, "stdin")
+
+
+def _cli_prompts(session_dir: Path) -> OperatorPrompts:
+    """The gate over the CLI's own approver, journaling into *session_dir*."""
+    from agent6.ui.cli._interact import build_approver
+
+    return OperatorPrompts(
+        approver=build_approver(session_dir),
+        journal=EventSink(session_dir / "logs.jsonl").emit,
+        session_dir=session_dir,
+    )
 
 
 def _cfg(**server: object) -> Config:
@@ -62,7 +74,7 @@ def test_a_tool_call_is_asked_about_before_the_server_sees_it(tmp_path: Path) ->
             root=tmp_path,
             config=_cfg(),
             mcp_manager=mgr,
-            approver=_recording(asked),
+            prompts=_recording(asked),
         )
         d.dispatch("mcp__fake__echo", {"text": "hello"})
     finally:
@@ -80,13 +92,19 @@ def test_the_prompt_carries_the_arguments_in_full(tmp_path: Path) -> None:
     the only part the model controls -- they never saw."""
     seen: list[str] = []
 
-    def _capture(prompt: str, /, *, scope: str | None = None) -> bool:
-        seen.append(prompt)
-        return False  # deny after the prompt is built; the server never sees it
+    def _capture(request: ApprovalRequest, /) -> ApprovalAnswer:
+        seen.append(request.prompt)
+        # Deny after the prompt is built; the server never sees it.
+        return ApprovalAnswer(False, "stdin")
 
     mgr = _manager()
     try:
-        d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, approver=_capture)
+        d = ToolDispatcher(
+            root=tmp_path,
+            config=_cfg(),
+            mcp_manager=mgr,
+            prompts=OperatorPrompts(approver=_capture),
+        )
         with pytest.raises(ToolDenied):
             d.dispatch("mcp__fake__echo", {"text": "x" * 500, "items": list(range(20))})
     finally:
@@ -103,7 +121,7 @@ def test_a_denied_call_never_reaches_the_server(tmp_path: Path) -> None:
             root=tmp_path,
             config=_cfg(),
             mcp_manager=mgr,
-            approver=_deny,
+            prompts=OperatorPrompts(approver=_deny),
         )
         with pytest.raises(ToolDenied, match="approve"):
             d.dispatch("mcp__fake__echo", {"text": "hello"})
@@ -114,13 +132,16 @@ def test_a_denied_call_never_reaches_the_server(tmp_path: Path) -> None:
 def test_approve_yes_is_the_standing_consent(tmp_path: Path) -> None:
     """The durable way to stop being asked, visible in `agent6 config show`."""
 
-    def _forbidden(_prompt: str, /, *, scope: str | None = None) -> bool:
+    def _forbidden(_request: ApprovalRequest, /) -> ApprovalAnswer:
         pytest.fail("approve = 'yes' must not prompt")
 
     mgr = _manager()
     try:
         d = ToolDispatcher(
-            root=tmp_path, config=_cfg(approve="yes"), mcp_manager=mgr, approver=_forbidden
+            root=tmp_path,
+            config=_cfg(approve="yes"),
+            mcp_manager=mgr,
+            prompts=OperatorPrompts(approver=_forbidden),
         )
         assert d.dispatch("mcp__fake__echo", {"text": "hi"})
     finally:
@@ -139,20 +160,19 @@ def test_allowing_every_command_does_not_allow_a_server(tmp_path: Path) -> None:
     later approval in the run, MCP tools included, when a single marker meant
     "allow everything"."""
     from agent6.sessions.ipc import set_away_mode
-    from agent6.ui.cli._interact import build_approver
 
     session_dir = tmp_path / "run"
     (session_dir / "approvals").mkdir(parents=True)
     set_session_allow(session_dir, COMMAND_SCOPE)
-    approve = build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
+    prompts = _cli_prompts(session_dir)
 
-    assert approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
+    assert prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
     # away-mode deny, so the ungranted call refuses instead of polling for a
     # front-end that will never attach.
     set_away_mode(session_dir, "deny")
     mgr = _manager()
     try:
-        d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, approver=approve)
+        d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, prompts=prompts)
         with pytest.raises(ToolDenied):
             d.dispatch("mcp__fake__echo", {"text": "hi"})
     finally:
@@ -163,12 +183,11 @@ def test_allowing_one_server_does_not_allow_its_sibling(tmp_path: Path) -> None:
     """Two servers are two threats: the operator granted the one they were
     asked about, and nothing else."""
     from agent6.sessions.ipc import session_allow_set
-    from agent6.ui.cli._interact import build_approver
 
     session_dir = tmp_path / "run"
     (session_dir / "approvals").mkdir(parents=True)
     set_session_allow(session_dir, "mcp.notes")
-    approve = build_approver(session_dir, EventSink(session_dir / "logs.jsonl"))
+    approve = _cli_prompts(session_dir).approve
 
     assert approve("Allow mcp__notes__read: {}", scope="mcp.notes") is True
     assert not session_allow_set(session_dir, "mcp.shell")
@@ -219,7 +238,11 @@ def test_denying_a_server_for_the_session_withdraws_its_tools(tmp_path: Path) ->
     mgr = _manager()
     try:
         d = ToolDispatcher(
-            root=tmp_path, config=_cfg(), mcp_manager=mgr, session_dir=session_dir, approver=_deny
+            root=tmp_path,
+            config=_cfg(),
+            mcp_manager=mgr,
+            session_dir=session_dir,
+            prompts=OperatorPrompts(approver=_deny),
         )
         assert "mcp__fake__echo" in d.available_tool_names()
         set_session_deny(session_dir, "mcp.other")
@@ -238,12 +261,17 @@ def test_an_unconfigured_server_is_refused_before_it_is_ever_asked_about(tmp_pat
     at all offers consent for something that cannot exist, and the manager
     refuses the call a moment later anyway."""
 
-    def _forbidden(_prompt: str, /, *, scope: str | None = None) -> bool:
-        pytest.fail(f"the operator was asked about a server that does not exist: {scope}")
+    def _forbidden(request: ApprovalRequest, /) -> ApprovalAnswer:
+        pytest.fail(f"the operator was asked about a server that does not exist: {request.scope}")
 
     mgr = _manager()
     try:
-        d = ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, approver=_forbidden)
+        d = ToolDispatcher(
+            root=tmp_path,
+            config=_cfg(),
+            mcp_manager=mgr,
+            prompts=OperatorPrompts(approver=_forbidden),
+        )
         with pytest.raises(ToolError, match="unknown MCP server"):
             d.dispatch("mcp__../../tmp/x__t", {})
     finally:
@@ -264,7 +292,7 @@ def test_deny_all_for_a_server_refuses_the_next_call_not_just_the_listing(tmp_pa
             root=tmp_path,
             config=_cfg(),
             mcp_manager=mgr,
-            approver=_recording(asked),
+            prompts=_recording(asked),
             session_dir=session_dir,
         )
         d.dispatch("mcp__fake__echo", {"text": "hi"})
@@ -303,7 +331,7 @@ def test_denying_one_server_leaves_a_sibling_alone(tmp_path: Path) -> None:
             root=tmp_path,
             config=cfg,
             mcp_manager=mgr,
-            approver=_recording([]),
+            prompts=_recording([]),
             session_dir=session_dir,
         )
         set_session_deny(session_dir, "mcp.fake")
@@ -321,9 +349,9 @@ def test_a_huge_payload_prompts_with_a_head_and_a_full_file(tmp_path: Path) -> N
     bound nothing changes; without a session dir the full text stays inline."""
     seen: list[str] = []
 
-    def _capture(prompt: str, /, *, scope: str | None = None) -> bool:
-        seen.append(prompt)
-        return False
+    def _capture(request: ApprovalRequest, /) -> ApprovalAnswer:
+        seen.append(request.prompt)
+        return ApprovalAnswer(False, "stdin")
 
     session_dir = tmp_path / "session"
     session_dir.mkdir()
@@ -334,7 +362,7 @@ def test_a_huge_payload_prompts_with_a_head_and_a_full_file(tmp_path: Path) -> N
             root=tmp_path,
             config=_cfg(),
             mcp_manager=mgr,
-            approver=_capture,
+            prompts=OperatorPrompts(approver=_capture),
             session_dir=session_dir,
         )
         with pytest.raises(ToolDenied):

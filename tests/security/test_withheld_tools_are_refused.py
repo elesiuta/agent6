@@ -25,6 +25,7 @@ from agent6.sessions.ipc import set_session_deny
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.errors import ToolDenied, ToolError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec
+from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
 from agent6.tools.schema import ALL_TOOLS
 from agent6.workflows._toolset import tool_definitions
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
@@ -37,8 +38,8 @@ Mode = Literal["run", "plan", "ask", "machine", "agent"]
 GUARD_WORDS = ("not available", "is disabled", "denied for this session", "Unknown tool")
 
 
-def _always_approve(_prompt: str, /, *, scope: str | None = None) -> bool:
-    return True
+def _always_approve(_request: ApprovalRequest, /) -> ApprovalAnswer:
+    return ApprovalAnswer(True, "stdin")
 
 
 def _assert_withheld_are_refused(d: ToolDispatcher, expected: set[str], mode: Mode = "run") -> None:
@@ -122,7 +123,7 @@ def test_an_mcp_server_denied_for_the_session_is_refused(tmp_path: Path) -> None
             isolation="none",
             mcp_manager=mgr,
             session_dir=session_dir,
-            approver=_always_approve,
+            prompts=OperatorPrompts(approver=_always_approve),
         )
         assert "mcp__fake__echo" in d.available_tool_names()
         set_session_deny(session_dir, "mcp.fake")

@@ -20,6 +20,7 @@ from agent6.config import Config
 from agent6.config.layer import EffectiveConfig
 from agent6.config.model import ConfigError
 from agent6.sessions.layout import SessionLayout
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.ui.acp import runner
 from agent6.ui.acp import session as session_mod
 from agent6.ui.acp.runner import Announced, RunBridge, forwarding_reporter, option_kind, stop_reason
@@ -248,7 +249,7 @@ def _acp_front(*, reply: str | None):
     asked: list[tuple[str, tuple[str, ...], bool | None]] = []
 
     def _ask(
-        prompt: str, options: tuple[str, ...], standing: bool | None, _call_id: str | None
+        prompt: str, options: tuple[str, ...], standing: bool | None, _call_id: int | None
     ) -> str | None:
         asked.append((prompt, options, standing))
         return reply
@@ -665,10 +666,14 @@ def test_a_gated_call_reads_pending_on_the_wire(
         layouts.append(layout)
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = EventSink(layout.logs_path)
-        approve = kw["frontend"].build_approver(layout.session_dir, events)  # before the loop
+        prompts = OperatorPrompts(  # built before the loop, as the leg does
+            approver=kw["frontend"].build_approver(layout.session_dir),
+            journal=events.emit,
+            session_dir=layout.session_dir,
+        )
         events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
-        approved = approve("Allow run_command: ls", scope="command")
+        approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
         events.emit("tool.result", name="run_command", ok=approved, summary="ok", call_id=1)
         events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
         return 0
@@ -993,4 +998,66 @@ def test_a_cancel_of_a_queued_prompt_answers_at_once(
         assert reply["result"]["stopReason"] == "cancelled"
     finally:
         release.set()
+        wire.close()
+
+
+def test_a_request_names_the_call_it_gates_not_the_newest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two calls in flight (a concurrent seat's read beside the gated
+    command): the request names the call the journaled prompt carries, and
+    only that call reads pending on the wire."""
+    from agent6.events import EventSink
+
+    monkeypatch.chdir(tmp_path)
+
+    def _gated_run(*_a: object, **kw: Any) -> int:
+        layout = SessionLayout(
+            state_dir=runner.resolved_state_dir(tmp_path), session_id=str(kw["session_id"])
+        )
+        layout.session_dir.mkdir(parents=True, exist_ok=True)
+        events = EventSink(layout.logs_path)
+        prompts = OperatorPrompts(
+            approver=kw["frontend"].build_approver(layout.session_dir),
+            journal=events.emit,
+            session_dir=layout.session_dir,
+        )
+        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
+        events.emit("tool.call", name="read_file", args={"path": "x"}, call_id=2)
+        approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
+        events.emit("tool.result", name="read_file", ok=True, summary="ok", call_id=2)
+        events.emit("tool.result", name="run_command", ok=approved, summary="ok", call_id=1)
+        events.emit("session.end", reason="finish_session", iterations=1, all_passed=True)
+        return 0
+
+    monkeypatch.setattr(runner, "run_task", _gated_run)
+    monkeypatch.setattr(runner, "load_session_config", _loaded)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "do the thing")
+        announced: list[str] = []
+        pending: list[str] = []
+        asked: str | None = None
+        for _ in range(80):
+            message = wire.recv()
+            if message.get("method") == "session/request_permission":
+                asked = message["params"]["toolCall"]["toolCallId"]
+                wire.send(
+                    id=message["id"],
+                    result={"outcome": {"outcome": "selected", "optionId": "0"}},
+                )
+            elif message.get("method") == "session/update":
+                update = message["params"]["update"]
+                if update["sessionUpdate"] == "tool_call":
+                    announced.append(update["toolCallId"])
+                elif update.get("status") == "pending":
+                    pending.append(update["toolCallId"])
+            elif "result" in message:
+                break
+        assert len(announced) == 2, announced
+        assert asked == announced[0], "the request names the gated call, not the newest in flight"
+        assert pending == [announced[0]], "only the gated call waits"
+    finally:
         wire.close()

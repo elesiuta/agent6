@@ -331,10 +331,11 @@ class TranscriptFold:
     `feed` returns the items that event produced (usually zero or one).
 
     A tool call is several items under one `call_id`, each superseding the
-    last: in flight at `tool.call` (`ok=None`), marked awaiting while its
-    approval prompt is open, settled at `tool.result`. A consumer keeping a
-    list drops the superseded one (`fold_transcript` does). A leg boundary
-    settles every call still open; a reader that knows the worker died calls
+    last: in flight at `tool.call` (`ok=None`), marked awaiting while the
+    prompt naming it (`approval.prompt` / `question.prompt`, by `call_id`) is
+    open, settled at `tool.result`. A consumer keeping a list drops the
+    superseded one (`fold_transcript` does). A leg boundary settles every
+    call still open; a reader that knows the worker died calls
     `settle_open_calls` itself.
     """
 
@@ -347,6 +348,9 @@ class TranscriptFold:
         # same-name calls interleave. An id-less historical event falls back
         # to its name key (sequential pairing).
         self._pending: dict[int | str, tuple[TranscriptItem, str]] = {}
+        # The call each open prompt holds, by prompt id: the answer event
+        # names only the prompt.
+        self._gated: dict[str, int] = {}
         self._verify: tuple[bool, str] | None = None  # (ok, badge) for run_verify_command
         self._finish = ""  # summary from the terminal finish tool
         self._tools = 0
@@ -448,15 +452,11 @@ class TranscriptFold:
             out = self._flush_message()  # a turn's prose precedes its calls
             out.extend(self._start_tool(event))
             return out
-        if etype == "approval.prompt":
-            # The dispatcher journals tool.call before the approval gate: the
-            # newest call in flight is the one the prompt holds.
-            return self._mark_newest_call("awaiting approval")
-        if etype == "question.prompt":
-            # Likewise ask_user: its call is in flight while the operator answers.
-            return self._mark_newest_call("awaiting answer")
+        if etype in ("approval.prompt", "question.prompt"):
+            why = "awaiting approval" if etype == "approval.prompt" else "awaiting answer"
+            return self._mark_gated_call(event, why)
         if etype in ("approval.answer", "question.answer"):
-            return self._mark_newest_call("")
+            return self._release_gated_call(event)
         if etype == "verify.end":
             code = event.get("exit_code")
             dur = float(event.get("duration_s", 0) or 0)
@@ -558,17 +558,28 @@ class TranscriptFold:
         out.append(pending)
         return out
 
-    def _mark_newest_call(self, why: str) -> list[TranscriptItem]:
-        """The newest call in flight re-emitted with *why* it waits (empty:
-        it runs again); nothing when no call is in flight (a prompt before
-        the run starts gates no call)."""
-        if not self._pending:
+    def _mark_gated_call(self, event: dict[str, Any], why: str) -> list[TranscriptItem]:
+        """The call the prompt names (its `call_id`) re-emitted with *why* it
+        waits; nothing for a prompt naming no call in flight (a question
+        before the run starts, a verify the harness runs itself)."""
+        key = event.get("call_id")
+        if not isinstance(key, int) or key not in self._pending:
             return []
-        key = next(reversed(self._pending))
+        self._gated[str(event.get("id", ""))] = key
+        return [self._redetail(key, why)]
+
+    def _release_gated_call(self, event: dict[str, Any]) -> list[TranscriptItem]:
+        """The answered prompt's call re-emitted as running again."""
+        key = self._gated.pop(str(event.get("id", "")), None)
+        if key is None or key not in self._pending:
+            return []
+        return [self._redetail(key, "")]
+
+    def _redetail(self, key: int, detail: str) -> TranscriptItem:
         pending, preview = self._pending[key]
-        marked = replace(pending, detail=why)
+        marked = replace(pending, detail=detail)
         self._pending[key] = (marked, preview)
-        return [marked]
+        return marked
 
     def _complete_tool(self, event: dict[str, Any]) -> list[TranscriptItem]:
         name = str(event.get("name", ""))
@@ -614,6 +625,7 @@ class TranscriptFold:
             for pending, _preview in self._pending.values()
         ]
         self._pending.clear()
+        self._gated.clear()
         return out
 
 

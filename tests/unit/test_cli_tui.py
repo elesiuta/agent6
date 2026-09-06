@@ -19,9 +19,11 @@ import pytest
 
 from agent6.events import EventSink
 from agent6.sessions.ipc import COMMAND_SCOPE
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli import _interact as interactmod
 from agent6.ui.cli import _live as livemod
+from agent6.ui.steer import SteerState
 
 
 def _events_of(log: Path, type_: str) -> list[dict[str, Any]]:
@@ -31,6 +33,19 @@ def _events_of(log: Path, type_: str) -> list[dict[str, Any]]:
         if obj.get("type") == type_:
             out.append(obj)
     return out
+
+
+def _prompts(
+    session_dir: Path, events: EventSink, steer_cell: list[SteerState | None] | None = None
+) -> OperatorPrompts:
+    """The gate over the CLI's own approver and questioner: the pairing a
+    run wires, journaling into *events*."""
+    return OperatorPrompts(
+        approver=interactmod.build_approver(session_dir, None, steer_cell),
+        questioner=interactmod.build_questioner(session_dir),
+        journal=events.emit,
+        session_dir=session_dir,
+    )
 
 
 def _live(_d: object) -> bool:
@@ -73,7 +88,7 @@ def test_approver_uses_tui_answer_when_live(
     monkeypatch.setattr(interactmod, "frontend_is_live", _live)
     monkeypatch.setattr(interactmod, "read_answer", _ans_yes)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("run `ls`?", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.prompt")
     ans = _events_of(log, "approval.answer")[0]
@@ -86,7 +101,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
 ) -> None:
     # A premature /api/session/<id>/approve (ids are predictable counters) pre-writes
     # approvals/approval-1.answer before the run reaches its first approval. The
-    # approver must clear that stale slot before emitting the prompt, so it is
+    # gate must clear that stale slot before journaling the prompt, so it is
     # not silently consumed as an auto-approval. Uses the REAL read_answer (short
     # timeout) so this exercises the actual file-bridge ordering.
     import functools
@@ -102,7 +117,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground stdin path
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
     write_answer(tmp_path, "approval-1", "yes")  # the premature POST
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     # The premature "yes" is cleared before the prompt; read_answer finds nothing
     # and times out, so it falls back to stdin (which denies) -- NOT auto-approved.
     assert approve("run `curl evil`?", scope=COMMAND_SCOPE) is False
@@ -134,7 +149,7 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("run `ls`?", scope=COMMAND_SCOPE) is True
     t.join(timeout=2)
     assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
@@ -152,7 +167,7 @@ def test_approver_falls_back_to_stdin_without_tui(
     monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("x", scope=COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
@@ -185,7 +200,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
         write_answer(tmp_path, "approval-1", "yes")
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("rm -rf build", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
@@ -200,7 +215,7 @@ def test_approver_session_allows_every_later_command(
     monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("first?", scope=COMMAND_SCOPE) is True
     # A second prompt must NOT reach the stdin approver -- the session marker auto-passes.
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
@@ -217,7 +232,7 @@ def test_approver_tui_timeout_falls_back_to_stdin(
     monkeypatch.setattr(interactmod, "read_answer", _ans_none)  # TUI died / timed out
     monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)  # foreground
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("x", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
 
@@ -357,7 +372,7 @@ def test_approver_away_deny_auto_denies(tmp_path: Path, monkeypatch: pytest.Monk
     events = EventSink(log)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # must NOT prompt
     set_away_mode(tmp_path, "deny")
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("rm -rf /", scope=COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "away-deny"
 
@@ -376,7 +391,7 @@ def test_approver_live_front_end_wins_over_away_mode(
     monkeypatch.setattr(interactmod, "read_answer", _ans_yes)  # and it approved
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
     set_away_mode(tmp_path, "deny")  # would deny if the front-end did NOT win
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert (
         approve("ls", scope=COMMAND_SCOPE) is True
     )  # the attached front-end approved despite away=deny
@@ -404,7 +419,7 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
         write_answer(tmp_path, "approval-1", "yes")  # and answers
 
     threading.Thread(target=attach_and_answer, daemon=True).start()
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("ls", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
@@ -429,7 +444,7 @@ def test_a_stop_request_ends_an_away_wait(tmp_path: Path, monkeypatch: pytest.Mo
         request_stop(tmp_path)
 
     threading.Thread(target=stop_it, daemon=True).start()
-    ask = interactmod.build_questioner(tmp_path, events)
+    ask = _prompts(tmp_path, events).ask
     started = time.monotonic()
     answers = ask((UserQuestion(question="stash?", options=("stash", "cancel")),))
     assert answers == ("",)
@@ -497,7 +512,7 @@ def test_approver_wait_consumes_a_claimless_answer(
 
     threading.Thread(target=answer_never_claiming, daemon=True).start()
     threading.Thread(target=abort_if_wedged, daemon=True).start()
-    approve = interactmod.build_approver(tmp_path, events)
+    approve = _prompts(tmp_path, events).approve
     assert approve("run_verify_command", scope=COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
 
@@ -577,13 +592,56 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
     monkeypatch.setattr(interactmod, "tty_message", notices.append)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _approve_yes)
 
-    approve = interactmod.build_approver(tmp_path, events, None, [_steer(True)])
+    approve = _prompts(tmp_path, events, [_steer(True)]).approve
     assert approve("Allow run_command: ls", scope="command") is True
     assert calls == ["menu"]
     assert any("pause armed" in n for n in notices)
 
     calls.clear()
     notices.clear()
-    approve = interactmod.build_approver(tmp_path, events, None, [_steer(False)])
+    approve = _prompts(tmp_path, events, [_steer(False)]).approve
     assert approve("Allow run_command: ls", scope="command") is True
     assert calls == [] and notices == []
+
+
+def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lifecycle builds the gate before the leg attaches the live console
+    view, so the approver and questioner read the view at prompt time: with it
+    captured at build time they paused nothing, and the heartbeat's per-tick
+    line-erase wiped the tty prompt and the operator's keystrokes."""
+    from agent6.ui.cli._console_view import ConsoleView
+    from agent6.ui.cli.run import session_frontend
+
+    paused: list[ConsoleView] = []
+    real_pause = ConsoleView.pause
+
+    def _pause(self: ConsoleView) -> Any:
+        paused.append(self)
+        return real_pause(self)
+
+    monkeypatch.setattr(ConsoleView, "pause", _pause)
+    monkeypatch.setattr(interactmod, "frontend_is_live", _dead)
+    monkeypatch.setattr(interactmod, "_has_controlling_tty", _tty)
+    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
+
+    def _first(_q: tuple[UserQuestion, ...]) -> tuple[str, ...]:
+        return ("a",)
+
+    monkeypatch.setattr(interactmod, "default_stdin_questioner", _first)
+    fe = session_frontend()
+    events = EventSink(tmp_path / "logs.jsonl")
+    prompts = OperatorPrompts(
+        approver=fe.build_approver(tmp_path),
+        questioner=fe.build_questioner(tmp_path),
+        journal=events.emit,
+        session_dir=tmp_path,
+    )
+    fe.attach_console_view(events)  # the leg attaches the view after the gate exists
+    try:
+        assert prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
+        assert prompts.ask((UserQuestion(question="pick?", options=("a", "b")),)) == ("a",)
+    finally:
+        fe.close_console_view()
+    assert len(paused) == 2, "both prompts pause the view the leg attached"

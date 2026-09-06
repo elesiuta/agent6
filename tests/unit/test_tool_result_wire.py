@@ -28,6 +28,7 @@ from agent6.graph.curator import GraphCurator
 from agent6.graph.models import AddSubtaskIntent, TaskNodeDraft
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher, ToolError
+from agent6.tools.operator_prompts import OperatorPrompts, QuestionAnswer
 
 _VALID_TOML = """
 [agent6]
@@ -208,7 +209,11 @@ def test_wire_ask_user(tmp_path: Path) -> None:
     d = ToolDispatcher(
         root=tmp_path,
         config=_config(tmp_path),
-        questioner=lambda qs: tuple("ans" for _ in qs),
+        prompts=OperatorPrompts(
+            questioner=lambda request: QuestionAnswer(
+                tuple("ans" for _ in request.questions), "stdin"
+            )
+        ),
     )
     out = d.dispatch("ask_user", {"questions": [{"question": "q?", "options": ["a", "b"]}]})
     assert _dumps(out) == '{"answers": ["ans"]}'

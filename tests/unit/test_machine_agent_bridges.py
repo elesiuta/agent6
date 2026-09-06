@@ -46,8 +46,9 @@ def test_a_machine_command_grant_does_not_answer_another_scopes_prompt(tmp_path:
     set_session_allow(state, COMMAND_SCOPE)
     bridges = _build_machine_bridges(instance, state, EventSink(state / "logs.jsonl"))
 
-    assert bridges.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
-    assert bridges.approve("Allow fetch: evil.example /x") is False  # headless deny, not the grant
+    assert bridges.prompts.approve("Allow run_command: ls", scope=COMMAND_SCOPE) is True
+    # A headless deny, not the grant.
+    assert bridges.prompts.approve("Allow fetch: evil.example /x") is False
 
 
 def test_stale_answers_cleared_before_state_reexecution(tmp_path: Path) -> None:
@@ -69,8 +70,8 @@ def test_headless_defaults_when_no_frontend(tmp_path: Path) -> None:
     instance, state, events = _dirs(tmp_path)
     b = _build_machine_bridges(instance, state, events)
     # No front-end claim on the instance dir: deny approvals, empty answers, no steer.
-    assert b.approve("run rm -rf?") is False
-    assert b.ask((UserQuestion(question="pick", options=("a", "b")),)) == ("",)
+    assert b.prompts.approve("run rm -rf?") is False
+    assert b.prompts.ask((UserQuestion(question="pick", options=("a", "b")),)) == ("",)
     assert b.steer_requested() is False
     assert b.steer_prompt() is None
 
@@ -86,7 +87,7 @@ def test_approval_answer_read_from_per_state_dir(tmp_path: Path) -> None:
         target=lambda: (time.sleep(0.2), write_answer(state, "approval-1", "yes")),
         daemon=True,
     ).start()
-    assert b.approve("allow?") is True
+    assert b.prompts.approve("allow?") is True
 
 
 def test_question_answer_read_from_per_state_dir(tmp_path: Path) -> None:
@@ -97,7 +98,8 @@ def test_question_answer_read_from_per_state_dir(tmp_path: Path) -> None:
         target=lambda: (time.sleep(0.2), write_question_answers(state, "question-1", ["chosen"])),
         daemon=True,
     ).start()
-    assert b.ask((UserQuestion(question="which?", options=("chosen", "other")),)) == ("chosen",)
+    question = UserQuestion(question="which?", options=("chosen", "other"))
+    assert b.prompts.ask((question,)) == ("chosen",)
 
 
 def test_machine_approval_ignores_a_premature_answer(tmp_path: Path) -> None:
@@ -120,7 +122,7 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: Path) -> None:
 
     machine_agent.read_answer = _fast_read  # type: ignore[assignment]
     try:
-        assert b.approve("run rm -rf?") is False
+        assert b.prompts.approve("run rm -rf?") is False
     finally:
         machine_agent.read_answer = orig
 
@@ -227,7 +229,7 @@ def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: Path) -> None:
 
     t = threading.Thread(target=_answer_late)
     t.start()
-    assert b.approve("run ls?", scope="command") is True
+    assert b.prompts.approve("run ls?", scope="command") is True
     t.join()
 
     def _answer_question_late() -> None:
@@ -237,7 +239,7 @@ def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: Path) -> None:
     t2 = threading.Thread(target=_answer_question_late)
     t2.start()
     q = UserQuestion(question="colour?", options=("blue", "red"))
-    assert b.ask((q,)) == ("blue",)
+    assert b.prompts.ask((q,)) == ("blue",)
     t2.join()
 
 
@@ -257,5 +259,5 @@ def test_away_wait_prompt_stops_with_the_run(tmp_path: Path) -> None:
 
     t = threading.Thread(target=_stop_late)
     t.start()
-    assert b.approve("run ls?", scope="command") is False
+    assert b.prompts.approve("run ls?", scope="command") is False
     t.join()

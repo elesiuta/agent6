@@ -81,6 +81,7 @@ from agent6.sessions.lock import (
     repo_writer_holder,
 )
 from agent6.sessions.manifest import ManifestError, MergeStamp, SessionManifest, read_manifest
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import SESSION_KINDS, session_bucket, session_kind
 from agent6.viewmodel import newest_session_dir
 from agent6.viewmodel.listing import finished_needs_new_work, needs_new_work_refusal
@@ -542,6 +543,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         transcript_sink = TranscriptSink(layout.transcripts_dir)
         events = EventSink(layout.logs_path)
+        # The leg's one gate to the operator: every prompt journals and takes
+        # its id here, whichever front-end answers.
+        prompts = OperatorPrompts(
+            approver=frontend.build_approver(layout.session_dir),
+            questioner=frontend.build_questioner(layout.session_dir),
+            journal=events.emit,
+            session_dir=layout.session_dir,
+        )
 
         warn_install_inside_workspace(cwd, reporter=reporter)
         for line in agents_md_notices(cwd):
@@ -631,6 +640,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 untracked_at_start=read_untracked_at_start(layout.session_dir),
                 resume_state_path=snapshot_path,
                 undo_forker=_undo_forker,
+                prompts=prompts,
                 # The follow-up this leg answered, not the run's original task:
                 # a `--steer` question that never appeared made the second
                 # answer read as more of the answer to the first.

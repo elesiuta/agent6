@@ -13,8 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.app.frontend import FrontendCapabilities
+from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.events import EventSink
+from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.tools.schema import UserQuestion
 from agent6.ui.acp.frontend import acp_frontend
 
@@ -23,7 +24,7 @@ def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
     asked: list[tuple[str, tuple[str, ...], bool | None]] = []
 
     def _ask(
-        prompt: str, options: tuple[str, ...], standing: bool | None, _call_id: str | None
+        prompt: str, options: tuple[str, ...], standing: bool | None, _call_id: int | None
     ) -> str | None:
         asked.append((prompt, options, standing))
         return reply
@@ -37,17 +38,29 @@ def _frontend(*, can_ask: bool = True, reply: str | None = "allow"):
     return front, asked
 
 
+def _prompts(front: SessionFrontend, session_dir: Path, log: str = "logs.jsonl") -> OperatorPrompts:
+    """The gate over this front-end's approver and questioner, journaling
+    into `<session_dir>/<log>`: the pairing a run wires."""
+    return OperatorPrompts(
+        approver=front.build_approver(session_dir),
+        questioner=front.build_questioner(session_dir),
+        journal=EventSink(session_dir / log).emit,
+        session_dir=session_dir,
+    )
+
+
 def test_an_approval_becomes_a_request_to_the_editor(tmp_path: Path) -> None:
     front, asked = _frontend()
-    approve = front.build_approver(tmp_path, EventSink(tmp_path / "logs.jsonl"))
+    approve = _prompts(front, tmp_path).approve
     assert approve("Allow run_command: ls", scope="command") is True
     assert asked == [("Allow run_command: ls", ("allow", "deny"), True)]
+    assert _journal(tmp_path / "logs.jsonl")[-1]["source"] == "acp"
 
 
 def test_a_client_that_cannot_be_asked_gets_a_no(tmp_path: Path) -> None:
     """Not a hang, and not an invented yes."""
     front, asked = _frontend(can_ask=False)
-    approve = front.build_approver(tmp_path, EventSink(tmp_path / "logs.jsonl"))
+    approve = _prompts(front, tmp_path).approve
     assert approve("Allow run_command: rm -rf /") is False
     assert asked == [], "it must not even try"
     # The journal says nobody was asked: the CLI's word for a deny with no
@@ -57,7 +70,7 @@ def test_a_client_that_cannot_be_asked_gets_a_no(tmp_path: Path) -> None:
 
 def test_declining_is_a_no(tmp_path: Path) -> None:
     front, _asked = _frontend(reply="deny")
-    approve = front.build_approver(tmp_path, EventSink(tmp_path / "logs.jsonl"))
+    approve = _prompts(front, tmp_path).approve
     assert approve("Allow run_command: ls") is False
 
 
@@ -65,12 +78,13 @@ def test_a_question_carries_its_options_and_an_unanswered_one_is_empty(tmp_path:
     """The loop already reads an empty answer as "the operator said nothing",
     which is different from a value."""
     front, asked = _frontend(reply="dark")
-    ask_user = front.build_questioner(tmp_path, EventSink(tmp_path / "logs.jsonl"))
+    ask_user = _prompts(front, tmp_path).ask
     assert ask_user((UserQuestion(question="Theme?", options=("dark", "light")),)) == ("dark",)
     assert asked[0] == ("Theme?", ("dark", "light"), None)
+    assert _journal(tmp_path / "logs.jsonl")[-1]["source"] == "acp"
 
     mute, _ = _frontend(can_ask=False)
-    silent = mute.build_questioner(tmp_path, EventSink(tmp_path / "silent.jsonl"))
+    silent = _prompts(mute, tmp_path, "silent.jsonl").ask
     assert silent((UserQuestion(question="Theme?"),)) == ("",)
     assert _journal(tmp_path / "silent.jsonl")[-1]["source"] == "headless"
 
@@ -106,7 +120,7 @@ def test_an_approval_that_must_not_be_remembered_says_so(tmp_path: Path) -> None
     can carry data out in its path. An editor that offers "always allow" needs
     something to key that decision on."""
     front, asked = _frontend(reply="allow once")
-    approve = front.build_approver(tmp_path, EventSink(tmp_path / "logs.jsonl"))
+    approve = _prompts(front, tmp_path).approve
     assert approve("Allow fetch: evil.example /x") is True
     assert asked[-1][1:] == (("allow once", "deny"), False)
 
@@ -186,27 +200,29 @@ def _journal(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
-def test_an_approval_over_acp_is_journaled_like_the_clis(tmp_path: Path) -> None:
-    """The fold marks a call "awaiting approval" only on the journal's
-    approval.prompt/answer pair. An ACP approver that asked the editor and
-    journaled nothing left every surface (attach, the web, the ACP projection
-    itself) showing a gated call as running."""
-    front, _asked = _frontend(reply="allow")
-    approve = front.build_approver(tmp_path, EventSink(tmp_path / "logs.jsonl"))
-    assert approve("Allow run_command: ls", scope="command") is True
-    prompt, answer = _journal(tmp_path / "logs.jsonl")
-    assert (prompt["type"], prompt["id"]) == ("approval.prompt", "approval-1")
-    assert prompt["prompt"] == "Allow run_command: ls" and prompt["standing"] is True
-    assert (answer["type"], answer["id"]) == ("approval.answer", "approval-1")
-    assert answer["approved"] is True and answer["source"] == "acp"
+def test_a_request_names_the_call_the_prompt_carries(tmp_path: Path) -> None:
+    """The editor is asked under the id of the call the gate stamped on the
+    prompt, never one the front-end re-derives from its own event stream:
+    with two calls in flight, the gated one is not the newest."""
+    calls: list[int | None] = []
 
+    def _ask(
+        prompt: str, options: tuple[str, ...], standing: bool | None, call_id: int | None
+    ) -> str | None:
+        calls.append(call_id)
+        return options[0]
 
-def test_a_question_over_acp_is_journaled_like_the_clis(tmp_path: Path) -> None:
-    front, _asked = _frontend(reply="dark")
-    ask = front.build_questioner(tmp_path, EventSink(tmp_path / "logs.jsonl"))
-    assert ask((UserQuestion(question="Theme?", options=("dark", "light")),)) == ("dark",)
-    prompt, answer = _journal(tmp_path / "logs.jsonl")
-    assert (prompt["type"], prompt["id"]) == ("question.prompt", "question-1")
-    assert prompt["questions"] == [{"question": "Theme?", "options": ["dark", "light"]}]
-    assert (answer["type"], answer["id"]) == ("question.answer", "question-1")
-    assert answer["answers"] == ["dark"] and answer["source"] == "acp"
+    front = acp_frontend(
+        ask=_ask,
+        capabilities=FrontendCapabilities(can_ask=True),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _rid, _flags: "",
+    )
+    prompts = _prompts(front, tmp_path)
+    events = EventSink(tmp_path / "logs.jsonl")
+    events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
+    events.emit("tool.call", name="read_file", args={"path": "x"}, call_id=2)
+    assert prompts.approve("Allow run_command: ls", scope="command", call_id=1) is True
+    assert prompts.ask((UserQuestion(question="Theme?", options=("dark", "light")),), call_id=1)
+    prompts.approve("Run commands UNSANDBOXED on this host?")  # gates no call
+    assert calls == [1, 1, None]

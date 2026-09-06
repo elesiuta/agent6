@@ -17,6 +17,7 @@ from agent6.sessions.ipc import (
     set_session_deny,
 )
 from agent6.tools.dispatch import ToolDispatcher
+from agent6.tools.operator_prompts import ApprovalAnswer, ApprovalRequest, OperatorPrompts
 
 _COMMAND_TOOLS = {"run_command", "run_verify_command", "stop_background"}
 
@@ -116,14 +117,13 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
     )
-    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
-
     answers = iter(["no", "no", "yes"])
 
-    def _answer(_p: str, /, *, scope: str | None = None) -> bool:
-        return next(answers) == "yes"
+    def _answer(_request: ApprovalRequest, /) -> ApprovalAnswer:
+        return ApprovalAnswer(next(answers) == "yes", "stdin")
 
-    d._approver = _answer  # pyright: ignore[reportPrivateUsage]
+    prompts = OperatorPrompts(approver=_answer, session_dir=tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path, prompts=prompts)
     for _ in range(2):
         with pytest.raises(Exception, match="not approved"):
             d.dispatch("run_command", {"argv": ["true"]})
@@ -153,13 +153,13 @@ def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: Path) -> Non
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "ask"}, "workflow": {"verify_command": ["true"]}}
     )
-    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
 
-    def _wait_broken(_p: str, /, *, scope: str | None = None) -> bool:
+    def _wait_broken(_request: ApprovalRequest, /) -> ApprovalAnswer:
         request_stop(tmp_path)  # the stop lands while the approval waits
-        return False
+        return ApprovalAnswer(False, "stdin")
 
-    d._approver = _wait_broken  # pyright: ignore[reportPrivateUsage]
+    prompts = OperatorPrompts(approver=_wait_broken, session_dir=tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path, prompts=prompts)
     with pytest.raises(Exception, match="asked to stop while awaiting approval"):
         d.dispatch("run_command", {"argv": ["true"]})
     with pytest.raises(Exception, match="asked to stop while awaiting approval"):
