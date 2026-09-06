@@ -551,7 +551,8 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     """A merged run's refs/agent6/<id> falls with the same rules as branches:
     reachable-merged deletes outright, squash-merged only with
     --delete-squashed while the ref matches the recorded tip, unmerged and
-    manifest-less (machine) refs are kept silently."""
+    manifest-less (machine) refs are kept, counted by reason and never
+    named."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
@@ -593,11 +594,14 @@ def test_prune_drops_chain_refs_of_confirmed_merged_runs(
     assert _chain_ref_exists(tmp_path, "machine-box1")
     assert f"deleted {chain_ref_for('run-RCH111')}" in out
     assert "machine-box1" not in out
+    assert "chain refs: deleted 1, kept 3 (1 machine, 1 squash-merged, 1 unmerged)" in out
 
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
     assert not _chain_ref_exists(tmp_path, "run-SQH111")
     assert _chain_ref_exists(tmp_path, "run-UNM111")
     assert _chain_ref_exists(tmp_path, "machine-box1")
+    assert "chain refs: deleted 1, kept 2 (1 machine, 1 unmerged)" in out
 
 
 def test_prune_reaches_chain_refs_with_no_run_branches(

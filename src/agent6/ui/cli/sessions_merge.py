@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -392,11 +393,12 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     kept = merged_kept + unmerged_kept
     total_deleted = deleted + squashed_deleted
     squashed_note = f" ({squashed_deleted} squash-merged)" if squashed_deleted else ""
-    refs_note = (
-        f"; chain refs: deleted {refs_deleted}, kept {refs_kept}"
-        if refs_deleted or refs_kept
-        else ""
-    )
+    refs_note = ""
+    if refs_deleted or refs_kept:
+        why = ", ".join(f"{n} {reason}" for reason, n in sorted(refs_kept.items()))
+        refs_note = f"; chain refs: deleted {refs_deleted}, kept {sum(refs_kept.values())}" + (
+            f" ({why})" if why else ""
+        )
     print(
         f"\n[agent6] deleted {total_deleted}{squashed_note}; kept {kept} "
         f"({merged_kept} merged, {unmerged_kept} unmerged){refs_note}{clones_note}",
@@ -432,25 +434,35 @@ def _sweep_workdirs(cwd: Path, state_dir: Path, config_path: Path | None) -> tup
     return note, bool(clones_swept or clones_kept or worktrees_removed)
 
 
-def _prune_chain_refs(cwd: Path, state_dir: Path, *, delete_squashed: bool) -> tuple[int, int]:
+def _prune_chain_refs(
+    cwd: Path, state_dir: Path, *, delete_squashed: bool
+) -> tuple[int, Counter[str]]:
     """Drop `refs/agent6/<id>/head` chain refs whose manifest confirms the run
     merged, under the same safety rules as branches: reachable-from-base
     deletes outright; a squash-merge (content in the base commit, ref
     unreachable) deletes only with --delete-squashed AND only while the ref
     still points at the recorded merged tip. Live runs, unmerged runs, and
-    refs with no run manifest (machine chains) are kept; keeps are silent --
-    an unmerged ref is the run's anchor, not clutter. Returns (deleted, kept
-    merged-but-not-deletable)."""
-    refs_deleted = refs_kept = 0
+    refs with no run manifest (machine chains) are kept, counted by reason
+    and never named: an unmerged ref is the run's anchor, not clutter.
+    Returns (deleted, kept by reason), every ref counted once."""
+    refs_deleted = 0
+    kept: Counter[str] = Counter()
     for sid, sha in list_chain_refs(cwd):
         layout = session_layout(state_dir, sid)
-        if layout is None or worker_is_alive(layout.session_dir):
-            continue  # no session record (a machine chain), or still running
+        if layout is None:
+            # A machine's chain (`machine_chain_ref_for`) has no session record.
+            kept["machine" if sid.startswith("machine-") else "no session record"] += 1
+            continue
+        if worker_is_alive(layout.session_dir):
+            kept["live"] += 1
+            continue
         try:
             manifest = read_manifest(layout.session_dir)
         except ManifestError:
+            kept["unreadable manifest"] += 1
             continue
         if not (manifest.merged and manifest.merged.sha):
+            kept["unmerged"] += 1
             continue
         into = manifest.merged.into
         ref = chain_ref_for(sid)
@@ -463,5 +475,5 @@ def _prune_chain_refs(cwd: Path, state_dir: Path, *, delete_squashed: bool) -> t
             refs_deleted += 1
             print(f"[agent6] deleted {ref} (squash-merged into {into})")
         else:
-            refs_kept += 1
-    return refs_deleted, refs_kept
+            kept["squash-merged"] += 1
+    return refs_deleted, kept
