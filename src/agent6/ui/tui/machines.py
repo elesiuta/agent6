@@ -664,15 +664,22 @@ class MachinesScreen(ScreenChrome, Screen[None]):
         return None
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Dim the row actions on a page with no selectable row: View and Run
-        need an authored file, Watch needs a row of any kind, and all three were
-        silent no-ops the footer still offered."""
+        """Grey out the row actions on a page with no selectable row: View and
+        Run need an authored file, Watch needs a row of any kind, and all three
+        were silent no-ops the footer still offered. None, not False: False
+        also HIDES the key, and a key missing from the footer reads as a
+        capability this page does not have."""
         del parameters
         if action in ("view", "run"):
-            return self._selected() is not None
+            return True if self._selected() is not None else None
         if action == "watch":
-            return bool(self._machines)
+            return True if self._machines else None
         return True
+
+    def on_data_table_row_highlighted(self, _event: DataTable.RowHighlighted) -> None:
+        # The row actions act on the selection, and Textual re-asks
+        # `check_action` only on a bindings refresh.
+        self.refresh_bindings()
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         # Enter on a row opens the parsed view (the DataTable consumes Enter, so the

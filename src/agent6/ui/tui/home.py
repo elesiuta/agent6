@@ -49,10 +49,10 @@ from agent6.ui.tui.theme import (
     status_style,
 )
 from agent6.viewmodel import (
+    LIVE_STATUS_WORDS,
     SessionSummary,
     is_winner,
     session_dirs,
-    session_is_live,
     summarize_session_dir,
     task_snippet,
 )
@@ -253,17 +253,30 @@ class HomeScreen(ScreenChrome, Screen[None]):
         )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Dim Merge unless the selected run can take one: the CLI refuses a
-        live run, one with no branch and one already merged, and the footer
-        offered the key anyway (the web disables the button and says why)."""
+        """Grey Merge out on a LIVE run, which `sessions merge` always refuses
+        (the web disables the same button and says why). None, not False:
+        False also HIDES the key, and a key missing from the footer reads as a
+        capability this hub does not have.
+
+        The other refusals (no commits, already merged) are the CLI's to make:
+        deciding them here needs a git read per selection, and the summary's
+        `unmerged` mark is branch-derived, so it reads False for a run whose
+        commits live only on its chain ref -- one the CLI merges fine.
+        """
         del parameters
         if action == "merge_selected":
             rd = self._selected_dir()
             if rd is None:
-                return False
+                return None
             s = self._summaries.get(rd.name)
-            return bool(s and s.unmerged) and not session_is_live(rd)
+            return None if s is not None and s.status in LIVE_STATUS_WORDS else True
         return True
+
+    def on_data_table_row_highlighted(self, _event: DataTable.RowHighlighted) -> None:
+        # Moving the cursor changes what the row actions would act on, and
+        # Textual re-asks `check_action` only on a bindings refresh: without
+        # this the footer describes the row selected when the screen mounted.
+        self.refresh_bindings()
 
     def _selected_dir(self) -> Path | None:
         """The run dir under the cursor, or None on an empty table."""

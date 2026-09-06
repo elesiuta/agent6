@@ -501,23 +501,28 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
     assert seen == [resolved_state_dir(tmp_path)]
 
 
-def test_merge_is_dimmed_for_a_run_with_nothing_to_merge(tmp_path: Path) -> None:
-    """The CLI refuses a merge for a live run, a run with no branch and an
-    already-merged one; the hub offered the key anyway and the operator got the
-    refusal after confirming. The web disables the same button up front."""
+def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
+    """`sessions merge` always refuses a live run, so the hub greys the key
+    instead of confirming a modal to be told no. None greys it; False would
+    hide it, and a key missing from the footer reads as a capability the hub
+    does not have."""
     import asyncio
+    import os
 
     from agent6.ui.tui.home import Agent6HomeApp
 
     a6 = tmp_path / ".agent6"
-    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+    live = _write_run(
+        a6, "runs", "r-live", [{"type": "session.start", "mode": "run", "user_task": "x"}]
+    )
+    (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     async def scenario() -> None:
         app = Agent6HomeApp(a6, tmp_path)
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
-            assert screen.check_action("merge_selected", ()) is False
+            assert screen.check_action("merge_selected", ()) is None
             assert screen.check_action("refresh", ()) is True
 
     asyncio.run(scenario())

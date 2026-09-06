@@ -110,6 +110,7 @@ _STYLE_RICH: dict[StyleName, str] = {
     "marker": "dim italic",
     "done-ok": "bold green",
     "done-fail": "bold yellow",
+    "done-neutral": "bold",
     "body": "",
     "done-detail": "dim",
     "operator": "bold green",

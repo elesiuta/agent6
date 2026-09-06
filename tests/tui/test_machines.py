@@ -146,10 +146,12 @@ def test_row_actions_are_dimmed_on_an_empty_machines_page(tmp_path: Path) -> Non
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, MachinesScreen)
+            # None greys the key; False would hide it, and a missing key reads
+            # as a capability the page does not have.
             assert [screen.check_action(a, ()) for a in ("view", "run", "watch")] == [
-                False,
-                False,
-                False,
+                None,
+                None,
+                None,
             ]
             assert screen.check_action("create", ()) is True
 
