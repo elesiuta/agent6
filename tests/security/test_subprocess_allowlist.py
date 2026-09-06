@@ -47,7 +47,6 @@ ALLOWED = {
     "sessions/ipc.py",
     "sandbox/detect.py",
     "sandbox/jail.py",
-    "tools/mcp_client.py",
     "ui/cli/_ask.py",
     "ui/btw.py",
     "ui/cli/_live.py",

@@ -633,9 +633,12 @@ def test_initialize_sends_the_canonical_version(tmp_path: Path) -> None:
 
 
 def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The operator-opted-out (no-jail) MCP spawn carries the parent-death
-    tie: a stdio server that ignores stdin EOF must not outlive a SIGKILLed
-    agent6 (the jailed branch gets the same tie through the launcher)."""
+    """The operator-opted-out (no-jail) MCP spawn is the spawner's `none`
+    level: the parent-death tie (a stdio server that ignores stdin EOF must
+    not outlive a SIGKILLed agent6), its own session, and the pid registered
+    so a sibling handle's escapee sweep spares it. A second Popen here
+    carried the first two and not the third."""
+    from agent6.sandbox import jail as jail_mod
     from agent6.tools import mcp_client
 
     captured: dict[str, object] = {}
@@ -650,12 +653,20 @@ def test_unconfined_server_ties_to_the_agent(monkeypatch: pytest.MonkeyPatch) ->
         captured.update(kwargs)
         return _P()
 
-    monkeypatch.setattr(mcp_client.subprocess, "Popen", fake_popen)
-    mcp_client._spawn_server(  # pyright: ignore[reportPrivateUsage]
-        ("fake-server",), pass_env=(), policy=None
-    )
+    monkeypatch.setattr(jail_mod.subprocess, "Popen", fake_popen)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret")
+    live = jail_mod._live_launchers  # pyright: ignore[reportPrivateUsage]
+    try:
+        mcp_client._spawn_server(  # pyright: ignore[reportPrivateUsage]
+            ("fake-server",), pass_env=(), policy=None
+        )
+        assert 4242 in live
+    finally:
+        live.discard(4242)
     assert captured.get("preexec_fn") is not None
     assert captured.get("start_new_session") is True
+    env = captured.get("env")
+    assert isinstance(env, dict) and "ANTHROPIC_API_KEY" not in env
 
 
 def test_a_failed_starts_survivors_reach_the_managers_close(

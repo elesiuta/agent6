@@ -403,9 +403,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 
 - `git_ops.py`: agent6's own git operations ([Git](#7-git)).
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
-- `sandbox/jail.py`: the jail launcher.
-- `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` commands.
-  A server with a sandbox policy spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); a server the operator opted out is a plain subprocess.
+- `sandbox/jail.py`: the jail launcher, and the plain spawn under `isolation = "none"`.
+  An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` level.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
 - `providers/claude_code.py`: the `api_format = "claude_code"` provider runs the operator-installed Claude Code binary with fixed argv (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory); prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.
   Curated environment, `--tools ""`, `--allowedTools mcp__agent6`, `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`; CLAUDE.md, auto-memory, and auto-compaction off by environment; `system/init` is audited so a tool outside `mcp__agent6__*` or an API-key source refuses the run.

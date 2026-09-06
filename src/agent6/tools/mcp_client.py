@@ -43,12 +43,12 @@ import contextlib
 import json
 import os
 import re
-import signal
 import subprocess
 import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from agent6 import __version__
@@ -58,7 +58,6 @@ from agent6.sandbox.jail import (
     JailedProcess,
     JailUnavailableError,
     SessionNetwork,
-    die_with_parent,
     spawn_in_jail,
 )
 from agent6.tools.mcp_http import HttpTransport, MCPHttpError, MCPSessionExpired
@@ -198,8 +197,8 @@ def _spawn_server(
     pass_env: tuple[str, ...],
     session_net: SessionNetwork | None = None,
 ) -> JailedProcess:
-    """Start one stdio server: through the jail when it has a policy, as a
-    plain subprocess when the operator opted it out.
+    """Start one stdio server: through the jail when it has a policy, at the
+    spawner's `none` level when the operator opted it out.
 
     The confined path is `spawn_in_jail`, the same launcher and the same
     JailPolicy a jailed command gets: a second confinement stack would drift
@@ -221,27 +220,20 @@ def _spawn_server(
             stderr=subprocess.PIPE,
             session_net=session_net,
         )
-    return JailedProcess(
-        subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-            # A curated env, not this process's: the full one carries the
-            # provider API keys, and an MCP server is third-party code that may
-            # log or forward what it was given. A server that needs a token
-            # names it in `pass_env`.
-            env=curated_env(passthrough=pass_env, desktop=True),
-            # Its own session: a terminal Ctrl-C signals the foreground process
-            # group, and an MCP server that dies with it breaks its tools for
-            # the rest of the run.
-            start_new_session=True,
-            # Dies with the agent (PDEATHSIG, same tie the jailed branch gets
-            # through the launcher): a server that ignores stdin EOF must not
-            # outlive a SIGKILLed agent6.
-            preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
-        )
+    # The opt-out is the `none` level of the same spawner: its own session (a
+    # terminal Ctrl-C must not take a server down), tied to the agent by
+    # PDEATHSIG, and registered so a sibling's escapee sweep spares it. A
+    # curated env, not this process's: the full one carries the provider API
+    # keys, and an MCP server is third-party code that may log or forward what
+    # it was given. A server that needs a token names it in `pass_env`.
+    unconfined = JailPolicy(
+        cwd=Path.cwd(),
+        argv=command,
+        isolation="none",
+        env=tuple(sorted(curated_env(passthrough=pass_env, desktop=True).items())),
+    )
+    return spawn_in_jail(
+        unconfined, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
 
 
