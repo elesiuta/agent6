@@ -27,7 +27,6 @@ stack. See :func:`_apply_preset`.
 from __future__ import annotations
 
 import contextlib
-import re
 import tomllib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -37,8 +36,10 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from agent6.config.io import (
+    format_toml_value,
     read_toml_file,
     read_toml_leaf,
+    toml_key,
 )
 from agent6.config.model import (
     Config,
@@ -51,7 +52,6 @@ from agent6.paths import (
     repo_config_path,
     state_dir,
 )
-from agent6.portable import toml_basic_string
 
 LayerName = Literal["default", "preset", "global", "repo", "flag", "machine"]
 
@@ -759,32 +759,6 @@ def effective_leaf(eff: EffectiveConfig, dotted_key: str) -> tuple[Any, str] | N
 # ---------------------------------------------------------------------------
 
 
-def _toml_key(key: str) -> str:
-    """A TOML key: bare when it matches the bare-key grammar, else quoted.
-
-    A provider hand-named "my provider" or "openrouter.free" is valid loader
-    input, so the serializer must quote it: raw interpolation yields
-    `[providers.my provider]` (unparseable) or `[providers.openrouter.free]`
-    (silently re-nested)."""
-    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else toml_basic_string(key)
-
-
-def _toml_scalar(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, str):
-        return toml_basic_string(value)
-    if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(_toml_scalar(v) for v in value) + "]"
-    if isinstance(value, dict):
-        # Inline table, so a dict ANYWHERE in a value (an extra_body option
-        # object inside an array, say) round-trips instead of being dropped
-        # or printed as Python repr.
-        body = ", ".join(f"{_toml_key(k)} = {_toml_scalar(v)}" for k, v in value.items())
-        return "{" + body + "}"
-    return str(value)
-
-
 def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
     """Emit one TOML table (and recurse into sub-tables / arrays of tables).
 
@@ -806,18 +780,18 @@ def _emit_table(path: str, data: dict[str, Any], lines: list[str]) -> None:
     if scalars or is_leaf:
         lines.append(f"[{path}]")
         for key, value in scalars.items():
-            lines.append(f"{_toml_key(key)} = {_toml_scalar(value)}")
+            lines.append(f"{toml_key(key)} = {format_toml_value(value)}")
         lines.append("")
     for key, sub in subtables.items():
-        _emit_table(f"{path}.{_toml_key(key)}" if path else _toml_key(key), sub, lines)
+        _emit_table(f"{path}.{toml_key(key)}" if path else toml_key(key), sub, lines)
     for key, arr in arraytables.items():
         for item in arr:
-            lines.append(f"[[{path}.{_toml_key(key)}]]" if path else f"[[{_toml_key(key)}]]")
+            lines.append(f"[[{path}.{toml_key(key)}]]" if path else f"[[{toml_key(key)}]]")
             for k2, v2 in item.items():
                 if v2 is not None:
                     # Dicts render as inline tables via _toml_scalar; skipping
                     # them dropped an array item's nested objects.
-                    lines.append(f"{_toml_key(k2)} = {_toml_scalar(v2)}")
+                    lines.append(f"{toml_key(k2)} = {format_toml_value(v2)}")
             lines.append("")
 
 
@@ -869,7 +843,7 @@ def materialize(
     for section in ordered:
         value = data[section]
         if value is not None and not isinstance(value, dict) and not _is_table_array(value):
-            lines.append(f"{section} = {_toml_scalar(value)}")
+            lines.append(f"{section} = {format_toml_value(value)}")
     if lines[-1] != "":
         lines.append("")
     for section in ordered:
@@ -883,7 +857,7 @@ def materialize(
                 lines.append(f"[[{section}]]")
                 for k2, v2 in item.items():
                     if v2 is not None:
-                        lines.append(f"{_toml_key(k2)} = {_toml_scalar(v2)}")
+                        lines.append(f"{toml_key(k2)} = {format_toml_value(v2)}")
                 lines.append("")
     if kept := _file_presets(keep_presets_from):
         _emit_table("presets", kept, lines)

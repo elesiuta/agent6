@@ -132,7 +132,7 @@ def format_toml_value(value: object) -> str:  # noqa: PLR0911
         # wholesale (a nested `[table]` would collide with the inline parent).
         if not value:
             return "{}"
-        items = ", ".join(f"{_toml_key(k)} = {format_toml_value(v)}" for k, v in value.items())
+        items = ", ".join(f"{toml_key(k)} = {format_toml_value(v)}" for k, v in value.items())
         return "{ " + items + " }"
     # ConfigError (an OperatorError): a CLI value can land here as-parsed
     # (`config set key 2024-01-01` reads as a TOML date), so the refusal
@@ -140,7 +140,7 @@ def format_toml_value(value: object) -> str:  # noqa: PLR0911
     raise ConfigError(f"cannot serialize {value!r} to TOML")
 
 
-def _toml_key(key: object) -> str:
+def toml_key(key: object) -> str:
     """A TOML key: bare if it is a simple identifier, else a quoted string."""
     k = str(key)
     return k if re.fullmatch(r"[A-Za-z0-9_-]+", k) else _toml_value(k)

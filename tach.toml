@@ -325,7 +325,7 @@ path = "agent6.tools"
 # has one owner, and the dispatcher is where it is enforced. All leaf modules
 # over the filesystem, so the dependency runs downward.
 # agent6 (root): the MCP handshake sends the canonical __version__.
-depends_on = ["agent6", "agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.memory", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc"]
+depends_on = ["agent6", "agent6.tools.schema", "agent6.sandbox", "agent6.types", "agent6.child_env", "agent6.config", "agent6.events", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.memory", "agent6.skills", "agent6.paths", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.ipc", "agent6.portable"]
 
 [[modules]]
 # graph.models: the update_task/list_tasks status pattern is derived from the
@@ -414,7 +414,7 @@ depends_on = ["agent6.config.model", "agent6.errors", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.layer"
-depends_on = ["agent6.config.model", "agent6.config.io", "agent6.paths", "agent6.portable"]
+depends_on = ["agent6.config.model", "agent6.config.io", "agent6.paths"]
 
 [[modules]]
 path = "agent6.config.write"
