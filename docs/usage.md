@@ -92,7 +92,7 @@ agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
 ```
 
 - state is snapshotted before each model call and checkpointed per turn
-- `fork` rolls a copy back to a turn and continues it as a new run; the original is unchanged
+- `fork` rolls a copy back to a turn and continues it as a new run; the original is unchanged. The rollback covers committed content; untracked files persist across the fork point
 
 Exit codes for `agent6 run` and `resume`, for scripts to branch on:
 

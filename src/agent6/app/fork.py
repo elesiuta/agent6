@@ -15,7 +15,10 @@ to that turn. So on a gated run (commits fire only on a green verify), an edit
 made but not committed at the forked turn is ABSENT from the fork's tree even
 though the copied transcript mentions it -- the same committed-history-only
 posture `resume` documents, and deliberate: the alternative is snapshotting
-uncommitted bytes into every checkpoint. The DAG is not copied but REBUILT: the
+uncommitted bytes into every checkpoint. That rollback governs TRACKED
+content only: an untracked file lives outside every sha, so one created
+after the fork point persists in the shared checkout, and a fork that edits
+it absorbs the whole file into its first commit. The DAG is not copied but REBUILT: the
 checkpoint's `graph_version` names an exact past state, and `graph.replay`
 undoes every journal-recorded mutation stamped after it, so the fork's tasks,
 statuses, and cursor match the turn its conversation came from.
