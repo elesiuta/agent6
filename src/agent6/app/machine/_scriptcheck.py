@@ -217,7 +217,11 @@ def run_offline_tests(
     workdir = Path(tempfile.mkdtemp(prefix="agent6-scripttest-"))
     try:
         bundle_copy = workdir / "bundle"
-        shutil.copytree(bundle_dir, bundle_copy, symlinks=True)
+        # The tests need the bundle, not its history: a drafting workspace is a
+        # git repo, and copying `.git` per attempt copies every draft it holds.
+        shutil.copytree(
+            bundle_dir, bundle_copy, symlinks=True, ignore=shutil.ignore_patterns(".git")
+        )
         return _run_offline_tests_in(bundle_copy, isolation, timeout_s=timeout_s)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
