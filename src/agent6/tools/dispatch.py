@@ -904,8 +904,9 @@ class ToolDispatcher:
         )
 
     def _run_model_command(self, argv: tuple[str, ...]) -> ExecResult:
-        """A command the MODEL chose: no wall-clock kill, and a hand-back
-        instead of a guess about whether a long one is stuck.
+        """A command the MODEL chose: where the mode can read a hand-back, no
+        wall-clock kill and a hand-back instead of a guess about whether a
+        long one is stuck; elsewhere the bounded run with its timeout.
 
         The check-in needs a session (something must stay alive to own the
         running command), a background roster to hand it to, and a mode whose

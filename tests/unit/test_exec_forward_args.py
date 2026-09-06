@@ -26,7 +26,7 @@ from agent6.ui import cli
 def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     calls: dict[str, Any] = {}
 
-    def _resolve(_verb: str, target: str) -> SessionLayout:
+    def _resolve(target: str) -> SessionLayout:
         return SessionLayout(state_dir=tmp_path, session_id=target or "newest-run")
 
     def _exec(layout: SessionLayout, cfg: Any, cwd: Path, argv: tuple[str, ...]) -> int:

@@ -454,11 +454,6 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             if etype in ("role.thinking_delta", "role.text_delta"):
                 self._pending += str(evt.get("text", ""))
                 continue
-            if not live and etype == "role.call":
-                # A stopped/parked/ended instance isn't "thinking…"; drop the
-                # phantom (was gated on `_ended` only, so a killed worker or a
-                # parked machine still ticked a live role.call line).
-                continue
             discrete = _discrete_log_line(evt, in_flight=live and i == open_call)
             if discrete is not None:
                 self._flush_pending()

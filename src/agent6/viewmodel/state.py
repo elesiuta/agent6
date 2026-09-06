@@ -4,7 +4,7 @@
 
 The wire form `session_state_as_dict` built from a SessionState is the data
 contract for any external viewer (`attach --json`, the web page, a future
-TS mirror): SessionState's fields plus `status`/`status_label`/`dead_state`/`live`/
+TS mirror): SessionState's fields plus `status`/`status_label`/`dead_state`/`shells`/`live`/
 `operator_blocked`, with `log_tail` as plain strings. Keep its keys stable.
 
 The fold itself does no I/O (dataclasses + an `apply_event` that returns a

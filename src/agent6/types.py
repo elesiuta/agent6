@@ -91,9 +91,9 @@ SESSION_KINDS: dict[str, SessionKind] = {
             clamps_commands=True,
             resumable=True,
         ),
-        # Authoring a machine file, and one state of one running machine. The
-        # deliverable is the finish_session payload; command tools only tempt a
-        # weak model into spelunking.
+        # A read-only machine agent state: the deliverable is the
+        # finish_session payload, and command tools only tempt a weak model
+        # into spelunking.
         SessionKind(
             name="machine",
             role="worker",

@@ -387,8 +387,8 @@ def test_tool_definitions_run_mode_includes_edit_tools(tmp_path: Path) -> None:
 
 
 def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(tmp_path: Path) -> None:
-    # machine authoring + machine agent-state: read-only navigation + finish_session,
-    # NO edit/patch/verify/run_command/DAG (the deliverable is a finish_session result).
+    # a read-only machine agent state: navigation + finish_session, NO
+    # edit/patch/verify/run_command/DAG (the deliverable is a finish_session result).
     p = tmp_path / "agent6.toml"
     p.write_text(_VALID_TOML.replace('run_commands = "no"', 'run_commands = "yes"'), "utf-8")
     cfg = load_config(p)

@@ -355,7 +355,7 @@ def _dispatch_answer(args: argparse.Namespace) -> int:
     return _cmd_answer(args.target, tuple(args.answers))
 
 
-def _resolve_target(verb: str, target: str) -> SessionLayout | None:
+def _resolve_target(target: str) -> SessionLayout | None:
     """The named session, or the newest when the operator omitted one, through
     the resolution `attach` and the `sessions` verbs use -- so an ambiguous
     prefix reads as ambiguous here too, and a husk names itself. Prints the
@@ -403,7 +403,7 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
     if not argv:
         print("ERROR: give a command (after `--` when naming a session).", file=sys.stderr)
         return 2
-    layout = _resolve_target("exec", target)
+    layout = _resolve_target(target)
     if layout is None:
         return 2
     try:
@@ -423,7 +423,7 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
         # `forward 8000` means "port 8000 of the newest session": a bare number
         # is a port (the help says so; a numeric session id needs both args).
         target, port = "", int(target)
-    layout = _resolve_target("forward", target)
+    layout = _resolve_target(target)
     if layout is None:
         return 2
     if port is None:

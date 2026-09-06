@@ -1354,8 +1354,8 @@ def test_dispatcher_refuses_mutations_in_plan_mode(tmp_path: Path) -> None:
 
 
 def test_machine_mode_blocks_edits_and_commands(tmp_path: Path) -> None:
-    # machine-authoring + agent-state loops are read-only: the dispatcher refuses
-    # edits AND run_command/run_verify (unlike ask, which allows run_command).
+    # a read-only machine agent state: the dispatcher refuses edits AND
+    # run_command/run_verify (unlike ask, which allows run_command).
     cfg = _config_with_run_commands(tmp_path, "yes")
     d = ToolDispatcher(root=tmp_path, config=cfg, mode="machine")
     with pytest.raises(ToolError, match="machine mode"):
