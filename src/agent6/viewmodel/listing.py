@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
-from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
+from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, MANIFEST_NAME, bucket_dir
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.task_text import operator_task_text
 from agent6.viewmodel.events import event_epoch
@@ -25,14 +25,17 @@ from agent6.viewmodel.format import format_age, listing_status_label, status_lev
 
 
 def session_mtime(session_dir: Path) -> float:
-    """Last-activity time of a session: the mtime of its `logs.jsonl` (when the run
-    last appended an event), falling back to the dir mtime before the log exists.
+    """Last-activity time of a session: the mtime of its `logs.jsonl` (when the
+    run last appended an event), else its manifest (written once, when the
+    session was created), else the dir.
 
-    NOT the run-directory mtime: a viewer writes its `frontends/` claim / `approvals/`
-    into the dir on open, bumping the DIRECTORY mtime, so sorting by it floats a
-    merely-viewed run to "most recent". Keying off the log keeps "when" stable.
+    NOT the run-directory mtime: a viewer writes its `frontends/` claim into the
+    dir on open, bumping the DIRECTORY mtime, so sorting by it floated a
+    merely-viewed run to "most recent" -- a parked submission outranking live
+    work. A run with no log yet (parked, or a `fork --no-run`) has a manifest
+    and nothing else that moves, so that is its time.
     """
-    for candidate in (session_dir / LOGS_NAME, session_dir):
+    for candidate in (session_dir / LOGS_NAME, session_dir / MANIFEST_NAME, session_dir):
         try:
             return candidate.stat().st_mtime
         except OSError:

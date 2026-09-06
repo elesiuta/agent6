@@ -33,6 +33,7 @@ def is_safe_session_id(session_id: str) -> bool:
 # hardcodes the wrong one silently finds nothing, which is indistinguishable
 # from an empty session.
 LOGS_NAME = "logs.jsonl"
+MANIFEST_NAME = "manifest.json"
 # The files that were untracked when the run started (repo-root-relative,
 # NUL-separated). They are the operator's: every chain commit and dirty check
 # of the run leaves them out.
@@ -60,7 +61,7 @@ class SessionLayout:
 
     @property
     def manifest_path(self) -> Path:
-        return self.session_dir / "manifest.json"
+        return self.session_dir / MANIFEST_NAME
 
     @property
     def graph_dir(self) -> Path:

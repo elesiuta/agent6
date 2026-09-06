@@ -35,11 +35,24 @@ def test_run_mtime_prefers_log_over_dir(tmp_path: Path) -> None:
     assert session_mtime(d) == 1000.0  # keyed off the log, not the dir
 
 
-def test_run_mtime_falls_back_to_dir(tmp_path: Path) -> None:
+def test_run_mtime_of_a_log_less_session_is_its_manifest(tmp_path: Path) -> None:
+    """A parked run and a `fork --no-run` have no log, and opening either in the
+    TUI or the web writes a `frontends/` claim into the dir: keyed off the dir
+    mtime, merely LOOKING at one floated it to the top of every listing, above
+    live work."""
     d = tmp_path / "run"
     d.mkdir()
-    os.utime(d, (2000.0, 2000.0))
-    assert session_mtime(d) == 2000.0  # no log yet -> dir mtime
+    manifest = d / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    os.utime(manifest, (2000.0, 2000.0))
+    os.utime(d, (9000.0, 9000.0))  # a viewer's claim bumped the dir
+
+    assert session_mtime(d) == 2000.0
+
+    bare = tmp_path / "husk"
+    bare.mkdir()
+    os.utime(bare, (2000.0, 2000.0))
+    assert session_mtime(bare) == 2000.0  # nothing but the dir -> the dir
 
 
 def test_task_snippet_skips_seeded_file_block() -> None:
