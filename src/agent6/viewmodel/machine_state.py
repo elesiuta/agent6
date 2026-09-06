@@ -38,6 +38,7 @@ from agent6.machine.journal import (
 from agent6.machine.model import MachineSpec
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, machines_root
+from agent6.viewmodel.format import format_transition
 from agent6.viewmodel.state import fold_session
 from agent6.viewmodel.tail import tail_events
 
@@ -70,6 +71,7 @@ class TransitionView:
     label: str
     goto: str
     detail: str = ""
+    line: str = ""  # `format_transition` of the fields, as every surface prints it
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +94,14 @@ class MachineState:
     transitions: tuple[TransitionView, ...]  # the path taken, in order
     ended: MachineResult | None
     notifications: tuple[NotificationView, ...]  # recent machine.notify, oldest first
+
+
+def _transition_view(s: StepEvent) -> TransitionView:
+    detail = _fact_detail(s)
+    line = format_transition(s.seq, s.state, s.label, s.goto, detail)
+    return TransitionView(
+        seq=s.seq, state=s.state, label=s.label, goto=s.goto, detail=detail, line=line
+    )
 
 
 def _fact_detail(step: StepEvent) -> str:
@@ -134,10 +144,7 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
         )
         for name, st in spec.states.items()
     )
-    transitions = tuple(
-        TransitionView(seq=s.seq, state=s.state, label=s.label, goto=s.goto, detail=_fact_detail(s))
-        for s in steps
-    )
+    transitions = tuple(_transition_view(s) for s in steps)
     ended = MachineResult.from_end(end) if end is not None else None
     notes = [e for e in events if isinstance(e, MachineNotify)]
     notifications = tuple(

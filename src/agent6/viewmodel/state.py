@@ -28,7 +28,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel import events
-from agent6.viewmodel.format import dead_run_note, status_label
+from agent6.viewmodel.format import TASK_STATUS_GLYPH, budget_usd_text, dead_run_note, status_label
 from agent6.viewmodel.listing import (
     LIVE_STATUS_WORDS,
     StatusFacts,
@@ -53,6 +53,11 @@ class TaskNodeView:
     status: NodeStatus = "pending"
     depth: int = 0
     is_cursor: bool = False
+    glyph: str = ""  # the status as every surface draws it (TASK_STATUS_GLYPH)
+
+    def __post_init__(self) -> None:
+        if not self.glyph:
+            object.__setattr__(self, "glyph", TASK_STATUS_GLYPH.get(self.status, "·"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -729,6 +734,12 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
     snapshot)."""
     d = asdict(state)
     d["context_pct"] = context_fill(state)
+    d["budget"]["usd_text"] = budget_usd_text(
+        state.budget.usd_total,
+        partial=state.budget.usd_partial,
+        usd_cap=state.budget.usd_cap,
+        usd_prior_legs=state.budget.usd_prior_legs,
+    )
     for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
         row["head"], row["payload"] = ap.head, ap.payload
     if session_dir is not None:

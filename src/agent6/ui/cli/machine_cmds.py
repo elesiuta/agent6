@@ -544,9 +544,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR09
                 print(f"ERROR: {exc}", file=sys.stderr)
                 return 1
             for t in cursor.new_transitions(ms):
-                print(
-                    f"  {format_transition(t.seq, t.state, t.label, t.goto, t.detail)}", flush=True
-                )
+                print(f"  {t.line}", flush=True)
             for n in cursor.new_notifications(ms):
                 # Ring the bell + fire a desktop notification (if notify-send is
                 # present) so an operator watching over ssh is alerted.

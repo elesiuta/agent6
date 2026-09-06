@@ -83,7 +83,6 @@ from agent6.viewmodel import (
 )
 from agent6.viewmodel.events import tool_result_ok
 from agent6.viewmodel.format import (
-    format_transition,
     format_usd,
     format_when,
     machine_state_mark,
@@ -373,9 +372,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         # New transitions.
         for t in self._cursor.new_transitions(ms):
             self._flush_pending()
-            log.write(
-                Text(format_transition(t.seq, t.state, t.label, t.goto, t.detail), style="bold")
-            )
+            log.write(Text(t.line, style="bold"))
 
         # The current agent state's reasoning (switch logs as states change).
         newest, switched = self._cursor.advance_log(self._root)

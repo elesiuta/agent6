@@ -83,17 +83,6 @@ function toast(msg, bad) {
   else { setTimeout(() => t.remove(), 4000); }
   host.appendChild(t);
 }
-// Mirrors budget.format_usd precision (cents >= $1, else 4dp); keep in sync.
-// partial: the figure is a known lower bound (unpriced spend) -> '~' prefix,
-// and ~$0.0000 is information where a clean $0 stays terse (format_usd's rule).
-function fmtUsd(u, partial) {
-  // Mirrors Python format_usd exactly (no terse "$0" special-case): ~ = a
-  // partial lower bound, 2 decimals at/above ~$1, else 4. A genuinely clean $0
-  // is BLANKED by the hub callers (like the CLI/TUI hubs), not shown here.
-  const p = partial ? '~' : '';
-  return (u || 0) >= 0.995 ? p + '$' + Number(u || 0).toFixed(2) : p + '$' + Number(u || 0).toFixed(4);
-}
-// The hub's `updated` cell, `MM-DD HH:MM` in local time like the CLI and TUI hubs.
 function when(ts) {
   if (!ts) return '';
   const d = new Date(ts * 1000), p = n => String(n).padStart(2, '0');
@@ -320,9 +309,7 @@ function sessionsCard(sessions) {
   const card = listCard('Sessions', sessions, 'no sessions yet', (r, it, g) => {
     it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
     g.appendChild(el('div', 'title', (r.winner ? '★ ' : '') + (r.task || '(no task)')));
-    // A genuinely clean $0 (no spend, not partial) is blanked, like the CLI/TUI
-    // hub rows; an all-unpriced ~$0 still shows (spend happened, price unknown).
-    const cost = (!r.cost_usd && !r.usd_partial) ? '' : ' · ' + fmtUsd(r.cost_usd, r.usd_partial);
+    const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
     g.appendChild(el('div', 'sub', `${esc(r.session_id)} · ${when(r.mtime)}${cost}`));
     it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   });

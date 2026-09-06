@@ -310,14 +310,11 @@ function paintDetails(cards, s, asOf) {
   // Metered spend vs max_usd (-1 = unlimited); unmetered tokens vs the fallback
   // cap only when that ledger has traffic. The cap re-arms each resume leg, so
   // the bar meters THIS leg's spend (usd_total - usd_prior_legs) while the cost
-  // figure stays cumulative -- mirrors ui/tui/app.py render_heartbeat; keep in sync.
+  // figure stays cumulative; the text is the server's `usd_text`.
   const usdCap = b.usd_cap || 0;
   const legUsd = Math.max(0, (b.usd_total || 0) - (b.usd_prior_legs || 0));
   const usdFrac = usdCap > 0 ? Math.min(1, legUsd / usdCap) : 0;
-  const usdText = fmtUsd(b.usd_total, b.usd_partial)
-    + (usdCap > 0 ? ((b.usd_prior_legs || 0) > 0 ? ' · leg ' + fmtUsd(legUsd, false) + ' / ' + fmtUsd(usdCap, false) : ' / ' + fmtUsd(usdCap, false))
-                  : (usdCap === -1 ? ' (unlimited)' : ''));
-  cards.budget.appendChild(barRow('cost', usdFrac, usdText));
+  cards.budget.appendChild(barRow('cost', usdFrac, b.usd_text || ''));
   if (b.tokens_unmetered) {
     const fbCap = b.tokens_fallback_cap || 0;
     const fbFrac = fbCap > 0 ? Math.min(1, b.tokens_unmetered / fbCap) : 0;
@@ -346,8 +343,7 @@ function paintDetails(cards, s, asOf) {
   if (!(s.tasks||[]).length) tree.appendChild(el('div', 'muted', 'no task graph yet'));
   for (const t of s.tasks || []) {
     const line = el('div', 'node' + (t.is_cursor ? ' cursor' : ''));
-    // Mirrors viewmodel/format.py TASK_STATUS_GLYPH (JS can't import it); keep in sync.
-    const glyph = { passed:'✓', failed:'✗', in_progress:'▸', pending:'·', skipped:'–', obsolete:'×' }[t.status] || '·';
+    const glyph = t.glyph || '·'; // the server's TASK_STATUS_GLYPH
     line.appendChild(el('span', 'st-' + t.status, '  '.repeat(t.depth) + glyph + ' '));
     line.appendChild(document.createTextNode(t.title));
     tree.appendChild(line);
@@ -407,17 +403,7 @@ function paintRun(cards, s) {
   }
   // Fan-out compare outcome (stamped into a lane's manifest by --parallel's
   // auto-compare): where this lane placed and why. Absent for a non-lane run.
-  if (s.compare && typeof s.compare.rank === 'number') {
-    const c = s.compare;
-    // Mirror format_compare (sessions show / TUI): `rank 1/2 · winner · judge ($0.01)`.
-    const parts = ['rank ' + c.rank + '/' + c.of];
-    if (c.winner) parts.push('winner');
-    if (c.ranked_by) {
-      const judged = c.judge_cost_usd > 0 || c.judge_cost_partial;
-      parts.push(c.ranked_by + (judged ? ' (' + fmtUsd(c.judge_cost_usd, c.judge_cost_partial) + ')' : ''));
-    }
-    add('compare', parts.join(' · '));
-  }
+  if (s.compare && s.compare.line) add('compare', s.compare.line); // format_compare, server-side
   cards.head.appendChild(kv);
   // The judge's reason sits under its compare row (as sessions show prints it).
   if (s.compare && s.compare.rationale) {

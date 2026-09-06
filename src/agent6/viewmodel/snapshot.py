@@ -15,7 +15,7 @@ from agent6.machine import MachineJournal, load_machine
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
-from agent6.viewmodel.format import format_branch, format_lineage
+from agent6.viewmodel.format import format_branch, format_compare, format_lineage, format_usd
 from agent6.viewmodel.listing import session_compare
 from agent6.viewmodel.machine_state import (
     fold_machine,
@@ -95,6 +95,8 @@ def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str,
     compare = session_compare(session_dir)
     if compare is not None:
         header["compare"] = compare.model_dump(mode="json")
+        line, _rationale = format_compare(compare) or ("", "")
+        header["compare"]["line"] = line
     return header
 
 
@@ -143,6 +145,7 @@ def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
     d["spend"] = {
         "usd": spend.usd,
         "usd_partial": spend.partial,
+        "text": format_usd(spend.usd, partial=spend.partial),
         "input_tokens": spend.input_tokens,
         "output_tokens": spend.output_tokens,
         "in_flight_state": in_flight,

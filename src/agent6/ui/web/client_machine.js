@@ -150,11 +150,9 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   }
   structBody.innerHTML = '';
   const word = m.worker_lost ? 'stopped' : (m.status || (m.ended ? m.ended.status : ''));
-  // A machine runs unattended against the USD ceiling, and this page could not
-  // say what it had spent: `spend` is the instance total, as `machine status`
-  // reports it.
+  // `spend` is the instance total, as `machine status` reports it, rendered server-side.
   const sp = m.spend || {};
-  const cost = typeof sp.usd === 'number' ? ' · ' + fmtUsd(sp.usd, sp.usd_partial) : '';
+  const cost = sp.text ? ' · ' + sp.text : '';
   structBody.appendChild(el('div', 'sub muted',
     `${esc(m.machine)} v${esc(m.version)}${word ? ' · ' + esc(word) : ''} · current: ${esc(m.current)}${cost}`));
   const tree = el('div', 'tree');
@@ -168,8 +166,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
 
   pathBody.innerHTML = '';
   const path = el('div', 'tree');
-  // Mirrors viewmodel.format.format_transition: `[seq] state --label--> goto -- detail`.
-  for (const t of m.transitions || []) path.appendChild(el('div', 'node', `[${t.seq}] ${t.state} --${t.label}--> ${t.goto}${t.detail ? ' -- ' + t.detail : ''}`));
+  for (const t of m.transitions || []) path.appendChild(el('div', 'node', t.line)); // format_transition, server-side
   if (!(m.transitions||[]).length) path.appendChild(el('div', 'muted', 'no transitions yet'));
   pathBody.appendChild(path);
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));

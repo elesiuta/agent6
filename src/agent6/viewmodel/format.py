@@ -103,6 +103,22 @@ def format_cost_cell(usd: float, *, partial: bool = False) -> str:
     return format_usd(usd, partial=partial)
 
 
+def budget_usd_text(
+    usd_total: float, *, partial: bool, usd_cap: float, usd_prior_legs: float
+) -> str:
+    """The run view's cost line: the cumulative figure, then this leg's spend
+    against its cap (the cap re-arms on every resume leg while the figure stays
+    cumulative); `(unlimited)` for a cap of -1."""
+    text = format_usd(usd_total, partial=partial)
+    if usd_cap > 0:
+        cap = format_usd(usd_cap)
+        if usd_prior_legs > 0:
+            leg = format_usd(max(0.0, usd_total - usd_prior_legs))
+            return f"{text} · leg {leg} / {cap}"
+        return f"{text} / {cap}"
+    return f"{text} (unlimited)" if usd_cap == -1 else text
+
+
 # The fan-out winner marker, shown on listing rows (a lane the auto-compare
 # ranked first). Text glyph so every terminal font renders it; the web SPA
 # mirrors it in page.py.

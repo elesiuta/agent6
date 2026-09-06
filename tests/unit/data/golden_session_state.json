@@ -7,7 +7,8 @@
       "title": "ok",
       "status": "pending",
       "depth": 0,
-      "is_cursor": false
+      "is_cursor": false,
+      "glyph": "·"
     }
   ],
   "cursor_task_id": null,
@@ -81,7 +82,8 @@
     "plan_used_percent": 0.0,
     "plan_consumed": 0.0,
     "plan_cap": 0.0,
-    "plan_resets_at": 0.0
+    "plan_resets_at": 0.0,
+    "usd_text": "$0.0048"
   },
   "pending_approvals": [
     {
