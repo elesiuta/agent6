@@ -44,8 +44,7 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
         # Parked on an operator prompt: no boundaries arrive and no steer
         # (--now included) can break that wait; only the answer can.
         print(
-            f"note: the run is waiting on an unanswered {summary.reason.split()[0]};"
-            f" the steer stays queued until it is answered:"
-            f" agent6 attach {layout.session_id}"
+            f"note: the run is waiting ({summary.reason}); the steer stays"
+            f" queued until that is answered: agent6 attach {layout.session_id}"
         )
     return 0

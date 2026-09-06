@@ -99,5 +99,5 @@ def test_steer_notes_an_unanswered_prompt_park(
 
     assert main(["steer", "tiny-run-CCCC33", "hello"]) == 0
     out = capsys.readouterr().out
-    assert "waiting on an unanswered approval" in out
+    assert "the run is waiting (approval" in out
     assert "agent6 attach tiny-run-CCCC33" in out
