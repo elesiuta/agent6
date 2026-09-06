@@ -20,7 +20,7 @@ from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
 from agent6.sessions.manifest import NO_MERGE_COMMIT, ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import error, warn
-from agent6.ui.cli._steer import repl_prompt_sigint
+from agent6.ui.cli._steer import idle_prompt_sigint
 from agent6.viewmodel import newest_session_dir
 from agent6.workflows.loop import (
     SessionResult,
@@ -269,7 +269,7 @@ def run_ask_repl(
             pending = ""
         else:
             try:
-                with repl_prompt_sigint():
+                with idle_prompt_sigint():
                     question = input("\nask> ").strip()
             except (EOFError, KeyboardInterrupt):
                 print(file=sys.stderr)

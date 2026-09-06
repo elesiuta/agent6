@@ -43,13 +43,14 @@ from agent6.viewmodel.transcript import scrub_terminal_output
 
 
 @contextlib.contextmanager
-def repl_prompt_sigint() -> Generator[None]:
-    """Default Ctrl-C for the duration of an idle REPL prompt (ask> /
-    agent6>). No step is in flight there, so the run's escalating steer
-    handler would lie ("pausing after this step"), PEP 475 would retry the
-    interrupted input() (three presses to leave), and the armed stage would
-    open a phantom pause menu on the next question. The escalation applies
-    only while a leg runs; at the prompt one Ctrl-C simply raises."""
+def idle_prompt_sigint() -> Generator[None]:
+    """Default Ctrl-C for the duration of an idle CLI prompt (ask>, agent6>,
+    the revise_prompt choice). No step is in flight there, so the run's
+    escalating steer handler would lie ("pausing after this step"), PEP 475
+    would retry the interrupted input() (three presses to leave), and the
+    armed stage would open a phantom pause menu on the next question. The
+    escalation applies only while a leg runs; at the prompt one Ctrl-C simply
+    raises."""
     prev = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, signal.default_int_handler)
     try:
@@ -90,7 +91,7 @@ def _select_revised_prompt(
     print(original, file=sys.stderr)
     while True:
         try:
-            with repl_prompt_sigint():
+            with idle_prompt_sigint():
                 choice = (
                     input("[agent6] revise_prompt: [a]ccept, [o]riginal, [e]dit, [q]uit? ")
                     .strip()

@@ -467,7 +467,7 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
 ) -> None:
     """One Ctrl-C leaves the revise_prompt choice, as at every other idle CLI
     prompt. The leg installs the run's escalating steer handler before the
-    loop reaches this prompt, so without `repl_prompt_sigint` the press was
+    loop reaches this prompt, so without `idle_prompt_sigint` the press was
     absorbed by the retried input(): three presses to leave, a "pausing after
     this step" line with no step in flight, and an armed stage that opened a
     pause menu at the run's first boundary."""

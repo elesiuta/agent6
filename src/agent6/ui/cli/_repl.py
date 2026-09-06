@@ -22,7 +22,7 @@ from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.tools.mcp_client import MCPManager
 from agent6.types import AutoCommitDirective
 from agent6.ui.cli._interact import _pause
-from agent6.ui.cli._steer import repl_prompt_sigint
+from agent6.ui.cli._steer import idle_prompt_sigint
 from agent6.ui.cli.plan_watch import (
     event_epoch,
     format_plain_event,
@@ -79,7 +79,7 @@ def build_repl_hook(
         # approval/question prompts). The whole session is an idle prompt,
         # nested wizard questions included, so the run's escalating Ctrl-C
         # handler stands aside for all of it.
-        with _pause(console_view), repl_prompt_sigint():
+        with _pause(console_view), idle_prompt_sigint():
             return _prompt_loop(iteration, sha)
 
     def _prompt_loop(iteration: int, sha: str) -> AutoCommitDirective:
