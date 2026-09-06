@@ -110,7 +110,7 @@ def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
     exact -- the machine ledger burning real money against a $0 figure."""
     import json
 
-    from agent6.viewmodel.format import format_cost
+    from agent6.viewmodel.format import format_usd
     from agent6.viewmodel.machine_state import Spend, read_budget_totals
 
     log = tmp_path / "logs.jsonl"
@@ -129,7 +129,7 @@ def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
     )
     spend = read_budget_totals(log)
     assert spend.partial is True
-    assert format_cost(spend.usd, partial=spend.partial).startswith("~$")
+    assert format_usd(spend.usd, partial=spend.partial).startswith("~$")
     # The flag survives folding with priced (non-partial) slices.
     assert (spend + Spend(1.0)).partial is True
 

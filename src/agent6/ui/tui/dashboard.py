@@ -67,7 +67,7 @@ from agent6.viewmodel.format import (
     clip_cell,
     dead_run_note,
     format_compare,
-    format_cost,
+    format_usd,
     spinner_frame,
     status_label,
 )
@@ -553,7 +553,7 @@ class DashboardScreen(ScreenChrome, Screen[None]):
         # tasks and cost are both as-of the selected step; ctx is live.
         done_n = sum(1 for t in ds.tasks if t.status in ("passed", "skipped"))
         step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
-        cost = f"[b]{format_cost(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
+        cost = f"[b]{format_usd(ds.budget.usd_total, partial=ds.budget.usd_partial)}[/]"
         # Consumption of the binding ledger: THIS leg's metered spend vs its
         # usd_cap (resume re-arms the cap while usd_total stays cumulative),
         # plus the unmetered-token fraction when that ledger has traffic.

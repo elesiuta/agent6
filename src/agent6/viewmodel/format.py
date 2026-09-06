@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 from typing import Literal
 
-from agent6.budget import format_usd
+from agent6.budget import format_usd  # the surfaces' one import of it
 from agent6.sessions.manifest import CompareStamp
 
 # Task-node status glyphs. Text characters (not graphics) so every terminal font
@@ -79,14 +79,6 @@ def format_age(seconds: float) -> str:
     return f"{int(s // 86400)}d"
 
 
-def format_cost(usd: float, *, partial: bool = False) -> str:
-    """Render a USD cost identically on every surface (`budget.format_usd`:
-    cents at >= $1, four decimals below), with a leading '~' when the figure is
-    a known under-estimate (a model without price data). The web SPA mirrors
-    this in client.js's fmtUsd."""
-    return ("~" if partial else "") + format_usd(usd)
-
-
 def machine_state_mark(*, is_current: bool, is_visited: bool) -> str:
     """The mark before a machine state in the overview: the current state,
     a visited one, or none. Text glyphs (the task-status set's), mirrored by
@@ -104,11 +96,11 @@ def format_transition(seq: int, state: str, label: str, goto: str, detail: str =
 
 def format_cost_cell(usd: float, *, partial: bool = False) -> str:
     """A listing's cost cell: blank for a genuinely clean $0, else
-    `format_cost` (an all-unpriced run's `~$0.0000` is information: spend
+    `format_usd` (an all-unpriced run's `~$0.0000` is information: spend
     happened, price unknown)."""
     if usd <= 0 and not partial:
         return ""
-    return format_cost(usd, partial=partial)
+    return format_usd(usd, partial=partial)
 
 
 # The fan-out winner marker, shown on listing rows (a lane the auto-compare
@@ -159,7 +151,7 @@ def format_compare(compare: CompareStamp | None) -> tuple[str, str] | None:
     if compare.ranked_by:
         by = compare.ranked_by
         if compare.judge_cost_usd > 0 or compare.judge_cost_partial:
-            cost = format_cost(compare.judge_cost_usd, partial=compare.judge_cost_partial)
+            cost = format_usd(compare.judge_cost_usd, partial=compare.judge_cost_partial)
             by += f" ({cost})"
         parts.append(by)
     return " · ".join(parts), compare.rationale

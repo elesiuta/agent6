@@ -35,8 +35,8 @@ from agent6.viewmodel import (
 from agent6.viewmodel.format import (
     format_branch,
     format_compare,
-    format_cost,
     format_lineage,
+    format_usd,
     listing_status_label,
 )
 
@@ -243,7 +243,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         # run say so, or $0.03 next to the last leg's 10k tokens reads wrong.
         leg_s = " (latest leg)" if scan.legs > 1 else ""
         cost_s = (
-            f"  cost {format_cost(scan.cost_usd, partial=scan.usd_partial)}"
+            f"  cost {format_usd(scan.cost_usd, partial=scan.usd_partial)}"
             + (f" (all {scan.legs} legs)" if scan.legs > 1 else "")
             if scan.cost_usd is not None
             else ""

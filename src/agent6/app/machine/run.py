@@ -81,7 +81,7 @@ from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.sessions.layout import machines_root
 from agent6.tools.policy import jail_policy, passthrough_env
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, NetworkMode
-from agent6.viewmodel.format import format_cost
+from agent6.viewmodel.format import format_usd
 from agent6.viewmodel.machine_state import machine_spend, wait_line
 from agent6.workflows.subrun import SubrunError
 
@@ -530,7 +530,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.out(
             f"{result.status.upper()}: {spec.machine} ended in {result.state!r}"
             f" after {_transitions(result.transitions)} ({result.reason});"
-            f" spent {format_cost(spend.usd, partial=spend.partial)}"
+            f" spent {format_usd(spend.usd, partial=spend.partial)}"
         )
     # A machine with run states commits to its own branch and never touches the
     # checkout, so the ending names the branch and how to merge it: the same

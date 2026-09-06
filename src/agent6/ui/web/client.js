@@ -83,11 +83,11 @@ function toast(msg, bad) {
   else { setTimeout(() => t.remove(), 4000); }
   host.appendChild(t);
 }
-// Mirrors viewmodel/format.py format_cost precision (cents >= $1, else 4dp); keep in sync.
+// Mirrors budget.format_usd precision (cents >= $1, else 4dp); keep in sync.
 // partial: the figure is a known lower bound (unpriced spend) -> '~' prefix,
-// and ~$0.0000 is information where a clean $0 stays terse (format_cost's rule).
+// and ~$0.0000 is information where a clean $0 stays terse (format_usd's rule).
 function fmtUsd(u, partial) {
-  // Mirrors Python format_cost exactly (no terse "$0" special-case): ~ = a
+  // Mirrors Python format_usd exactly (no terse "$0" special-case): ~ = a
   // partial lower bound, 2 decimals at/above ~$1, else 4. A genuinely clean $0
   // is BLANKED by the hub callers (like the CLI/TUI hubs), not shown here.
   const p = partial ? '~' : '';

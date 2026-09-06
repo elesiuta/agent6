@@ -40,7 +40,7 @@ from agent6.sessions.layout import LOGS_NAME, SessionLayout, read_untracked_at_s
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.verify_infer import line_to_argv
 from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
-from agent6.viewmodel.format import format_cost
+from agent6.viewmodel.format import format_usd
 from agent6.workflows.loop import SessionResult
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
@@ -376,7 +376,7 @@ def _print_run_total_across_legs(layout: SessionLayout, *, reporter: Reporter) -
     fresh budget), so its "TOTAL" line undersells a resumed run without this."""
     scan = scan_session_log(layout.session_dir / LOGS_NAME)
     if scan.legs > 1 and scan.cost_usd is not None:
-        cost = format_cost(scan.cost_usd, partial=scan.usd_partial)
+        cost = format_usd(scan.cost_usd, partial=scan.usd_partial)
         reporter.out(f"  RUN TOTAL (all {scan.legs} legs): {cost}")
 
 

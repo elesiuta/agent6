@@ -25,7 +25,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import Config
 from agent6.providers import Provider, ProviderError, TranscriptSink
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.viewmodel.format import format_cost
+from agent6.viewmodel.format import format_usd
 from agent6.workflows.judge import CandidateBrief, JudgeError, compare, mechanical_ranking
 
 # The reviewer provider the judge call uses, built by the caller from the
@@ -48,7 +48,7 @@ class RankOutcome:
     when a failed judge fell back to the mechanical ranking; it is 0.0 only
     when no judge call was made. `judge_cost_partial` marks it a lower bound (the
     reviewer model is unpriced and reported no cost), the same flag
-    `format_cost` renders as `~`.
+    `format_usd` renders as `~`.
     """
 
     ranking: tuple[str, ...]
@@ -106,7 +106,7 @@ def rank(
             detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
             spent, unknown = budget.estimate_usd()
             spent_s = (
-                f"; judge spend {format_cost(spent, partial=unknown)}"
+                f"; judge spend {format_usd(spent, partial=unknown)}"
                 if spent > 0 or unknown
                 else ""
             )
@@ -135,18 +135,18 @@ def print_ranked_candidates(
         verify = "passed" if c.verify_ok else "failed" if c.verify_ok is False else "no-verify"
         into = (merged_into or {}).get(rid, "")
         landing = f"merged into {into}" if into else f"merge with: agent6 sessions merge {rid}"
-        reporter.out(f"  {rnk}. {rid}  {verify:<9} {format_cost(c.cost_usd)}   {landing}")
+        reporter.out(f"  {rnk}. {rid}  {verify:<9} {format_usd(c.cost_usd)}   {landing}")
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
         judge = outcome.judge_cost_usd
         partial = outcome.judge_cost_partial
         if judge > 0 or partial:
             reporter.out(
-                f"total: candidates {format_cost(cand_total)}"
-                f" + judge {format_cost(judge, partial=partial)}"
-                f" = {format_cost(cand_total + judge, partial=partial)}"
+                f"total: candidates {format_usd(cand_total)}"
+                f" + judge {format_usd(judge, partial=partial)}"
+                f" = {format_usd(cand_total + judge, partial=partial)}"
             )
         else:
-            reporter.out(f"total: candidates {format_cost(cand_total)}")
+            reporter.out(f"total: candidates {format_usd(cand_total)}")
     if outcome.rationale:
         reporter.out(f"\njudge: {outcome.rationale}")

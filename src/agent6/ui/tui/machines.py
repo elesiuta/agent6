@@ -83,8 +83,8 @@ from agent6.viewmodel import (
 )
 from agent6.viewmodel.events import tool_result_ok
 from agent6.viewmodel.format import (
-    format_cost,
     format_transition,
+    format_usd,
     format_when,
     machine_state_mark,
     status_label,
@@ -347,7 +347,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         # A machine runs unattended against the USD ceiling, so the header
         # carries its spend.
         spend, _in_flight = machine_spend(events, self._root, alive=worker_is_alive(self._root))
-        cost = format_cost(spend.usd, partial=spend.partial)
+        cost = format_usd(spend.usd, partial=spend.partial)
         self.query_one("#mw-head", Static).update(
             Text(
                 f"machine: {ms.machine}   {status}"

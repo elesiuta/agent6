@@ -62,7 +62,7 @@ from agent6.viewmodel import (
     tail_events,
     task_snippet,
 )
-from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_cost, status_label
+from agent6.viewmodel.format import TASK_STATUS_GLYPH, format_usd, status_label
 from agent6.viewmodel.state import SessionState, context_fill, status_facts
 
 PROMPT = "[agent6] paused: Enter=continue · type to steer · /help: "
@@ -174,7 +174,7 @@ def _print_status(session_dir: Path) -> None:
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     role = s.last_role
     model = f"{role.role}/{role.model}" if role else "—"
-    cost = format_cost(s.budget.usd_total, partial=s.budget.usd_partial)
+    cost = format_usd(s.budget.usd_total, partial=s.budget.usd_partial)
     ctx = ""
     if role is not None and role.ctx_tokens > 0:
         fill = context_fill(s)

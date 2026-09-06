@@ -69,8 +69,8 @@ from agent6.viewmodel import (
     machine_word_for_dir,
 )
 from agent6.viewmodel.format import (
-    format_cost,
     format_transition,
+    format_usd,
     format_when,
     machine_state_mark,
 )
@@ -367,7 +367,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     print(
-        f"  spend: {format_cost(spend.usd, partial=spend.partial)}"
+        f"  spend: {format_usd(spend.usd, partial=spend.partial)}"
         f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok)"
     )
     state_spec = spec.states.get(result.state)

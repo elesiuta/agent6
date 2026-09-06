@@ -66,7 +66,7 @@ from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_a
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, bucket_dir, session_layout
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.viewmodel import produced_result, summarize_session_dir
-from agent6.viewmodel.format import format_cost, status_label
+from agent6.viewmodel.format import format_usd, status_label
 from agent6.workflows.judge import CandidateBrief
 from agent6.workflows.subrun import (
     GroupLaneSpawner,
@@ -835,7 +835,7 @@ def _print_lane_status(
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     model = f" ({spec.model})" if spec.model else ""
-    cost_s = f"  {format_cost(cost)}" if cost > 0 else ""
+    cost_s = f"  {format_usd(cost)}" if cost > 0 else ""
     state = (
         f"waiting on {waiting} (answer via agent6 attach {spec.session_id}, the web or TUI hub)"
         if waiting

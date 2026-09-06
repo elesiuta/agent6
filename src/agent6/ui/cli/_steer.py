@@ -38,7 +38,7 @@ from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._menu_input import menu_capable, read_line_until
 from agent6.ui.cli._steer_menu import BtwRunner, normalize_steer_choice, pause_menu
 from agent6.ui.steer import SteerState, file_bridge_steer
-from agent6.viewmodel.format import format_cost
+from agent6.viewmodel.format import format_usd
 
 
 @contextlib.contextmanager
@@ -217,7 +217,7 @@ def format_session_facts(facts: SessionFacts) -> str:
     CLI operator cannot otherwise see (a TUI/web viewer has widgets for them).
     Spend first -- it is the fact that decides whether to interrupt now."""
     return (
-        f"{format_cost(facts.spend_usd, partial=facts.spend_partial)}"
+        f"{format_usd(facts.spend_usd, partial=facts.spend_partial)}"
         f" · {facts.model} · commands {facts.run_commands} · {facts.isolation}"
     )
 
