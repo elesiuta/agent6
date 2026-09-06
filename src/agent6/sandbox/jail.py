@@ -1375,6 +1375,11 @@ class JailSession:
     # a skipped grant): the jail came up degraded but still runs. The caller
     # surfaces it once; "" when setup was clean.
     startup_stderr: str = ""
+    # What was already ours when the session opened. Without a PID namespace,
+    # anything beyond it at close is this session's escapee: a BACKGROUND
+    # command's `setsid` daemon reparents here and the launcher's own
+    # process-group kill never reaches it, so it outlived the run.
+    _opened_with: frozenset[int] = frozenset()
 
     @classmethod
     def open(cls, policy: JailPolicy, *, session_net: SessionNetwork | None = None) -> JailSession:
@@ -1423,13 +1428,15 @@ class JailSession:
             _abandon_launcher(proc, interrupt_w)
             raise JailUnavailableError(f"jail session died during setup: {err or 'no output'}")
         startup_stderr = _lossy_text(_read_available(proc.stderr, budget_s=0.1)).strip()
+        pid_namespaced = policy.isolation == "strict"
         return cls(
             _proc=proc,
             _binary=binary,
-            _pid_namespaced=policy.isolation == "strict",
+            _pid_namespaced=pid_namespaced,
             _interrupt_w=interrupt_w,
             _memory_limit_mb=policy.memory_limit_mb,
             startup_stderr=startup_stderr,
+            _opened_with=frozenset() if pid_namespaced else frozenset(_own_children()),
         )
 
     def run(
@@ -1601,3 +1608,9 @@ class JailSession:
                 os.killpg(self._proc.pid, signal.SIGKILL)
         with _sweep_lock:
             _live_launchers.discard(self._proc.pid)
+        if not self._pid_namespaced:
+            # A command's own escapees are swept as it ends; a BACKGROUND
+            # command outlives every one of those sweeps, and the launcher can
+            # only kill the process group it tracked. Whatever appeared since
+            # the session opened and is not ours goes here.
+            _kill_escapees(self._opened_with | {self._proc.pid})

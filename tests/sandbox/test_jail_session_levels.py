@@ -115,6 +115,33 @@ def test_a_setsid_escapee_does_not_outlive_its_command(
         session.close()
 
 
+@pytest.mark.parametrize("isolation", _NO_NAMESPACE_LEVELS)
+def test_a_backgrounded_setsid_daemon_dies_with_the_session(
+    tmp_path: Path, isolation: IsolationLevel
+) -> None:
+    """The two halves together: a BACKGROUND command's `setsid` child leaves
+    the group the launcher tracked, and outlives every per-command sweep. With
+    no PID namespace nothing else bounded it, so it survived the run -- on
+    hardened, with the host's network."""
+    session = _session(tmp_path, isolation)
+    marker = tmp_path / "daemon.pid"
+    session.start_background(
+        ("/bin/sh", "-c", f"setsid sh -c 'echo $$ > {marker}; sleep 60' & sleep 0.4")
+    )
+    time.sleep(1.0)
+    assert marker.exists(), "the daemon never started; the test proves nothing"
+    pid = int(marker.read_text().strip())
+    assert _running(pid)
+
+    session.close()
+
+    time.sleep(1.0)
+    still = _running(pid)
+    if still:  # never leave one behind, even on failure
+        os.kill(pid, signal.SIGKILL)
+    assert not still
+
+
 def test_the_unconfined_level_says_so_on_startup(tmp_path: Path) -> None:
     """`none` reaches the launcher now, so "the launcher ran" no longer implies
     "confinement was applied". It is loud instead: the caller surfaces this as
