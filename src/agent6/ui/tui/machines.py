@@ -49,6 +49,7 @@ from agent6.sessions.ipc import (
     register_frontend,
     request_steer,
     unregister_frontend,
+    worker_is_alive,
     write_steer_answer,
 )
 from agent6.sessions.layout import LOGS_NAME, bucket_dir, machines_root
@@ -74,6 +75,7 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     fold_machine,
     fold_session,
+    machine_spend,
     machine_verb_refusal,
     machine_word_for_dir,
     newest_state_log,
@@ -81,6 +83,7 @@ from agent6.viewmodel import (
 )
 from agent6.viewmodel.events import tool_result_ok
 from agent6.viewmodel.format import (
+    format_cost,
     format_transition,
     format_when,
     machine_state_mark,
@@ -323,7 +326,8 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             self._was_steerable = steerable
             self.refresh_bindings()
         try:
-            ms = fold_machine(self._spec, self._journal.read())
+            events = self._journal.read()
+            ms = fold_machine(self._spec, events)
         except JournalError as exc:
             # A corrupt journal line must not crash the screen every poll tick;
             # show it and keep polling (an append may heal or end the run).
@@ -336,8 +340,15 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
             status = f"ended: {ms.ended.status} ({ms.ended.reason})"
         else:
             status = f"{machine_word_for_dir(ms, self._root)} · {ms.current}"
+        # A machine is the one thing that runs unattended against the USD
+        # ceiling, and this screen could not say what it had spent.
+        spend, _in_flight = machine_spend(events, self._root, alive=worker_is_alive(self._root))
+        cost = format_cost(spend.usd, partial=spend.partial)
         self.query_one("#mw-head", Static).update(
-            Text(f"machine: {ms.machine}   {status}   transitions: {len(ms.transitions)}")
+            Text(
+                f"machine: {ms.machine}   {status}"
+                f"   transitions: {len(ms.transitions)}   spend: {cost}"
+            )
         )
         table = self.query_one("#mw-states", DataTable)
         for s in ms.states:

@@ -12,12 +12,17 @@ from typing import Any
 
 from agent6.git_ops import branch_exists, merge_stamp_holds
 from agent6.machine import MachineJournal, load_machine
+from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel.format import format_branch, format_lineage
 from agent6.viewmodel.listing import session_compare
-from agent6.viewmodel.machine_state import fold_machine, machine_state_as_dict
+from agent6.viewmodel.machine_state import (
+    fold_machine,
+    machine_spend,
+    machine_state_as_dict,
+)
 from agent6.viewmodel.state import fold_session, fold_until_commit, session_state_as_dict
 from agent6.viewmodel.tail import tail_events
 
@@ -127,7 +132,22 @@ def session_snapshot(
 def machine_snapshot(machine_dir: Path) -> dict[str, Any]:
     """A machine instance's folded MachineState as the wire dict. Raises
     MachineError for an unloadable source and JournalError for a corrupt
-    journal; the callers word those."""
+    journal; the callers word those.
+
+    Carries the instance's `spend`, which only `machine status` used to
+    compute: a machine is the one thing that runs unattended against
+    `[budget].max_usd`, and the two surfaces an operator watches it from could
+    not say what it had spent."""
     spec = load_machine(machine_dir / "machine.asm.toml")
-    ms = fold_machine(spec, MachineJournal(machine_dir).read())
-    return machine_state_as_dict(ms, machine_dir)
+    events = MachineJournal(machine_dir).read()
+    ms = fold_machine(spec, events)
+    d = machine_state_as_dict(ms, machine_dir)
+    spend, in_flight = machine_spend(events, machine_dir, alive=worker_is_alive(machine_dir))
+    d["spend"] = {
+        "usd": spend.usd,
+        "usd_partial": spend.partial,
+        "input_tokens": spend.input_tokens,
+        "output_tokens": spend.output_tokens,
+        "in_flight_state": in_flight,
+    }
+    return d

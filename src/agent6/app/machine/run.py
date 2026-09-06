@@ -37,7 +37,7 @@ from agent6.app.machine._preflight import (
     machine_network_refusal,
     machine_protect_paths,
 )
-from agent6.app.machine._spend import book_crashed_attempt, machine_spend
+from agent6.app.machine._spend import book_crashed_attempt
 from agent6.app.machine_agent import build_machine_agent_runner, clone_at_machine_chain
 from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.preflight import SessionRefused, budget_preflight
@@ -79,6 +79,7 @@ from agent6.sessions.layout import machines_root
 from agent6.tools.policy import jail_policy, passthrough_env
 from agent6.types import CommandResult, IsolationLevel, JailPolicy, NetworkMode
 from agent6.viewmodel.format import format_cost
+from agent6.viewmodel.machine_state import machine_spend
 from agent6.workflows.subrun import SubrunError
 
 

@@ -77,7 +77,7 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: Path) -> None:
     spawn point."""
     import json
 
-    from agent6.app.machine._spend import Spend, read_budget_totals
+    from agent6.viewmodel.machine_state import Spend, read_budget_totals
 
     log = tmp_path / "logs.jsonl"
     log.write_text(
@@ -110,8 +110,8 @@ def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: Path) -> None:
     exact -- the machine ledger burning real money against a $0 figure."""
     import json
 
-    from agent6.app.machine._spend import Spend, read_budget_totals
     from agent6.viewmodel.format import format_cost
+    from agent6.viewmodel.machine_state import Spend, read_budget_totals
 
     log = tmp_path / "logs.jsonl"
     log.write_text(

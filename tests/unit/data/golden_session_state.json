@@ -121,7 +121,7 @@
     }
   ],
   "log_tail": [
-    "10:00:00.000  session.start      # Fix the bug\n\nRestore the thing.",
+    "10:00:00.000  session.start      # Fix the bug  Restore the thing.",
     "10:00:00.100  graph.update       2 tasks",
     "10:00:01.000  role.call          worker/kimi-k2",
     "10:00:02.000  budget.update      in=5850 out=82 $0.0048",

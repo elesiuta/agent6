@@ -42,7 +42,6 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from agent6.app._session import tool_result_cap_chars
 from agent6.app._setup import apply_git_ops_policy
 from agent6.app.confine import check_hide_paths_support, check_network_support
-from agent6.app.machine._spend import Spend, read_budget_totals
 from agent6.app.providers import (
     InstrumentedProvider,
     build_role_provider,
@@ -91,6 +90,7 @@ from agent6.tools.operator_prompts import (
     QuestionRequest,
 )
 from agent6.types import IsolationLevel
+from agent6.viewmodel.machine_state import Spend, read_budget_totals
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import SubrunError, clone_workspace
 

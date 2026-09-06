@@ -150,8 +150,13 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   }
   structBody.innerHTML = '';
   const word = m.worker_lost ? 'stopped' : (m.status || (m.ended ? m.ended.status : ''));
+  // A machine runs unattended against the USD ceiling, and this page could not
+  // say what it had spent: `spend` is the instance total, as `machine status`
+  // reports it.
+  const sp = m.spend || {};
+  const cost = sp.usd || sp.usd_partial ? ' · ' + fmtUsd(sp.usd, sp.usd_partial) : '';
   structBody.appendChild(el('div', 'sub muted',
-    `${esc(m.machine)} v${esc(m.version)}${word ? ' · ' + esc(word) : ''} · current: ${esc(m.current)}`));
+    `${esc(m.machine)} v${esc(m.version)}${word ? ' · ' + esc(word) : ''} · current: ${esc(m.current)}${cost}`));
   const tree = el('div', 'tree');
   for (const st of m.states || []) {
     const line = el('div', 'node' + (st.is_current ? ' cursor' : ''));
