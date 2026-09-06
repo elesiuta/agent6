@@ -269,6 +269,18 @@ def test_written_value_error_catches_an_invalid_container_element() -> None:
     assert written_value_error("providers.x.token_command", ["gcloud"]) is None
 
 
+def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one() -> None:
+    """`config set workflow.verify_command "python -m pytest"` answered with
+    pydantic's "Input should be a valid tuple", which names neither the array
+    form nor `config add`."""
+    from agent6.config.write import written_value_error
+
+    err = written_value_error("workflow.verify_command", "python -m pytest")
+    assert err is not None
+    assert "expected a list" in err
+    assert "config add workflow.verify_command" in err
+
+
 def test_written_value_error_catches_a_section_wide_rule() -> None:
     """A rule spanning two keys is a model_validator, and pydantic reports it at
     the SECTION -- a PARENT of the written key. Accepting a parent loc only for

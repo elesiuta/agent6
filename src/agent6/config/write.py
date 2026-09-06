@@ -291,8 +291,12 @@ def _error_about(err: ErrorDetails, key: str, value: object) -> str | None:
         # genuinely absent field.
         return None
     if err["type"] in ("bool_parsing", "bool_type"):
-        return f"{key}: expected true or false, got {value!r}"
-    return f"{key}: {err['msg']}"
+        detail = f"expected true or false, got {value!r}"
+    elif err["type"] in ("tuple_type", "list_type"):
+        detail = f'expected a list: config set {key} \'["a", "b"]\', or config add {key} a'
+    else:
+        detail = err["msg"]
+    return f"{key}: {detail}"
 
 
 def revalidate_write(
