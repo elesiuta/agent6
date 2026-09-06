@@ -22,12 +22,14 @@ from agent6.config import (
     Config,
     ConfigError,
     MCPServerEntry,
+    ProviderEntry,
     plan_metered,
 )
 from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.events import EventSink
 from agent6.git_ops import set_provider_key_env, set_repo_filter_policy, set_repo_hook_policy
 from agent6.models.cache import list_models, refresh_pricing_catalog
+from agent6.providers.claude_code import login_status
 from agent6.sandbox import strict_namespaces_work
 from agent6.sandbox.detect import Environment, detect
 from agent6.sandbox.jail import SessionNetwork
@@ -256,38 +258,8 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
             " or fix the reference."
         )
     for name in sorted(needed):
-        entry = cfg.providers[name]
-        if isinstance(entry, ClaudeCodeProviderEntry):
-            continue  # no key: the binary carries the operator's own login
-        if isinstance(entry, ChatGPTProviderEntry):
-            if load_oauth_tokens(name, secrets=secrets) is None:
-                return (
-                    f"no ChatGPT sign-in stored for [providers.{name}];"
-                    " run `agent6 connect chatgpt`."
-                )
-            # Same opportunistic refresh as the keyed path: the listing is
-            # what feeds model completion and context-window sizing.
-            list_models(name, entry, None)
-            continue
-        key = resolve_api_key(name, entry.api_key_env, secrets=secrets)
-        if key:
-            # Opportunistically refresh this provider's models cache (TTL-gated
-            # inside, ~1.5s timeout, never raises). This is what keeps model
-            # PRICING fresh for budget sizing + cost reports: prices live only
-            # in this cache, fetched from the provider's models endpoint.
-            list_models(name, entry, key)
-            continue
-        if entry.token_command or entry.auth_style == "none":
-            # Auth is minted by a command (checked at call time) or not required.
-            continue
-        if isinstance(entry, AnthropicProviderEntry):
-            return (
-                f"no API key for [providers.{name}] (Anthropic). Run"
-                f" `agent6 connect` or set the {entry.api_key_env or 'API key'} env var."
-            )
-        # OpenAI-compatible: a missing key is only an error if the endpoint
-        # clearly expects one; local endpoints legitimately need none, so we
-        # do not block here.
+        if (err := _provider_refusal(name, cfg.providers[name], secrets)) is not None:
+            return err
     if "openrouter" not in needed and any(
         rm.model.startswith("claude-")
         and "/" not in rm.model
@@ -300,6 +272,42 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
         # unpriced on a cold cache. A plan-metered route is an authoritative
         # $0 and needs no price.
         refresh_pricing_catalog()
+    return None
+
+
+def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) -> str | None:
+    """Why one routed provider cannot run, or None: a claude_code binary that is
+    not signed in, a chatgpt block with no stored sign-in, an Anthropic block
+    with no key. A keyed or local endpoint passes, refreshing its model listing
+    on the way (TTL-gated, ~1.5s, never raises): that cache is what feeds model
+    completion, context-window sizing, and the PRICES the budget meters with."""
+    if isinstance(entry, ClaudeCodeProviderEntry):
+        # No key: the binary carries the operator's own login; check it is
+        # signed in before any state exists.
+        err = login_status(entry.binary)
+        return f"[providers.{name}]: {err}" if err is not None else None
+    if isinstance(entry, ChatGPTProviderEntry):
+        if load_oauth_tokens(name, secrets=secrets) is None:
+            return (
+                f"no ChatGPT sign-in stored for [providers.{name}]; run `agent6 connect chatgpt`."
+            )
+        list_models(name, entry, None)
+        return None
+    key = resolve_api_key(name, entry.api_key_env, secrets=secrets)
+    if key:
+        list_models(name, entry, key)
+        return None
+    if (
+        isinstance(entry, AnthropicProviderEntry)
+        and not entry.token_command
+        and entry.auth_style != "none"
+    ):
+        return (
+            f"no API key for [providers.{name}] (Anthropic). Run"
+            f" `agent6 connect` or set the {entry.api_key_env or 'API key'} env var."
+        )
+    # Minted by a command (checked at call time), not required, or an
+    # OpenAI-compatible endpoint (local ones legitimately need no key).
     return None
 
 

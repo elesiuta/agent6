@@ -40,7 +40,7 @@ from agent6.app.finalize import (
     stranded_edits,
 )
 from agent6.app.frontend import SessionFrontend, approval_scopes
-from agent6.app.providers import build_prompt_reviser_provider, role_temperature
+from agent6.app.providers import build_prompt_reviser_provider, close_provider, role_temperature
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config, RoleName
@@ -367,6 +367,9 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             raise
     finally:
         steer_state.restore()
+        session.close()
+        if prompt_reviser_provider is not None:
+            close_provider(prompt_reviser_provider)
         if dispatcher is not None:
             dispatcher.close()
         if mcp_manager is not None:

@@ -39,7 +39,7 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 - **Code review**: `agent6 review` on any diff, plus an in-loop adversarial panel where only blocking findings gate a finish
 - **Background commands**: a run's command can keep running behind a handle (dev servers, watchers); none outlive the run
 - **Skills**: SKILL.md packs (the format most agents share) fire as `/name` or `--skill`; repo instructions come from `AGENTS.md`
-- **Providers**: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), or a ChatGPT subscription, with model and reasoning effort set per role ([Config](https://agent6.dev/config/))
+- **Providers**: Anthropic, any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, LM Studio), a ChatGPT subscription, or the signed-in Claude Code binary (a Claude subscription), with model and reasoning effort set per role ([Config](https://agent6.dev/config/))
 - **Budget**: a hard `max_usd` cap per run, a token cap for calls with no price
 - **Fixed tool surface**: the model's tools are a fixed set, extended only by operator-configured MCP servers (off by default, jailed by default)
 - **Eight runtime dependencies**, no telemetry, no auto-update
@@ -66,7 +66,8 @@ See [installation](https://agent6.dev/installation/) for the full requirements a
 # Connect a provider (stored in ~/.config/agent6/, key in a 0600 secrets file).
 # If already connected, skip both; `agent6 check` verifies it.
 agent6 connect                # interactive: pick provider, paste API key
-# (or `agent6 connect chatgpt` to sign in with a ChatGPT subscription)
+# or `agent6 connect chatgpt` for a ChatGPT subscription
+# or `agent6 connect claude` for a signed-in Claude Code binary
 agent6 model worker anthropic claude-sonnet-5
 
 # Run the agent on a task, create a plan, or ask a question.

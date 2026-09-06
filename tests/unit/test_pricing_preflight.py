@@ -226,6 +226,26 @@ def test_claude_code_routes_are_plan_metered(
     assert called == []
 
 
+def test_claude_code_route_needs_a_signed_in_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A routed claude_code provider is preflighted with `login_status`: a
+    signed-out binary refuses statically, naming the provider block, before any
+    state exists; a signed-in one passes with no key lookup."""
+
+    def signed_out(binary: str) -> str | None:
+        return f"{binary} says: run `claude auth login`"
+
+    def signed_in(binary: str) -> str | None:
+        return None
+
+    monkeypatch.setattr(_setup, "load_secrets", dict)
+    monkeypatch.setattr(_setup, "login_status", signed_out)
+    cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code", "binary": "/opt/cc"}})
+    err = _setup.check_provider_keys(cfg)
+    assert err is not None and "[providers.claude]" in err and "/opt/cc says" in err
+    monkeypatch.setattr(_setup, "login_status", signed_in)
+    assert _setup.check_provider_keys(cfg) is None
+
+
 def test_machine_pins_carry_their_provider_into_the_notes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -26,8 +26,19 @@ from agent6.ui.cli.parser import build_parser
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = [*sorted((ROOT / "docs").glob("*.md")), ROOT / "README.md"]
 
-# Other tools' flags, named in prose about what agent6 does with them.
-_NOT_OURS = {"--no-ext-diff", "--no-textconv", "--no-ff"}
+# Other tools' flags, named in prose about what agent6 does with them: git's,
+# and Claude Code's on the claude_code child's argv (`--allowedTools` scans as
+# `--allowed`).
+_NOT_OURS = {
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-ff",
+    "--allowed",
+    "--disable-slash-commands",
+    "--no-session-persistence",
+    "--setting-sources",
+    "--strict-mcp-config",
+}
 
 
 def _cli_flags() -> set[str]:

@@ -134,7 +134,15 @@ depends_on = [
 
 [[modules]]
 path = "agent6.providers"
-depends_on = ["agent6.budget", "agent6.paths", "agent6.portable", "agent6.secrets"]
+depends_on = [
+  "agent6",  # serverInfo.version on the claude_code MCP handshake
+  "agent6.budget",
+  "agent6.child_env",  # the claude_code child's curated environment
+  "agent6.paths",
+  "agent6.portable",
+  "agent6.sandbox",  # die_with_parent ties the claude_code child to the agent
+  "agent6.secrets",
+]
 
 [[modules]]
 path = "agent6.events"

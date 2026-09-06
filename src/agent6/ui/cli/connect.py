@@ -46,6 +46,7 @@ from agent6.providers.chatgpt_oauth import (
     start_device_auth,
     tokens_from_grant,
 )
+from agent6.providers.claude_code import login_status
 from agent6.providers.types import ProviderError
 from agent6.secrets import (
     SecretsError,
@@ -363,14 +364,58 @@ def _chatgpt_sign_in(name: str) -> int:
     return 0
 
 
-def _cmd_logout(name: str) -> int:
+def _claude_code_check(name: str) -> None:
+    """No secret to store: the binary carries the operator's own login. Checked
+    now so a signed-out install is named here, not at the first run; connect
+    checks `claude` on PATH, the run preflight and `agent6 model` check
+    `[providers.<name>].binary`."""
+    err = login_status("claude")
+    if err is None:
+        print("Claude Code (`claude` on PATH): signed in.")
+        return
+    print(
+        f"WARNING: {err}\n  [providers.{name}] is written but not usable yet.",
+        file=sys.stderr,
+    )
+
+
+def _prompt_api_format(name: str, preset_format: str) -> str | None:
+    """The api_format for *name*: the preset's, else the operator's answer;
+    None (after printing why) on no input or an unknown value."""
+    api_format = preset_format
+    if not api_format:
+        try:
+            api_format = (
+                input(f"API format for {name!r} [anthropic/openai/chatgpt/claude_code]: ").strip()
+                or "anthropic"
+            )
+        except EOFError:
+            return None
+    if api_format not in ("anthropic", "openai", "chatgpt", "claude_code"):
+        print(
+            f"ERROR: unknown api_format {api_format!r}"
+            " (expected anthropic, openai, chatgpt, or claude_code).",
+            file=sys.stderr,
+        )
+        return None
+    return api_format
+
+
+def _cmd_logout(name: str, api_format: str) -> int:
     """Remove a provider's stored credentials (`connect --logout`).
 
     For a chatgpt-format provider the OAuth grant is revoked at the issuer
     first (best effort: local removal proceeds regardless, and revoking an
     already-dead token is a success). The `[providers.<name>]` config block
-    stays; only credentials are removed.
+    stays; only credentials are removed. A claude_code provider holds none
+    here: its login belongs to the binary.
     """
+    if api_format == "claude_code":
+        print(
+            "agent6 stores no Claude Code credentials; `claude auth logout` signs out.",
+            file=sys.stderr,
+        )
+        return 2
     tokens = load_oauth_tokens(name)
     if tokens is not None:
         err = revoke_tokens(CHATGPT_ISSUER, CHATGPT_CLIENT_ID, tokens)
@@ -404,24 +449,13 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
     name = _resolve_provider_name(provider)
     if name is None:
         return 2
-    if logout:
-        return _cmd_logout(name)
-    print("agent6 connect: add a provider and API key.\n")
     preset = PROVIDER_DEFAULTS.get(name)
-    api_format = preset["api_format"] if preset else ""
-    if not api_format:
-        try:
-            api_format = (
-                input(f"API format for {name!r} [anthropic/openai/chatgpt]: ").strip()
-                or "anthropic"
-            )
-        except EOFError:
-            return 2
-    if api_format not in ("anthropic", "openai", "chatgpt"):
-        print(
-            f"ERROR: unknown api_format {api_format!r} (expected anthropic, openai, or chatgpt).",
-            file=sys.stderr,
-        )
+    preset_format = preset["api_format"] if preset else ""
+    if logout:
+        return _cmd_logout(name, preset_format)
+    print("agent6 connect: add a provider and API key.\n")
+    api_format = _prompt_api_format(name, preset_format)
+    if api_format is None:
         return 2
     base_url = (preset or {}).get("base_url", "")
     if api_format == "openai":
@@ -431,7 +465,10 @@ def _cmd_connect(*, provider: str, to_repo: bool, verify: bool = True, logout: b
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
 
-    if api_format == "chatgpt":
+    if api_format == "claude_code":
+        _claude_code_check(name)
+        api_key = ""
+    elif api_format == "chatgpt":
         rc = _chatgpt_sign_in(name)
         if rc != 0:
             return rc

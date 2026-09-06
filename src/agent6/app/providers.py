@@ -12,6 +12,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
+    ClaudeCodeProviderEntry,
     Config,
     EffortLevel,
     RoleModel,
@@ -23,6 +24,7 @@ from agent6.providers import (
     AnthropicProvider,
     ChatGPTCredential,
     ChatGPTProvider,
+    ClaudeCodeProvider,
     CommandToken,
     OpenAIProvider,
     Provider,
@@ -139,6 +141,21 @@ def _provider_from_entry(
     """Build a Provider for an explicit `[providers.<provider_name>]` entry +
     model + effort. Shared by `build_role_provider` (role routing) and the
     review panel's explicit per-seat `provider/model` routing."""
+    if isinstance(entry, ClaudeCodeProviderEntry):
+        if effort == "off":
+            raise ProviderError(
+                f"effort = off has no Claude Code equivalent ([providers.{provider_name}]"
+                " passes --effort low..max); set the role's effort to low or unset it",
+                fatal=True,
+            )
+        return ClaudeCodeProvider(
+            model=model,
+            binary=entry.binary,
+            effort=effort,
+            transcript_sink=transcript_sink,
+            budget=budget,
+            context_tokens=models_registry.context_window(provider_name, model),
+        )
     extra_headers = tuple(sorted(entry.extra_headers.items()))
     extra_body = dict(entry.extra_body)
     extra_query = dict(entry.extra_query)
@@ -208,6 +225,14 @@ def _provider_from_entry(
         reasoning_effort=effort,
         credential=credential,
     )
+
+
+def close_provider(provider: Provider) -> None:
+    """Release what a provider holds: a `claude_code` session's child process.
+    The HTTP providers hold nothing and have no `close`."""
+    close = getattr(provider, "close", None)
+    if callable(close):
+        close()
 
 
 def role_temperature(cfg: Config, role: RoleName) -> float | None:
@@ -319,6 +344,9 @@ class InstrumentedProvider:
             )
         self._emit_budget()
         return resp
+
+    def close(self) -> None:
+        close_provider(self.inner)
 
     def _emit_budget(self) -> None:
         """Cumulative spend after a call, whether it returned or RAISED.

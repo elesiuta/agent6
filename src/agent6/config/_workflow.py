@@ -571,8 +571,9 @@ class BudgetConfig(BaseModel):
             "every claude_code round's rate-limit event) report the account's windows and "
             "credit state, and once a window is exhausted with credits present the run stops "
             "at its next boundary; a call already in flight completes. `true`: a chatgpt credit "
-            "balance's drop across the run is read as dollars and meters against `max_usd`. "
-            "Included-plan usage is unaffected."
+            "balance's drop across the run is read as dollars and meters against `max_usd`; a "
+            "claude_code run reads no credit balance, so the extra usage it spends is not "
+            "metered by `max_usd`. Included-plan usage is unaffected."
         ),
     )
 

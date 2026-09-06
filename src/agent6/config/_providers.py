@@ -371,7 +371,10 @@ class ClaudeCodeProviderEntry(BaseModel):
     binary: str = Field(
         default="claude",
         min_length=1,
-        description="The Claude Code executable: a name on PATH or an absolute path.",
+        description=(
+            "The Claude Code executable: a name on PATH or an absolute path. `claude_code`"
+            " format only."
+        ),
     )
 
 

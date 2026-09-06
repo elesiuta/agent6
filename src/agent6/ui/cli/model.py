@@ -19,6 +19,7 @@ from agent6.config.layer import load_effective, repo_config_path_for
 from agent6.config.write import ConfigLeafValue, set_config_table
 from agent6.models.choices import provider_model_choices
 from agent6.paths import global_config_path
+from agent6.providers.claude_code import login_status
 from agent6.secrets import load_oauth_tokens, resolve_api_key
 
 
@@ -135,7 +136,9 @@ def _warn_unusable_provider(config_path: Path | None, provider: str) -> None:
         )
         return
     if isinstance(entry, ClaudeCodeProviderEntry):
-        return  # no key: the binary carries the operator's own login
+        if (err := login_status(entry.binary)) is not None:
+            print(f"note: provider {provider!r}: {err}", file=sys.stderr)
+        return
     if entry.auth_style == "none" or entry.token_command:
         return
     if entry.api_format == "chatgpt":

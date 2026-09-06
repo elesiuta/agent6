@@ -43,6 +43,7 @@ ALLOWED = {
     "app/machine/_preflight.py",
     "app/machine_agent.py",
     "git_ops.py",
+    "providers/claude_code.py",
     "providers/token_command.py",
     "sessions/ipc.py",
     "sandbox/detect.py",

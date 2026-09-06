@@ -30,6 +30,7 @@ from agent6.app.providers import (
     build_review_seats,
     build_role_provider,
     build_summariser_provider,
+    close_provider,
     resolve_compaction_thresholds,
     resolve_decompose,
 )
@@ -128,6 +129,14 @@ class SessionProviders:
     provider: Provider
     summariser_provider: Provider | None
     review_seats: list[ReviewSeat]
+
+    def close(self) -> None:
+        """Release every provider's held process (a `claude_code` session)."""
+        close_provider(self.provider)
+        if self.summariser_provider is not None:
+            close_provider(self.summariser_provider)
+        for seat in self.review_seats:
+            close_provider(seat.provider)
 
 
 def build_session_providers(

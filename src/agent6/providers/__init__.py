@@ -4,11 +4,11 @@
 
 `AnthropicProvider` (Anthropic Messages), `OpenAIProvider` (any OpenAI
 Chat Completions-compatible endpoint: OpenAI, OpenRouter, Ollama, vLLM,
-llama.cpp), and `ChatGPTProvider` (the ChatGPT-subscription Codex
-backend) all satisfy the `Provider` Protocol and can serve ANY sub-agent
-role. Role-to-provider routing lives in `[models.<role>]` in your config;
-the providers themselves are interchangeable from the sub-agents' point
-of view.
+llama.cpp), `ChatGPTProvider` (the ChatGPT-subscription Codex backend), and
+`ClaudeCodeProvider` (the operator's installed Claude Code binary) all
+satisfy the `Provider` Protocol and can serve ANY sub-agent role.
+Role-to-provider routing lives in `[models.<role>]` in your config; the
+providers themselves are interchangeable from the sub-agents' point of view.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from typing import Any, Protocol, runtime_checkable
 from agent6.providers.anthropic import AnthropicProvider
 from agent6.providers.chatgpt import ChatGPTProvider
 from agent6.providers.chatgpt_oauth import ChatGPTCredential
+from agent6.providers.claude_code import ClaudeCodeProvider
 from agent6.providers.openai import OpenAIProvider
 from agent6.providers.token_command import CommandToken
 from agent6.providers.types import (
@@ -86,6 +87,7 @@ __all__ = [
     "AnthropicProvider",
     "ChatGPTCredential",
     "ChatGPTProvider",
+    "ClaudeCodeProvider",
     "CommandToken",
     "OpenAIProvider",
     "Provider",

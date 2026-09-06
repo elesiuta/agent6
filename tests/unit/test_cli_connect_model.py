@@ -573,6 +573,35 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
     assert "Data controls" in out and "never sends feedback" in out
 
 
+def test_connect_claude_writes_the_format_only_and_stores_no_secret(
+    iso: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`connect claude` checks the binary's sign-in, writes `api_format` and no
+    secret; a signed-out binary warns with the remedy; `--logout` refuses since
+    agent6 holds no Claude Code credential."""
+
+    def signed_in(binary: str) -> str | None:
+        return None
+
+    def signed_out(binary: str) -> str | None:
+        return "not signed in; run `claude auth login`"
+
+    monkeypatch.setattr("agent6.ui.cli.connect.login_status", signed_in)
+    assert main(["connect", "claude"]) == 0
+    gc = (tmp_path / "g" / "config.toml").read_text(encoding="utf-8")
+    assert "[providers.claude]" in gc and 'api_format = "claude_code"' in gc
+    assert not (tmp_path / "g" / "secrets.toml").exists()
+    assert "Claude Code (`claude` on PATH): signed in." in capsys.readouterr().out
+
+    monkeypatch.setattr("agent6.ui.cli.connect.login_status", signed_out)
+    assert main(["connect", "claude"]) == 0
+    err = capsys.readouterr().err
+    assert "WARNING: not signed in; run `claude auth login`" in err and "not usable yet" in err
+
+    assert main(["connect", "claude", "--logout"]) == 2
+    assert "claude auth logout" in capsys.readouterr().err
+
+
 def test_connect_chatgpt_state_mismatch_refuses(iso: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")

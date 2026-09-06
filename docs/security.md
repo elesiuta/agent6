@@ -66,6 +66,9 @@ The model sees the fixed tool set in `src/agent6/tools/schema.py`.
 - no `shell`, no `write_file`, no `eval`
 - adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md))
 
+Under `api_format = "claude_code"` the model runs inside the operator's installed Claude Code binary, unjailed, as the operator, with every built-in tool off (`--tools ""`).
+Its only reach into the machine is agent6's tools served over the sdk MCP tunnel, so the dispatcher, the jail, and the approval gates are unchanged; the binary holds the operator's Claude login exactly as an interactive `claude` does, and agent6 never reads it.
+
 ### 2. Sandbox
 
 Every tool call that allows the model to run arbitrary commands (`run_command`, `run_verify_command`, backgrounded commands, and MCP servers) runs in a jail at the effective isolation level.
@@ -191,6 +194,9 @@ The agent works within the environment it is given and cannot expand it:
 The agent process's own egress is unbounded.
 Everything below bounds a child of it.
 
+A `claude_code` provider's child dials `api.anthropic.com` and `claude.ai` (login refresh) from the agent process; telemetry, crash reporting, and update hosts are disabled by its environment.
+While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, reachable from a jailed command only under `hardened`, whose `/tmp` is the host's.
+
 **`fetch`** is the model's only direct egress.
 
 - One https URL, GET, no redirects followed, no credential, text only, 1 MiB.
@@ -305,6 +311,10 @@ Under `none` isolation nothing is enforced or refused.
     - token exchange and refreshes `POST` only to the authority's `/oauth/token`
     - tokens live in `secrets.toml` under the same `0600` and executes-nothing rules
     - agent6 never sends a rating or feedback on a response and has no rating surface: the backend may use rated turns for training, and that choice is never made on the operator's behalf
+- `agent6 connect claude` stores nothing: Claude Code's own login (`~/.claude/.credentials.json`, `~/.claude.json`) is never read, copied, or mounted by agent6
+    - the child's environment carries no `ANTHROPIC_*` or `CLAUDE*` variable from the operator shell, so a shell API key cannot override the subscription login; `CLAUDE_CONFIG_DIR` is the one passthrough
+    - `claude auth status --json` is parsed for `loggedIn` only; its body (email, org) is never printed or journaled
+    - the binary's initialize handshake carries the account block; agent6 keeps the email in memory only, to replace it with `<operator-email>` in the model's returned text, and records none of it
 
 ### 9. State and locks
 
@@ -363,6 +373,10 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `tools/mcp_client.py`: operator-configured `[mcp.servers.*]` commands.
   A server with a sandbox policy spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); a server the operator opted out is a plain subprocess.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
+- `providers/claude_code.py`: the `api_format = "claude_code"` provider runs the operator-installed Claude Code binary with fixed argv (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory); prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.
+  Curated environment, `--tools ""`, `--allowedTools mcp__agent6`, `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`; CLAUDE.md, auto-memory, and auto-compaction off by environment; `system/init` is audited so a tool outside `mcp__agent6__*` or an API-key source refuses the run.
+  Unjailed: it needs the operator's login under `$HOME` and its own egress, at the agent process's trust tier.
+  `claude auth status --json` runs the same way for the sign-in preflight.
 - `sessions/ipc.py`: `ps -p <pid> -o lstart=` on hosts without `/proc` (macOS), for the `worker.pid` start-time identity, over a pid agent6 recorded.
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer), so the side question keeps provider egress while the run is confined.
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
@@ -407,6 +421,8 @@ It catches prompt regressions; the structural defenses above confine a model tha
 - agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace
     - a jailed command can rewrite it; the next tool call runs the rewrite as you, outside the jail
     - install agent6 outside the tree (pipx, `uv tool`); agent6 warns at run entry on this shape
+- Claude Code (`api_format = "claude_code"`) appends the account email to every system prompt it sends and has no switch for it; the model can echo it, and agent6 scrubs it only from returned text, never from tool inputs (an edit carrying it lands as written)
+    - managed settings (`/etc/claude-code/managed-settings.json`) still apply inside the child; the `system/init` audit refuses the run when the tool list differs from what agent6 offered or `apiKeySource` is not `none`, and checks nothing else: a managed hook, or a managed MCP server exposing no tool, passes it
 - Side channels: no claim about timing, cache, or speculative side channels.
 - Supply chain: pin your install
     - runtime deps `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, `ruff`, `ty`; build dep `hatchling`; jail crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`, `serde_json`
