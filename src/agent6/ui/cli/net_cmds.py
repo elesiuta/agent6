@@ -115,7 +115,7 @@ def forward(
     # per-connection child, so a bind-first flow prints "forwarding" and then
     # drops every connection in silence when there is no network to join.
     if read_session_netns_pid(layout.session_dir) is None:
-        print(f"agent6 forward: {no_session_network_reason(layout)}", file=out)
+        print(f"REFUSING: {no_session_network_reason(layout)}", file=out)
         return 2
     # Same number on both sides unless told otherwise: that is what `kubectl
     # port-forward 3000`, `docker -p 3000:3000` and `ssh -L` all mean, and it is
@@ -129,7 +129,7 @@ def forward(
         listener.bind(("127.0.0.1", local_port))
     except OSError as exc:
         print(
-            f"agent6 forward: cannot listen on 127.0.0.1:{local_port}: {exc}."
+            f"ERROR: cannot listen on 127.0.0.1:{local_port}: {exc}."
             " Pick another with --local-port.",
             file=out,
         )
@@ -141,7 +141,7 @@ def forward(
     listener.settimeout(2.0)
     bound = listener.getsockname()[1]
     print(
-        f"agent6 forward: http://127.0.0.1:{bound} -> port {remote_port} inside"
+        f"[agent6] forwarding http://127.0.0.1:{bound} -> port {remote_port} inside"
         f" {layout.session_id}. Ctrl-C to stop.",
         file=out,
     )
@@ -152,7 +152,7 @@ def forward(
             except TimeoutError:
                 if read_session_netns_pid(layout.session_dir) is None:
                     print(
-                        f"agent6 forward: {layout.session_id} ended; nothing left to reach.",
+                        f"[agent6] {layout.session_id} ended; nothing left to reach.",
                         file=out,
                     )
                     return 0
@@ -231,14 +231,14 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     try:
         policy = jail_policy(cwd, cfg, isolation, argv, network=network, timeout_s=0.0)
     except JailUnavailableError as exc:
-        print(f"agent6 exec: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if policy.network == "session" and pid is None:
         # Config asked for the session network but this session has none to
         # join (the run ended, or never held one): refuse rather than open
         # /proc/None. The command joins a LIVE session's network only.
         print(
-            f"agent6 exec: {layout.session_id} has no live session network to join"
+            f"REFUSING: {layout.session_id} has no live session network to join"
             " (the run ended, or never held one). Pick a running session, or set"
             " [sandbox].network away from 'session' for this command.",
             file=sys.stderr,
@@ -257,7 +257,7 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     try:
         result = run_in_jail(policy, session_net=borrowed)
     except JailUnavailableError as exc:
-        print(f"agent6 exec: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     finally:
         if borrowed is not None:

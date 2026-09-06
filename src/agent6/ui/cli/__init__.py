@@ -370,7 +370,7 @@ def _resolve_target(verb: str, target: str) -> SessionLayout | None:
     try:
         layout = resolve_or_newest_layout(Path.cwd(), target)
     except SessionIdError as exc:
-        print(f"agent6 {verb}: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return None
     if layout is None:
         print_no_session_match(target, resolved_state_dir(Path.cwd()))
@@ -393,7 +393,7 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
         before, argv = rest[:split], tuple(rest[split + 1 :])
         if len(before) > 1:
             print(
-                f"agent6 exec: at most one session id before `--`, got {' '.join(before)!r}.",
+                f"ERROR: at most one session id before `--`, got {' '.join(before)!r}.",
                 file=sys.stderr,
             )
             return 2
@@ -401,7 +401,7 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
     else:
         argv = tuple(rest)
     if not argv:
-        print("agent6 exec: give a command (after `--` when naming a session).", file=sys.stderr)
+        print("ERROR: give a command (after `--` when naming a session).", file=sys.stderr)
         return 2
     layout = _resolve_target("exec", target)
     if layout is None:
@@ -409,7 +409,7 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
     try:
         cfg = load_effective(Path.cwd(), args.config).config
     except ConfigError as exc:
-        print(f"agent6 exec: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     return exec_in_session(layout, cfg, Path.cwd(), argv)
 
@@ -434,7 +434,7 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
                 if read_session_netns_pid(layout.session_dir) is not None
                 else no_session_network_reason(layout)
             )
-            print(f"agent6 forward: {reason}", file=sys.stderr)
+            print(f"REFUSING: {reason}", file=sys.stderr)
             return 1
         print(f"{layout.session_id} is listening on: {', '.join(str(p) for p in ports)}")
         return 0
