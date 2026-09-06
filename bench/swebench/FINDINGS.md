@@ -1157,3 +1157,45 @@ On the 2026_03 window the board reads Junie 61.6 +/- 0.64, Codex 60.4
 +/- 1.37, Claude Code 59.6 +/- 1.98 (mean of 5); one run of 63/110 is
 within one SD of Codex and Claude Code and below Junie. No claim beyond
 that: a mean-of-5 (~60 points) is what the board reports.
+
+### The layer notice: a null on its own firing set (2026-08-31)
+
+Arm (branch pilot/layer-notice, wheel from its tip): every run end
+(finish_session, the settled and silent ends) is handed back once when
+a changed non-test module has an in-repo importer the task names and
+the diff leaves untouched; the notice lists the importers; importers
+come from parsed import statements (a package `__init__` counts only
+when imported as itself, a bare `__init__.py` names nothing). Same
+prompt v2, fixed staging harness, single attempt, conc 4.
+
+Smokes on exstruct-113: smoke 1 ended `verify_settled` before the
+finish-only hook (the end gate then gained the notice); smoke 2 fired at
+iter 17 with every submodule of the changed package listed (the package
+rule and the `__init__.py` exclusion followed); smoke 3 finished with an
+empty patch (nothing to notice).
+
+Pilot, 12 legs (7 unresolved ids from the offline firing set, 5
+resolved controls), 1.3 points:
+
+| id | arm | fired | edits after | end | result |
+|---|---|---|---|---|---|
+| exstruct-113 | treatment | no | | finish_session | unresolved |
+| hermes-webui-2056 | treatment | no | | gate_stale | unresolved |
+| hats-648 | treatment | no | | finish_session | unresolved |
+| hermes-webui-1818 | treatment | yes (streaming.py) | 0 | silent_finish | unresolved |
+| huggingface_hub-4056 | treatment | no | | finish_session | unresolved |
+| pandas-64796 | treatment | yes (datetimes.py, series.py) | 0 | silent_finish | unresolved |
+| mtplx-21 | treatment | no | | gate_stale | unresolved |
+| rapid-mlx-227 | control | no | | gate_stale | resolved |
+| tox-3904 | control | no | | verify_settled | unresolved |
+| rapid-mlx-289 | control | no | | silent_finish | resolved |
+| rapid-mlx-228 | control | no | | gate_stale | resolved |
+| beever-atlas-102 | control | no | | gate_stale | resolved |
+
+Firings 2/12 (the decision bar was 5/15), conversions 0/7, control
+losses 1/5 (an unfired leg). In both fired legs the model ended the run
+without editing the named file. The trigger is too tight in the field
+(the offline dry run's path-named approximation over-counted) and the
+notice did not move the model where it fired; the arm is parked, not
+shipped. Spend today: 1.0 (batch-10 rerun) + 0.2 (staging smoke) + 13
+(full-110) + 0.3 (layer smokes) + 1.3 (pilot) = 15.8 of 25 points.
