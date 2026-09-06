@@ -32,7 +32,7 @@ def test_the_end_of_run_task_tree_renders_for_a_plan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """It rebuilt the layout from the dir NAME, so a plan's graph was read from
-    runs/ -- and the whole block sits under `suppress(Exception)`, so it failed
+    runs/, and the whole block sat under `suppress(Exception)`, so it failed
     by printing nothing at all."""
     from agent6.ui.cli.sessions_show import _print_task_tree  # pyright: ignore[reportPrivateUsage]
 
@@ -91,3 +91,42 @@ def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
         "these assume the runs/ bucket; pass subdir=session_bucket(<mode>),"
         f" or add the file to `allowed` with the reason: {offenders}"
     )
+
+
+def test_a_task_tree_render_failure_is_not_an_empty_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole block sat under `suppress(Exception)`: a failure while
+    rendering printed nothing, said nothing on stderr and exited 0, while
+    `sessions graph` over the same graph reported it. A failure reaches the
+    CLI's reporter."""
+    from agent6.ui.cli.sessions_show import _print_task_tree  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.chdir(tmp_path)
+    session = bucket_dir(tmp_path / "state", "plans") / "brave-oak-BBBBBB"
+    layout = SessionLayout(
+        state_dir=tmp_path / "state", session_id="brave-oak-BBBBBB", subdir="plans"
+    )
+    layout.ensure()
+    nodes: dict[str, TaskNode] = {}
+    for node_id, title, parent in (
+        ("01AAAAAAAAAAAAAAAAAAAAAAAA", "root task", None),
+        ("01BBBBBBBBBBBBBBBBBBBBBBBB", "step one", "01AAAAAAAAAAAAAAAAAAAAAAAA"),
+    ):
+        node = TaskNode(
+            id=node_id,
+            title=title,
+            parent_id=parent,
+            created_at=_TS,
+            updated_at=_TS,
+            created_by="planner",
+        )
+        nodes[node_id] = node
+        write_node(layout, nodes, node)
+
+    def broken(*_a: object, **_k: object) -> list[str]:
+        raise RuntimeError("a render defect")
+
+    monkeypatch.setattr("agent6.ui.cli._task_tree.task_tree_lines", broken)
+    with pytest.raises(RuntimeError, match="a render defect"):
+        _print_task_tree(session)

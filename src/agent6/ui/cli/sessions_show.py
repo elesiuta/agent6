@@ -352,13 +352,12 @@ def _print_listening_ports(session_dir: Path) -> None:
     This is where someone asks "what is it doing", so it is where the answer
     belongs, with the command that opens it.
     """
-    with contextlib.suppress(Exception):
-        ports = listening_ports(session_dir)
-        if not ports:
-            return
-        listed = ", ".join(str(p) for p in ports)
-        print(f"serving:    {listed} (inside the run)")
-        print(f"            open one: agent6 forward {session_dir.name} {ports[0]}")
+    ports = listening_ports(session_dir)
+    if not ports:
+        return
+    listed = ", ".join(str(p) for p in ports)
+    print(f"serving:    {listed} (inside the run)")
+    print(f"            open one: agent6 forward {session_dir.name} {ports[0]}")
 
 
 def _print_task_tree(session_dir: Path) -> None:
@@ -369,13 +368,12 @@ def _print_task_tree(session_dir: Path) -> None:
     from agent6.sessions.layout import layout_of  # noqa: PLC0415
     from agent6.ui.cli._task_tree import task_tree_lines  # noqa: PLC0415
 
-    with contextlib.suppress(Exception):
-        layout = layout_of(session_dir)
-        nodes = load_graph(layout)
-        if len(nodes) <= 1:
-            return
-        lines = task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
-        if lines:
-            print("\nplan:")
-            for line in lines:
-                print(f"  {line}")
+    layout = layout_of(session_dir)
+    nodes = load_graph(layout)
+    if len(nodes) <= 1:
+        return
+    lines = task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
+    if lines:
+        print("\nplan:")
+        for line in lines:
+            print(f"  {line}")
