@@ -67,6 +67,7 @@ from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.ipc import (
     clear_away_mode,
     clear_pending_answers,
+    clear_session_grants,
     clear_worker_pid,
     effective_away,
     submit_steer,
@@ -521,8 +522,9 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # Needs the config: "approve everything while away" is a grant per
         # scope, and the scopes in play include one per configured MCP server.
-        if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
+        if sys.stdin.isatty():  # a foreground start clears a stale detach answer
             clear_away_mode(layout.session_dir)
+            clear_session_grants(layout.session_dir)
         else:
             # A front-end (web/TUI) or a detach spawns resume with no terminal; honor
             # AGENT6_DETACHED_AWAY so ask_user/approvals WAIT for a viewer instead of

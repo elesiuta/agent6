@@ -480,9 +480,10 @@ def clear_question_answers(session_dir: Path, question_id: str) -> None:
 # suffix and two servers never collide).
 #
 # Markers are NOT `*.answer`s, so clear_pending_answers leaves them in place:
-# the choice persists across this run's resumes (a detached run then keeps going
-# without a front-end to prompt). They live in the run's approvals dir, so other
-# runs are unaffected and a fresh run prompts again.
+# the choice persists across a detached run's resumes (it keeps going without a
+# front-end to prompt), and an interactive start drops the allow markers with
+# the away-mode (`clear_session_grants`). They live in the run's approvals dir,
+# so other runs are unaffected and a fresh run prompts again.
 COMMAND_SCOPE = "command"
 MCP_SCOPE_PREFIX = "mcp."
 SESSION_ALLOW_FILE = "session.allow"
@@ -599,6 +600,17 @@ def clear_away_mode(session_dir: Path) -> None:
     prior detach must not keep auto-denying/waiting."""
     with contextlib.suppress(FileNotFoundError):
         (approvals_path(session_dir) / AWAY_MODE_FILE).unlink()
+
+
+def clear_session_grants(session_dir: Path) -> None:
+    """Drop the per-scope approve-all grants beside the away-mode: the detach's
+    three answers are one question, so they expire together when the operator
+    is back at a terminal. `--auto-approve` is the grant that stays."""
+    approvals = approvals_path(session_dir)
+    if approvals.is_dir():
+        for marker in approvals.glob(f"{SESSION_ALLOW_FILE}.*"):
+            with contextlib.suppress(FileNotFoundError):
+                marker.unlink()
 
 
 def read_answer(

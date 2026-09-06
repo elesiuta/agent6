@@ -77,6 +77,7 @@ from agent6.sessions.ipc import (
     away_mode,
     clear_away_mode,
     clear_pending_answers,
+    clear_session_grants,
     clear_worker_pid,
     submit_steer,
     write_worker_pid,
@@ -284,8 +285,9 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         clear_pending_answers(layout.session_dir)
         if initial_steer.strip():
             submit_steer(layout.session_dir, initial_steer.strip())
-        if sys.stdin.isatty():  # a foreground start clears a stale detach away-mode
+        if sys.stdin.isatty():  # a foreground start clears a stale detach answer
             clear_away_mode(layout.session_dir)
+            clear_session_grants(layout.session_dir)
         else:
             apply_spawned_away_default(layout.session_dir, approval_scopes(cfg))
         # A visible branch named after the run id is 1:1 with the run (find it

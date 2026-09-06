@@ -164,3 +164,29 @@ def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: Path) -> Non
         d.dispatch("run_command", {"argv": ["true"]})
     with pytest.raises(Exception, match="asked to stop while awaiting approval"):
         d.dispatch("run_verify_command", {})
+
+
+def test_an_interactive_start_drops_the_detach_grants_with_the_away_mode(tmp_path: Path) -> None:
+    """A detach's approve-all answer is one `session.allow.<scope>` marker per
+    scope, which nothing cleared: a run detached with approve-all kept
+    auto-approving every command with the operator back and watching, while
+    its deny and wait siblings were cleared at an interactive start."""
+    from agent6.sessions.ipc import (
+        clear_session_grants,
+        session_allow_set,
+        session_deny_set,
+        set_session_allow,
+        set_session_deny,
+    )
+
+    set_session_allow(tmp_path, "command")
+    set_session_allow(tmp_path, "mcp.docs")
+    set_session_deny(tmp_path, "mcp.web")
+    clear_session_grants(tmp_path)
+    assert not session_allow_set(tmp_path, "command") and not session_allow_set(
+        tmp_path, "mcp.docs"
+    )
+    assert session_deny_set(
+        tmp_path, "mcp.web"
+    )  # a denial is the operator's own answer, not a detach grant
+    clear_session_grants(tmp_path / "never-made")  # no approvals dir: nothing to drop
