@@ -319,6 +319,12 @@ def dump_json(model: BaseModel, *, indent: int | None = None) -> str:
         return raw.encode("utf-8", "replace").decode("utf-8")
 
 
+# How far back a torn-tail heal looks for the last committed newline before it
+# falls back to reading the file. A journal line is one event; a tool fact
+# carrying a command's output is the long case.
+_TAIL_WINDOW = 1 << 20
+
+
 class MachineJournal:
     """Append-only event log plus snapshots for one machine instance."""
 
@@ -368,9 +374,26 @@ class MachineJournal:
             fh.seek(-1, os.SEEK_END)
             if fh.read(1) == b"\n":
                 return
-        raw = self.journal_path.read_bytes()
-        last_nl = raw.rfind(b"\n")
-        self.journal_path.write_bytes(raw[: last_nl + 1])
+        # Truncate in place: reading the whole journal and writing it back
+        # opens a window where a kill (or a concurrent reader) sees an EMPTY
+        # journal -- the file every machine's correctness rests on. `truncate`
+        # leaves it at either the old length or the new one.
+        with self.journal_path.open("rb") as fh:
+            size = fh.seek(0, os.SEEK_END)
+            window = min(size, _TAIL_WINDOW)
+            fh.seek(size - window)
+            tail = fh.read(window)
+        cut = tail.rfind(b"\n")
+        if cut < 0:
+            # No newline in the tail window: fall back to the whole file, which
+            # is the only way to find the last committed line.
+            cut = self.journal_path.read_bytes().rfind(b"\n")
+            if cut < 0:
+                os.truncate(self.journal_path, 0)  # one torn line, nothing committed
+                return
+            os.truncate(self.journal_path, cut + 1)
+            return
+        os.truncate(self.journal_path, size - window + cut + 1)
 
     def read(self) -> list[Any]:
         """Parse and validate every journal line in order."""

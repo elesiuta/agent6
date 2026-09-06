@@ -536,3 +536,36 @@ def test_append_and_snapshot_survive_a_lone_surrogate(tmp_path: Path) -> None:
     # The snapshot writer takes the same value on every subsequent step.
     j.write_snapshot(Snapshot(seq=0, state="scan", blackboard={"note": poison}))
     assert j.latest_snapshot() is not None
+
+
+def test_healing_a_torn_tail_never_empties_the_journal(tmp_path: Path) -> None:
+    """The heal read the whole journal and wrote it back, so a kill in that
+    window (or a concurrent reader, and every status surface reads without a
+    lock) saw an EMPTY journal -- the file a machine's correctness rests on.
+    It truncates in place, which leaves the old length or the new one."""
+    import json
+    import os
+
+    inst = tmp_path / "inst"
+    inst.mkdir()
+    journal = inst / "journal.jsonl"
+    committed = (
+        json.dumps({"type": "machine.begin", "ts": "t", "machine": "m", "version": 1}) + "\n"
+    ) * 3
+    journal.write_text(committed + '{"type": "step", "ts": "t"', encoding="utf-8")
+    opened = os.open(journal, os.O_RDONLY)  # a reader holding the file open
+    try:
+        MachineJournal(inst)._heal_torn_tail()  # pyright: ignore[reportPrivateUsage]
+    finally:
+        os.close(opened)
+
+    assert journal.read_text(encoding="utf-8") == committed
+    assert len(MachineJournal(inst).read()) == 3
+    # Structural, because the window it closes is a race no unit test observes
+    # deterministically: a whole-file rewrite (`write_bytes`, O_TRUNC) is what
+    # let a kill or a lockless reader see an empty journal.
+    import inspect
+
+    body = inspect.getsource(MachineJournal._heal_torn_tail)  # pyright: ignore[reportPrivateUsage]
+    assert "write_bytes" not in body
+    assert "os.truncate" in body
