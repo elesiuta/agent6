@@ -98,6 +98,7 @@ def inconclusive_note(result: PanelResult) -> str:
 # Capture BOTH the old-side (-A,B) and new-side (+C,D) line numbers so deletions
 # ground against the pre-image path too.
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+_GIT_HDR_RE = re.compile(r"^diff --git a/(.*?) b/(.*)$")
 
 
 def _unquote_git_path(p: str) -> str:
@@ -124,13 +125,22 @@ def diff_touched_ranges(diff: str) -> dict[str, list[tuple[int, int]]]:
     code at its OLD line number still grounds whether the whole file was deleted
     (post-image `/dev/null`) or lines were removed from a kept file. A `+++ `
     line only counts as a header when it follows a `--- ` (an added line whose
-    content happens to start with `++ ` is not mistaken for one).
+    content happens to start with `++ ` is not mistaken for one). A file the
+    diff touches without hunks (binary, a pure rename, a mode change) is
+    recorded with no ranges, so a path-only citation of it grounds and a line
+    citation does not.
     """
     ranges: dict[str, list[tuple[int, int]]] = {}
     newpath = oldpath = ""
     prev_minus = False
     lines = diff.splitlines()
     for i, raw in enumerate(lines):
+        if g := _GIT_HDR_RE.match(raw):
+            ranges.setdefault(_unquote_git_path(g.group(1)), [])
+            ranges.setdefault(_unquote_git_path(g.group(2)), [])
+            oldpath = newpath = ""
+            prev_minus = False
+            continue
         # A real "--- " file header is always immediately followed by a "+++ "
         # header. Requiring that lookahead stops a DELETED line whose own text
         # begins with "-- " -- rendered "--- ..." in the diff -- from being

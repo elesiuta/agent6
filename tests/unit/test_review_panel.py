@@ -549,3 +549,27 @@ def test_review_degrades_on_an_unreadable_agents_md(
         agents.chmod(0o600)
     assert rc == 0
     assert seen["agents_md"] == ""  # reviewed without the unreadable context
+
+
+def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
+    """A binary change, a pure rename and a mode flip carry no hunks, so the
+    file was absent from the map: a path-only citation of it was ungrounded
+    and its block downgraded to a warning. The path is recorded with no
+    ranges: grounded by path, not by line."""
+    diff = (
+        "diff --git a/img.png b/img.png\n"
+        "index 1111111..2222222 100644\n"
+        "Binary files a/img.png and b/img.png differ\n"
+        "diff --git a/old.py b/new.py\n"
+        "similarity index 100%\n"
+        "rename from old.py\n"
+        "rename to new.py\n"
+        "diff --git a/run.sh b/run.sh\n"
+        "old mode 100644\n"
+        "new mode 100755\n"
+    )
+    ranges = diff_touched_ranges(diff)
+    assert ranges == {"img.png": [], "old.py": [], "new.py": [], "run.sh": []}
+    assert is_grounded("img.png", ranges) and is_grounded("new.py", ranges)
+    assert not is_grounded("img.png:3", ranges)
+
