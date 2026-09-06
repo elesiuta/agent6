@@ -128,69 +128,67 @@ def forward(
     # be the same syntax with a different meaning, which is the surprising kind
     # of different.
     local_port = local_port or remote_port
-    listener = socket.socket()
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        listener.bind(("127.0.0.1", local_port))
-    except OSError as exc:
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            listener.bind(("127.0.0.1", local_port))
+        except OSError as exc:
+            print(
+                f"ERROR: cannot listen on 127.0.0.1:{local_port}: {exc}."
+                " Pick another with --local-port.",
+                file=out,
+            )
+            return 2
+        listener.listen(16)
+        # Wake up between connections so the loop can notice the run ending: a
+        # bridge that outlives its session accepts connections and drops them,
+        # which looks exactly like a broken server on the other side.
+        listener.settimeout(2.0)
+        bound = listener.getsockname()[1]
         print(
-            f"ERROR: cannot listen on 127.0.0.1:{local_port}: {exc}."
-            " Pick another with --local-port.",
+            f"[agent6] forwarding http://127.0.0.1:{bound} -> port {remote_port} inside"
+            f" {layout.session_id}. Ctrl-C to stop.",
             file=out,
         )
-        return 2
-    listener.listen(16)
-    # Wake up between connections so the loop can notice the run ending: a
-    # bridge that outlives its session accepts connections and drops them,
-    # which looks exactly like a broken server on the other side.
-    listener.settimeout(2.0)
-    bound = listener.getsockname()[1]
-    print(
-        f"[agent6] forwarding http://127.0.0.1:{bound} -> port {remote_port} inside"
-        f" {layout.session_id}. Ctrl-C to stop.",
-        file=out,
-    )
-    try:
-        while True:
-            with contextlib.suppress(ChildProcessError):  # reap finished bridges
-                while os.waitpid(-1, os.WNOHANG)[0]:
-                    pass
-            try:
-                conn, _ = listener.accept()
-            except TimeoutError:
-                if read_session_netns_pid(layout.session_dir) is None:
-                    print(
-                        f"[agent6] {layout.session_id} ended; nothing left to reach.",
-                        file=out,
-                    )
-                    return 0
-                continue
-            try:
-                child = os.fork()
-            except OSError as exc:
-                # A process cap or memory pressure on this machine, not a
-                # broken bridge: drop the one connection, keep accepting.
-                print(f"[agent6] could not fork a bridge for a connection: {exc}", file=out)
-                conn.close()
-                continue
-            if child == 0:  # pragma: no cover - one process per connection
-                listener.close()
-                code = 0
+        try:
+            while True:
+                with contextlib.suppress(ChildProcessError):  # reap finished bridges
+                    while os.waitpid(-1, os.WNOHANG)[0]:
+                        pass
                 try:
-                    join_session_network(layout.session_dir)
-                    inside = socket.create_connection(("127.0.0.1", remote_port), timeout=10)
-                    inside.settimeout(None)  # the 10 s bounds the connect, not the bridge
-                    _pump(conn, inside)
-                except (SessionNetworkUnavailable, OSError):
-                    code = 1
-                finally:
+                    conn, _ = listener.accept()
+                except TimeoutError:
+                    if read_session_netns_pid(layout.session_dir) is None:
+                        print(
+                            f"[agent6] {layout.session_id} ended; nothing left to reach.",
+                            file=out,
+                        )
+                        return 0
+                    continue
+                try:
+                    child = os.fork()
+                except OSError as exc:
+                    # A process cap or memory pressure on this machine, not a
+                    # broken bridge: drop the one connection, keep accepting.
+                    print(f"[agent6] could not fork a bridge for a connection: {exc}", file=out)
                     conn.close()
-                os._exit(code)
-            conn.close()  # the child owns it now
-    except KeyboardInterrupt:
-        return 0
-    finally:
-        listener.close()
+                    continue
+                if child == 0:  # pragma: no cover - one process per connection
+                    listener.close()
+                    code = 0
+                    try:
+                        join_session_network(layout.session_dir)
+                        inside = socket.create_connection(("127.0.0.1", remote_port), timeout=10)
+                        inside.settimeout(None)  # the 10 s bounds the connect, not the bridge
+                        _pump(conn, inside)
+                    except (SessionNetworkUnavailable, OSError):
+                        code = 1
+                    finally:
+                        conn.close()
+                    os._exit(code)
+                conn.close()  # the child owns it now
+        except KeyboardInterrupt:
+            return 0
 
 
 def _stamped_policy(layout: SessionLayout) -> tuple[str, NetworkMode | None] | None:

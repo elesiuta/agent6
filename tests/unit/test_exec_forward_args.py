@@ -531,3 +531,34 @@ def test_forward_drops_a_connection_it_cannot_fork_for(
     assert forks == 1
     assert rc == 0
     assert "could not fork" in out.getvalue()
+
+
+def test_forward_closes_its_listener_when_the_bind_fails(tmp_path: Path) -> None:
+    """A taken local port returned from the bind-failure branch before the
+    try/finally that closed the listener, leaving the socket to the garbage
+    collector (ResourceWarning: unclosed socket)."""
+    import gc
+    import io
+    import socket
+    import warnings
+
+    from agent6.sessions.ipc import write_session_netns_pid
+    from agent6.ui.cli import net_cmds
+
+    layout = SessionLayout(state_dir=tmp_path, session_id="busy-port-AAAAAA")
+    layout.ensure()
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    write_session_netns_pid(layout.session_dir, os.getpid())
+    out = io.StringIO()
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen(1)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            assert net_cmds.forward(layout, 9999, busy.getsockname()[1], out=out) == 2
+            gc.collect()
+    assert "Address already in use" in out.getvalue()
+    assert [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)] == []
