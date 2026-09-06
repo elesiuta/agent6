@@ -183,6 +183,24 @@ def test_argv_is_operator_config_only_and_the_private_dir_is_removed_on_close(
     assert not Path(spawn["cwd"]).exists()
 
 
+def test_the_child_is_kept_out_of_the_escapee_sweep(tmp_path: Path) -> None:
+    """Spawned in its own session and never registered, the persistent child
+    matched the escapee test exactly, so an unrelated `stop_background` sweep
+    SIGKILLed it mid-run."""
+    from agent6.sandbox import jail as jail_mod
+
+    binary, cap = _install(tmp_path, {"turns": [[_round(text="hi")]]})
+    provider = _provider(binary)
+    provider.call(
+        system="s",
+        messages=[{"role": "user", "content": [{"type": "text", "text": "t"}]}],
+        tools=TOOLS,
+    )
+    pid = _spawns(cap)[0]["pid"]
+    assert pid in jail_mod._own_detached  # pyright: ignore[reportPrivateUsage]
+    provider.close()
+
+
 def test_child_env_is_curated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "ANTHROPIC_API_KEY",

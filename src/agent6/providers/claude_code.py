@@ -84,7 +84,7 @@ from agent6.providers.types import (
     ToolDefinition,
     TranscriptRecorder,
 )
-from agent6.sandbox.jail import die_with_parent
+from agent6.sandbox.jail import die_with_parent, keep_out_of_the_sweep
 
 EMAIL_PLACEHOLDER = "<operator-email>"
 _MAX_LINE_BYTES = 8 * 1024 * 1024
@@ -542,6 +542,9 @@ class ClaudeCodeProvider:
         except OSError as exc:
             shutil.rmtree(private_dir, ignore_errors=True)
             raise ProviderError(f"cannot start {self.binary!r}: {exc}") from exc
+        # In its own session and ours on purpose: unregistered, it is exactly
+        # what the escapee sweep kills at the next background stop.
+        keep_out_of_the_sweep(proc.pid)
         assert proc.stderr is not None
         tail: list[bytes] = []
         drain = threading.Thread(
