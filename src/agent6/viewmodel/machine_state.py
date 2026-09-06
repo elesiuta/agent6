@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from agent6.machine import MachineError, load_machine
+from agent6.machine import MachineError, MachineResult, load_machine
 from agent6.machine.journal import (
     AgentFact,
     AttemptSpend,
@@ -73,21 +73,6 @@ class TransitionView:
 
 
 @dataclass(frozen=True, slots=True)
-class MachineEndView:
-    """The terminal/failed end the journal recorded, if any: a render projection
-    of the journal's `MachineEnd`, dropping its `type`/`ts` wire fields."""
-
-    status: str
-    reason: str
-    state: str
-    transitions: int
-
-    @classmethod
-    def from_end(cls, end: MachineEnd) -> MachineEndView:
-        return cls(end.status, end.reason, end.state, end.transitions)
-
-
-@dataclass(frozen=True, slots=True)
 class NotificationView:
     """One journaled `machine.notify` (a state's `notify` message), in order."""
 
@@ -105,7 +90,7 @@ class MachineState:
     current: str  # where the machine is, or is about to run
     states: tuple[MachineStateView, ...]  # spec order, position-flagged
     transitions: tuple[TransitionView, ...]  # the path taken, in order
-    ended: MachineEndView | None
+    ended: MachineResult | None
     notifications: tuple[NotificationView, ...]  # recent machine.notify, oldest first
 
 
@@ -153,7 +138,7 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
         TransitionView(seq=s.seq, state=s.state, label=s.label, goto=s.goto, detail=_fact_detail(s))
         for s in steps
     )
-    ended = MachineEndView.from_end(end) if end is not None else None
+    ended = MachineResult.from_end(end) if end is not None else None
     notes = [e for e in events if isinstance(e, MachineNotify)]
     notifications = tuple(
         NotificationView(ts=n.ts, state=n.state, message=n.message, level=n.level)
@@ -401,7 +386,7 @@ MachineVerb = Literal["stop", "poke", "steer", "answer"]
 def verb_refusals(
     name: str,
     *,
-    ended: MachineEndView | None,
+    ended: MachineResult | None,
     alive: bool,
     waiting: bool,
 ) -> dict[MachineVerb, str]:
@@ -457,11 +442,7 @@ def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str
     end = events[-1] if events and isinstance(events[-1], MachineEnd) else None
     return verb_refusals(
         name,
-        ended=MachineEndView(
-            status=end.status, reason=end.reason, state=end.state, transitions=end.transitions
-        )
-        if end is not None
-        else None,
+        ended=MachineResult.from_end(end) if end is not None else None,
         alive=worker_is_alive(machine_dir),
         waiting=_in_wait_state(machine_dir, events),
     )

@@ -50,7 +50,6 @@ from agent6.viewmodel.listing import (
 )
 from agent6.viewmodel.log_line import format_log_line
 from agent6.viewmodel.machine_state import (
-    MachineEndView,
     MachineState,
     MachineStateView,
     MachineSummary,
@@ -121,7 +120,6 @@ __all__ = [
     "CommitStep",
     "LogScan",
     "LogTail",
-    "MachineEndView",
     "MachineState",
     "MachineStateView",
     "MachineSummary",
