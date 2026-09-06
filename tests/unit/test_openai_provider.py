@@ -567,3 +567,35 @@ def test_401_without_credential_is_not_retried() -> None:
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert calls["n"] == 1
+
+
+def test_an_upstream_error_completion_is_retryable_not_a_quiet_turn() -> None:
+    """Observed from OpenRouter: a 200 whose choice carries
+    `finish_reason: "error"`, a null content and nothing else, after the model
+    spent its whole budget in the reasoning channel. Returned as a finished
+    turn it spends a went-quiet nudge on an upstream failure, and abstains a
+    review seat as if the model had answered."""
+    from agent6.providers._openai_parse import parse_response
+
+    failed = {
+        "choices": [
+            {"finish_reason": "error", "message": {"content": None, "reasoning": "thinking"}}
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 16801},
+    }
+    with pytest.raises(ProviderError, match="finish_reason='error'"):
+        parse_response(failed)
+
+    # A partial answer under the same finish_reason is still handed back.
+    partial = {
+        "choices": [{"finish_reason": "error", "message": {"content": "half an answer"}}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+    }
+    assert parse_response(partial).text == "half an answer"
+
+    # And an ordinary empty turn stays the loop's went-quiet case.
+    quiet = {
+        "choices": [{"finish_reason": "stop", "message": {"content": ""}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    assert parse_response(quiet).text == ""
