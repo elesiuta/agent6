@@ -1317,3 +1317,28 @@ def test_a_steered_ordinary_run_keeps_its_task(
     assert _cmd_resume(None, "sunny-otter-AAAA11", force=False, steer="and add tests") == 2
 
     assert json.loads(src.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
+
+
+def test_a_fork_records_the_untracked_files_of_its_own_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork's worktree is a fresh checkout of the checkpoint sha, so the
+    source's untracked paths are not in it. Inheriting that set described the
+    wrong checkout and left a file dropped into the fork's worktree unexcluded,
+    so its first commit swept the operator's file in."""
+    from agent6.sessions.layout import read_untracked_at_start
+
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    (repo / "notes.txt").write_text("the operator's own file\n", encoding="utf-8")
+    (src.session_dir / "untracked-at-start").write_bytes(b"notes.txt")
+
+    assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
+
+    dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    worktree = Path(json.loads(dst.manifest_path.read_text(encoding="utf-8"))["worktree"])
+    assert not (worktree / "notes.txt").exists(), "a fresh checkout has none of it"
+    assert read_untracked_at_start(dst.session_dir) == frozenset()

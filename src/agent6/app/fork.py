@@ -70,6 +70,7 @@ from agent6.git_ops import (
     set_ref,
     sync_worktree,
     tree_diff_paths,
+    untracked_paths,
     worktree_tree,
 )
 from agent6.graph.replay import graph_at_version, journal_prefix
@@ -849,9 +850,13 @@ def _materialize_fork(
     atomic_write(dst.session_dir / "loop_state.json", blob)
     atomic_write(dst.checkpoint_path(0), blob)
     _copy_dag(src, dst, graph_version=plan.graph_version)
-    # The same operator files as the source: the fork leaves out of its
-    # commits what the source did.
-    write_untracked_at_start(dst.session_dir, read_untracked_at_start(src.session_dir))
+    # The operator's files in the checkout THIS run works in, observed the way
+    # `agent6 run` observes them. Inherited from the source, the set described
+    # a different checkout: a fork's own worktree is a fresh checkout of the
+    # sha, where the source's untracked paths do not exist and a file the
+    # operator drops in before the first leg was swept into its first commit.
+    fork_checkout = checkout.worktree if checkout is not None else cwd
+    write_untracked_at_start(dst.session_dir, untracked_paths(fork_checkout))
 
     run_branch = run_branch_for(dst.session_id) if plan.cfg.git.branch_per_run else None
     write_session_manifest(
