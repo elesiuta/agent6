@@ -31,9 +31,11 @@ def _sub(
     *,
     help: str,
 ) -> argparse.ArgumentParser:
-    """`add_parser` with *help* mirrored as the description, so a leaf
-    `--help` opens with the same summary the parent's command list shows."""
-    return subparsers.add_parser(name, help=help, description=help)
+    """`add_parser` with *help* as the leaf's own description; the parent's
+    command list shows its first sentence, so `agent6 --help` reads as a list
+    of commands and the detail waits in `agent6 <command> --help`."""
+    summary, _, rest = help.partition(". ")
+    return subparsers.add_parser(name, help=summary + "." if rest else summary, description=help)
 
 
 def _add_config_flag(parser: argparse.ArgumentParser) -> None:

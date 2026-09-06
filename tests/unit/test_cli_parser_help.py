@@ -48,11 +48,31 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
 
 
 def test_every_subparser_has_a_description() -> None:
-    # Leaf --help used to open with no summary at all; each add_parser now
-    # mirrors its help string as the description.
+    # Leaf --help used to open with no summary at all; each add_parser carries
+    # its whole help string as the description.
     parser = build_parser()
     missing = [name for name, sub in _subparsers(parser) if not sub.description]
     assert missing == []
+
+
+def test_the_command_list_shows_one_sentence_per_command() -> None:
+    """`agent6 --help` is a list of commands: each entry is its command's first
+    sentence, and the rest waits in `agent6 <command> --help`."""
+    parser = build_parser()
+    action = next(
+        a
+        for a in parser._actions  # pyright: ignore[reportPrivateUsage]
+        if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
+    )
+    listed = {
+        c.dest: c.help or ""
+        for c in action._choices_actions  # pyright: ignore[reportPrivateUsage]
+    }
+    assert listed, "no commands listed"
+    for name, entry in listed.items():
+        description = action.choices[name].description or ""
+        assert ". " not in entry, f"{name} lists more than its first sentence"
+        assert description.startswith(entry.rstrip(".")), name
 
 
 def test_bare_parent_command_error_names_subcommand_not_dest(
