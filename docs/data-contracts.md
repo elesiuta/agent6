@@ -122,7 +122,7 @@ Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommi
 
 - **Written by:** viewmodel/events
 - **Read by:** ui/cli/{_console_view, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, log_line, state, transcript}
-- **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (4 test files exercise it)
+- **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (5 test files exercise it)
 
 ## MachineSpec
 
@@ -200,4 +200,4 @@ Pure event-fold: list[event_dict] -> SessionState.
 
 - **Written by:** viewmodel/{machine_state, state}
 - **Read by:** ui/cli/{_interact, _repl, _steer_menu, _task_tree, answer_cmd}, ui/tui/{app, conversation, dashboard, logview, machines, modals, prompts}, ui/web/{_sse, actions, model}, viewmodel/{__init__, snapshot}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (8 test files exercise it)
