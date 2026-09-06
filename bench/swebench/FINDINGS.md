@@ -926,3 +926,21 @@ Converging lever set (all classes now point at the same two):
 Pilot design follows: arm 1 on the zero-F2P + broke-P2P + near-miss set
 once the feature exists; arm 2 as a prompt-block pilot on the near-miss
 set.
+
+### Combined pilot launched: scoped-verify wheel + completing-the-fix prompt (2026-08-25)
+
+Prototype pass (arms combined by design; per-class conversion is the
+attribution, no strict A/B): the 54 gate-on misses re-run once with
+(a) the scoped-verify build: a harness pytest gate that overruns
+verify_timeout_s re-runs scoped to the tests nearest the run's diff
+instead of certifying nothing (targets broke-P2P 8 and the
+finish-unverified tail), and (b) a run-mode base-prompt addendum via the
+--prompt-file mount: drive the changed behaviour through the interface
+layer the issue describes (targets the one-layer-short zero-F2P 16/23),
+reproduce issue-quoted literals verbatim and run the issue-named test
+(targets near-miss 18). Shape otherwise identical to the gate-on arm
+(same container script, effort, timeouts, away=deny). One-leg smoke
+verified the pairing before launch: prompt block present in the leg's
+assembled state, patch produced, score path green. Runner rpl1..5 over
+pilot-b1..5; compare per class against the gate-on results before any
+conclusion. Cost ceiling ~5 plan points measured at ~1 point per 12 legs.
