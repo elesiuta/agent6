@@ -446,33 +446,20 @@ def _watch_transcript(target: Path) -> int:
         view.close()  # stop the heartbeat thread, clear any spinner line
         if front_end is not None:
             unregister_frontend(target, os.getpid())  # our claim only
-    if not interrupted and not _session_has_ended(events_path):
+    if not interrupted and not scan_session_log(events_path).finished:
         _print_crashed_line(target)
     return 0
 
 
 def _line_is_session_end(raw: bytes | str) -> bool:
-    """True if a logs.jsonl line is a `session.end` event."""
+    """True if a logs.jsonl line is a `session.end` event: the follower stops
+    at the leg's end as it streams (the fold answers for a whole journal)."""
     text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
     try:
         obj = json.loads(text)
     except (ValueError, TypeError):
         return False
     return isinstance(obj, dict) and obj.get("type") == "session.end"
-
-
-def _session_has_ended(events_path: Path) -> bool:
-    """True if the run's last logged event is `session.end` (finished, nothing to
-    follow). A resume appends events after a session.end, so only the LAST line
-    counts."""
-    try:
-        with events_path.open("rb") as fh:
-            last = b""
-            for last in fh:  # noqa: B007 - keep the final line
-                pass
-    except OSError:
-        return False
-    return bool(last) and _line_is_session_end(last)
 
 
 def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0912, PLR0915
@@ -529,11 +516,11 @@ def _cmd_watch_plain(target: Path, *, since: int) -> int:  # noqa: PLR0911, PLR0
                 # flush: piped/redirected output must not lose the replay to the
                 # block buffer when the run is idle/finished (nothing else flushes).
                 print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
-            if lines and _line_is_session_end(lines[-1]):
+            if lines and scan_session_log(events_path).finished:
                 return 0  # already finished: replayed, nothing to follow
         else:
             # A finished run has no new events to follow; seeking to end would hang.
-            if _session_has_ended(events_path):
+            if scan_session_log(events_path).finished:
                 print("[agent6] run already finished.", file=sys.stderr)
                 return 0
             # Seek to end; only show new events going forward.

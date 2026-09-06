@@ -344,3 +344,39 @@ def test_watch_json_checks_the_merged_claim_against_the_repo(
     out = json.loads(capsys.readouterr().out)
     assert "merged_into" not in out
     assert out["branch_line"] == "agent6/stamped-run → merges into main"
+
+
+def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The watch read "finished" off the journal's LAST line while every other
+    surface reads the listing fold, which only a resumed leg un-finishes. A
+    side answer journaled after session.end made the replay follow a finished
+    run until its watcher's own pid died."""
+    import os
+    import threading
+
+    from agent6.sessions.ipc import write_worker_pid
+
+    _make_run(
+        tmp_path,
+        "done-run",
+        [
+            {"type": "session.start", "user_task": "t"},
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "btw.answered", "question": "q", "block": "a"},
+        ],
+    )
+    monkeypatch.chdir(tmp_path)
+    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "done-run"
+    write_worker_pid(session_dir, os.getpid())  # reads as live: the follow path
+    result: list[int] = []
+    t = threading.Thread(
+        target=lambda: result.append(main(["attach", "done-run", "--raw", "--since", "5"])),
+        daemon=True,
+    )
+    t.start()
+    t.join(timeout=5)
+    assert not t.is_alive(), "attach followed a finished run"
+    assert result == [0]
+    capsys.readouterr()

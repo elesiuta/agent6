@@ -676,6 +676,15 @@ def test_status_says_where_the_changes_are(
         d, run_branch=branch, base_branch="main", merged={"into": "main", "sha": tip, "tip": tip}
     )
     assert f"changes:    {branch} (merged into main)" in show()
+    # A stamp that names no base covers nothing (one rule: `covering_stamp`);
+    # show used to read it as merged into the base branch.
+    _stamp_manifest(
+        d, run_branch=branch, base_branch="main", merged={"into": "", "sha": tip, "tip": tip}
+    )
+    assert f"changes:    {branch} → merges into main; merge with:" in show()
+    _stamp_manifest(
+        d, run_branch=branch, base_branch="main", merged={"into": "main", "sha": tip, "tip": tip}
+    )
     assert _cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
     assert (obj["run_branch"], obj["base_branch"], obj["merged_into"]) == (branch, "main", "main")

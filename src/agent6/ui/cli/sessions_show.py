@@ -11,11 +11,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.app.resume import covering_stamp
 from agent6.git_ops import (
     branch_exists,
     chain_ref_for,
     chain_tip,
-    merge_stamp_holds,
     run_branch_tips,
 )
 from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
@@ -263,10 +263,9 @@ def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Ch
     if undone:
         return _Changes(f"{run_branch} (taken back by /undo)", "")
     cwd = Path.cwd()
-    stamp = manifest.merged
-    if stamp is not None and merge_stamp_holds(cwd, session_id, run_branch, stamp.tip):
-        into = stamp.into or manifest.base_branch
-        return _Changes(format_branch(run_branch, manifest.base_branch, into), into)
+    stamp = covering_stamp(cwd, manifest)
+    if stamp is not None:
+        return _Changes(format_branch(run_branch, manifest.base_branch, stamp.into), stamp.into)
     merge_hint = f"merge with: agent6 sessions merge {session_id}"
     if not branch_exists(cwd, run_branch):
         chain = chain_ref_for(session_id)
