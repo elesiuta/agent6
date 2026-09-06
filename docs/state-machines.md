@@ -597,7 +597,7 @@ Sizing for long-running machines:
 
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
-| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam); per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail; failures loop back with source (`--max-attempts`, default 3); output: a DRAFT for operator review + commit ([Security considerations](#9-security-considerations)) |
+| `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail; failures hand the problems back (`--max-attempts`, default 3); output: a DRAFT for operator review + commit ([Security considerations](#9-security-considerations)) |
 | `agent6 machine check <file>`             | validate: parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff + ty, config from the nearest `pyproject.toml`/`ruff.toml` above the file); no execution, no network |
 | `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/*_test.py` mock tests in a no-network jail; a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
@@ -614,14 +614,15 @@ Sizing for long-running machines:
 ### 7.1 `machine create`
 
 Describe a loop in plain language and get a first-cut bundle back.
-It is an ordinary jailed agent6 loop handed this document's grammar; the model returns the whole bundle through `finish_session` (`result.toml` = the `.asm.toml`, `result.scripts` = every referenced script plus a mock test per script with an external seam).
-No new tool, no file-writing capability.
+It is an ordinary agent6 run handed this document's grammar, working in a drafting workspace of its own: the model writes the `.asm.toml` and every `scripts/...` file there with `apply_edit`, one file at a time, and finishes when the bundle is complete.
+No new tool; the leg has the edit tools and no command tool, and it never sees the operator's checkout.
 
+- the workspace is an empty git repo under `[parallel].workdir` (where lane clones and fork worktrees live), so each iteration commits and the draft survives a failure for the operator to read
 - every draft is gated: `machine check`, ruff (the destination's ruff config), ty, mock tests in a no-network jail
-    - failures loop back with the failing source, up to `--max-attempts` (default 3); retries carry the prior draft (patch, not regenerate)
+    - agent6 runs those validators itself between attempts (they need agent6, which no jailed command can reach) and hands the problems back, up to `--max-attempts` (default 3); the agent patches the files it wrote
 - the result is a draft: `-o <file>` overwrites freely, else `<name>.asm.toml` in the cwd, never clobbered (a collision prints to stdout, exits non-zero)
     - scripts land in `scripts/`
-- each attempt is watchable: a draft dir under the state dir carries prompt, candidate, transcript, and a `logs.jsonl` the TUI/web follow live
+- each attempt is watchable: a draft dir under the state dir carries the prompt, the transcript, and a `logs.jsonl` the TUI/web follow live
     - the CLI streams in the foreground; the TUI and web start detached and follow the dir
 - the [Security considerations](#9-security-considerations) invariant holds: `create` drafts into the working tree only; the operator reviews and commits; `machine run` refuses an uncommitted bundle
 
@@ -656,7 +657,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
 
 - **No new LLM tool surface**
     - the fixed set in `tools/schema.py` is unchanged; machines orchestrate existing capabilities
-    - `machine create` is no exception: the drafting agent runs the same toolset and returns the `.asm.toml` through `finish_session`, no new file-writing tool
+    - `machine create` is no exception: the drafting agent has the same edit tools any run has, pointed at a drafting workspace of its own, and no command tool at all
 - **No arbitrary code execution from a file**
     - predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`
     - dotted references are agent6-interpreted data navigation, not Python attribute resolution
@@ -671,7 +672,7 @@ No new runtime dependency (`tomllib` + `pydantic` + stdlib `ast`).
     - a supervisor crash mid-state cannot re-grant its slice: the resume books the orphaned per-state totals as an `attempt.spend` journal event, counted everywhere
 - **Machines are operator artifacts, never LLM-authored**
     - the threat model assumes the file is operator-written and reviewed like code; an LLM may propose (`machine create` drafts), running requires operator review + commit
-    - `create` writes only into the working tree and never auto-runs
+    - `create` writes into its own workspace, publishes one reviewed bundle into the working tree, and never auto-runs
     - `run` operates on a committed bundle, records it under the instance dir at first run, and refuses a continuation whose bundle drifted from the recorded bytes
     - a live instance runs the logic it recorded; an edit takes effect on a new instance
     - drafting is assistance; authorization stays human

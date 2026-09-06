@@ -21,11 +21,7 @@ from agent6.machine._semantics import (
 )
 from agent6.machine.authoring import (
     MACHINE_AUTHOR_GUIDE,
-    SCRIPTS_PAYLOAD_KEY,
-    TOML_PAYLOAD_KEY,
     build_authoring_prompt,
-    extract_scripts,
-    extract_toml,
 )
 from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run
 from agent6.machine.engine import (
@@ -76,8 +72,6 @@ __all__ = [
     "MACHINE_AUTHOR_GUIDE",
     "PROTECTED_OVERLAY_LEAVES",
     "PROTECTED_OVERLAY_TABLES",
-    "SCRIPTS_PAYLOAD_KEY",
-    "TOML_PAYLOAD_KEY",
     "AgentExecResult",
     "AgentFact",
     "AgentRequest",
@@ -112,8 +106,6 @@ __all__ = [
     "clear_stop_request",
     "drive",
     "dry_run",
-    "extract_scripts",
-    "extract_toml",
     "fixture_problems",
     "load_machine",
     "machine_lock",

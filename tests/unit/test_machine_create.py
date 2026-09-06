@@ -15,14 +15,11 @@ import pytest
 
 from agent6.app import machine_agent
 from agent6.app.machine import create as _create
+from agent6.config.layer import resolved_state_dir
 from agent6.machine import (
-    SCRIPTS_PAYLOAD_KEY,
-    TOML_PAYLOAD_KEY,
     AgentExecResult,
     AgentRequest,
     build_authoring_prompt,
-    extract_scripts,
-    extract_toml,
 )
 from agent6.ui.cli import main
 
@@ -71,24 +68,13 @@ reason = "x"
 # --- pure pieces -----------------------------------------------------------
 
 
-def test_extract_toml_returns_string() -> None:
-    assert extract_toml({TOML_PAYLOAD_KEY: "machine = 'x'"}) == "machine = 'x'"
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [None, {}, {TOML_PAYLOAD_KEY: ""}, {TOML_PAYLOAD_KEY: "   "}, {TOML_PAYLOAD_KEY: 7}],
-)
-def test_extract_toml_returns_none(payload: dict[str, object] | None) -> None:
-    assert extract_toml(payload) is None  # type: ignore[arg-type]
-
-
 def test_build_authoring_prompt_first_attempt() -> None:
     prompt = build_authoring_prompt("Poll a queue", attempt=1)
     assert "authoring guide" in prompt
     assert "Poll a queue" in prompt
     assert "finish_session" in prompt
-    assert "fix the previous draft" not in prompt
+    assert "apply_edit" in prompt, "the draft is written into the workspace"
+    assert "fix the draft in this workspace" not in prompt
 
 
 def test_authoring_guide_describes_the_metered_budget() -> None:
@@ -99,35 +85,17 @@ def test_authoring_guide_describes_the_metered_budget() -> None:
     assert "best_effort_usd_limit" not in prompt
 
 
-def test_build_authoring_prompt_retry_includes_diagnostics() -> None:
+def test_build_authoring_prompt_retry_carries_only_the_diagnostics() -> None:
+    """The draft is in the workspace, so a retry names the problems and sends
+    the agent back to its own files instead of re-pasting them into the prompt."""
     prompt = build_authoring_prompt(
         "Poll a queue",
         attempt=2,
-        prior_toml="machine = 'bad'",
         diagnostics=["initial 'nowhere' names no state"],
     )
-    assert "Attempt 2: fix the previous draft" in prompt
+    assert "Attempt 2: fix the draft in this workspace" in prompt
     assert "initial 'nowhere' names no state" in prompt
-    assert "machine = 'bad'" in prompt
-
-
-def test_build_authoring_prompt_retry_includes_prior_scripts() -> None:
-    # A retry must show the failing scripts, not just the toml. Without them
-    # the model regenerates every file blind to fix a one-line lint error.
-    prompt = build_authoring_prompt(
-        "Poll a queue",
-        attempt=2,
-        prior_toml="machine = 'x'",
-        diagnostics=["ruff (lint) found problems: scripts/run.py:1:1: F401"],
-        prior_scripts={"scripts/run.py": "import os\nprint(1)", "scripts/go.sh": "echo hi"},
-    )
-    assert "`scripts/run.py`:" in prompt
-    assert "import os" in prompt
-    assert "`scripts/go.sh`:" in prompt
-    assert "Change ONLY what the diagnostics name" in prompt
-    # .py gets a python fence, others a plain fence
-    assert "```python\nimport os" in prompt
-    assert "```\necho hi" in prompt
+    assert "Read the files you wrote" in prompt
 
 
 # --- CLI flow --------------------------------------------------------------
@@ -144,6 +112,9 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         cfg = SimpleNamespace(
             sandbox=SimpleNamespace(isolation="none"),
             budget=SimpleNamespace(max_usd=10.0),
+            # The drafting workspace lives where every subordinate working tree
+            # does; the default base is the cache dir, which the tests redirect.
+            parallel=SimpleNamespace(workdir=""),
             require_runnable=_require_runnable,
             models=SimpleNamespace(resolve=_resolve),
             cleartext_credential_endpoints=lambda: (),
@@ -163,18 +134,41 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_create, "select_isolation", _no_preflight)
 
 
-def _stub_runner(monkeypatch: pytest.MonkeyPatch, results: Iterable[AgentExecResult]) -> None:
-    seq = iter(results)
+def _stub_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    drafts: Iterable[tuple[dict[str, str], AgentExecResult]],
+) -> None:
+    """Each attempt writes its files into the drafting workspace, as the real
+    authoring leg does with `apply_edit`, then returns its result."""
+    seq = iter(drafts)
 
     def fake_build(
         cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
-            return next(seq)
+            files, result = next(seq)
+            for rel, content in files.items():
+                target = root / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            return result
 
         return run
 
     monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+
+
+def _write_draft(root: Path, files: dict[str, str]) -> None:
+    """Lay a draft down in the workspace, as the authoring leg's edits do."""
+    for rel, content in files.items():
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+
+def _draft(machine: str, **scripts: str) -> dict[str, str]:
+    """A bundle as the agent would leave it in the workspace."""
+    return {"greeter.asm.toml": machine, **{f"scripts/{n}": s for n, s in scripts.items()}}
 
 
 def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -191,9 +185,8 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             captured.append(request)
-            return AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
+            _write_draft(root, _draft(VALID_MACHINE))
+            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -205,7 +198,7 @@ def test_create_inherits_worker_model(tmp_path: Path, monkeypatch: pytest.Monkey
     # mode="machine" -> authoring system prompt + read-only tools. If the
     # plumbing dropped it the authoring agent would silently fall back to the
     # 29k coding prompt with no test catching it.
-    assert captured[0].mode == "machine"
+    assert captured[0].mode == "run"
 
 
 def test_create_writes_default_path(
@@ -215,11 +208,7 @@ def test_create_writes_default_path(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.02
-            )
-        ],
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.02))],
     )
     code = main(["machine", "create", "Greet the user"])
     assert code == 0
@@ -245,9 +234,8 @@ def test_create_writes_watchable_event_log(tmp_path: Path, monkeypatch: pytest.M
     ) -> Callable[[AgentRequest, object], AgentExecResult]:
         def run(_request: AgentRequest, events_log: object = None) -> AgentExecResult:
             captured_log.append(events_log)  # events_log is now per CALL, not per build
-            return AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
+            _write_draft(root, _draft(VALID_MACHINE))
+            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -282,15 +270,25 @@ def test_create_logs_the_cumulative_spend_across_attempts(
         monkeypatch,
         [
             # First attempt returns no draft (fails), second succeeds.
-            AgentExecResult(
-                reason="finish_session", payload=None, usd=0.01, input_tokens=100, output_tokens=20
+            (
+                {},
+                AgentExecResult(
+                    payload=None,
+                    reason="finish_session",
+                    usd=0.01,
+                    input_tokens=100,
+                    output_tokens=20,
+                ),
             ),
-            AgentExecResult(
-                reason="finish_session",
-                payload={TOML_PAYLOAD_KEY: VALID_MACHINE},
-                usd=0.02,
-                input_tokens=150,
-                output_tokens=30,
+            (
+                _draft(VALID_MACHINE),
+                AgentExecResult(
+                    payload=None,
+                    reason="finish_session",
+                    usd=0.02,
+                    input_tokens=150,
+                    output_tokens=30,
+                ),
             ),
         ],
     )
@@ -313,11 +311,7 @@ def test_create_saves_the_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
-        ],
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
     )
     code = main(["machine", "create", "Greet the user warmly"])
     assert code == 0
@@ -334,11 +328,13 @@ def test_create_retries_then_succeeds(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+            (
+                _draft(INVALID_MACHINE),
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.03
+            (
+                _draft(VALID_MACHINE),
+                AgentExecResult(payload=None, reason="finish_session", usd=0.03),
             ),
         ],
     )
@@ -360,11 +356,7 @@ def test_create_refuses_to_overwrite_default_path(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
-        ],
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
     )
     code = main(["machine", "create", "Greet the user"])
     assert code == 2  # a refusal
@@ -389,11 +381,7 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
-        ],
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
     )
     assert main(["machine", "create", "Greet the user"]) == 2  # a refusal
     capsys.readouterr()
@@ -417,11 +405,7 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
-        ],
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
     )
 
     real_write = _create._write_scripts  # pyright: ignore[reportPrivateUsage]
@@ -454,11 +438,7 @@ def test_create_output_flag_overwrites(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
-        ],
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
     )
     code = main(["machine", "create", "Greet the user", "-o", str(target)])
     assert code == 0
@@ -473,11 +453,13 @@ def test_create_never_valid_exits_1(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+            (
+                _draft(INVALID_MACHINE),
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+            (
+                _draft(INVALID_MACHINE),
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
         ],
     )
@@ -486,8 +468,8 @@ def test_create_never_valid_exits_1(
     out = capsys.readouterr()
     assert "no valid machine after 2 attempt(s)" in out.err
     assert "Last diagnostics:" in out.err
-    # last invalid draft echoed on stdout for reference
-    assert out.out.startswith('machine = "greeter"')
+    # the failed draft stays whole in the workspace, which the failure names
+    assert "The last draft is in " in out.err
     assert not (tmp_path / "greeter.asm.toml").exists()
 
 
@@ -501,16 +483,20 @@ def test_create_surfaces_a_reason_per_failed_attempt(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(reason="max_iterations", payload=None, usd=0.0),  # returned no draft
-            AgentExecResult(  # a structurally invalid draft
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: INVALID_MACHINE}, usd=0.01
+            (
+                {},
+                AgentExecResult(payload=None, reason="max_iterations", usd=0.0),
+            ),  # returned no draft
+            (  # a structurally invalid draft
+                _draft(INVALID_MACHINE),
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
         ],
     )
     code = main(["machine", "create", "Greet the user", "--max-attempts", "2"])
     assert code == 1
     err = capsys.readouterr().err
-    assert "attempt 1 failed: returned no draft" in err
+    assert "attempt 1 failed: No .asm.toml in the workspace" in err
     assert "attempt 2 failed:" in err  # a concrete reason, not silence
 
 
@@ -532,9 +518,10 @@ def test_create_no_payload_gives_diagnostic_and_retries(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(reason="max_iterations", payload=None, usd=0.0),
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.01
+            ({}, AgentExecResult(payload=None, reason="max_iterations", usd=0.0)),
+            (
+                _draft(VALID_MACHINE),
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
         ],
     )
@@ -560,11 +547,7 @@ def test_create_output_flag_creates_parent_dirs(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
-        ],
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
     )
     target = tmp_path / "new" / "deep" / "m.asm.toml"
     code = main(["machine", "create", "Greet the user", "-o", str(target)])
@@ -591,14 +574,10 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
         cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
-            return AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": unused_import},
-                },
-                usd=0.01,
+            _write_draft(
+                root, {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": unused_import}
             )
+            return AgentExecResult(payload=None, reason="finish_session", usd=0.01)
 
         return run
 
@@ -609,11 +588,12 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
     assert scriptcheck.lint_and_typecheck(tmp_path / "scripts") == []
 
 
-def test_create_retry_prompt_carries_prior_scripts(
+def test_create_retry_prompt_names_the_script_problem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # When a draft fails the script gate, the NEXT attempt's prompt must show
-    # the prior script source so the model patches instead of regenerating.
+    # A draft that fails the script gate gets the problems in the next
+    # attempt's prompt; the source itself stays in the workspace, where the
+    # agent reads and patches its own file.
     from agent6.app.machine import _scriptcheck as scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
@@ -625,21 +605,13 @@ def test_create_retry_prompt_carries_prior_scripts(
     good = "import json\nprint(json.dumps({}))\n"
     responses = iter(
         [
-            AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": bad},
-                },
-                usd=0.01,
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": bad},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
-            AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": good},
-                },
-                usd=0.01,
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": good},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
         ]
     )
@@ -649,7 +621,9 @@ def test_create_retry_prompt_carries_prior_scripts(
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             prompts.append(request.prompt)
-            return next(responses)
+            files, result = next(responses)
+            _write_draft(root, files)
+            return result
 
         return run
 
@@ -658,8 +632,9 @@ def test_create_retry_prompt_carries_prior_scripts(
     assert code == 0
     assert len(prompts) == 2
     assert "undefined_name" not in prompts[0]
-    assert "`scripts/run.py`:" in prompts[1]
-    assert "print(undefined_name)" in prompts[1]
+    assert "scripts/run.py" in prompts[1], "the failing file is named"
+    assert "F821" in prompts[1], "and the problem with it"
+    assert "Read the files you wrote" in prompts[1]
 
 
 # --- script bundle: the agent emits helper scripts alongside the .asm.toml ---
@@ -692,27 +667,6 @@ reason = "failed"
 SCRIPT_BODY = "import json\nprint(json.dumps({}))"
 
 
-def test_extract_scripts_keeps_safe_entries_only() -> None:
-    got = extract_scripts(
-        {
-            SCRIPTS_PAYLOAD_KEY: {
-                "scripts/run.py": "x = 1",
-                "./scripts/lib/util.py": "y = 2",  # normalized
-                "scripts/../etc/passwd": "escape",  # dropped (..)
-                "/abs/scripts/run.py": "abs",  # dropped (absolute)
-                "notes.txt": "outside scripts/",  # dropped (not under scripts/)
-                "scripts/x.py": 7,  # dropped (non-str content)
-            }
-        }
-    )
-    assert got == {"scripts/run.py": "x = 1", "scripts/lib/util.py": "y = 2"}
-
-
-@pytest.mark.parametrize("payload", [None, {}, {SCRIPTS_PAYLOAD_KEY: "not-a-map"}])
-def test_extract_scripts_empty(payload: dict[str, object] | None) -> None:
-    assert extract_scripts(payload) == {}  # type: ignore[arg-type]
-
-
 def test_create_attempts_share_one_budget_ledger(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -729,7 +683,7 @@ def test_create_attempts_share_one_budget_ledger(
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             caps.append(request.max_usd)
-            return AgentExecResult(reason="finish_session", payload=None, usd=6.0)
+            return AgentExecResult(payload=None, reason="finish_session", usd=6.0)
 
         return run
 
@@ -748,13 +702,9 @@ def test_create_writes_script_bundle(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
-                },
-                usd=0.02,
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
             )
         ],
     )
@@ -786,13 +736,9 @@ def test_create_refuses_to_overwrite_existing_script(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
-                },
-                usd=0.02,
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
             )
         ],
     )
@@ -816,17 +762,14 @@ def test_create_rejects_missing_script_then_succeeds(
         monkeypatch,
         [
             # attempt 1: references the script but omits it -> rejected.
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: SCRIPT_MACHINE}, usd=0.01
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             ),
             # attempt 2: now ships it -> accepted.
-            AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
-                },
-                usd=0.02,
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.02),
             ),
         ],
     )
@@ -852,13 +795,9 @@ def test_create_rejects_lint_bad_script(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": bad},
-                },
-                usd=0.01,
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": bad},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -881,13 +820,9 @@ def test_create_publish_validates_the_destination_before_claiming_success(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
-                },
-                usd=0.01,
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -914,13 +849,9 @@ def test_create_writes_scripts_before_the_machine_file(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: SCRIPT_MACHINE,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/run.py": SCRIPT_BODY},
-                },
-                usd=0.01,
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -946,8 +877,9 @@ def test_create_never_ships_script_exits_1(
     _stub_runner(
         monkeypatch,
         [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: SCRIPT_MACHINE}, usd=0.01
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
             )
         ],
     )
@@ -955,8 +887,6 @@ def test_create_never_ships_script_exits_1(
     assert code == 1
     out = capsys.readouterr()
     assert "not found in bundle" in out.err
-    # the diagnostic steers the agent to the right payload field.
-    assert SCRIPTS_PAYLOAD_KEY in out.err
     # no half-written bundle left behind.
     assert not (tmp_path / "scripted.asm.toml").exists()
     assert not (tmp_path / "scripts").exists()
@@ -1036,7 +966,7 @@ def test_create_failure_end_reason_names_the_failure(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [AgentExecResult(reason="max_iterations", payload=None, usd=0.0)],
+        [({}, AgentExecResult(payload=None, reason="max_iterations", usd=0.0))],
     )
     assert main(["machine", "create", "Greet the user", "--max-attempts", "1"]) == 1
 
@@ -1062,11 +992,7 @@ def test_create_stamps_a_liveness_marker_on_the_draft(
     _stub_preflight(monkeypatch)
     _stub_runner(
         monkeypatch,
-        [
-            AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
-        ],
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session", usd=0.0))],
     )
     assert main(["machine", "create", "Greet the user"]) == 0
 
@@ -1146,14 +1072,10 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
             seen_prompts.append(request.prompt)
-            return AgentExecResult(
-                reason="finish_session",
-                payload={
-                    TOML_PAYLOAD_KEY: bad_toml,
-                    SCRIPTS_PAYLOAD_KEY: {"scripts/helper.py": bad_script},
-                },
-                usd=0.0,
-            )
+            (root / "greeter.asm.toml").write_text(bad_toml, encoding="utf-8")
+            (root / "scripts").mkdir(exist_ok=True)
+            (root / "scripts" / "helper.py").write_text(bad_script, encoding="utf-8")
+            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
@@ -1165,33 +1087,39 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
     assert "PLW1510" in retry_prompt  # the lint problem, in the same attempt's diagnostics
 
 
-def test_the_authoring_agent_carries_the_draft_finish_contract(
+def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """machine create's AgentRequest declares output_schema="draft" (toml
-    required, scripts optional json), so a finish_session without result.toml
-    is bounced in-run by the leg's contract check instead of ending the
-    attempt. Three summary-only finishes in a row burned a create budget
-    against the prose instruction alone."""
+    """The bundle is files in a workspace, not a finish payload: a ~20KB TOML
+    string inside tool-call JSON defeated kimi-k2.6's emitter three times in a
+    row. The leg drafts with the edit tools and no shell -- the validators need
+    agent6 itself, which no jailed command can reach."""
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)
-    captured: list[AgentRequest] = []
+    captured: list[tuple[AgentRequest, Path, object]] = []
 
     def fake_build(
         cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
     ) -> Callable[[AgentRequest], AgentExecResult]:
         def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
-            captured.append(request)
-            return AgentExecResult(
-                reason="finish_session", payload={TOML_PAYLOAD_KEY: VALID_MACHINE}, usd=0.0
-            )
+            captured.append((request, root, cfg))
+            for rel, content in _draft(VALID_MACHINE).items():
+                (root / rel).write_text(content, encoding="utf-8")
+            return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 
         return run
 
     monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
     assert captured, "runner was never invoked"
-    req = captured[0]
-    assert req.output_schema == "draft"
-    assert req.schemas["draft"][TOML_PAYLOAD_KEY].optional is False
-    assert req.schemas["draft"][SCRIPTS_PAYLOAD_KEY].optional is True
+    req, root, cfg = captured[0]
+    assert req.mode == "run", "the authoring agent writes files"
+    assert req.output_schema is None, "no finish payload: the bundle is on disk"
+    assert (root / ".git").exists(), "the workspace is a repo, like any run's"
+    assert root != tmp_path, "never the operator's checkout"
+    # The jail masks the state dir, so a workspace inside it would be hidden
+    # from the run that must write there (a live create burned 200 iterations
+    # on `list_dir: Path is hidden from this run`).
+    state_dir = resolved_state_dir(tmp_path)
+    assert state_dir not in root.parents, "the workspace sits outside the state dir"
+    assert cfg == {"sandbox": {"run_commands": "no"}}

@@ -12,7 +12,6 @@ reporter; the watchable per-draft event log is a separate `EventSink`.
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from agent6.app._session import select_isolation
@@ -21,21 +20,18 @@ from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.app.machine_agent import build_machine_agent_runner
+from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.preflight import SessionRefused
 from agent6.config import ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.events import EventSink
+from agent6.git_ops import GitError, init_repo
 from agent6.machine import (
-    SCRIPTS_PAYLOAD_KEY,
-    TOML_PAYLOAD_KEY,
     AgentRequest,
-    FieldSpec,
     MachineError,
     MachineSpec,
     build_authoring_prompt,
     dry_run,
-    extract_scripts,
-    extract_toml,
     load_machine,
 )
 from agent6.portable import atomic_write
@@ -68,33 +64,43 @@ def _write_scripts(base_dir: Path, scripts: dict[str, str]) -> None:
         p.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
 
 
-def _reread_scripts(base_dir: Path, scripts: dict[str, str]) -> dict[str, str]:
-    """The same bundle keys, re-read from disk after ruff's safe fixes."""
-    return {rel: (base_dir / rel).read_text(encoding="utf-8") for rel in scripts}
+def _machine_file(workspace: Path) -> tuple[Path | None, str]:
+    """The one `.asm.toml` the agent wrote, or `(None, problem)`: a bundle is
+    one machine, and two candidates leave the publish path guessing."""
+    found = sorted(workspace.glob("*.asm.toml"))
+    if not found:
+        return None, (
+            "No .asm.toml in the workspace: write the machine file there"
+            " (and any scripts/ it references) with apply_edit."
+        )
+    if len(found) > 1:
+        names = ", ".join(p.name for p in found)
+        return None, f"Write ONE machine file; the workspace holds {len(found)}: {names}."
+    return found[0], ""
 
 
-def _check_machine_text(
-    text: str, scripts: dict[str, str], scratch: Path
-) -> tuple[MachineSpec | None, list[str]]:
-    """Validate a candidate `.asm.toml` + its scripts via `load_machine`.
-
-    The scripts are written into the scratch bundle first so the missing-script
-    check resolves against this attempt's files only (stale scripts from a prior
-    attempt are cleared). Returns the parsed spec + empty problems on success, or
-    `(None, problems)` when the source or its script bundle is invalid.
-    """
-    candidate_path = scratch / "candidate.asm.toml"
-    candidate_path.write_text(text, encoding="utf-8")
-    shutil.rmtree(scratch / "scripts", ignore_errors=True)
-    _write_scripts(scratch, scripts)
+def _check_bundle(path: Path) -> tuple[MachineSpec | None, list[str]]:
+    """Validate the workspace's `.asm.toml` and its script bundle via
+    `load_machine`. Returns the parsed spec + empty problems on success, or
+    `(None, problems)` when the source or its script bundle is invalid."""
     try:
-        spec = load_machine(candidate_path)
+        spec = load_machine(path)
     except MachineError as exc:
         return None, list(exc.problems)
-    bundle_problems = validate_bundle(spec, candidate_path)
+    bundle_problems = validate_bundle(spec, path)
     if bundle_problems:
         return None, bundle_problems
     return spec, []
+
+
+def _read_scripts(workspace: Path) -> dict[str, str]:
+    """The bundle's `scripts/` tree as {bundle-relative path: source}."""
+    root = workspace / "scripts"
+    return {
+        str(p.relative_to(workspace)): p.read_text(encoding="utf-8")
+        for p in sorted(root.rglob("*"))
+        if p.is_file()
+    }
 
 
 def _attempt_reason(problems: list[str]) -> str:
@@ -183,14 +189,32 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     reporter.err(
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
+    # The agent writes the bundle here, file by file, exactly as a run edits a
+    # repo: an empty git repo of its own, so the leg commits its iterations and
+    # nothing it writes can reach the operator's checkout. It sits where every
+    # other subordinate working tree does, NOT under the state dir: the jail
+    # masks that dir, so a workspace inside it is hidden from the very run that
+    # is supposed to write there.
+    workspace = subordinate_workdir_root(cfg, cwd, scratch.name)
+    workspace.mkdir(parents=True)
+    try:
+        init_repo(workspace)
+    except GitError as exc:
+        reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
+        return 1
     # Authoring drafts a machine; it has no machine [config] overlay of its own.
-    runner = build_machine_agent_runner({}, cwd, isolation, scratch / "agent_transcripts")
+    # No command tools: the agent writes files, and agent6 runs the validators
+    # (they need agent6 itself, which no jailed command can reach).
+    runner = build_machine_agent_runner(
+        {"sandbox": {"run_commands": "no"}},
+        workspace,
+        isolation,
+        scratch / "agent_transcripts",
+    )
 
-    prior_toml: str | None = None
-    prior_scripts: dict[str, str] = {}
     diagnostics: list[str] | None = None
     spec: MachineSpec | None = None
-    valid_toml: str | None = None
+    valid_path: Path | None = None
     valid_scripts: dict[str, str] = {}
     total_usd = 0.0
     total_in = 0
@@ -199,17 +223,6 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # subprocess is otherwise a fresh tracker, so N retries could bill N full
     # budgets. -1 = unlimited (the config's own convention).
     create_cap = None if cfg.budget.max_usd == -1 else cfg.budget.max_usd
-    # The authoring finish contract, leg-enforced like any machine state's:
-    # a finish_session without result.toml bounces in-run with the problem
-    # named, instead of ending the attempt for the outer loop to diagnose
-    # (kimi returned summary-only finishes three times in a row against the
-    # prose instruction alone).
-    draft_schemas = {
-        "draft": {
-            TOML_PAYLOAD_KEY: FieldSpec(type="str"),
-            SCRIPTS_PAYLOAD_KEY: FieldSpec(type="json", optional=True),
-        }
-    }
     attempt = 0  # bound for the session.end below (the loop always runs: max_attempts >= 1)
     for attempt in range(1, max_attempts + 1):
         if create_cap is not None and total_usd >= create_cap:
@@ -218,17 +231,11 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 f" {attempt - 1} attempt(s) (spent ~${total_usd:.4f}); stopping."
             )
             break
-        prompt = build_authoring_prompt(
-            task,
-            attempt=attempt,
-            prior_toml=prior_toml,
-            diagnostics=diagnostics,
-            prior_scripts=prior_scripts,
-        )
+        prompt = build_authoring_prompt(task, attempt=attempt, diagnostics=diagnostics)
         reporter.err(f"machine create: attempt {attempt}/{max_attempts}...")
         events.emit("loop.note", text=f"attempt {attempt}/{max_attempts}")
         # model omitted (=None): inherit the operator's effective worker model.
-        # mode="machine": authoring system prompt + read-only tools (see loop.py).
+        # mode="run": the edit tools, in the drafting workspace (see loop.py).
         # effort="off": authoring is transcription of a described design, not
         # deep derivation. "low" is already the provider default and did not
         # help: kimi-k2.6 spiralled into 30-minute length-capped thinks and
@@ -239,45 +246,25 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             AgentRequest(
                 prompt=prompt,
                 timeout_s=_CREATE_TIMEOUT_S,
-                mode="machine",
+                mode="run",
                 effort="off",
                 max_usd=remaining,
-                output_schema="draft",
-                schemas=draft_schemas,
             ),
             events_log,
         )
         total_usd += result.usd
         total_in += result.input_tokens
         total_out += result.output_tokens
-        candidate = extract_toml(result.payload)
-        if candidate is None:
-            diagnostics = [
-                f"You did not return a draft: call finish_session with result.{TOML_PAYLOAD_KEY}"
-                " set to the complete .asm.toml source as a single string."
-                f" (agent loop reason: {result.reason})"
-            ]
-            prior_toml = None
-            prior_scripts = {}
-            reporter.err(
-                f"machine create: attempt {attempt} failed:"
-                f" returned no draft (agent stop reason: {result.reason})"
-            )
+        candidate_path, missing = _machine_file(workspace)
+        if candidate_path is None:
+            diagnostics = [f"{missing} (agent loop reason: {result.reason})"]
+            reporter.err(f"machine create: attempt {attempt} failed: {missing}")
             if result.reason in _CREATE_STOP_REASONS:
                 break
             continue
-        candidate_scripts = extract_scripts(result.payload)
-        candidate_spec, problems = _check_machine_text(candidate, candidate_scripts, scratch)
+        candidate_scripts = _read_scripts(workspace)
+        candidate_spec, problems = _check_bundle(candidate_path)
         if candidate_spec is None:
-            # Structural / bundle failure. A missing-script problem (only produced
-            # here, never by the lint/test pass below) gets an extra hint pointing
-            # the agent at result.scripts.
-            if any("not found in bundle" in p for p in problems):
-                hint = (
-                    f"Return each missing scripts/... file in finish_session"
-                    f" result.{SCRIPTS_PAYLOAD_KEY} (a map of the path to its complete source)."
-                )
-                problems = [*problems, hint]
             if candidate_scripts:
                 # The scripts exist whether or not the TOML parsed: lint them
                 # now, so one attempt reveals every problem class instead of
@@ -285,7 +272,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 problems = [
                     *problems,
                     *lint_and_typecheck(
-                        scratch / "scripts",
+                        workspace / "scripts",
                         fix=True,
                         ruff_config_from=output.parent if output is not None else cwd,
                     ),
@@ -299,18 +286,17 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
             problems = lint_and_typecheck(
-                scratch / "scripts",
+                workspace / "scripts",
                 fix=True,
-                # The scratch lives under the state dir, where ruff's discovery
+                # The workspace lives under the state dir, where ruff's discovery
                 # finds no config; resolve from where the bundle publishes so
                 # this gate and the operator's later `machine check` agree.
                 ruff_config_from=output.parent if output is not None else cwd,
             )
-            # ruff --fix rewrote the scratch copies, so those are the bytes that
-            # passed. Publishing the model's originals writes a bundle that
-            # fails the `machine check` this command sends the operator to.
-            candidate_scripts = _reread_scripts(scratch, candidate_scripts)
-            offline = run_offline_tests(scratch, isolation)
+            # ruff --fix rewrote the workspace copies, so those are the bytes
+            # that passed; publish what validated, not what the model first wrote.
+            candidate_scripts = _read_scripts(workspace)
+            offline = run_offline_tests(workspace, isolation)
             problems.extend(offline.problems)
             if offline.skipped:
                 reporter.err(
@@ -325,14 +311,12 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
             )
             if not problems:
                 spec = candidate_spec
-                valid_toml = candidate
+                valid_path = candidate_path
                 valid_scripts = candidate_scripts
                 break
         # Reached only on a failed attempt (the success path broke above), so
         # surface a one-line reason instead of leaving "attempt N/M" unexplained.
         reporter.err(f"machine create: attempt {attempt} failed: {_attempt_reason(problems)}")
-        prior_toml = candidate
-        prior_scripts = candidate_scripts
         diagnostics = problems
         if result.reason in _CREATE_STOP_REASONS:
             break
@@ -351,22 +335,20 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # session.end reasons below are tokens, like every other emitter's: the listing
     # prints the reason as the detail beside "failed", where a prose sentence
     # contradicted the word. `iterations` = authoring attempts made.
-    if spec is None or valid_toml is None:
+    if spec is None or valid_path is None:
         events.emit("session.end", reason="no_valid_machine", iterations=attempt, all_passed=False)
         reporter.err(f"FAILED: no valid machine after {max_attempts} attempt(s).")
         if diagnostics:
             reporter.err("Last diagnostics:")
             for problem in diagnostics:
                 reporter.err(f"  - {problem}")
-        if prior_toml is not None:
-            reporter.err("The last (invalid) draft is on stdout for reference.")
-            # reporter.out re-adds one trailing newline, so strip one to match the
-            # original `print(..., end="")` byte-for-byte.
-            draft = prior_toml if prior_toml.endswith("\n") else prior_toml + "\n"
-            reporter.out(draft.removesuffix("\n"))
+        # The invalid draft stays whole in the workspace, where the operator can
+        # read it, diff it, or hand it to another run.
+        reporter.err(f"The last draft is in {workspace}.")
         return 1
 
-    payload = valid_toml if valid_toml.endswith("\n") else valid_toml + "\n"
+    draft_text = valid_path.read_text(encoding="utf-8")
+    payload = draft_text if draft_text.endswith("\n") else draft_text + "\n"
     target = output if output is not None else cwd / f"{spec.machine}.asm.toml"
     if output is None:
         # The default path is documented as clobbering nothing; that covers the
@@ -407,7 +389,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # pre-existing symlink under scripts/), so the structural check on what was
     # PUBLISHED decides the outcome: a success banner over a bundle that won't
     # run was a lie. Lint/types are not re-run: these bytes ARE the scratch copy
-    # that passed (_reread_scripts picks up ruff's fixes before publishing).
+    # that passed (the workspace copies carry ruff's fixes).
     out_problems = validate_bundle(spec, target)
     if out_problems:
         events.emit("session.end", reason="bundle_invalid", iterations=attempt, all_passed=False)
