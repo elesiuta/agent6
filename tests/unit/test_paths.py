@@ -177,6 +177,10 @@ def test_root_optin(monkeypatch: pytest.MonkeyPatch) -> None:
     assert paths.root_optin_enabled(False) is True
     monkeypatch.setenv("AGENT6_ALLOW_ROOT", "0")
     assert paths.root_optin_enabled(False) is False
+    # "1" alone opts in, as the sandbox-disable variable takes it: any other
+    # truthy-looking value ("yes", "x") opted in before.
+    monkeypatch.setenv("AGENT6_ALLOW_ROOT", "yes")
+    assert paths.root_optin_enabled(False) is False
 
 
 def test_mkdir_for_real_user_hands_back_created_ancestors(

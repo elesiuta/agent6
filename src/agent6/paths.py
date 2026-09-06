@@ -371,11 +371,10 @@ def is_root() -> bool:
 
 
 def root_optin_enabled(cli_flag: bool) -> bool:
-    """True when the operator has explicitly allowed running as root."""
-    if cli_flag:
-        return True
-    val = os.environ.get(_ALLOW_ROOT_ENV, "").strip().lower()
-    return val not in ("", "0", "false", "no")
+    """True when the operator has explicitly allowed running as root:
+    `--allow-root`, or `AGENT6_ALLOW_ROOT=1` (that value alone, as
+    `AGENT6_DANGEROUSLY_DISABLE_SANDBOX` takes)."""
+    return cli_flag or os.environ.get(_ALLOW_ROOT_ENV) == "1"
 
 
 def mkdir_for_real_user(path: Path, user: RealUser | None = None) -> None:
