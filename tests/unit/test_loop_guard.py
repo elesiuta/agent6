@@ -547,7 +547,23 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: Path) -> None:
     assert "nothing edited yet" in notices[0]
     assert "verify" not in notices[0]
 
-    # With a gate, the same notice names it.
+    # A gate the POLICY withholds is not a gate either: `run_commands = "no"`
+    # takes run_verify_command away, and the same run's prompt says so.
+    denied = MagicMock()
+    denied.call.side_effect = itertools.chain(
+        [_resp_with_tool("read_file", {"path": "x.txt"}, tu_id="d1")],
+        itertools.repeat(_resp_text("ok")),
+    )
+    no_commands = MagicMock(operator_wait_s=0.0)
+    no_commands.dispatch.return_value = RawResult({"content": "x"})
+    no_commands.command_policy.return_value = "no"
+    wf3 = _build_wf(repo, denied, no_commands)
+    wf3.config.workflow.verify_command = ("true",)
+    wf3.stagnation_notice_after_s = 1e-9
+    wf3.run("investigate")
+    assert "nothing edited yet" in _stagnation_blocks(_final_messages(denied))[0]
+
+    # With a gate the run can actually reach, the same notice names it.
     gated = MagicMock()
     gated.call.side_effect = itertools.chain(
         [_resp_with_tool("read_file", {"path": "x.txt"}, tu_id="g1")],

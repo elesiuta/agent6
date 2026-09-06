@@ -83,6 +83,11 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     for n in names:
         skill = by_name.get(n)
         if skill is None:
+            if not cfg.skills.enabled:
+                return "", (
+                    f"--skill: skills are disabled, so {n!r} cannot load"
+                    " (agent6 config set skills.enabled true)"
+                )
             available = ", ".join(sorted(by_name)) or "(none installed)"
             return "", f"--skill: unknown or disabled skill {n!r}; available: {available}"
         blocks.append(f'<skill name="{skill.name}">\n{skill.text.rstrip()}\n</skill>')

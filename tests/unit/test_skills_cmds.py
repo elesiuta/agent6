@@ -330,7 +330,9 @@ class TestSkillsTaskPrefix:
         prefix, err = _skills_task_prefix(cfg, ("tidy",))
 
         assert prefix == ""
-        assert "unknown or disabled skill 'tidy'" in err
+        # The refusal names the switch, not "(none installed)": the skill IS
+        # installed, and the listing beside it says exactly that.
+        assert "skills are disabled" in err and "skills.enabled true" in err
         assert _cmd_skills_list() == 0
         assert "skills are DISABLED" in capsys.readouterr().out
 

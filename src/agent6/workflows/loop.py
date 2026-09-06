@@ -2195,7 +2195,10 @@ class Workflow:
         if attemptless and elapsed >= self.stagnation_notice_after_s:
             state.stagnation_nudged = True
             minutes = max(1, int(elapsed // 60))
-            gated = bool(self.config.workflow.verify_command)
+            gated = (
+                bool(self.config.workflow.verify_command)
+                and self.dispatcher.command_policy() != "no"
+            )
             notice = STAGNATION_NUDGE if gated else STAGNATION_NUDGE_GATELESS
             turn.tool_results.append(Notice(notice.format(minutes=minutes)))
             self._emit("loop.stagnation.nudged", iteration=turn.iteration, elapsed_s=int(elapsed))
