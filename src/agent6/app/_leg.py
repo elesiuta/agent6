@@ -174,10 +174,13 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     # it the prompt would land invisibly in the console log and contend for
     # stdin. Skip revision for this leg instead.
     effective_revise_prompt = cfg.prompt.revise_prompt
-    if effective_revise_prompt == "interactive" and inputs.tui_enabled:
+    if effective_revise_prompt == "interactive" and (
+        inputs.tui_enabled or frontend.select_revised_prompt is None
+    ):
+        owner = "the TUI owns it" if inputs.tui_enabled else "this surface has none"
         reporter.note(
-            "prompt.revise_prompt='interactive' needs the terminal; the TUI"
-            " owns it. Skipping prompt revision for this leg."
+            f"prompt.revise_prompt='interactive' needs the terminal; {owner}."
+            " Skipping prompt revision for this leg."
         )
         effective_revise_prompt = "off"
     stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)

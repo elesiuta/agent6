@@ -362,7 +362,8 @@ class PromptConfig(BaseModel):
         description=(
             "Rewrite the task prompt once with the reviewer model before the loop starts: `off`, "
             "`auto` (the revision is used as written), or `interactive` (you accept, keep the "
-            "original, or edit; needs the terminal, so a run under the TUI skips it)."
+            "original, edit, or quit, which stops the run; needs a terminal to answer at, so a "
+            "run under the TUI, an ACP client or a spawned lane skips it)."
         ),
     )
     # Front-load task decomposition (run mode). When on the worker's system

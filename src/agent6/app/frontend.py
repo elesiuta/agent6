@@ -158,7 +158,9 @@ class SessionFrontend:
     # Interactive fronts prompt (default no); headless warns and proceeds.
     confirm_replay_after_crash: Callable[[int, tuple[str, ...]], bool]
     prompt_detach_away_mode: Callable[[Path, tuple[str, ...]], None]
-    select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None]
+    # None when this surface cannot run the interactive revise choice; the leg
+    # then skips revision instead of reading a selector's None as a quit.
+    select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None] | None
     # `run -i` / `ask -i`
     build_repl_hook: Callable[
         [Path, BudgetTracker, str, MCPManager | None],

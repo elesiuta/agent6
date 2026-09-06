@@ -224,7 +224,7 @@ def acp_frontend(
             )
         ),
         prompt_detach_away_mode=lambda _session_dir, _scopes: None,
-        select_revised_prompt=lambda _original, _revised, _notes: None,
+        select_revised_prompt=None,
         build_repl_hook=_no_repl,
         run_ask_repl=_no_ask_repl,
         save_ask_transcript=lambda _layout, _question, _answer: None,

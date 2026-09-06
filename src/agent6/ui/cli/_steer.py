@@ -65,7 +65,8 @@ def select_revised_prompt(
     questions: tuple[str, ...],
     console_view: ConsoleView | None = None,
 ) -> str | None:
-    """Interactive accept/edit/skip prompt for prompt.revise_prompt.
+    """Interactive accept/original/edit/quit prompt for prompt.revise_prompt;
+    None (quit, Ctrl-C, Ctrl-D) stops the run.
 
     `console_view`, when given, has its heartbeat suspended for the whole
     exchange (the spinner's per-tick line-erase otherwise wipes the choice

@@ -217,6 +217,7 @@ from agent6.workflows._parallel_dispatch import (
 from agent6.workflows._prompt_blocks import build_system_prompt, initial_instructions
 from agent6.workflows._prompt_revision import (
     PromptRevision,
+    PromptRevisionDeclined,
     PromptRevisionError,
     clip_text,
     format_effective_task,
@@ -648,19 +649,12 @@ class Workflow:
         try:
             effective_task = self._maybe_revise_prompt(user_task, repo)
         except PromptRevisionError as exc:
-            self._log(f"LOOP: prompt revision failed: {exc}")
-            self._emit(
-                "session.end",
-                reason="prompt_revision_failed",
-                iterations=0,
-                all_passed=False,
-            )
+            declined = isinstance(exc, PromptRevisionDeclined)
+            end_reason: SessionEndReason = "steer_abort" if declined else "prompt_revision_failed"
+            self._log(f"LOOP: prompt revision {'declined' if declined else 'failed'}: {exc}")
+            self._emit("session.end", reason=end_reason, iterations=0, all_passed=False)
             return SessionResult(
-                completed=False,
-                reason="prompt_revision_failed",
-                summary=str(exc),
-                iterations=0,
-                tool_calls=0,
+                completed=False, reason=end_reason, summary=str(exc), iterations=0, tool_calls=0
             )
 
         # Seed the run's root task and wire its id into the
@@ -4247,7 +4241,7 @@ class Workflow:
                 revision.clarifying_questions,
             )
             if selected is None or not selected.strip():
-                raise PromptRevisionError("operator aborted prompt revision")
+                raise PromptRevisionDeclined("operator quit at the revise_prompt choice")
             selected_task = selected.strip()
             if selected_task == user_task.strip():
                 return user_task

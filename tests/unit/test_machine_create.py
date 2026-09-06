@@ -1195,3 +1195,29 @@ def test_discarding_the_workspace_takes_its_empty_base_with_it(tmp_path: Path) -
     (base / "create-BBBBBB").mkdir()
     _discard_workspace(base / "create-BBBBBB", Reporter(out=said.append, err=said.append))
     assert kept.is_dir() and base.is_dir()
+
+
+def test_an_operator_stop_ends_create_instead_of_retrying(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An operator stopping the drafting agent (`steer_abort`) ends the
+    command; absent that reason from `_CREATE_STOP_REASONS`, the loop read
+    the stop as a failed attempt and re-ran the whole authoring prompt."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    _stub_preflight(monkeypatch)
+    attempts = 0
+
+    def fake_build(
+        cfg: object, root: Path, isolation: object, transcript_dir: Path, **_kw: object
+    ) -> Callable[[AgentRequest], AgentExecResult]:
+        def run(_request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+            nonlocal attempts
+            attempts += 1
+            return AgentExecResult(payload=None, reason="steer_abort", usd=0.0)
+
+        return run
+
+    monkeypatch.setattr(_create, "build_machine_agent_runner", fake_build)
+    assert main(["machine", "create", "Greet the user", "--max-attempts", "3"]) == 1
+    assert attempts == 1

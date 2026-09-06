@@ -50,7 +50,7 @@ _CREATE_TIMEOUT_S = 900.0
 
 
 _CREATE_STOP_REASONS = frozenset(
-    {"budget_exhausted", "timeout", "provider_error", "prompt_revision_failed"}
+    {"budget_exhausted", "timeout", "provider_error", "prompt_revision_failed", "steer_abort"}
 )
 
 

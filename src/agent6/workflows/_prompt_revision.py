@@ -32,6 +32,10 @@ class PromptRevisionError(Exception):
     """Raised when the optional prompt-revision pass cannot produce a task."""
 
 
+class PromptRevisionDeclined(PromptRevisionError):
+    """The operator quit at the interactive choice: their stop, not a failure."""
+
+
 def clip_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text

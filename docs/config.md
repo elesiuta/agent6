@@ -291,7 +291,7 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 |---|---|---|
 | `system_prompt_file` | `""` | Path of a file that replaces run mode's built-in base system prompt (the dynamic blocks still append). The tool contracts become yours to state; a file missing the core tool names is warned about at startup. Empty: the built-in base. `agent6 prompt show` prints the assembled prompt, the tool definitions, and the first message. |
 | `structural_priors` | `true` | Include the `<repo-priors>` block in the system prompt: the repo map, the symbol outline, co-change and hot-symbol hints, recent commits. `false` for a leaner, cheaper prompt. |
-| `revise_prompt` | `"off"` | Rewrite the task prompt once with the reviewer model before the loop starts: `off`, `auto` (the revision is used as written), or `interactive` (you accept, keep the original, or edit; needs the terminal, so a run under the TUI skips it). |
+| `revise_prompt` | `"off"` | Rewrite the task prompt once with the reviewer model before the loop starts: `off`, `auto` (the revision is used as written), or `interactive` (you accept, keep the original, edit, or quit, which stops the run; needs a terminal to answer at, so a run under the TUI, an ACP client or a spawned lane skips it). |
 | `decompose` | `"auto"` | Front-load task decomposition in run mode: the model lays the task out as ordered DAG subtasks before editing and works them one at a time. `on` helps small models that under-finish multi-part tasks (measured on mistral-small; capable models just pay 2-4x overhead), `off` never, `auto` decides per worker model from the capability registry (`config show` prints the resolved value). `--decompose` forces it for one run. |
 
 ## `[skills]`

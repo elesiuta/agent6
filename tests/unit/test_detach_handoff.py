@@ -181,11 +181,15 @@ def _returning(value: object) -> Callable[..., object]:
     return stub
 
 
-def _stub_leg_internals(monkeypatch: pytest.MonkeyPatch, result: SessionResult) -> None:
+def _stub_leg_internals(
+    monkeypatch: pytest.MonkeyPatch, result: SessionResult, built: dict[str, Any] | None = None
+) -> None:
     class _Workflow:
         iterations_reached = 3
 
         def __init__(self, **kw: Any) -> None:
+            if built is not None:
+                built.update(kw)
             self._undo_forker: Callable[[], tuple[str, str] | None] = kw["undo_forker"]
 
         def run(self, _task: str) -> SessionResult:
@@ -353,3 +357,64 @@ def test_an_undone_ask_leg_names_the_fork_instead_of_answering_with_it(
     assert saved == []
     assert any("continue as fork-two-BBBBBB" in s for s in said)
     assert not any("operator undid" in s for s in said)
+
+
+def test_a_surface_without_the_revise_choice_skips_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ACP front-end has no terminal to ask the revise_prompt choice on;
+    its selector answered None, which read as the operator's quit and ended
+    the run "stopped" for an act nobody performed. A surface with no selector
+    skips revision, as a leg under the TUI does."""
+    built: dict[str, Any] = {}
+    _stub_leg_internals(
+        monkeypatch,
+        SessionResult(
+            completed=True, reason="finish_session", summary="ok", iterations=1, tool_calls=0
+        ),
+        built,
+    )
+    layout = SessionLayout(state_dir=tmp_path / "state", session_id="acp-one-AAAAAA")
+    layout.ensure()
+    said: list[str] = []
+    front = acp_frontend(
+        ask=lambda _p, _o, _s, _c, _u=None: None,
+        capabilities=FrontendCapabilities(),
+        agent6_exe=lambda: "agent6",
+        spawn_detached_resume=lambda _cwd, _sid, _flags: "",
+    )
+    assert front.select_revised_prompt is None
+    cwd = tmp_path / "repo"
+    cwd.mkdir()
+
+    end = run_leg(
+        Config.model_validate({"prompt": {"revise_prompt": "interactive"}}),
+        layout,
+        LegInputs(
+            session_id=layout.session_id,
+            mode="run",
+            role="worker",
+            isolation="hardened",
+            tui_enabled=False,
+            interactive=False,
+            task="do the thing",
+            gate=lambda cfg, _b: cfg,
+            chain_branch=None,
+            base_sha="",
+            untracked_at_start=frozenset(),
+            resume_state_path=layout.session_dir / "loop_state.json",
+            undo_forker=lambda: None,
+            prompts=OperatorPrompts(session_dir=layout.session_dir),
+            ask_transcript_task=None,
+        ),
+        frontend=front,
+        reporter=Reporter(out=said.append, err=said.append),
+        events=EventSink(layout.logs_path),
+        transcript_sink=None,  # type: ignore[arg-type]
+        cwd=cwd,
+        state_dir=tmp_path / "state",
+    )
+
+    assert end.rc == 0
+    assert built["revise_prompt"] == "off"
+    assert any("this surface has none" in s for s in said)

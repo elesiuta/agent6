@@ -245,3 +245,27 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: Path) -> None:
     task_text = first_worker_messages[0]["content"][0]["text"]
     assert "keep this exact task" in task_text
     assert "Rewrite everything" not in task_text
+
+
+def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: Path) -> None:
+    """An operator's `q` (or Ctrl-D) at the interactive revise_prompt choice
+    ended the run as `prompt_revision_failed`, "prompt revision failed" in
+    every listing, though nothing failed: it is the operator's own stop."""
+    from agent6.viewmodel.listing import status_word
+
+    def quit_at_the_choice(_original: str, _revised: str, _questions: tuple[str, ...]) -> None:
+        return None
+
+    reviser = MagicMock()
+    reviser.call.return_value = _text_resp("<revised_task>Rewrite everything.</revised_task>")
+    wf = _wf(
+        tmp_path,
+        prompt_reviser_provider=reviser,
+        revise_prompt="interactive",
+        prompt_revision_selector=quit_at_the_choice,
+    )
+    with patch.object(Workflow, "_load_repo_summary", return_value=_repo(tmp_path)):
+        result = wf.run("fix the bug in src/foo.py")
+    assert result.reason == "steer_abort"
+    word, _ = status_word(finished=True, all_passed=False, end_reason=result.reason)
+    assert word == "stopped"

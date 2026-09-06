@@ -173,8 +173,15 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
         confirm_run_on_run_branch=confirm_run_on_run_branch,
         confirm_replay_after_crash=confirm_replay_after_crash,
         prompt_detach_away_mode=prompt_detach_away_mode,
-        select_revised_prompt=lambda original, revised, questions: select_revised_prompt(
-            original, revised, questions, console_cell[0]
+        # The choice reads stdin: with it redirected nobody can answer.
+        select_revised_prompt=(
+            (
+                lambda original, revised, questions: select_revised_prompt(
+                    original, revised, questions, console_cell[0]
+                )
+            )
+            if sys.stdin.isatty()
+            else None
         ),
         build_repl_hook=lambda cwd, budget, session_id, mcp_manager: build_repl_hook(
             cwd,
