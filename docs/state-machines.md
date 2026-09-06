@@ -255,6 +255,13 @@ A single command, argv-style (never a shell string), through the existing `run_i
 - `only_explicit_states` and `session` need `strict`; an unhonorable tool-network config refuses at startup, naming the conflicting `sandbox.network` value and the fix
 - offline tool states each get their own network (separate launchers; no run-wide session network to share)
 
+**Secrets (opt-in, none by default).**
+
+- a `tool`'s `pass_env`: environment variable names its jailed command receives from the operator's environment, e.g. `pass_env = ["X_TOKEN"]`
+- only names the operator lists in `[machine].pass_env` reach a jail (global/repo config, never the machine overlay); a state naming one not listed refuses the run at startup, naming the variable
+- a provider's `api_key_env` is never allowed there, as for an MCP server's `pass_env`
+- `machine check` names every variable a state declares
+
 **Script bundles.** A machine is a bundle: the `.asm.toml` plus an optional sibling `scripts/` of operator-reviewed helpers (the kind `machine create` may draft).
 
 - a `tool` references one by a relative path starting `scripts/` (`command = ["bash", "scripts/fetch.sh"]`), resolved against the jail's mounted cwd: keep the bundle at or under the directory you run `agent6` from

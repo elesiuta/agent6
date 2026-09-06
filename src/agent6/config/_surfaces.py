@@ -125,6 +125,16 @@ class MachineConfig(BaseModel):
         ),
     )
     notify: MachineNotifyConfig = Field(default_factory=MachineNotifyConfig)
+    pass_env: StrTuple = Field(
+        default=(),
+        description=(
+            "Environment variable names a machine's `tool` state may receive from the"
+            " operator's environment when its own `pass_env` names them; a state naming one"
+            " not listed here refuses the run at startup. Global/repo config only (a machine"
+            " `[config]` overlay setting it is rejected); a provider's `api_key_env` is never"
+            " allowed."
+        ),
+    )
 
 
 def is_loopback_host(host: str) -> bool:

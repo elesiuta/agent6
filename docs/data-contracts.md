@@ -96,7 +96,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 
 - **Written by:** workflows/loop
 - **Read by:** app/{_leg, fork, resume}, workflows/_loop_state
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (15 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (16 test files exercise it)
 
 ## ToolResult family
 
@@ -145,7 +145,7 @@ Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 
 - **Written by:** machine/_semantics
 - **Read by:** app/machine/{_bundle, _frontend, _preflight, create, run}, machine/{__init__, dryrun, engine, graph, journal}, ui/cli/{config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{_sse, actions, server}, viewmodel/machine_state
-- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (9 test files exercise it)
+- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (10 test files exercise it)
 
 ## JournalEvent
 

@@ -304,8 +304,9 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _mcp_pass_env_excludes_provider_keys(self) -> Config:
-        """No server's `pass_env` may name a provider's `api_key_env`.
+    def _pass_env_excludes_provider_keys(self) -> Config:
+        """No `pass_env` (an MCP server's, the machine allowlist) may name a
+        provider's `api_key_env`.
 
         The invariant lives here so a direct config edit cannot bypass it (mcp
         connect pre-checks the same rule for a friendlier early refusal).
@@ -315,12 +316,17 @@ class Config(BaseModel):
             for e in self.providers.values()
             if not isinstance(e, ClaudeCodeProviderEntry) and e.api_key_env
         }
-        for name, srv in self.mcp.servers.items():
-            leaked = sorted(keys.intersection(srv.pass_env))
+        lists = [
+            (f"[mcp.servers.{name}].pass_env", srv.pass_env, "an MCP server")
+            for name, srv in self.mcp.servers.items()
+        ]
+        lists.append(("[machine].pass_env", self.machine.pass_env, "a machine's tool"))
+        for where, names, who in lists:
+            leaked = sorted(keys.intersection(names))
             if leaked:
                 raise ValueError(
-                    f"[mcp.servers.{name}].pass_env names provider API key env var(s) "
-                    f"{', '.join(leaked)}; agent6 never passes a provider key to an MCP server."
+                    f"{where} names provider API key env var(s) {', '.join(leaked)};"
+                    f" agent6 never passes a provider key to {who}."
                 )
         return self
 

@@ -119,7 +119,12 @@ class _RecordingWorld:
     net_calls: list[tuple[tuple[str, ...], NetworkMode]]
 
     def run_tool(
-        self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
+        self,
+        argv: tuple[str, ...],
+        timeout_s: float,
+        *,
+        network: NetworkMode = "none",
+        pass_env: tuple[str, ...] = (),
     ) -> ToolExecResult:
         self.net_calls.append((argv, network))
         return ToolExecResult(exit_code=0, stdout="", timed_out=False)

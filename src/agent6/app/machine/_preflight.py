@@ -13,14 +13,34 @@ protect paths (`machine_protect_paths`) and the operator notify hook
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from agent6.app.confine import check_network_support
 from agent6.app.finalize import hook_env, run_notify_hook
 from agent6.config import Config
-from agent6.machine import ToolState
+from agent6.machine import StateSpec, ToolState
 from agent6.types import IsolationLevel
+
+
+def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> str | None:
+    """A refusal message naming every tool state that asks for an environment
+    variable the operator's `[machine].pass_env` does not allow, else None.
+    The state declares, the operator permits: the allowlist lives in the
+    global/repo config, never in the machine's own file."""
+    allowed = set(cfg.machine.pass_env)
+    asks = [
+        f"[states.{name}] asks for {', '.join(n for n in state.pass_env if n not in allowed)}"
+        for name, state in states.items()
+        if isinstance(state, ToolState) and any(n not in allowed for n in state.pass_env)
+    ]
+    if not asks:
+        return None
+    return (
+        f"{'; '.join(asks)}. [machine].pass_env does not allow these environment"
+        " variables; list them there, in the global or repo config (never a machine"
+        " overlay), to pass them."
+    )
 
 
 def machine_network_refusal(

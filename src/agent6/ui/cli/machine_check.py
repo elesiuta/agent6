@@ -125,6 +125,12 @@ def _cmd_machine_check(path: Path) -> int:
         return _fail(path, script_problems, "scripts")
     for warning in _tool_reachability_warnings(spec, path):
         print(warning, file=sys.stderr)
+    for name, state in spec.states.items():
+        if isinstance(state, ToolState) and state.pass_env:
+            print(
+                f"[states.{name}] receives the environment variable(s)"
+                f" {', '.join(state.pass_env)} when [machine].pass_env allows them"
+            )
     print(f"OK: {path} ({spec.machine}, {len(spec.states)} states)")
     return 0
 

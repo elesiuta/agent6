@@ -65,6 +65,7 @@ from agent6.machine.model import (
     FieldSpec,
     MachineError,
     MachineSpec,
+    StateSpec,
     ToolState,
 )
 
@@ -93,6 +94,7 @@ __all__ = [
     "PendingWait",
     "Snapshot",
     "StateCheck",
+    "StateSpec",
     "StepEvent",
     "ToolExecResult",
     "ToolPolicyFactory",

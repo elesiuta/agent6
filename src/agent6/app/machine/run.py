@@ -35,6 +35,7 @@ from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
     build_machine_notify_hook,
     machine_network_refusal,
+    machine_pass_env_refusal,
     machine_protect_paths,
 )
 from agent6.app.machine._spend import book_crashed_attempt
@@ -197,7 +198,13 @@ def machine_tool_policy_factory(
         env_base["AGENT6_MACHINE_DATA_DIR"] = str(data_dir)
         extra_rw = (data_dir,)
 
-    def build(argv: tuple[str, ...], timeout_s: float, network: NetworkMode) -> JailPolicy:
+    def build(
+        argv: tuple[str, ...], timeout_s: float, network: NetworkMode, pass_env: tuple[str, ...]
+    ) -> JailPolicy:
+        # The state's declared names, copied from the operator's environment
+        # when set there: the run's startup refused any the operator has not
+        # allowed (`machine_pass_env_refusal`).
+        env = {**env_base, **{k: os.environ[k] for k in pass_env if k in os.environ}}
         return jail_policy(
             cwd,
             cfg,
@@ -207,7 +214,7 @@ def machine_tool_policy_factory(
             network=network,
             extra_rw_paths=extra_rw,
             extra_protect_paths=protect_paths,
-            env_base=env_base,
+            env_base=env,
         )
 
     return build
@@ -313,6 +320,11 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             isolation = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
         except SessionRefused as refusal:
             return refusal.rc
+        # Its fix is an allowlist entry, never a network change: refused
+        # outright, ahead of the network-fix flow below.
+        if (denied := machine_pass_env_refusal(cfg, spec.states)) is not None:
+            reporter.refuse(denied)
+            return 2
         refusal = machine_network_refusal(cfg, isolation, tool_states) or check_hide_paths_support(
             cfg, isolation, cwd
         )

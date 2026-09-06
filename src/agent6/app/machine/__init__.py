@@ -22,6 +22,7 @@ from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._preflight import (
     build_machine_notify_hook,
     machine_network_refusal,
+    machine_pass_env_refusal,
     machine_protect_paths,
 )
 from agent6.app.machine._scriptcheck import (
@@ -48,6 +49,7 @@ __all__ = [
     "build_machine_notify_hook",
     "lint_and_typecheck",
     "machine_network_refusal",
+    "machine_pass_env_refusal",
     "machine_protect_paths",
     "machine_spend",
     "read_budget_totals",

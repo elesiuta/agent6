@@ -231,7 +231,12 @@ class World(Protocol):
     """Everything the engine is allowed to observe from the outside."""
 
     def run_tool(
-        self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
+        self,
+        argv: tuple[str, ...],
+        timeout_s: float,
+        *,
+        network: NetworkMode = "none",
+        pass_env: tuple[str, ...] = (),
     ) -> ToolExecResult: ...
 
     def run_agent(self, request: AgentRequest) -> AgentExecResult: ...
@@ -254,7 +259,7 @@ class World(Protocol):
 
 # The per-call tool-jail policy, injected by the CLI (see LiveWorld.tool_policy):
 # (argv, timeout_s, network) -> the JailPolicy the shared builder produced.
-ToolPolicyFactory = Callable[[tuple[str, ...], float, NetworkMode], JailPolicy]
+ToolPolicyFactory = Callable[[tuple[str, ...], float, NetworkMode, tuple[str, ...]], JailPolicy]
 
 
 def _state_log_seq(p: Path) -> int:
@@ -339,15 +344,21 @@ class LiveWorld:
     on_wait: Callable[[], None] | None = None
 
     def run_tool(
-        self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
+        self,
+        argv: tuple[str, ...],
+        timeout_s: float,
+        *,
+        network: NetworkMode = "none",
+        pass_env: tuple[str, ...] = (),
     ) -> ToolExecResult:
-        # `network` is authoritative here: opt-in was gated by the CLI at
-        # startup (sandbox.network), and the factory's builder clamps it to
-        # what the isolation level truthfully provides.
+        # `network` and `pass_env` are authoritative here: the opt-ins were
+        # gated by the CLI at startup (sandbox.network, machine.pass_env), and
+        # the factory's builder clamps the network to what the isolation level
+        # truthfully provides.
         if self.tool_policy is None:
             raise EngineError("LiveWorld has no tool_policy factory wired")
         try:
-            policy = self.tool_policy(tuple(argv), float(timeout_s), network)
+            policy = self.tool_policy(tuple(argv), float(timeout_s), network, pass_env)
             result = (self.jail_runner or run_in_jail)(policy)
         except JailUnavailableError as exc:
             raise EngineError(f"jail unavailable: {exc}") from exc
@@ -694,6 +705,7 @@ def _execute(
             # processes die with the state, so there is never a sibling to
             # share one with (see StateSpec.network).
             network="host" if state.network == "host" else "none",
+            pass_env=state.pass_env,
         )
         if result.timed_out:
             label = "timeout"

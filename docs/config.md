@@ -372,6 +372,7 @@ Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/
 |---|---|---|
 | `snapshot_keep` | `5` | How many blackboard snapshots a machine instance keeps (recovery reads only the latest; `machine replay` rebuilds any state from the journal). `0` keeps all. |
 | `state_log_keep` | `50` | How many per-state log dirs a machine instance keeps under `<instance>/states/` (the watchable logs of each state's leg; the journal keeps the full transition history regardless). `0` keeps all. |
+| `pass_env` | `[]` | Environment variable names a machine's `tool` state may receive from the operator's environment when its own `pass_env` names them; a state naming one not listed here refuses the run at startup. Global/repo config only (a machine `[config]` overlay setting it is rejected); a provider's `api_key_env` is never allowed. |
 
 ### `[machine.notify]` (optional)
 

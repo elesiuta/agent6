@@ -19,7 +19,15 @@ import re
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 __all__ = [
     "AgentState",
@@ -333,6 +341,23 @@ class ToolState(BaseModel):
     # call (`sandbox.network`, read from global/repo config, never a machine
     # overlay).
     network: Literal["auto", "host", "none"] = "auto"
+    # Env var names this tool's jailed command receives from the operator's
+    # environment: only those the operator lists in `[machine].pass_env`
+    # (global/repo config, never a machine overlay); a name the operator has
+    # not allowed refuses the run at startup, naming every such state and var.
+    # A tool jail otherwise gets the fixed passthrough environment alone.
+    pass_env: tuple[str, ...] = ()
+
+    @field_validator("pass_env")
+    @classmethod
+    def _env_names(cls, names: tuple[str, ...]) -> tuple[str, ...]:
+        for name in names:
+            if not _ENV_NAME_RE.fullmatch(name):
+                raise ValueError(f"pass_env names an invalid environment variable name {name!r}")
+        return names
+
+
+_ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _seconds_as_str(value: object) -> object:
@@ -392,6 +417,9 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     ),
     "git.run_repo_filters": (
         "honoring the repo's content drivers runs repo-controlled code on the host outside the jail"
+    ),
+    "machine.pass_env": (
+        "it decides which of the operator's environment variables reach a tool jail"
     ),
     "prompt.system_prompt_file": (
         "the system prompt is read from the host, outside the jail, and sent to the provider"

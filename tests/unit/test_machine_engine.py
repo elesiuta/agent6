@@ -391,7 +391,12 @@ class FakeWorld:
     notifications: list[tuple[str, str, str, str]] = field(default_factory=list)
 
     def run_tool(
-        self, argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
+        self,
+        argv: tuple[str, ...],
+        timeout_s: float,
+        *,
+        network: NetworkMode = "none",
+        pass_env: tuple[str, ...] = (),
     ) -> ToolExecResult:
         self.calls.append(argv)
         self.net_calls.append((argv, network))
@@ -708,7 +713,7 @@ def test_run_tool_uses_the_injected_jail_runner(tmp_path: Path) -> None:
     world = LiveWorld(
         cwd=tmp_path,
         journal=MachineJournal(tmp_path / "i"),
-        tool_policy=lambda argv, timeout_s, network: JailPolicy(cwd=tmp_path, argv=argv),
+        tool_policy=lambda argv, timeout_s, network, pass_env: JailPolicy(cwd=tmp_path, argv=argv),
         jail_runner=_runner,
     )
     res = world.run_tool(("echo", "hi"), 5.0)
@@ -748,7 +753,9 @@ def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: Path)
             self.slept: list[float | None] = []
             self.persisted: list[float | None] = []
 
-        def run_tool(self, argv: Any, timeout_s: Any, *, network: Any = "none") -> Any:
+        def run_tool(
+            self, argv: Any, timeout_s: Any, *, network: Any = "none", pass_env: Any = ()
+        ) -> Any:
             raise AssertionError("no tool states")
 
         def run_agent(self, request: Any, events_log: Any = None) -> Any:
@@ -1685,7 +1692,11 @@ def test_stop_request_parks_at_the_transition_boundary(tmp_path: Path) -> None:
     real_run_tool = world.run_tool
 
     def stop_during_first_tool(
-        argv: tuple[str, ...], timeout_s: float, *, network: NetworkMode = "none"
+        argv: tuple[str, ...],
+        timeout_s: float,
+        *,
+        network: NetworkMode = "none",
+        pass_env: Any = (),
     ) -> ToolExecResult:
         write_stop_request(journal.root)
         return real_run_tool(argv, timeout_s, network=network)
