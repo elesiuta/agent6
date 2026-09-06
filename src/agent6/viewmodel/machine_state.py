@@ -35,6 +35,8 @@ from agent6.machine.journal import (
 from agent6.machine.model import MachineSpec
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, machines_root
+from agent6.viewmodel.state import fold_session
+from agent6.viewmodel.tail import tail_events
 
 # How many recent machine.notify events a MachineState carries. Front-ends render
 # them as ephemeral surfaces, so only the tail matters; the journal keeps them all.
@@ -166,21 +168,38 @@ def fold_machine(spec: MachineSpec, events: Sequence[object]) -> MachineState:
     )
 
 
-def machine_status_word(ms: MachineState, *, parked: bool, alive: bool) -> str:
+def machine_status_word(
+    ms: MachineState, *, parked: bool, alive: bool, blocked: bool = False
+) -> str:
     """THE liveness word front-ends read, so a machine that isn't working never
     renders busy. Terminal reports its ok/failed end; an armed `--exit-on-wait`
-    wait (parked) OR a live worker blocked in a foreground `wait` state is
+    wait (parked), a live worker blocked in a foreground `wait` state, or a live
+    worker whose agent state holds an unanswered operator prompt (blocked) is
     "waiting"; a live worker in any other state is "running"; a dead pid that is
     neither parked nor ended is "stopped". The fold is pure, so parked (a
-    persisted PendingWait) and alive (a live worker.pid) are probed by the caller."""
+    persisted PendingWait), alive (a live worker.pid) and blocked (the newest
+    state log's open prompt) are probed by the caller."""
     if ms.ended is not None:
         return ms.ended.status
     if parked:
         return "waiting"
     if alive:
+        if blocked:
+            return "waiting"
         current_kind = next((s.kind for s in ms.states if s.is_current), None)
         return "waiting" if current_kind == "wait" else "running"
     return "stopped"
+
+
+def machine_operator_blocked(machine_dir: Path) -> str:
+    """The state dir (`0001-attempt`) whose agent leg holds an unanswered
+    approval or question, else "": the machine waits on the operator there."""
+    log = newest_state_log(machine_dir)
+    if log is None:
+        return ""
+    state = fold_session(tail_events(log, follow=False))
+    open_prompts = [*state.pending_approvals, *state.pending_questions]
+    return log.parent.name if any(not p.answered for p in open_prompts) else ""
 
 
 def machine_is_parked(machine_dir: Path) -> bool:
@@ -238,6 +257,8 @@ def summarize_machine_dir(machine_dir: Path) -> MachineSummary:
     except (MachineError, OSError):
         return MachineSummary(machine_dir.name, "", "", "unreadable", "", mtime)
     reason = ms.ended.reason if ms.ended is not None and ms.ended.status == "failed" else ""
+    if ms.ended is None and (blocked_in := machine_operator_blocked(machine_dir)):
+        reason = f"waiting on an approval in {blocked_in}"
     return MachineSummary(
         name=machine_dir.name,
         machine=ms.machine,
@@ -321,7 +342,10 @@ def machine_word_for_dir(ms: MachineState, machine_dir: Path) -> str:
     :func:`machine_status_word` fed the two dir probes (armed wait, worker
     pid), so surfaces cannot pair the probes differently."""
     return machine_status_word(
-        ms, parked=machine_is_parked(machine_dir), alive=worker_is_alive(machine_dir)
+        ms,
+        parked=machine_is_parked(machine_dir),
+        alive=worker_is_alive(machine_dir),
+        blocked=bool(machine_operator_blocked(machine_dir)),
     )
 
 

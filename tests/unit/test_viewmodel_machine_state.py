@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -268,3 +269,22 @@ def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: Path) 
     for verb in verbs:
         msg = machine_verb_refusal(d, "tiny", verb)
         assert "already ended in 'done' (ok: routed)" in msg, (verb, msg)
+
+
+def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: Path) -> None:
+    """The newest state log's unanswered approval names the state the machine
+    waits on; an answered one does not, and a live blocked worker is "waiting"."""
+    from agent6.viewmodel.machine_state import machine_operator_blocked, machine_status_word
+
+    states = tmp_path / "states"
+    (states / "0001-attempt").mkdir(parents=True)
+    log = states / "0001-attempt" / "logs.jsonl"
+    prompt = {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"}
+    log.write_text(json.dumps(prompt) + "\n", encoding="utf-8")
+    assert machine_operator_blocked(tmp_path) == "0001-attempt"
+    answer = {"type": "approval.answer", "id": "a1", "approved": True}
+    log.write_text(json.dumps(prompt) + "\n" + json.dumps(answer) + "\n", encoding="utf-8")
+    assert machine_operator_blocked(tmp_path) == ""
+    ms = fold_machine(_spec(tmp_path), [])
+    assert machine_status_word(ms, parked=False, alive=True, blocked=True) == "waiting"
+    assert machine_status_word(ms, parked=False, alive=True) == "running"

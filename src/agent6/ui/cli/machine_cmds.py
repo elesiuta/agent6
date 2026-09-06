@@ -64,6 +64,7 @@ from agent6.viewmodel import (
     MachineWatchCursor,
     event_epoch,
     fold_machine,
+    machine_operator_blocked,
     machine_verb_refusal,
     machine_word_for_dir,
 )
@@ -347,7 +348,17 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         running_in = f", running {inflight_state!r}" if inflight_state else ""
         print(f"  status: running (worker pid {pid} alive){running_in}")
     else:
-        print(f"  status: {word}")
+        # A live worker blocked on an operator prompt: the word is "waiting"
+        # and the line names the state to answer in.
+        print(
+            f"  status: {word}"
+            + (
+                f" (an approval open in {blocked_in}: answer it in the TUI machine view"
+                " or the web page)"
+                if alive and (blocked_in := machine_operator_blocked(root))
+                else ""
+            )
+        )
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     print(

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -1039,3 +1040,31 @@ def test_list_joins_instances_with_their_files_and_names_the_rest(
     assert broken.split() == ["-", "-", "-", "invalid", "broken.asm.toml"]
     # Two unparsable files (both named "-") keep two rows.
     assert any("broken2.asm.toml" in line for line in lines)
+
+
+def test_status_and_list_name_a_parked_approval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A live worker whose agent state holds an unanswered approval reads
+    "waiting" on both surfaces, and status names the state to answer in."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    MachineJournal(root).clear_pending_wait()
+    write_worker_pid(root, os.getpid())
+    leg = root / "states" / "0001-attempt"
+    leg.mkdir(parents=True)
+    (leg / "logs.jsonl").write_text(
+        json.dumps({"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: x"})
+        + "\n",
+        encoding="utf-8",
+    )
+    assert main(["machine", "status", "waiter_delayed"]) == 0
+    out = capsys.readouterr().out
+    assert "status: waiting" in out
+    assert "an approval open in 0001-attempt" in out
+    assert main(["machine", "list"]) == 0
+    row = next(line for line in capsys.readouterr().out.splitlines() if "waiter_delayed" in line)
+    assert "waiting" in row and "0001-attempt" in row
