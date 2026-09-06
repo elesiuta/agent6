@@ -16,6 +16,7 @@ from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
 from agent6.child_env import curated_env
+from agent6.commit_message import render_commit_trailer
 from agent6.config import Config, NotifyConfig
 from agent6.events import EventSink
 from agent6.git_ops import (
@@ -29,7 +30,6 @@ from agent6.git_ops import (
     delete_branch_if_merged,
     find_stash,
     merge_stamp_holds,
-    render_commit_trailer,
     restore_stash,
     verify_git_identity,
 )

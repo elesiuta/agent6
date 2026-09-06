@@ -14,6 +14,7 @@ from pathlib import Path
 from agent6.app.fork import sweep_fork_worktrees
 from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
 from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
+from agent6.commit_message import render_commit_trailer
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import (
@@ -31,7 +32,6 @@ from agent6.git_ops import (
     list_chain_refs,
     list_run_branches,
     list_run_commits,
-    render_commit_trailer,
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status

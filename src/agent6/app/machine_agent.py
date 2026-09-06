@@ -51,6 +51,7 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
+from agent6.commit_message import render_commit_trailer
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
 from agent6.events import EventSink
@@ -62,7 +63,6 @@ from agent6.git_ops import (
     fetch_branch,
     machine_branch_for,
     machine_chain_ref_for,
-    render_commit_trailer,
 )
 from agent6.git_ops import status as git_status
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload

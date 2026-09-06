@@ -44,9 +44,10 @@ from agent6.app.frontend import SessionFrontend, approval_scopes
 from agent6.app.providers import build_prompt_reviser_provider, close_provider, role_temperature
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
+from agent6.commit_message import render_commit_trailer
 from agent6.config import Config, RoleName
 from agent6.events import EventSink, EventWriteError
-from agent6.git_ops import chain_ref_for, render_commit_trailer
+from agent6.git_ops import chain_ref_for
 from agent6.paths import chown_to_real_user
 from agent6.providers import TranscriptSink
 from agent6.sandbox.jail import SessionNetwork

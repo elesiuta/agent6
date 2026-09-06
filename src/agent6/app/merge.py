@@ -21,18 +21,16 @@ from agent6.app._setup import apply_git_ops_policy
 from agent6.app.manifest import write_manifest
 from agent6.app.providers import InstrumentedProvider, build_role_provider
 from agent6.budget import BudgetTracker
+from agent6.commit_message import CommitRow, condense_commit_message, conventional_commit_subject
 from agent6.config import Config
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
-    CommitRow,
     GitError,
     MergeResult,
     branch_exists,
     branch_tip_sha,
     chain_tip,
-    condense_commit_message,
-    conventional_commit_subject,
     is_ancestor,
     list_run_commits,
     plumb_merge,

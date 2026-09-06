@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.budget import BudgetExceeded, BudgetTracker
+from agent6.commit_message import conventional_commit_subject
 from agent6.config import Config
 from agent6.directive import DirectiveError, Segment, parse_directive, parse_pin
 from agent6.git_ops import (
@@ -31,7 +32,6 @@ from agent6.git_ops import (
     chain_dirty_paths,
     chain_tip,
     commit_diff,
-    conventional_commit_subject,
     diff_since,
     tree_diff_paths,
     worktree_name_status,

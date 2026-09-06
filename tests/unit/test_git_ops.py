@@ -13,6 +13,7 @@ from unittest import mock
 import pytest
 
 from agent6 import git_ops
+from agent6.commit_message import condense_commit_message
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -22,7 +23,6 @@ from agent6.git_ops import (
     commit_all,
     commit_diff,
     commit_paths,
-    condense_commit_message,
     create_branch,
     create_branch_at,
     diff_range,
@@ -1231,7 +1231,7 @@ def test_commit_all_appends_the_identity_trailer_once(tmp_path: Path) -> None:
 
 
 def test_render_commit_trailer_joins_the_code_writers() -> None:
-    from agent6.git_ops import render_commit_trailer
+    from agent6.commit_message import render_commit_trailer
 
     assert render_commit_trailer("", models=("m",)) is None
     got = render_commit_trailer("Assisted-by: agent6:{model}", models=("m1",))
@@ -1272,7 +1272,7 @@ def test_list_run_commits_preserves_body_with_separator_bytes(tmp_path: Path) ->
 
 
 def test_conventional_subject_derives_type_and_scope() -> None:
-    from agent6.git_ops import conventional_commit_subject
+    from agent6.commit_message import conventional_commit_subject
 
     # All test files -> test; scope from the common first dir under src/ when
     # source is touched, else the common top-level dir.

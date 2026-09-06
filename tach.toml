@@ -21,7 +21,7 @@ depends_on = []
 # presentation, process-spawn, and run-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, LaneRuntime).
 path = "agent6.app"
-depends_on = [
+depends_on = ["agent6.commit_message", 
   "agent6.child_env",
   "agent6",
   "agent6.budget",
@@ -61,7 +61,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.ui.cli"
-depends_on = [
+depends_on = ["agent6.commit_message", 
   "agent6.ui.steer",
   "agent6.app",
   "agent6.config",
@@ -104,7 +104,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.workflows"
-depends_on = [
+depends_on = ["agent6.commit_message", 
   "agent6.prompts",  # pure prompt/template text the loop assembles
   # prompt show resolves the isolation a run here would get, so the preview
   # renders the same level-aware blocks the loop does
@@ -335,8 +335,13 @@ path = "agent6.tools.schema"
 depends_on = ["agent6.graph.models", "agent6.types"]
 
 [[modules]]
+# Commit message composition: pure string work, no git.
+path = "agent6.commit_message"
+depends_on = []
+
+[[modules]]
 path = "agent6.git_ops"
-depends_on = ["agent6.types", "agent6.child_env"]  # the provider-key names every child is stripped of
+depends_on = ["agent6.commit_message", "agent6.types", "agent6.child_env"]  # the provider-key names every child is stripped of
 
 [[modules]]
 # The package __init__ re-exports the models as the public API.
