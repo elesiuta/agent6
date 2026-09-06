@@ -14,8 +14,8 @@ from unittest.mock import MagicMock
 from agent6.config import Config
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
+    LoopState,
     Workflow,
-    _LoopState,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -37,7 +37,7 @@ def _wf(
 
 
 def _green(wf: Workflow, **verdict_kw: Any) -> bool | None:
-    state = _LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
+    state = LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
     return wf._tree_is_verify_green(state)  # pyright: ignore[reportPrivateUsage]
 
 
@@ -63,7 +63,7 @@ def test_the_harness_gate_defaults_to_finish_with_two_returns() -> None:
 
 
 def _verified(wf: Workflow, **verdict_kw: Any) -> str:
-    state = _LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
+    state = LoopState(original_task="t", tool_calls=0, verify=VerifyVerdict(**verdict_kw))
     return wf._verification(state)  # pyright: ignore[reportPrivateUsage]
 
 
@@ -110,7 +110,7 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
         wf = _wf(verify=verify)
         wf.events = MagicMock(emit=_capture)
         wf.events.emit = _capture  # type: ignore[method-assign]
-        state = _LoopState(original_task="t", tool_calls=0, verify=verify_verdict)
+        state = LoopState(original_task="t", tool_calls=0, verify=verify_verdict)
         emitted.clear()
         wf._emit_run_end_grounded(  # pyright: ignore[reportPrivateUsage]
             reason="finish_session", iteration=1, state=state
@@ -191,10 +191,10 @@ def _snap(**kw: Any) -> Any:
     return SessionSnapshot(**{**base, **kw})
 
 
-def _resumed_state(wf: Workflow, snap: Any) -> _LoopState:
+def _resumed_state(wf: Workflow, snap: Any) -> LoopState:
     from agent6.workflows._conversation import Conversation
 
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     wf._seed_carryover(state, Conversation.from_wire([]), snap)  # pyright: ignore[reportPrivateUsage]
     return state
 
@@ -270,9 +270,9 @@ def _harness_wf(when: str, retries: int = 2, *, policy: str = "yes") -> tuple[Wo
 
 
 def _turn(*, finishing: bool = False, edited: bool = False) -> Any:
-    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TurnState
 
-    turn = _TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
+    turn = TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
     if finishing:
         turn.finish_signal = "done"
         turn.finish_kind = "finish_session"
@@ -294,7 +294,7 @@ def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree
     bookkeeping, so the finish gate sees green and auto-commit sees a pass)."""
     wf, dispatcher = _harness_wf("finish")
     dispatcher.run_verify.return_value = _exec(0, "3 passed")
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
 
     assert wf._turn_harness_verify(state, turn) is None  # pyright: ignore[reportPrivateUsage]
@@ -311,7 +311,7 @@ def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() 
     times; the next red finish stands (reported finished, never passed)."""
     wf, dispatcher = _harness_wf("finish", retries=2)
     dispatcher.run_verify.return_value = _exec(1, "1 failed")
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     seen: list[str | None] = []
     notices: list[str] = []
     for _ in range(3):
@@ -330,7 +330,7 @@ def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() 
 def test_zero_retries_lets_the_first_red_finish_stand() -> None:
     wf, dispatcher = _harness_wf("finish", retries=0)
     dispatcher.run_verify.return_value = _exec(1)
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
     wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
@@ -342,7 +342,7 @@ def test_a_tree_the_model_already_certified_is_not_judged_twice() -> None:
     """Green and untouched since: the finish needs no second run. And a turn
     whose own run_verify_command judged the tree is never judged on top."""
     wf, dispatcher = _harness_wf("finish")
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
     turn = _turn(finishing=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
@@ -358,7 +358,7 @@ def test_step_mode_judges_every_editing_turn_and_finish_mode_does_not() -> None:
     for when, calls in (("step", 1), ("finish", 0), ("never", 0)):
         wf, dispatcher = _harness_wf(when)
         dispatcher.run_verify.return_value = _exec(0)
-        state = _LoopState(original_task="t", tool_calls=0)
+        state = LoopState(original_task="t", tool_calls=0)
         wf._turn_harness_verify(state, _turn(edited=True))  # pyright: ignore[reportPrivateUsage]
         assert dispatcher.run_verify.call_count == calls, when
 
@@ -367,7 +367,7 @@ def test_never_mode_leaves_a_finish_over_an_unverified_tree_alone() -> None:
     """`never`: the measured model-driven shape. The harness neither runs the gate
     nor returns the finish; the end is reported finished, not passed."""
     wf, dispatcher = _harness_wf("never")
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
     wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
@@ -378,7 +378,7 @@ def test_never_mode_leaves_a_finish_over_an_unverified_tree_alone() -> None:
 
 def test_run_commands_no_withholds_the_gate_from_the_harness_too() -> None:
     wf, dispatcher = _harness_wf("finish", policy="no")
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
     wf._gate_verify_finish(state, turn)  # pyright: ignore[reportPrivateUsage]
@@ -396,7 +396,7 @@ def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
 
     wf, dispatcher = _harness_wf("finish", retries=2)
     dispatcher.run_verify.side_effect = ToolDenied("run_verify_command not approved")
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True, edited=True)
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
     assert _notices(turn) == [
@@ -453,7 +453,7 @@ def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:
     Self-review 2026-08-23: the turn-wide boolean skipped it."""
     wf, dispatcher = _harness_wf("step")
     dispatcher.run_verify.return_value = _exec(0)
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     turn = _turn(edited=True)
     turn.verify_just_passed = True  # the model's own green, then the edit
     turn.edit_since_verify_pass = True

@@ -14,8 +14,8 @@ from agent6.config import Config
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.workflows import loop as loopmod
 from agent6.workflows.loop import (
+    TurnState,
     Workflow,
-    _TurnState,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -30,8 +30,8 @@ def _wf(tmp_path: Path, style: str, provider: Any = None, logger: Any = print) -
     )
 
 
-def _turn(text: str) -> _TurnState:
-    return _TurnState(iteration=3, resp=MagicMock(text=text), assistant=MagicMock())
+def _turn(text: str) -> TurnState:
+    return TurnState(iteration=3, resp=MagicMock(text=text), assistant=MagicMock())
 
 
 def test_agent6_style_is_the_default_and_unchanged(tmp_path: Path) -> None:

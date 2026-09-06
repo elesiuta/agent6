@@ -33,8 +33,8 @@ from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.workflows._session_state import load_session_snapshot
 from agent6.workflows.loop import (
+    LoopState,
     Workflow,
-    _LoopState,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -93,7 +93,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: Path) -> None:
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
 
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s",
@@ -134,7 +134,7 @@ def test_checkpoints_are_append_only(tmp_path: Path) -> None:
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     for turn in (1, 2, 3):
         wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
             system="s",
@@ -171,7 +171,7 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: Path) -
         )
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
 
     def save(content: str, turn: int, *, checkpoint: bool) -> None:
         wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]

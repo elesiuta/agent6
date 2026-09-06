@@ -103,12 +103,12 @@ def _wf(**kw: Any) -> Workflow:
 
 
 def _state(**kw: Any) -> Any:
-    """Minimal _LoopState for _save_resume_snapshot call sites."""
-    from agent6.workflows.loop import _LoopState  # pyright: ignore[reportPrivateUsage]
+    """Minimal LoopState for _save_resume_snapshot call sites."""
+    from agent6.workflows.loop import LoopState
 
     defaults: dict[str, Any] = {"original_task": "t", "tool_calls": 0}
     defaults.update(kw)
-    return _LoopState(**defaults)
+    return LoopState(**defaults)
 
 
 _T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -251,8 +251,8 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
 
 
 def _turn(**kw: Any) -> Any:
-    """A bare _TurnState for direct turn-phase method tests."""
-    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+    """A bare TurnState for direct turn-phase method tests."""
+    from agent6.workflows.loop import TurnState
 
     defaults: dict[str, Any] = {
         "iteration": 1,
@@ -260,7 +260,7 @@ def _turn(**kw: Any) -> Any:
         "assistant": AssistantTurn((), ()),
     }
     defaults.update(kw)
-    return _TurnState(**defaults)
+    return TurnState(**defaults)
 
 
 def test_finish_planning_salvages_a_title_only_plan(tmp_path: Path) -> None:
@@ -5860,12 +5860,12 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     gate."""
     from agent6.tools.dispatch import ToolError
     from agent6.workflows._conversation import ToolUse
-    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TurnState
 
     dispatcher = MagicMock()
     dispatcher.dispatch.side_effect = ToolError("finish_planning is not available in run mode")
     wf = _wf(mode="run", dispatcher=dispatcher)
-    turn = _TurnState(
+    turn = TurnState(
         iteration=1,
         resp=MagicMock(),
         assistant=AssistantTurn(
@@ -5891,13 +5891,13 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     3-second finish->revoke->finish loop until killed)."""
     from agent6.tools.results import FinishSessionResult
     from agent6.workflows._conversation import ToolUse
-    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TurnState
 
     dispatcher = MagicMock()
     dispatcher.dispatch.return_value = FinishSessionResult(summary_text="done", result=None)
     wf = _wf(mode="run", dispatcher=dispatcher)
     state = _state()
-    turn = _TurnState(
+    turn = TurnState(
         iteration=1,
         resp=MagicMock(),
         assistant=AssistantTurn(
@@ -5908,7 +5908,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     wf._turn_dispatch_tools(state, turn)  # pyright: ignore[reportPrivateUsage]
     assert state.ok_tool_calls == 0  # a control verb is not work
 
-    worked = _TurnState(
+    worked = TurnState(
         iteration=2,
         resp=MagicMock(),
         assistant=AssistantTurn(
@@ -5984,11 +5984,11 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     means nothing verified the FINAL tree, so the end must not claim
     all_passed=True."""
     from agent6.workflows._conversation import ToolUse
-    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TurnState
 
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=Path("/tmp"))
-    turn = _TurnState(
+    turn = TurnState(
         iteration=7,
         resp=MagicMock(),
         assistant=AssistantTurn(
@@ -6013,11 +6013,11 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
 def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     """The mirror: a verified-green tree at the plateau still ends passed."""
     from agent6.workflows._conversation import ToolUse
-    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TurnState
 
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=Path("/tmp"))
-    turn = _TurnState(
+    turn = TurnState(
         iteration=7,
         resp=MagicMock(),
         assistant=AssistantTurn(

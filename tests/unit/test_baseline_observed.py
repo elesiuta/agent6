@@ -16,9 +16,9 @@ import pytest
 
 from agent6.tools.results import ExecResult
 from agent6.workflows.loop import (
+    LoopState,
+    TurnState,
     Workflow,
-    _LoopState,  # pyright: ignore[reportPrivateUsage]
-    _TurnState,  # pyright: ignore[reportPrivateUsage]
 )
 
 _BASE = "b" * 40
@@ -47,16 +47,16 @@ def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: Workflow) -> None:
     monkeypatch.setattr("agent6.workflows.loop.git_status", _status)
 
 
-def _state() -> _LoopState:
-    return _LoopState(original_task="t", tool_calls=0)
+def _state() -> LoopState:
+    return LoopState(original_task="t", tool_calls=0)
 
 
 def _verify(rc: int, *, duration_s: float = 5.0) -> ExecResult:
     return ExecResult(returncode=rc, stdout="", stderr="", duration_s=duration_s, exec_failed=False)
 
 
-def _turn() -> _TurnState:
-    return _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
+def _turn() -> TurnState:
+    return TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
 
 
 @pytest.mark.parametrize("rc", [0, 1])
@@ -203,10 +203,10 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: Path
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         workflow=SimpleNamespace(verify_command=("pytest",), verify_when="finish", verify_retries=2)
     )
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False
     state.verify.baseline_ok = False
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
+    turn = TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
     turn.finish_signal = MagicMock()
     turn.finish_kind = "finish_session"
 

@@ -22,8 +22,8 @@ from agent6.workflows._conversation import Conversation
 from agent6.workflows._metric import MetricSample as _MetricSample
 from agent6.workflows._session_state import SessionSnapshot, load_session_snapshot
 from agent6.workflows.loop import (
+    LoopState,
     Workflow,
-    _LoopState,  # pyright: ignore[reportPrivateUsage]
 )
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
@@ -96,7 +96,7 @@ def test_snapshot_persists_completion_scalars(tmp_path: Path) -> None:
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = _LoopState(original_task="t", tool_calls=2)
+    state = LoopState(original_task="t", tool_calls=2)
     state.verify.ever_passed = True
     state.gateless_ever_committed = True
     state.metric_history.append(_MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True))
@@ -166,7 +166,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
     to completion and then failed import on the already-existing branch,
     stranding paid work. Persist it like the sibling completion scalars."""
     from agent6.workflows.loop import (
-        _restore_completion_state,  # pyright: ignore[reportPrivateUsage]
+        restore_completion_state,
     )
 
     snap = tmp_path / "loop_state.json"
@@ -182,7 +182,7 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     state.parallel_groups_dispatched = 2
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=4, root_task_id=None, state=state
@@ -190,8 +190,8 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: Path) -
     loaded = load_session_snapshot(snap)
     assert loaded.parallel_groups_dispatched == 2
 
-    fresh = _LoopState(original_task="t", tool_calls=0)
-    _restore_completion_state(fresh, loaded)
+    fresh = LoopState(original_task="t", tool_calls=0)
+    restore_completion_state(fresh, loaded)
     assert fresh.parallel_groups_dispatched == 2  # the next dispatch is p3, not p1
 
 
@@ -201,7 +201,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
     completion scalars. A version-2 snapshot written BEFORE pins existed loads
     with none (additive defaulted field, same as the /parallel counter)."""
     from agent6.workflows.loop import (
-        _restore_completion_state,  # pyright: ignore[reportPrivateUsage]
+        restore_completion_state,
     )
 
     snap = tmp_path / "loop_state.json"
@@ -217,7 +217,7 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     state.pins.extend(["never touch schema files", "goal:\nship X"])
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s", messages=[], tool_calls=0, next_iteration=4, root_task_id=None, state=state
@@ -225,8 +225,8 @@ def test_snapshot_persists_and_restores_pins(tmp_path: Path) -> None:
     loaded = load_session_snapshot(snap)
     assert loaded.pins == ("never touch schema files", "goal:\nship X")
 
-    fresh = _LoopState(original_task="t", tool_calls=0)
-    _restore_completion_state(fresh, loaded)
+    fresh = LoopState(original_task="t", tool_calls=0)
+    restore_completion_state(fresh, loaded)
     assert fresh.pins == ["never touch schema files", "goal:\nship X"]
 
     # Pre-pins snapshot (no `pins` key) still loads: additive default.

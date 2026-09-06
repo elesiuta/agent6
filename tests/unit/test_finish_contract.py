@@ -24,8 +24,8 @@ from agent6.machine import AgentRequest
 from agent6.machine.model import FieldSpec
 from agent6.workflows._conversation import Notice
 from agent6.workflows.loop import (
+    TurnState,
     Workflow,
-    _TurnState,  # pyright: ignore[reportPrivateUsage]
 )
 
 _SCHEMAS = {
@@ -72,8 +72,8 @@ def _wf(validator: Any) -> Workflow:
     return wf
 
 
-def _finishing_turn(payload: dict[str, Any] | None) -> _TurnState:
-    turn = _TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
+def _finishing_turn(payload: dict[str, Any] | None) -> TurnState:
+    turn = TurnState(iteration=3, resp=MagicMock(), assistant=MagicMock())
     turn.finish_kind = "finish_session"
     turn.finish_signal = "done"
     turn.finish_payload = payload

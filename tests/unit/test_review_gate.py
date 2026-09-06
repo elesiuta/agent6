@@ -407,18 +407,18 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
 
 def _settled_state() -> Any:
     from agent6.workflows._nudges import VERIFY_SETTLED_STOP_AFTER
-    from agent6.workflows.loop import _LoopState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import LoopState
 
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     state.gateless_ever_committed = True
     state.verify_settled_idle = VERIFY_SETTLED_STOP_AFTER
     return state
 
 
 def _idle_turn() -> Any:
-    from agent6.workflows.loop import _TurnState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TurnState
 
-    return _TurnState(iteration=9, resp=MagicMock(), assistant=MagicMock())
+    return TurnState(iteration=9, resp=MagicMock(), assistant=MagicMock())
 
 
 def test_a_settled_end_is_reviewed_like_a_finish() -> None:
@@ -495,7 +495,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     with the output, in the conversation since there are no tool results),
     then the before-finish panel judges it."""
     from agent6.config import Config
-    from agent6.workflows.loop import _LoopState, _TurnState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import LoopState, TurnState
 
     cfg = Config.model_validate(
         {"workflow": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
@@ -508,20 +508,20 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     panel = _PanelScript([CritiqueResult(text="* fine", satisfied=True)])
     wf = _wf(config=cfg, dispatcher=dispatcher, review_trigger="before_finish")
     wf.mode = "run"
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     state.ever_edited = True
     state.verify.note_pass()
     state.verify.note_edit()  # green once, edited since: stale
     conv = Conversation()
     with patch.object(Workflow, "_run_review_panel", panel):
-        turn = _TurnState(iteration=5, resp=_resp("Done."), assistant=MagicMock())
+        turn = TurnState(iteration=5, resp=_resp("Done."), assistant=MagicMock())
         assert wf._handle_silent_finish("Done.", conv, state, turn) is None  # pyright: ignore[reportPrivateUsage]
         texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
         assert any("[harness verify] finish: verify_command exit 1" in t for t in texts)
         assert any("the next red finish ends the run" in t for t in texts)
         assert panel.calls == 0  # a red gate returns the end before the panel sits
         # The return is spent: the next silent finish stands, the panel sits and approves.
-        turn = _TurnState(iteration=6, resp=_resp("Done."), assistant=MagicMock())
+        turn = TurnState(iteration=6, resp=_resp("Done."), assistant=MagicMock())
         ended = wf._handle_silent_finish("Done.", conv, state, turn)  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
     assert ended.verified == "failed"

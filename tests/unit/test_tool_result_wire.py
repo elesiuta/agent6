@@ -328,8 +328,8 @@ def test_wire_tool_error_shape(tmp_path: Path) -> None:
     from unittest.mock import MagicMock
 
     from agent6.workflows.loop import (
+        LoopState,
         Workflow,
-        _LoopState,  # pyright: ignore[reportPrivateUsage]
     )
 
     d = ToolDispatcher(root=tmp_path, config=_config(tmp_path))
@@ -337,7 +337,7 @@ def test_wire_tool_error_shape(tmp_path: Path) -> None:
         d.dispatch("no_such_tool", {})
 
     wf = MagicMock()
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     content = Workflow._note_tool_error(  # pyright: ignore[reportPrivateUsage]
         wf, state, "no_such_tool", {}, exc.value
     )

@@ -565,7 +565,7 @@ def test_resume_leg_rearms_the_iteration_allowance(tmp_path: Path) -> None:
     wf = _build_wf(repo, provider, dispatcher)
     wf.max_iterations = 5
     wf.resume_state_path = tmp_path / "loop_state.json"
-    from agent6.workflows.loop import _LoopState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import LoopState
 
     wf._save_resume_snapshot(  # pyright: ignore[reportPrivateUsage]
         system="s",
@@ -573,7 +573,7 @@ def test_resume_leg_rearms_the_iteration_allowance(tmp_path: Path) -> None:
         tool_calls=0,
         next_iteration=6,
         root_task_id=None,
-        state=_LoopState(original_task="t", tool_calls=0),
+        state=LoopState(original_task="t", tool_calls=0),
     )
     result = wf.resume()
 

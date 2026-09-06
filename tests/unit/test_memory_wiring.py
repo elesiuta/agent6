@@ -157,9 +157,9 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
 
     from agent6.memory import memory_dir
     from agent6.workflows.loop import (
+        LoopState,
+        TurnState,
         Workflow,
-        _LoopState,  # pyright: ignore[reportPrivateUsage]
-        _TurnState,  # pyright: ignore[reportPrivateUsage]
     )
 
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "statehome"))
@@ -168,9 +168,9 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
 
     wf = Workflow.__new__(Workflow)
     wf.state_dir = state_dir
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
-    turn = MagicMock(spec=_TurnState)
+    turn = MagicMock(spec=TurnState)
     target = memory_dir(state_dir) / "fact.md"
 
     result = MagicMock()

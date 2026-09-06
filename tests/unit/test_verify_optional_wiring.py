@@ -165,7 +165,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> 
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from agent6.workflows.loop import Workflow, _LoopState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import LoopState, Workflow
 
     wf = Workflow.__new__(Workflow)
     wf.config = SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
@@ -173,7 +173,7 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: Path) -> 
     )
     wf.dispatcher = MagicMock()
     wf.dispatcher.command_policy.return_value = "no"  # denied mid-run
-    state = MagicMock(spec=_LoopState)
+    state = MagicMock(spec=LoopState)
     state.verify = VerifyVerdict(last_ok=False, edited_since=False)
 
     assert wf._tree_is_verify_green(state) is False  # pyright: ignore[reportPrivateUsage]
@@ -565,7 +565,7 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
     from unittest.mock import MagicMock
 
     from agent6.config import Config
-    from agent6.workflows.loop import Workflow, _TurnState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import TurnState, Workflow
 
     (tmp_path / "AGENTS.md").write_text(
         "## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8"
@@ -578,7 +578,7 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: Path) -> Non
         dispatcher=dispatcher,
         logger=lambda _line: None,
     )
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
+    turn = TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
     wf._maybe_adopt_verify(MagicMock(), turn)  # pyright: ignore[reportPrivateUsage]
     dispatcher.adopt_verify_command.assert_not_called()
     assert wf.config.workflow.verify_command == ()

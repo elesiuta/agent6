@@ -199,7 +199,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     still lets the finish through (a panel never deadlocks a run)."""
     import agent6.workflows.loop as loop_mod
     from agent6.workflows._panel import PanelResult, ReviewVerdict
-    from agent6.workflows.loop import _LoopState  # pyright: ignore[reportPrivateUsage]
+    from agent6.workflows.loop import LoopState
 
     abstain = ReviewVerdict(seat="s", model="m", verdict="pass", error="output hit the cap")
     res = PanelResult(
@@ -218,7 +218,7 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
         review_decision="advisory",
         base_sha="b",
     )
-    state = _LoopState(original_task="t", tool_calls=0)
+    state = LoopState(original_task="t", tool_calls=0)
     with (
         patch.object(loop_mod.Workflow, "_run_diff", return_value=_DIFF),
         patch.object(loop_mod, "run_panel", return_value=res),

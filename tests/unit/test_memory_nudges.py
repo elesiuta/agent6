@@ -17,9 +17,9 @@ from agent6.workflows._conversation import AssistantTurn, Notice
 from agent6.workflows._nudges import MEMORY_FINISH_NUDGE, MEMORY_FLIP_NUDGE
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
+    LoopState,
+    TurnState,
     Workflow,
-    _LoopState,  # pyright: ignore[reportPrivateUsage]
-    _TurnState,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -35,15 +35,15 @@ def _wf(**kw: Any) -> Workflow:
     )
 
 
-def _state(**kw: Any) -> _LoopState:
-    return _LoopState(original_task="t", tool_calls=0, **kw)
+def _state(**kw: Any) -> LoopState:
+    return LoopState(original_task="t", tool_calls=0, **kw)
 
 
-def _turn(iteration: int = 1, **kw: Any) -> _TurnState:
-    return _TurnState(iteration=iteration, resp=MagicMock(), assistant=AssistantTurn((), ()), **kw)
+def _turn(iteration: int = 1, **kw: Any) -> TurnState:
+    return TurnState(iteration=iteration, resp=MagicMock(), assistant=AssistantTurn((), ()), **kw)
 
 
-def _verify(wf: Workflow, state: _LoopState, turn: _TurnState, rc: int) -> None:
+def _verify(wf: Workflow, state: LoopState, turn: TurnState, rc: int) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         turn,
@@ -53,7 +53,7 @@ def _verify(wf: Workflow, state: _LoopState, turn: _TurnState, rc: int) -> None:
     )
 
 
-def _notice_texts(turn: _TurnState) -> list[str]:
+def _notice_texts(turn: TurnState) -> list[str]:
     return [item.text for item in turn.tool_results if isinstance(item, Notice)]
 
 

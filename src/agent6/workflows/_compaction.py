@@ -671,7 +671,7 @@ def _dedupe_identical_results(
 
 @dataclass(slots=True)
 class _Tier1Pass:
-    """State shared by the phases of one tier-1 pass (the loop's `_TurnState`
+    """State shared by the phases of one tier-1 pass (the loop's `TurnState`
     pattern: one mutable object instead of six hand-threaded locals)."""
 
     conversation: Conversation

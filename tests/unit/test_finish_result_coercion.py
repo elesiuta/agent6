@@ -13,8 +13,8 @@ from unittest.mock import MagicMock
 from agent6.config import Config
 from agent6.workflows._conversation import AssistantTurn
 from agent6.workflows.loop import (
+    TurnState,
     Workflow,
-    _TurnState,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -30,9 +30,9 @@ def _wf(**kw: Any) -> Workflow:
     )
 
 
-def _capture(tool_input: dict[str, Any]) -> _TurnState:
+def _capture(tool_input: dict[str, Any]) -> TurnState:
     wf = _wf()
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=AssistantTurn((), ()))
+    turn = TurnState(iteration=1, resp=MagicMock(), assistant=AssistantTurn((), ()))
     wf._capture_finish(turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
     return turn
 

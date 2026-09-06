@@ -194,7 +194,7 @@ class SessionSnapshot(BaseModel):
     # Executed-dispatch count for the standing spin guard (0 on old snapshots:
     # one extra re-entry at most, then the mark resyncs).
     ok_tool_calls: int = 0
-    # Standing-goal re-entry bookkeeping (see _LoopState). Additive: an old
+    # Standing-goal re-entry bookkeeping (see LoopState). Additive: an old
     # snapshot restores the never-absorbed default and a fresh streak.
     standing_tools_mark: int = -1
     standing_fruitless: int = 0

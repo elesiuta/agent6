@@ -123,17 +123,17 @@ def test_a_declaration_names_the_end_only_over_a_red_tree(
     declared: str, green: bool | None, expected: str
 ) -> None:
     from agent6.workflows.loop import (
+        LoopState,
+        TurnState,
         Workflow,
-        _LoopState,  # pyright: ignore[reportPrivateUsage]
-        _TurnState,  # pyright: ignore[reportPrivateUsage]
     )
 
     wf = Workflow.__new__(Workflow)
-    turn = _TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
+    turn = TurnState(iteration=1, resp=MagicMock(), assistant=MagicMock())
     turn.finish_kind = "finish_session"
     turn.finish_stale_gate = declared
     object.__setattr__(wf, "_tree_is_verify_green", MagicMock(return_value=green))
-    reason = wf._finish_reason(turn, MagicMock(spec=_LoopState))  # pyright: ignore[reportPrivateUsage]
+    reason = wf._finish_reason(turn, MagicMock(spec=LoopState))  # pyright: ignore[reportPrivateUsage]
     assert reason == expected
 
 
