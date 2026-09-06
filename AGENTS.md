@@ -40,7 +40,7 @@ The agent6 concretions, and the principles the Zen doesn't cover:
 - **Decompose proactively.** Past ~600 lines per module (or a few hundred per method), split before it ossifies (exemplar: `workflows/loop.py`'s `_prompt_blocks` / `_metric` / `_compaction` siblings).
   Lift cohesive helper groups into sibling `_name.py` modules, improving names and shapes in passing; moved symbols get public names and direct call sites.
   A large stateful method's cross-iteration bookkeeping goes in ONE mutable state dataclass, rather than a 9-parameter helper or a tuple return.
-  An extraction that shifts a module boundary records the edge in `tach.toml`; pyright allows importing `_name` only from a `_`-prefixed module.
+  An extraction that shifts a module boundary records the edge in `tach.toml`.
   One module decomposed per commit.
 - **Secure by default, degrade or refuse.** Every knob ships with the safe default, visible in `agent6 config show`; widening is opt-in and carries a security review note.
   The operator loosens; the agent's own sandbox stays where the operator put it.
@@ -141,7 +141,7 @@ The shortest version that still carries the point wins.
 
 ### Git and commit practices
 
-- Push, `--force`, history rewrites and `reset --hard` belong to the operator: `git_ops.py` refuses them unconditionally, with no override.
+- Push, `--force`, history rewrites and `reset --hard` belong to the operator: `git_ops.py` spells none of them, so there is nothing to enable (pinned by `test_git_ops_never_spells_a_destructive_verb`).
   `branch -D` has ONE operator-only exception: `sessions prune --delete-squashed` on a branch the manifest confirms was squash-merged (the commit survives in the reflog).
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`; the scope matches a directory under `src/agent6/` or a top-level area.
 - One concern per commit, each worth keeping on its own.
