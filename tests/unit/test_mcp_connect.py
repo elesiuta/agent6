@@ -85,6 +85,49 @@ def test_the_enable_hint_names_the_config_the_entry_went_to(
     assert "DISABLED (agent6 config set --repo mcp.enabled true)" in capsys.readouterr().out
 
 
+def test_a_second_connect_under_the_same_name_says_it_replaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    args: dict[str, object] = {"url": "", "token_env": "", "pass_env": [], "to_repo": False}
+
+    assert cmd_mcp_connect("browser", command=_server_argv(), **args) == 0  # pyright: ignore[reportArgumentType]
+    assert "replacing" not in capsys.readouterr().out
+    argv = [*_server_argv(), "--again"]
+    assert cmd_mcp_connect("browser", command=argv, **args) == 0  # pyright: ignore[reportArgumentType]
+
+    assert "written to the global config, replacing browser." in capsys.readouterr().out
+    assert load_effective(tmp_path).config.mcp.servers["browser"].command == tuple(argv)
+
+
+def test_an_entry_in_the_other_layer_is_named_not_called_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The merged config is not the layer being written: a repo-layer entry
+    plus a global connect leaves the repo entry winning, and the inverse
+    shadows the global one; each write says which."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    args: dict[str, object] = {"url": "", "token_env": "", "pass_env": []}
+
+    assert cmd_mcp_connect("b", command=_server_argv(), to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
+    capsys.readouterr()
+    argv = [*_server_argv(), "--global"]
+    assert cmd_mcp_connect("b", command=argv, to_repo=False, **args) == 0  # pyright: ignore[reportArgumentType]
+    out = capsys.readouterr().out
+    assert "written to the global config; the repo config's entry for b keeps winning." in out
+    assert "replacing" not in out
+    assert load_effective(tmp_path).config.mcp.servers["b"].command == tuple(_server_argv())
+
+    assert cmd_mcp_connect("c", command=_server_argv(), to_repo=False, **args) == 0  # pyright: ignore[reportArgumentType]
+    capsys.readouterr()
+    assert cmd_mcp_connect("c", command=argv, to_repo=True, **args) == 0  # pyright: ignore[reportArgumentType]
+    out = capsys.readouterr().out
+    assert "written to the repo config; it shadows the global config's entry for c." in out
+    assert load_effective(tmp_path).config.mcp.servers["c"].command == tuple(argv)
+
+
 def test_a_binary_missing_on_the_host_is_named_without_a_sandbox_hint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

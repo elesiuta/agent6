@@ -26,7 +26,7 @@ from agent6.config import (
     is_loopback_url,
     mcp_server_name_refusal,
 )
-from agent6.config.layer import load_effective
+from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves
 from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError
@@ -143,7 +143,8 @@ def cmd_mcp_connect(
     config_path: Path | None = None,
 ) -> int:
     """Prove the server answers, then write it into config. Returns an exit code."""
-    cfg = load_effective(Path.cwd(), config_path).config
+    effective = load_effective(Path.cwd(), config_path)
+    cfg = effective.config
     refusal = _refuse_bad_flags(
         name=name, command=command, url=url, token_env=token_env, pass_env=pass_env, cfg=cfg
     )
@@ -195,9 +196,9 @@ def cmd_mcp_connect(
     if written is not None:
         print(f"ERROR: {written}", file=sys.stderr)
         return 2
+    print(f"\n{_written_line(effective, name, to_repo)}")
     # The master switch is separate and off by default, so say so rather than
     # flipping a security-relevant default on the operator's behalf.
-    print(f"\nwritten to {'the repo' if to_repo else 'the global'} config.")
     print(f"enable MCP for runs with:  {_enable_command(to_repo)}")
     return 0
 
@@ -227,6 +228,26 @@ def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLe
         summary = "".join(c for c in " ".join(tool.description.split()) if c.isprintable())[:80]
         print(f"  mcp__{name}__{tool.tool_name}{'  ' + summary if summary else ''}")
     return None
+
+
+def _written_line(effective: EffectiveConfig, name: str, to_repo: bool) -> str:
+    """Where the entry went, and what that means beside an entry the other
+    layer holds: the repo layer wins over the global one."""
+    holders = {
+        layer.name
+        for layer in effective.layers
+        if name in layer.data.get("mcp", {}).get("servers", {})
+    }
+    target, other = ("repo", "global") if to_repo else ("global", "repo")
+    if target in holders:
+        note = f", replacing {name}"
+    elif other in holders and to_repo:
+        note = f"; it shadows the global config's entry for {name}"
+    elif other in holders:
+        note = f"; the repo config's entry for {name} keeps winning"
+    else:
+        note = ""
+    return f"written to the {target} config{note}."
 
 
 def _enable_command(to_repo: bool) -> str:
