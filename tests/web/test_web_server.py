@@ -1471,3 +1471,25 @@ def test_a_malformed_body_is_the_clients_error(server: tuple[WebServer, int]) ->
     assert status == 400 and "bad request" in str(body.get("error"))
     status, body = _post_raw(port, "/api/new", b"[1, 2]", headers)
     assert status == 400 and "JSON object" in str(body.get("error"))
+
+
+def test_prune_route_passes_the_squash_opt_in_through(
+    server: tuple[WebServer, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The button's checkbox has to reach the CLI flag, or the web can never
+    prune what the default merge strategy leaves behind."""
+    from agent6.ui.web import actions as web_actions
+
+    seen: list[bool] = []
+
+    def _fake_prune(cwd: Path, **kw: object) -> tuple[bool, str]:
+        seen.append(bool(kw.get("delete_squashed")))
+        return True, "pruned"
+
+    monkeypatch.setattr(web_actions, "prune_sessions", _fake_prune)
+    _srv, port = server
+
+    assert _post(port, "/api/sessions/prune", {})[0] == 200
+    assert _post(port, "/api/sessions/prune", {"delete_squashed": True})[0] == 200
+
+    assert seen == [False, True]

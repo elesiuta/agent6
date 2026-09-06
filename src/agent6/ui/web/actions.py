@@ -381,9 +381,19 @@ def merge_run(
     return run_cli_capture(argv, cwd)
 
 
-def prune_sessions(cwd: Path, config_path: Path | None = None) -> tuple[bool, str]:
-    """Prune merged/obsolete run branches: `agent6 sessions prune`."""
-    return run_cli_capture([*agent6_argv(config_path), "sessions", "prune"], cwd)
+def prune_sessions(
+    cwd: Path, *, delete_squashed: bool = False, config_path: Path | None = None
+) -> tuple[bool, str]:
+    """Prune merged/obsolete run branches: `agent6 sessions prune`.
+
+    *delete_squashed* passes the CLI's own opt-in flag, without which the
+    default `squash` merge strategy leaves every merged run's branch behind
+    (unreachable, so `git branch -d` refuses it).
+    """
+    argv = [*agent6_argv(config_path), "sessions", "prune"]
+    if delete_squashed:
+        argv.append("--delete-squashed")
+    return run_cli_capture(argv, cwd)
 
 
 def remove_session(cwd: Path, session_id: str, config_path: Path | None = None) -> tuple[bool, str]:

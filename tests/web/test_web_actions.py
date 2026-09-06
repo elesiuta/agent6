@@ -439,3 +439,22 @@ def test_spawn_machine_run_takes_the_listed_name_or_path(
     assert spawned[-1][-1] == str(mf)
     ok, msg = actions.spawn_machine_run(tmp_path, "/elsewhere/tiny.asm.toml")
     assert ok is False and "listed path or name" in msg and "tiny.asm.toml" in msg
+
+
+def test_prune_carries_the_squash_opt_in_only_when_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hub's prune ran the bare verb, so under the default squash strategy
+    it deleted nothing: every merged run's branch is unreachable and kept."""
+    captured: list[list[str]] = []
+
+    def _fake_capture(argv: list[str], cwd: Path, **_k: object) -> tuple[bool, str]:
+        captured.append(list(argv))
+        return True, "ok"
+
+    monkeypatch.setattr(actions, "run_cli_capture", _fake_capture)
+
+    actions.prune_sessions(tmp_path)
+    assert captured[-1][1:] == ["sessions", "prune"]
+    actions.prune_sessions(tmp_path, delete_squashed=True)
+    assert captured[-1][1:] == ["sessions", "prune", "--delete-squashed"]

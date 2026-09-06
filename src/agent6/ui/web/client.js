@@ -312,8 +312,18 @@ function sessionsCard(sessions) {
     it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   });
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';
-  prune.onclick = async () => { try { const d = await postJSON('/api/sessions/prune', {}); toast(d.message || 'pruned'); route(); } catch (e) { toast(e.message, true); } };
-  card.appendChild(prune);
+  // The CLI's --delete-squashed, as a flag beside the verb: with the default
+  // squash strategy every merged run's branch is unreachable, so a plain prune
+  // reports them and deletes none.
+  const sq = el('label', 'sub'); sq.style.marginLeft = '8px';
+  const sqBox = document.createElement('input'); sqBox.type = 'checkbox';
+  sq.appendChild(sqBox); sq.appendChild(document.createTextNode(' also squash-merged branches'));
+  prune.onclick = async () => {
+    if (sqBox.checked && !confirm('Force-delete branches recorded as squash-merged? Their commits stay in the base and in the reflog.')) return;
+    try { const d = await postJSON('/api/sessions/prune', { delete_squashed: sqBox.checked }); toast(d.message || 'pruned'); route(); }
+    catch (e) { toast(e.message, true); }
+  };
+  card.appendChild(prune); card.appendChild(sq);
   const rmAsks = el('button', 'danger'); rmAsks.textContent = 'Clear saved asks';
   rmAsks.style.marginTop = '10px'; rmAsks.style.marginLeft = '6px';
   rmAsks.onclick = async () => {

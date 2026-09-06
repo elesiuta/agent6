@@ -97,6 +97,13 @@ class MergeBody(_Body):
     strategy: str = ""
 
 
+class PruneBody(_Body):
+    # The CLI's `--delete-squashed`: force-delete a branch the manifest
+    # confirms was squash-merged (the default strategy, so without it a
+    # merged run's branch stays).
+    delete_squashed: bool = False
+
+
 class ResumeBody(_Body):
     # The follow-up instruction a finished run is resumed with; empty = plain resume.
     text: str = ""
@@ -360,11 +367,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/sessions/prune":
-            # Drain the body (the client posts `{}`) even though prune takes no
-            # params: an unread body would sit on the keep-alive socket and the
-            # next request line would be parsed with it prepended.
-            self._read_body()
-            ok, msg = actions.prune_sessions(self.cwd, self.config_path)
+            body = PruneBody.model_validate(self._read_body())
+            ok, msg = actions.prune_sessions(
+                self.cwd, delete_squashed=body.delete_squashed, config_path=self.config_path
+            )
             self._ok_or_err(ok, {"message": msg}, msg)
             return
         if path == "/api/config":

@@ -30,7 +30,7 @@ Every page docks its text entry at the bottom, like a chat: type, Enter sends, S
 
 - **Sessions page**: every session (mode, status, last activity, cost)
     - the docked composer starts new work: run / plan / ask, under a chosen preset
-    - prune merged run branches; clear saved asks
+    - prune merged run branches, squash-merged ones too when the box beside it is ticked (the CLI's `--delete-squashed`); clear saved asks
 - **Machines page**: instances, `machine create` drafts, cards that run an authored machine file
     - the docked composer creates a new one
 - **Session view** (live over SSE): the conversation is the page, the same folded transcript the CLI and TUI render, with the in-progress turn streaming underneath
