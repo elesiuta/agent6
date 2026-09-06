@@ -799,9 +799,13 @@ def test_run_says_where_a_machines_work_landed(
     (tmp_path / "f.txt").write_text("x", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "f.txt"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "init"], check=True)
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "branch", "agent6/machine-wait-then-run"], check=True
-    )
+    # A prior instance's work sits on the branch, above what HEAD holds.
+    for argv in (
+        ["checkout", "-q", "-b", "agent6/machine-wait-then-run"],
+        ["commit", "-q", "--allow-empty", "-m", "a run state's work"],
+        ["checkout", "-q", "-"],
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *argv], check=True)
     f = tmp_path / "wtr.asm.toml"
     f.write_text(WAIT_THEN_RUN, encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "wtr.asm.toml"], check=True)
@@ -967,6 +971,7 @@ def test_a_fresh_instance_over_a_merged_chain_starts_from_head(
         ["git", "add", "runwarn.asm.toml"],
         ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed"],
         ["git", "update-ref", "refs/agent6/machine-run-warn/head", "HEAD"],
+        ["git", "branch", "agent6/machine-run-warn", "HEAD"],
     ):
         subprocess.run(argv, cwd=repo, check=True)
     cfg = tmp_path / "agent6.toml"
@@ -989,6 +994,8 @@ model = "m"
     assert "REFUSING" not in captured.err
     assert "work on 'agent6/machine-run-warn' is in HEAD" in captured.err
     assert "WAITING" in captured.out
+    # This instance committed nothing and HEAD holds the branch: no merge line.
+    assert "changes are on" not in captured.out
     gone = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", "refs/agent6/machine-run-warn/head"],
         cwd=repo,

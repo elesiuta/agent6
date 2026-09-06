@@ -536,7 +536,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
     # checkout, so "tests passing" was said over a tree whose tests still fail,
     # with nothing naming where the work went. Same three lines a run ends on.
     branch = machine_branch_for(spec.machine)
-    if has_run_agent and branch_exists(cwd, branch):
+    if has_run_agent and branch_exists(cwd, branch) and not is_ancestor(cwd, branch, "HEAD"):
         reporter.out(f"\nchanges are on {branch}")
         reporter.out(f"  merge with:  git merge {branch}")
         reporter.out(f"  inspect:     git diff HEAD...{branch}")
