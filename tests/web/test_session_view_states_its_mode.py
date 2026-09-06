@@ -48,16 +48,22 @@ def test_the_page_heads_the_panel_with_the_mode_not_a_fixed_word() -> None:
     assert "cards._head_title.textContent = s.mode" in client
 
 
-def test_conversation_route_paints_the_prompts_it_claims_to_answer() -> None:
-    """#/conversation/<id> registers as the run's answering front-end the
-    moment its stream opens, but never painted the prompts: a run blocked on
-    an approval waited on a page that could not show it. The route's builder
-    paints prompts like the run view -- seeded from the snapshot, then per
-    frame."""
-    client = CLIENT_JS
-    conv = client[client.index("async function renderConversation") :]
-    conv = conv[: conv.index("// --- machine watch")]
-    assert conv.count("paintPrompts(") >= 2, "the conversation route paints no prompts"
+def test_the_session_view_is_the_one_conversation_page() -> None:
+    """A second route rendered the same conversation with its own stream
+    handler, which had already drifted (no `/undo` branch), and nothing
+    linked to it. The session view is the conversation page."""
+    assert "renderConversation" not in CLIENT_JS
+    assert "parts[0] === 'conversation'" not in CLIENT_JS
+
+
+def test_the_session_view_paints_the_prompts_it_claims_to_answer() -> None:
+    """Opening the session view's stream claims the run as an answer front-end
+    (`WebServer.claim_session`), so `paintRun` must paint its prompts: a run
+    blocked on an approval would otherwise wait on the page that took the
+    claim while it showed nothing."""
+    start = CLIENT_JS.index("function paintRun(")
+    body = CLIENT_JS[start : CLIENT_JS.index("function renderDiff(", start)]
+    assert "paintPrompts(cards, isDead ? {} : s)" in body
 
 
 def test_the_run_crumb_carries_the_state_word() -> None:

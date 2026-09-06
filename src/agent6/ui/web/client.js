@@ -153,7 +153,6 @@ async function route() {
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines', gen); }
     else if (parts[0] === 'config') { setTab('config'); await renderConfig(gen); }
     else if (parts[0] === 'session' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
-    else if (parts[0] === 'conversation' && parts[1]) { setTab('hub'); await renderConversation(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }, gen); }
     else { view.innerHTML = ''; view.appendChild(el('div', 'empty', 'not found')); }
