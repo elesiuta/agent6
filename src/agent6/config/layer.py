@@ -49,7 +49,6 @@ from agent6.config.model import (
 from agent6.paths import (
     global_config_path,
     repo_config_path,
-    state_dir,
 )
 
 LayerName = Literal["default", "preset", "global", "repo", "flag", "machine"]
@@ -114,16 +113,6 @@ def _forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
             f" config or the --preset flag, not the {layer_name} config; use"
             f" --preset <name> or set it in your repo/global config."
         )
-
-
-def resolved_state_dir(repo_root: Path) -> Path:
-    """The per-repo state dir for *repo_root* (`paths.state_dir`)."""
-    return state_dir(repo_root)
-
-
-def repo_config_path_for(repo_root: Path) -> Path:
-    """The per-repo config path for *repo_root* (out of the workspace)."""
-    return repo_config_path(repo_root)
 
 
 def discover_layers(repo_root: Path, explicit_path: Path | None) -> list[Layer]:

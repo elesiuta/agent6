@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import CommitIdentity, chain_commit, chain_ref_for
+from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 
@@ -43,7 +43,7 @@ def _manifest(
     merged_tip: str = "",
     merged_sha: str = "0" * 40,
 ) -> None:
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
+    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {
         "version": 2,
@@ -341,7 +341,7 @@ def test_runs_prune_says_why_a_pre_tip_manifest_is_kept(
     _git(tmp_path, "merge", "--squash", "agent6/pretip1")
     _git(tmp_path, "commit", "-q", "-m", "squash pretip1")
     # A manifest written before MergeStamp.tip existed: merged, but no tip.
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="pretip1")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="pretip1")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -388,7 +388,7 @@ def test_plain_prune_never_points_at_a_flag_that_would_skip_the_branch(
     _make_branch(tmp_path, "pretip2", "s.txt")
     _git(tmp_path, "merge", "--squash", "agent6/pretip2")
     _git(tmp_path, "commit", "-q", "-m", "squash pretip2")
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="pretip2")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="pretip2")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -432,7 +432,7 @@ def test_runs_dir_prints_the_state_dir(
     monkeypatch.chdir(repo)
     assert main(["sessions", "dir"]) == 0
     printed = capsys.readouterr().out.strip()
-    assert printed == str(resolved_state_dir(repo))
+    assert printed == str(state_dir(repo))
     assert "\n" not in printed
 
 
@@ -449,7 +449,7 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = resolved_state_dir(repo) / "sessions" / "runs"
+    runs = state_dir(repo) / "sessions" / "runs"
     live, dead = runs / "live-run-AAAA11", runs / "dead-run-BBBB22"
     for d in (live, dead):
         d.mkdir(parents=True)
@@ -502,7 +502,7 @@ def test_runs_rm_names_the_kept_branch(
         ["git", "update-ref", "refs/agent6/gone-run-CCCC33/head", "HEAD"], cwd=repo, check=True
     )
     subprocess.run(["git", "branch", "agent6/gone-run-CCCC33"], cwd=repo, check=True)
-    d = resolved_state_dir(repo) / "sessions" / "runs" / "gone-run-CCCC33"
+    d = state_dir(repo) / "sessions" / "runs" / "gone-run-CCCC33"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "run"}\n'
@@ -543,7 +543,7 @@ def test_rm_names_the_sha_when_the_chain_was_the_only_anchor(
     _git(tmp_path, "commit", "-q", "-m", "init")
     head = _git(tmp_path, "rev-parse", "HEAD")
     _git(tmp_path, "update-ref", chain_ref_for("loose-run111"), head)
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="loose-run111")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="loose-run111")
     layout.ensure()
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run"}\n'
@@ -565,7 +565,7 @@ def test_runs_rm_asks_clears_the_bucket(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    asks = resolved_state_dir(repo) / "sessions" / "asks"
+    asks = state_dir(repo) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
     assert main(["sessions", "rm", "some-id", "--asks"]) == 2
@@ -695,7 +695,7 @@ def test_rm_reports_a_deletion_failure_instead_of_success(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = resolved_state_dir(repo) / "sessions" / "runs"
+    runs = state_dir(repo) / "sessions" / "runs"
     target = runs / "stuck-run-CCCC33"
     target.mkdir(parents=True)
     (target / "logs.jsonl").write_text(
@@ -727,7 +727,7 @@ def _fork_with_worktree(repo: Path, session_id: str, *, merged: bool, record: bo
     add_worktree(repo, worktree, base)
     _git(repo, "branch", f"agent6/{session_id}", base)
     if record:
-        layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
+        layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
         layout.ensure()
         data: dict[str, object] = {
             "version": 3,
@@ -831,7 +831,7 @@ def _record(repo: Path, session_id: str, worktree: Path, *, merged: bool) -> Pat
     """A session manifest naming *worktree* (an `/undo` fork's shares its
     source's)."""
     base = _git(repo, "rev-parse", "HEAD")
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
+    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
     layout.ensure()
     data: dict[str, object] = {
         "version": 3,
@@ -876,9 +876,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     _git(tmp_path, "update-ref", "refs/heads/agent6/fork-moved011", after)
     live = _fork_with_worktree(tmp_path, "fork-live0011", merged=True)
     write_worker_pid(
-        SessionLayout(
-            state_dir=resolved_state_dir(tmp_path), session_id="fork-live0011"
-        ).session_dir,
+        SessionLayout(state_dir=state_dir(tmp_path), session_id="fork-live0011").session_dir,
         os.getpid(),
     )
 
@@ -906,7 +904,7 @@ def test_removing_a_worktree_deletes_only_the_lock_it_left_in_its_state_dir(
     the dir held, the dir; a session the operator ran inside the worktree
     lives there too and stays, named in prune's output. The whole state dir
     was rmtree'd, sessions included."""
-    from agent6.config.layer import resolved_state_dir as state_dir_of
+    from agent6.paths import state_dir as state_dir_of
 
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
@@ -972,7 +970,7 @@ def test_rm_removes_a_record_whose_worktree_is_already_gone(
     assert main(["sessions", "rm", "fork-swept11"]) == 0
 
     assert "removed fork-swept11" in capsys.readouterr().out
-    assert not (resolved_state_dir(tmp_path) / "sessions" / "runs" / "fork-swept11").exists()
+    assert not (state_dir(tmp_path) / "sessions" / "runs" / "fork-swept11").exists()
 
 
 def test_rm_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
@@ -995,7 +993,7 @@ def test_rm_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
     err = capsys.readouterr().err
     assert "notes.md" in err and str(worktree) in err
     assert (worktree / "notes.md").exists()
-    assert (resolved_state_dir(tmp_path) / "sessions" / "runs" / "fork-hold111").is_dir()
+    assert (state_dir(tmp_path) / "sessions" / "runs" / "fork-hold111").is_dir()
 
 
 def test_prune_removes_a_worktree_whose_content_the_run_committed(
@@ -1022,7 +1020,7 @@ def test_prune_removes_a_worktree_whose_content_the_run_committed(
         fallback_parent=base,
         identity=CommitIdentity(name="t", email="t@t"),
     )
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="fork-landed11")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="fork-landed11")
     data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     data["merged"] = {"into": "main", "sha": "0" * 40, "tip": tip}
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
@@ -1054,7 +1052,7 @@ def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
     _git(tmp_path, "update-ref", chain_ref_for("gonebase1"), tip)
     _git(tmp_path, "branch", "-D", "agent6/gonebase1")  # the squash-merge shape
     _manifest(tmp_path, "gonebase1", base, merged=True, merged_tip=tip)
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="gonebase1")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="gonebase1")
     data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     data["merged"]["into"] = "feature"
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
@@ -1228,7 +1226,7 @@ def test_delete_squashed_names_a_chain_ref_whose_merge_tip_was_never_recorded(
     _git(tmp_path, "merge", "--squash", tip)
     _git(tmp_path, "commit", "-q", "-m", "squash notip1")
     _manifest(tmp_path, "notip1", base, merged=True, merged_sha=_git(tmp_path, "rev-parse", "HEAD"))
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="notip1")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="notip1")
     data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     data["merged"]["tip"] = ""
     layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
@@ -1260,7 +1258,7 @@ def test_prune_confirms_a_forked_plans_branch_across_buckets(
     _git(tmp_path, "merge", "--squash", "agent6/brave-oak-AAAAAA")
     _git(tmp_path, "commit", "-q", "-m", "squash the plan")
     layout = SessionLayout(
-        state_dir=resolved_state_dir(tmp_path), session_id="brave-oak-AAAAAA", subdir="plans"
+        state_dir=state_dir(tmp_path), session_id="brave-oak-AAAAAA", subdir="plans"
     )
     layout.ensure()
     layout.manifest_path.write_text(
@@ -1315,13 +1313,13 @@ def test_prune_keeps_a_live_runs_branch_whatever_its_stamp_says(
         merged_tip=tip,
         merged_sha=_git(tmp_path, "rev-parse", "HEAD"),
     )
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="live1")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="live1")
     write_worker_pid(layout.session_dir, os.getpid())
 
     _make_branch(tmp_path, "live2", "m.txt")
     _git(tmp_path, "merge", "--no-ff", "-q", "-m", "merge live2", "agent6/live2")
     _manifest(tmp_path, "live2", base, merged=True, merged_sha=_git(tmp_path, "rev-parse", "HEAD"))
-    live2 = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="live2")
+    live2 = SessionLayout(state_dir=state_dir(tmp_path), session_id="live2")
     write_worker_pid(live2.session_dir, os.getpid())
     live2.manifest_path.write_text("{", encoding="utf-8")  # torn: its liveness still counts
 

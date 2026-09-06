@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
 from agent6.ui.cli._common import resolve_session_layout
 
@@ -23,7 +23,7 @@ def isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     (state / "sessions" / "runs" / "run-abc").mkdir(parents=True)
     (state / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (state / "sessions" / "asks" / "ask-xyz").mkdir(parents=True)
@@ -45,7 +45,7 @@ def test_resolves_a_machine_create_draft(tmp_path: Path) -> None:
     # `agent6 attach <draft-id>` follows the authoring agent's live log.
     repo = tmp_path / "repo"
     repo.mkdir()
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     (state / "sessions" / "machines" / "blue-meadow-X1").mkdir(parents=True)
     (state / "sessions" / "machines" / "blue-meadow-X1" / "logs.jsonl").write_text(
         "{}\n", encoding="utf-8"
@@ -59,7 +59,7 @@ def test_resolves_a_machine_create_draft(tmp_path: Path) -> None:
 def test_prefix_must_be_unique_across_runs_and_asks(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     (state / "sessions" / "runs" / "same-run").mkdir(parents=True)
     (state / "sessions" / "runs" / "same-run" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (state / "sessions" / "asks" / "same-ask").mkdir(parents=True)
@@ -75,7 +75,7 @@ def test_prefix_must_be_unique_across_runs_and_asks(tmp_path: Path) -> None:
 def test_exact_match_wins_over_cross_bucket_prefix(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     (state / "sessions" / "runs" / "run").mkdir(parents=True)
     (state / "sessions" / "runs" / "run" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (state / "sessions" / "asks" / "run-question").mkdir(parents=True)
@@ -91,8 +91,8 @@ def test_exact_match_wins_over_cross_bucket_prefix(tmp_path: Path) -> None:
 def test_empty_query_is_invalid(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
-    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
+    (state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
+    (state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
         "{}\n", encoding="utf-8"
     )
 
@@ -103,8 +103,8 @@ def test_empty_query_is_invalid(tmp_path: Path) -> None:
 def test_raises_when_no_match(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
-    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
+    (state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
+    (state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
         "{}\n", encoding="utf-8"
     )
     with pytest.raises(SessionIdError):

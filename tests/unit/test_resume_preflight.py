@@ -16,7 +16,7 @@ import pytest
 import agent6.app._session as session_mod
 import agent6.app._setup as setup_mod
 import agent6.app.resume as resume_mod
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.resume import _cmd_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.workflows._session_state import SNAPSHOT_VERSION
@@ -43,7 +43,7 @@ def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "parked-AAAA11"
+    session_dir = state_dir(repo) / "sessions" / "runs" / "parked-AAAA11"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
@@ -131,7 +131,7 @@ def test_parked_resume_carries_the_original_flag_selected_profile_stamp(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _park_manifest(
-        resolved_state_dir(repo) / "sessions" / "runs" / "parked-BBBB22",
+        state_dir(repo) / "sessions" / "runs" / "parked-BBBB22",
         preset="strict",
         from_flag=True,
     )
@@ -151,7 +151,7 @@ def test_parked_resume_with_its_own_profile_flag_lets_run_task_derive_the_stamp(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _park_manifest(
-        resolved_state_dir(repo) / "sessions" / "runs" / "parked-CCCC33",
+        state_dir(repo) / "sessions" / "runs" / "parked-CCCC33",
         preset="strict",
         from_flag=True,
     )
@@ -175,7 +175,7 @@ def test_parked_resume_of_a_config_selected_profile_re_derives_the_stamp(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _park_manifest(
-        resolved_state_dir(repo) / "sessions" / "runs" / "parked-DDDD44",
+        state_dir(repo) / "sessions" / "runs" / "parked-DDDD44",
         preset="hardened",
         from_flag=False,
     )
@@ -190,7 +190,7 @@ class _Stop(Exception):
 
 
 def _plan_session_dir(repo: Path, session_id: str) -> None:
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / session_id
+    session_dir = state_dir(repo) / "sessions" / "runs" / session_id
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": session_id, "mode": "plan", "user_task": "t"}),
@@ -299,7 +299,7 @@ def test_resume_preset_flag_is_recorded_for_later_legs(
     monkeypatch.chdir(repo)
     _plan_session_dir(repo, "plan-PRESET1")
     _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "plan-PRESET1"
+    session_dir = state_dir(repo) / "sessions" / "runs" / "plan-PRESET1"
 
     def _stop(*_a: object, **_k: object) -> object:
         raise _Stop()
@@ -332,7 +332,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     _plan_session_dir(repo, "plan-PIDORDER")
     _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")  # run_commands="ask" with no tty refuses
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "plan-PIDORDER"
+    session_dir = state_dir(repo) / "sessions" / "runs" / "plan-PIDORDER"
     order: list[str] = []
     real_write = resume_mod.write_worker_pid
 
@@ -404,7 +404,7 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "parked-DETACH"
+    session_dir = state_dir(repo) / "sessions" / "runs" / "parked-DETACH"
     _park_manifest(session_dir, preset="", from_flag=False)
     _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
     child = subprocess.Popen(["sleep", "60"])
@@ -448,7 +448,7 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     base = sp.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "note-UNTRACKED"
+    session_dir = state_dir(repo) / "sessions" / "runs" / "note-UNTRACKED"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
@@ -567,7 +567,7 @@ def test_an_id_matching_two_buckets_is_refused_by_name(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     _session_dir(state, "runs", "quiet-fox-AAAAAA", "run")
     _session_dir(state, "asks", "quiet-fox-BBBBBB", "ask")
 
@@ -589,7 +589,7 @@ def test_a_session_resume_cannot_continue_is_left_untouched(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     draft = _session_dir(state, "machines", "brave-elk-CCCCCC", "machine")
     (draft / "worker.pid").write_text("4242\n", encoding="utf-8")
     (draft / "answer_1.json").write_text("{}", encoding="utf-8")
@@ -612,7 +612,7 @@ def test_a_resumed_ask_needs_no_repo_and_answers_where_a_fresh_one_does(
     outside = tmp_path / "notarepo"
     outside.mkdir()
     monkeypatch.chdir(outside)
-    state = resolved_state_dir(outside)
+    state = state_dir(outside)
     ask = _session_dir(state, "asks", "quiet-fox-AAAAAA", "ask")
 
     # No snapshot: the refusal that follows proves the git preflight was skipped
@@ -642,7 +642,7 @@ def test_resuming_a_finished_run_without_a_steer_is_refused(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "done-BBBB22"
+    session_dir = state_dir(repo) / "sessions" / "runs" / "done-BBBB22"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": "done-BBBB22", "mode": "run", "user_task": "t"}),
@@ -679,7 +679,7 @@ def test_a_finished_run_still_resumes_with_a_steer(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "done-CCCC33"
+    session_dir = state_dir(repo) / "sessions" / "runs" / "done-CCCC33"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": "done-CCCC33", "mode": "run", "user_task": "t"}),

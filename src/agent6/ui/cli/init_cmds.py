@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective, repo_config_path_for
+from agent6.config.layer import load_effective
 from agent6.errors import OperatorError
 from agent6.git_ops import (
     GitError,
@@ -20,7 +20,7 @@ from agent6.git_ops import (
     unignored,
 )
 from agent6.init import _ask, init_workspace
-from agent6.paths import chown_to_real_user
+from agent6.paths import chown_to_real_user, repo_config_path
 from agent6.ui.cli._common import error
 
 _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
@@ -142,7 +142,7 @@ def _print_next_steps(cwd: Path, config_path: Path | None) -> None:
 
 def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | None = None) -> int:
     cwd = Path.cwd()
-    target = repo_config_path_for(cwd)
+    target = repo_config_path(cwd)
     if not assume_yes and not sys.stdin.isatty():
         # Refuse rather than silently take every default and write files:
         # consent comes from a TTY or --yes.

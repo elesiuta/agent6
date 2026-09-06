@@ -28,9 +28,9 @@ from agent6.config import (
     is_loopback_url,
     mcp_server_name_refusal,
 )
-from agent6.config.layer import EffectiveConfig, load_effective, repo_config_path_for
+from agent6.config.layer import EffectiveConfig, load_effective
 from agent6.config.write import ConfigLeafValue, set_config_leaves, unset_config_table
-from agent6.paths import global_config_path
+from agent6.paths import global_config_path, repo_config_path
 from agent6.sandbox.detect import resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError
 from agent6.tools.mcp_client import MCPManager, MCPServerSpec, MCPToolDescriptor, tool_count
@@ -303,7 +303,7 @@ def cmd_mcp_remove(name: str, *, to_repo: bool = False, config_path: Path | None
         # The layer declares it, but not as a `[mcp.servers.<name>]` header the
         # line surgery can delete (a dotted key, an inline table), so the entry
         # is still live and the operator is told so.
-        path = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
+        path = repo_config_path(Path.cwd()) if to_repo else global_config_path()
         error(
             f"{name} is not written as a [mcp.servers.{name}] table in {path};"
             " it lives in a dotted key or an inline table, which this verb does not"

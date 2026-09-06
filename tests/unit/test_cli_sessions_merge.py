@@ -11,9 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import chain_ref_for
-from agent6.paths import repo_id
+from agent6.paths import repo_id, state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 
@@ -47,7 +46,7 @@ def _setup_run(
         _git(tmp_path, "add", "-A")
         _git(tmp_path, "commit", "-q", "-m", msg)
     _git(tmp_path, "checkout", "-q", "main")
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id=session_id)
     layout.ensure()
     recorded_branch = branch if run_branch == "<auto>" else run_branch
     layout.manifest_path.write_text(
@@ -127,7 +126,7 @@ def test_a_fork_of_a_squash_merged_run_lands_only_its_own_work(
     _git(tmp_path, "checkout", "-q", "main")
     fork_tip = _git(tmp_path, "rev-parse", "agent6/fork-run1")
     _git(tmp_path, "update-ref", chain_ref_for("fork-run1"), fork_tip)
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="fork-run1")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="fork-run1")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -171,7 +170,7 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
     assert (tmp_path / "a.txt").exists() and (tmp_path / "b.txt").exists()
     # exactly one new commit on main (the squash), not the two per-step commits
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-AAAA11")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-AAAA11")
     m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     assert m["merged"]["into"] == "main"
     assert m["merged"]["sha"]
@@ -190,7 +189,7 @@ def test_runs_merge_refuses_while_the_worker_is_alive(
 
     monkeypatch.chdir(tmp_path)
     base = _setup_run(tmp_path, "run-LIVE11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-LIVE11")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-LIVE11")
     write_worker_pid(layout.session_dir, os.getpid())  # this test process = a live worker
 
     rc = main(["sessions", "merge", "run-LIVE11"])
@@ -560,7 +559,7 @@ def test_merging_an_already_merged_run_does_not_claim_a_second_merge(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-AAAA77", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     assert main(["sessions", "merge", "run-AAAA77", "--strategy", "squash"]) == 0
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-AAAA77")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-AAAA77")
     real_sha = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]["sha"]
     capsys.readouterr()
 
@@ -606,7 +605,7 @@ def test_a_merge_that_adds_nothing_still_records_the_run_as_merged(
     out = capsys.readouterr().out
     assert "main already has its content" in out and "recorded as merged into main" in out
     assert _git(tmp_path, "rev-parse", "main") == main_tip  # nothing landed
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-SAME11")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-SAME11")
     stamp = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
     assert (stamp["into"], stamp["sha"], stamp["tip"]) == ("main", NO_MERGE_COMMIT, branch_tip)
     row = summarize_session_dir(layout.session_dir, branch_tips=run_branch_tips(tmp_path))
@@ -640,7 +639,7 @@ def test_a_noop_merge_over_new_commits_restamps_the_tip_it_covers(
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-RSTP11", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
     assert main(["sessions", "merge", "run-RSTP11", "--strategy", "squash"]) == 0
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-RSTP11")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-RSTP11")
     first = json.loads(layout.manifest_path.read_text(encoding="utf-8"))["merged"]
     _git(tmp_path, "checkout", "-q", "agent6/run-RSTP11")
     (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
@@ -678,7 +677,7 @@ def test_diff_on_a_session_that_cannot_commit_does_not_show_your_own_work(
     (tmp_path / "human.txt").write_text("mine\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "human: my own work")
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="plan-AAA044")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="plan-AAA044")
     m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     m["mode"] = "plan"
     layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
@@ -701,7 +700,7 @@ def test_a_parked_run_does_not_claim_the_run_it_was_parked_behind(
     (tmp_path / "other.txt").write_text("theirs\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "the other run's commit")
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-PARK01")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-PARK01")
     m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     m["mode"], m["parked_task"] = "run", "do the thing"
     layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
@@ -716,7 +715,7 @@ def test_commits_explains_a_plan_the_same_way_merge_does(
     """`sessions commits` kept the claim its sibling `merge` was corrected for."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "plan-AAA055", commits=[], run_branch=None)
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="plan-AAA055")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="plan-AAA055")
     m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     m["mode"] = "plan"
     layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
@@ -728,7 +727,7 @@ def test_commits_explains_a_plan_the_same_way_merge_does(
 
 
 def _set_manifest_field(tmp_path: Path, session_id: str, **fields: str) -> None:
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id=session_id)
     m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     m.update(fields)
     layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")
@@ -873,7 +872,7 @@ def test_merge_squash_trailer_names_every_code_writer(
         '[git.commit]\ntrailer = "Assisted-by: agent6:{model}"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-TRL222", commits=[("a.txt", "a\n", "agent6 iter 1: add a")])
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="run-TRL222")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="run-TRL222")
     layout.logs_path.write_text(
         "".join(
             json.dumps(e) + "\n"
@@ -1014,7 +1013,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
         json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": False}) + "\n",
         encoding="utf-8",
     )
-    origin_runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
+    origin_runs = state_dir(tmp_path) / "sessions" / "runs"
     origin_runs.mkdir(parents=True)
     (origin_runs / "fan-l1").symlink_to(lane_state)
 
@@ -1038,7 +1037,7 @@ def test_diff_explains_an_ask_the_same_way_merge_does(
     manifest field where its siblings name the fact (an ask writes nothing)."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "ask-AAA056", commits=[], run_branch=None)
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="ask-AAA056")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="ask-AAA056")
     m = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     m["mode"], m["base_sha"] = "ask", ""
     layout.manifest_path.write_text(json.dumps(m) + "\n", encoding="utf-8")

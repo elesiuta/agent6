@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.paths import state_dir
 from agent6.sessions.layout import bucket_dir
 from agent6.ui.web import actions
 
@@ -64,10 +65,9 @@ def _ask(state: Path) -> str:
 def test_a_refusal_does_not_call_an_ask_a_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, call: object
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
 
     monkeypatch.chdir(tmp_path)
-    session_id = _ask(resolved_state_dir(tmp_path))
+    session_id = _ask(state_dir(tmp_path))
     ok, message = call(tmp_path, session_id)  # pyright: ignore[reportCallIssue, reportGeneralTypeIssues]
     assert not ok
     assert "run" not in message, message

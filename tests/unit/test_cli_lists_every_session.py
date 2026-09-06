@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.layout import bucket_dir
 from agent6.ui.cli import main
 
@@ -35,7 +35,7 @@ def test_a_machine_draft_appears_in_the_listing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     _session(state, "machines", "fair-trail-AAAAAA", "machine")
 
     assert main(["sessions", "list"]) == 0
@@ -66,7 +66,7 @@ def test_an_undone_run_lists_as_undone_and_never_unmerged(
     git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "run")
     git("branch", "agent6/undone-one-AAAAA", "HEAD")
     git("reset", "-q", "--hard", base)
-    session = bucket_dir(resolved_state_dir(tmp_path), "runs") / "undone-one-AAAAA"
+    session = bucket_dir(state_dir(tmp_path), "runs") / "undone-one-AAAAA"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text(
         json.dumps(
@@ -99,7 +99,7 @@ def test_every_bucket_is_listed_together(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     for bucket, mode, sid in (
         ("runs", "run", "runny-one-AAAAAA"),
         ("plans", "plan", "planny-two-BBBBB"),

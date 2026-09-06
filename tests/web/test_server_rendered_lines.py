@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.layout import bucket_dir, machines_root
 from agent6.ui.cli import main
 from agent6.ui.web.page import PAGE_HTML
@@ -47,7 +47,7 @@ reason = "routed"
 
 
 def _run(tmp_path: Path, name: str, events: list[dict[str, object]]) -> Path:
-    d = bucket_dir(resolved_state_dir(tmp_path), "runs") / name
+    d = bucket_dir(state_dir(tmp_path), "runs") / name
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return d
@@ -111,7 +111,7 @@ def test_machine_transitions_and_spend_arrive_rendered(
     f.write_text(ROUTER, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
-    md = machines_root(resolved_state_dir(tmp_path)) / "router"
+    md = machines_root(state_dir(tmp_path)) / "router"
     snap = machine_snapshot(md)
     (first, *_rest) = snap["transitions"]
     assert (

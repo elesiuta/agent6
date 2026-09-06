@@ -32,7 +32,7 @@ def test_the_writer_still_derives_that_directory_the_same_way() -> None:
     spawns an authoring agent: the point is that neither side spells the path
     out for itself."""
     source = inspect.getsource(create_mod)
-    assert "bucket_dir(state_dir, bucket)" in source
+    assert "bucket_dir(state, bucket)" in source
     assert 'session_bucket("machine")' in source
 
 

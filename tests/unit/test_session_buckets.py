@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.paths import state_dir
 from agent6.sessions.layout import (
     HUB_BUCKETS,
     SESSION_BUCKETS,
@@ -102,13 +103,12 @@ def test_every_hub_lists_every_hub_bucket(
     """A bucket a hub does not scan is a session the operator cannot see. Each
     surface carried its own `("runs", "asks")` tuple, so adding plans/ left
     `agent6 sessions` printing "no sessions yet" over a real plan."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli import main
     from agent6.ui.web import model as web_model
     from agent6.viewmodel import session_dirs
 
     monkeypatch.chdir(tmp_path)
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     session = bucket_dir(state, bucket) / "brave-oak-AAAAAA"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text(
@@ -138,11 +138,10 @@ def test_a_machine_instance_is_not_reachable_as_a_session(
     """`machines` names two things now, and only the path separates them. A
     session lookup that reached the INSTANCES dir would let `sessions rm` delete
     a running machine's state -- so the buckets must never resolve there."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli._common import resolve_session_layout
 
     monkeypatch.chdir(tmp_path)
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     (state / "machines" / "tiny").mkdir(parents=True)
 
     with pytest.raises(Exception, match="no session matches"):
@@ -153,11 +152,10 @@ def test_a_machine_draft_is_reachable_as_a_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The converse: an authoring draft IS a session, so an id resolves to it."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli._common import resolve_session_layout
 
     monkeypatch.chdir(tmp_path)
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     (bucket_dir(state, "machines") / "brave-oak-AAAAAA").mkdir(parents=True)
     (bucket_dir(state, "machines") / "brave-oak-AAAAAA" / "logs.jsonl").write_text(
         "{}\n", encoding="utf-8"

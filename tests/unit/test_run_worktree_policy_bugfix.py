@@ -155,7 +155,7 @@ def test_untracked_files_are_not_dirt_and_are_recorded(
     err = capsys.readouterr().err
     assert "REFUSING" not in err and "PARKED" not in err
     assert (repo / "notes.txt").read_text(encoding="utf-8") == "mine\n"
-    (session_dir,) = _session_dirs(app_run_mod.resolved_state_dir(repo))
+    (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
     assert read_untracked_at_start(session_dir) == {"notes.txt"}
     assert not read_manifest(session_dir).parked_task
 
@@ -180,7 +180,7 @@ def test_modified_tracked_files_refuse_when_nobody_can_answer(
     assert '[git].dirty_tree = "stash"' in err and '"include"' in err
     # The operator's edit is untouched and no session dir survives the refusal.
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
-    assert _session_dirs(app_run_mod.resolved_state_dir(repo)) == []
+    assert _session_dirs(app_run_mod.state_dir(repo)) == []
 
 
 @pytest.mark.parametrize("answer", ["stash", "stash: set them aside", "STASH"])
@@ -208,7 +208,7 @@ def test_answer_stash_stashes_tracked_changes_only(
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "edited\n"
     assert (repo / "notes.txt").read_text(encoding="utf-8") == "mine\n"
     assert _git(repo, "stash", "list") == ""
-    (session_dir,) = _session_dirs(app_run_mod.resolved_state_dir(repo))
+    (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
     assert read_untracked_at_start(session_dir) == {"notes.txt"}
 
 
@@ -247,7 +247,7 @@ def test_answer_cancel_parks_the_run_with_its_task(
     assert rc == 2
     err = capsys.readouterr().err
     assert "PARKED: the working tree has uncommitted changes to tracked files" in err
-    (session_dir,) = _session_dirs(app_run_mod.resolved_state_dir(repo))
+    (session_dir,) = _session_dirs(app_run_mod.state_dir(repo))
     assert f"agent6 resume {session_dir.name}" in err
     manifest = read_manifest(session_dir)
     assert manifest.parked_task == "do a thing"
@@ -306,7 +306,7 @@ def test_the_last_runs_unmerged_work_is_named_as_such(
     repo.mkdir()
     _init_repo(repo)
     monkeypatch.chdir(repo)
-    state = app_run_mod.resolved_state_dir(repo)
+    state = app_run_mod.state_dir(repo)
     prior = bucket_dir(state, "runs") / "prior-run-AAAAAA"
     prior.mkdir(parents=True)
     (prior / "logs.jsonl").write_text('{"type": "session.start", "user_task": "t"}\n')

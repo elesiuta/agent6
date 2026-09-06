@@ -24,10 +24,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.app._setup import SandboxOverrides
-from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import chain_ref_for
 from agent6.graph.storage import list_checkpoint_turns, load_graph
-from agent6.paths import global_config_dir
+from agent6.paths import global_config_dir, state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.types import session_bucket
 from agent6.ui.cli.fork import _cmd_fork  # pyright: ignore[reportPrivateUsage]
@@ -319,17 +318,17 @@ def test_fork_preserves_source_run_mode(tmp_path: Path, monkeypatch: pytest.Monk
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "plan-src-AAAA11", head_sha=head, turns=(1, 2), mode="plan")
+    state = state_dir(repo)
+    _seed_source_run(state, "plan-src-AAAA11", head_sha=head, turns=(1, 2), mode="plan")
 
     rc = _cmd_fork(None, "plan-src", new_session_id="plan-fork-BBBB22", no_run=True)
     assert rc == 0
 
     # The fork inherits mode="plan", so its dir belongs in plans/ -- not in the
     # runs/ bucket the default layout would have put it in.
-    dst = SessionLayout(state_dir=state_dir, session_id="plan-fork-BBBB22", subdir="plans")
+    dst = SessionLayout(state_dir=state, session_id="plan-fork-BBBB22", subdir="plans")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["mode"] == "plan"
-    assert not (state_dir / "sessions" / "runs" / "plan-fork-BBBB22").exists()
+    assert not (state / "sessions" / "runs" / "plan-fork-BBBB22").exists()
 
 
 def test_fork_refuses_an_explicit_id_held_by_any_bucket(
@@ -341,16 +340,16 @@ def test_fork_refuses_an_explicit_id_held_by_any_bucket(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
-    (state_dir / "sessions" / "asks" / "taken-CCCC33").mkdir(parents=True)
+    state = state_dir(repo)
+    _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
+    (state / "sessions" / "asks" / "taken-CCCC33").mkdir(parents=True)
 
     rc = _cmd_fork(None, "src", new_session_id="taken-CCCC33", no_run=True)
 
     assert rc == 2
     err = capsys.readouterr().err
     assert "asks/" in err and "unique across every bucket" in err
-    assert not (state_dir / "sessions" / "runs" / "taken-CCCC33").exists()
+    assert not (state / "sessions" / "runs" / "taken-CCCC33").exists()
 
 
 def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -360,15 +359,13 @@ def test_fork_preserves_source_run_profile(tmp_path: Path, monkeypatch: pytest.M
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(
-        state_dir, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="paranoid"
-    )
+    state = state_dir(repo)
+    _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="paranoid")
 
     rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["workflow"]["preset"] == "paranoid"
 
@@ -397,12 +394,12 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "src-PROF11", head_sha=head, turns=(1,), workflow_profile="fast")
+    state = state_dir(repo)
+    _seed_source_run(state, "src-PROF11", head_sha=head, turns=(1,), workflow_profile="fast")
 
     rc = _cmd_fork(None, "src-PROF11", new_session_id="child-PROF22", no_run=True)
     assert rc == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="child-PROF22")
+    dst = SessionLayout(state_dir=state, session_id="child-PROF22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["workflow"]["preset"] == "fast"
     assert manifest["models"]["driver"]["model"] == "claude-fast"  # not claude-base
@@ -421,10 +418,10 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
+    state = state_dir(repo)
     # A config-selected source whose stamped name is now STALE (config says quick).
     _seed_source_run(
-        state_dir,
+        state,
         "src-CFG11",
         head_sha=head,
         turns=(1,),
@@ -434,7 +431,7 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
 
     assert _cmd_fork(None, "src-CFG11", new_session_id="child-CFG22", no_run=True) == 0
     manifest = json.loads(
-        SessionLayout(state_dir=state_dir, session_id="child-CFG22").manifest_path.read_text(
+        SessionLayout(state_dir=state, session_id="child-CFG22").manifest_path.read_text(
             encoding="utf-8"
         )
     )
@@ -454,8 +451,8 @@ def test_fork_snapshots_the_dag_under_the_source_curator_lock(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "src-LOCK11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    src = _seed_source_run(state, "src-LOCK11", head_sha=head, turns=(1,))
 
     locked: list[Path] = []
     real_flock = fork_mod.flock
@@ -482,8 +479,8 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,), mode="plan")
+    state = state_dir(repo)
+    src = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,), mode="plan")
 
     for bad in (None, "{not json", "[]"):  # missing / corrupt JSON / non-object
         if bad is None:
@@ -492,9 +489,7 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
             src.manifest_path.write_text(bad, encoding="utf-8")
         rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
         assert rc == 2, f"manifest shape {bad!r} must refuse the fork"
-        assert not SessionLayout(
-            state_dir=state_dir, session_id="child-BBBB22"
-        ).session_dir.exists()
+        assert not SessionLayout(state_dir=state, session_id="child-BBBB22").session_dir.exists()
         branches = sp.run(
             ["git", "branch", "--list", "agent6/child-BBBB22"],
             cwd=repo,
@@ -514,8 +509,8 @@ def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     # A second commit, and pre-create the fork branch pointing at it (≠ head).
     (repo / "b.txt").write_text("y\n")
     sp.run(["git", "add", "-A"], cwd=repo, check=True)
@@ -527,7 +522,7 @@ def test_fork_cleans_up_run_dir_when_branch_cut_fails(
 
     rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 1
-    assert not SessionLayout(state_dir=state_dir, session_id="child-BBBB22").session_dir.exists()
+    assert not SessionLayout(state_dir=state, session_id="child-BBBB22").session_dir.exists()
 
 
 def test_fork_clones_state_writes_lineage_and_branch(
@@ -539,13 +534,13 @@ def test_fork_clones_state_writes_lineage_and_branch(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    state = state_dir(repo)
+    src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
     rc = _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True)
     assert rc == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     assert dst.session_dir.is_dir()
     # loop_state.json + seed checkpoint 0000.json carry the latest (turn 3) state.
     seed = load_session_snapshot(dst.checkpoint_path(0))
@@ -588,7 +583,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     assert current == "main", "fork must not move the operator's checkout"
 
     # lineage.jsonl appended under the state dir root.
-    lineage = (state_dir / "lineage.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    lineage = (state / "lineage.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert len(lineage) == 1
     ev = json.loads(lineage[0])
     assert ev["child"] == "brave-yak-BBBB22"
@@ -609,8 +604,8 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1, 2))
+    state = state_dir(repo)
+    src = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2))
     latest_payload = {
         "version": SNAPSHOT_VERSION,
         "system": "sys",
@@ -630,7 +625,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
     rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
 
     assert rc == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
     assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == (
         "turn 3 from loop_state"
     )
@@ -644,8 +639,8 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1, 2, 3))
+    state = state_dir(repo)
+    src = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2, 3))
     src.session_dir.joinpath("loop_state.json").write_text(
         src.checkpoint_path(2).read_text(encoding="utf-8"), encoding="utf-8"
     )
@@ -653,7 +648,7 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
     rc = _cmd_fork(None, "src", new_session_id="child-BBBB22", no_run=True)
 
     assert rc == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
     assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
 
 
@@ -664,12 +659,12 @@ def test_fork_at_turn_selects_that_checkpoint(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    state = state_dir(repo)
+    _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
     rc = _cmd_fork(None, "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
     assert rc == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="kid-CCCC33")
+    dst = SessionLayout(state_dir=state, session_id="kid-CCCC33")
     assert load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["forked_from_turn"] == 2
 
@@ -679,12 +674,12 @@ def test_fork_unknown_turn_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    state = state_dir(repo)
+    _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
 
     rc = _cmd_fork(None, "sunny-otter", at_turn=99, new_session_id="kid-DDDD44", no_run=True)
     assert rc == 2
-    assert not (state_dir / "sessions" / "runs" / "kid-DDDD44").exists()
+    assert not (state / "sessions" / "runs" / "kid-DDDD44").exists()
 
 
 def test_fork_at_turn_refuses_without_checkpoint_store(
@@ -696,8 +691,8 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    layout = SessionLayout(state_dir=state_dir, session_id="bare-run-EEEE55")
+    state = state_dir(repo)
+    layout = SessionLayout(state_dir=state, session_id="bare-run-EEEE55")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -729,11 +724,11 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
 
     rc = _cmd_fork(None, "bare-run", at_turn=4, new_session_id="kid-EEEE55", no_run=True)
     assert rc == 2
-    assert not (state_dir / "sessions" / "runs" / "kid-EEEE55").exists()
+    assert not (state / "sessions" / "runs" / "kid-EEEE55").exists()
 
     rc = _cmd_fork(None, "bare-run", new_session_id="fresh-FFFF66", no_run=True)
     assert rc == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="fresh-FFFF66")
+    dst = SessionLayout(state_dir=state, session_id="fresh-FFFF66")
     seed = load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "rolling"
     assert seed.next_iteration == 4
@@ -758,11 +753,11 @@ def test_fork_without_id_forks_most_recent_run(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "only-run-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "only-run-AAAA11", head_sha=head, turns=(1,))
     rc = _cmd_fork(None, "", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["parent_session_id"] == "only-run-AAAA11"  # the only/most-recent run
 
@@ -777,8 +772,8 @@ def test_fork_continue_resumes_without_force(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     captured: dict[str, Any] = {}
 
     def _fake_resume(config_path: object, session_id: str, *, force: bool, **_kw: object) -> int:
@@ -811,15 +806,15 @@ def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "src-AAAA11", head_sha=head, turns=(1,))
-    child = SessionLayout(state_dir=state_dir, session_id="child-BBBB22", subdir="runs")
+    state = state_dir(repo)
+    _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
+    child = SessionLayout(state_dir=state, session_id="child-BBBB22", subdir="runs")
 
     rc = _cmd_fork(None, "src", new_session_id="child-BBBB22")
     assert rc == 2
     assert "needs someone to answer" in capsys.readouterr().err
     assert not child.session_dir.exists()
-    assert not (state_dir / "lineage.jsonl").exists()
+    assert not (state / "lineage.jsonl").exists()
     refs = sp.run(
         ["git", "for-each-ref", "refs/heads/agent6/", "refs/agent6/"],
         cwd=repo,
@@ -864,8 +859,8 @@ def test_resume_config_refusal_leaves_checkout_untouched(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "cfgfail-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "cfgfail-AAAA11", head_sha=head, turns=(1,))
     rc = _cmd_resume(None, "cfgfail-AAAA11", force=False)
     assert rc == 2
     assert "No providers configured" in capsys.readouterr().err
@@ -893,8 +888,8 @@ def test_resume_diverged_branch_refuses_without_checkout(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "divg-AAAA11", head_sha=new_head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "divg-AAAA11", head_sha=new_head, turns=(1,))
     rc = _cmd_resume(None, "divg-AAAA11", force=False)
     assert rc == 2  # a refusal
     assert "diverged" in capsys.readouterr().err
@@ -936,7 +931,7 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
     import agent6.ui.cli.fork as fork_cli
 
     monkeypatch.chdir(tmp_path)
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="done-run-AAAA11")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="done-run-AAAA11")
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
@@ -989,8 +984,8 @@ def test_a_past_turn_fork_starts_on_the_task_that_turn_was_on(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    state = state_dir(repo)
+    src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     # The focus lands AFTER turn 1's graph_version: turn 1 had no cursor.
     late = next(n for n in load_graph(src).values() if n.title == "late subtask")
     GraphCurator(src).set_cursor(SetCursorIntent(id=late.id))
@@ -998,7 +993,7 @@ def test_a_past_turn_fork_starts_on_the_task_that_turn_was_on(
 
     assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="kid-DDDD44")
+    dst = SessionLayout(state_dir=state, session_id="kid-DDDD44")
     assert json.loads(dst.cursor_path.read_text(encoding="utf-8"))["node_id"] is None
 
 
@@ -1015,14 +1010,14 @@ def test_fork_at_past_turn_rebuilds_the_graph_of_that_turn(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
+    state = state_dir(repo)
     # graph_version 1 = root only; 2 = root + child; 3 = child passed.
-    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     assert {n.title for n in load_graph(src).values()} == {"root task", "late subtask"}
 
     assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="kid-CCCC33")
+    dst = SessionLayout(state_dir=state, session_id="kid-CCCC33")
     nodes = load_graph(dst)
     # The turn-3 subtask did not exist at turn 1, and the root had not passed.
     assert [n.title for n in nodes.values()] == ["root task"]
@@ -1053,11 +1048,11 @@ def test_a_past_turn_fork_reopens_without_a_lost_tail_warning(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    state = state_dir(repo)
+    _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     assert _cmd_fork(None, "sunny-otter", at_turn=1, new_session_id="kid-CCCC33", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="kid-CCCC33")
+    dst = SessionLayout(state_dir=state, session_id="kid-CCCC33")
     assert [n.graph_version for n in load_graph(dst).values()] == [1]
     capsys.readouterr()
     curator = GraphCurator(dst)
@@ -1076,15 +1071,15 @@ def test_fork_copies_the_dag_when_the_checkpoint_has_no_graph_version(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "old-run-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    src = _seed_source_run(state, "old-run-AAAA11", head_sha=head, turns=(1,))
     payload = json.loads(src.checkpoint_path(1).read_text(encoding="utf-8"))
     payload["graph_version"] = 0
     src.checkpoint_path(1).write_text(json.dumps(payload), encoding="utf-8")
 
     assert _cmd_fork(None, "old-run", at_turn=1, new_session_id="kid-DDDD44", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="kid-DDDD44")
+    dst = SessionLayout(state_dir=state, session_id="kid-DDDD44")
     assert {n.title for n in load_graph(dst).values()} == {"root task", "late subtask"}
 
 
@@ -1099,9 +1094,9 @@ def test_an_auto_minted_fork_id_skips_a_taken_directory(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "forky-src-AAAA11", head_sha=head, turns=(1, 2))
-    taken = state_dir / "sessions" / "runs" / "taken-one-AAAAAA"
+    state = state_dir(repo)
+    _seed_source_run(state, "forky-src-AAAA11", head_sha=head, turns=(1, 2))
+    taken = state / "sessions" / "runs" / "taken-one-AAAAAA"
     taken.mkdir(parents=True)
     (taken / "marker.txt").write_text("do not clobber\n", encoding="utf-8")
     minted = iter(["taken-one-AAAAAA", "freed-two-BBBBBB"])
@@ -1110,7 +1105,7 @@ def test_an_auto_minted_fork_id_skips_a_taken_directory(
     assert _cmd_fork(None, "forky-src", no_run=True) == 0
 
     assert (taken / "marker.txt").read_text(encoding="utf-8") == "do not clobber\n"
-    assert (state_dir / "sessions" / "runs" / "freed-two-BBBBBB" / "manifest.json").is_file()
+    assert (state / "sessions" / "runs" / "freed-two-BBBBBB" / "manifest.json").is_file()
 
 
 def test_fork_manifest_stamps_the_resolved_isolation(
@@ -1121,15 +1116,15 @@ def test_fork_manifest_stamps_the_resolved_isolation(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "iso-src-AAAA11", head_sha=head, turns=(1, 2))
+    state = state_dir(repo)
+    _seed_source_run(state, "iso-src-AAAA11", head_sha=head, turns=(1, 2))
 
     def _hardened(_knob: str, _env: object) -> str:
         return "hardened"
 
     monkeypatch.setattr("agent6.app.fork.resolve_isolation", _hardened)
     assert _cmd_fork(None, "iso-src", new_session_id="iso-fork-BBBB22", no_run=True) == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="iso-fork-BBBB22", subdir="runs")
+    dst = SessionLayout(state_dir=state, session_id="iso-fork-BBBB22", subdir="runs")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["policy"]["isolation"] == "hardened"
 
@@ -1156,7 +1151,7 @@ def _fork_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     (repo / "seed.txt").write_text("dirty\n", encoding="utf-8")
     (repo / "notes.md").write_text("mine\n", encoding="utf-8")
     monkeypatch.chdir(repo)
-    _seed_source_run(resolved_state_dir(repo), "src-AAAA11", head_sha=turn1, turns=(1,))
+    _seed_source_run(state_dir(repo), "src-AAAA11", head_sha=turn1, turns=(1,))
     return repo, turn1, head
 
 
@@ -1171,11 +1166,11 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     from agent6.git_ops import chain_commit, tree_diff_paths
 
     repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
-    state_dir = resolved_state_dir(repo)
+    state = state_dir(repo)
 
     assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     worktree = Path(manifest["worktree"])
     assert (worktree / ".git").is_file(), "a linked worktree of the repository"
@@ -1219,10 +1214,10 @@ def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
         encoding="utf-8",
     )
     repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
-    state_dir = resolved_state_dir(repo)
+    state = state_dir(repo)
     assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     manifest = json.loads(
-        SessionLayout(state_dir=state_dir, session_id="child-BBBB22").manifest_path.read_text(
+        SessionLayout(state_dir=state, session_id="child-BBBB22").manifest_path.read_text(
             encoding="utf-8"
         )
     )
@@ -1247,7 +1242,7 @@ def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
     rc = resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False)
     assert rc == 0
     assert seen["cwd"] == worktree and seen["process_cwd"] == repo
-    assert seen["state_dir"] == state_dir
+    assert seen["state_dir"] == state
     assert Path.cwd() == repo
 
 
@@ -1261,10 +1256,10 @@ def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
     from agent6.app import resume as resume_mod
 
     repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
-    state_dir = resolved_state_dir(repo)
+    state = state_dir(repo)
     assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     manifest = json.loads(
-        SessionLayout(state_dir=state_dir, session_id="child-BBBB22").manifest_path.read_text(
+        SessionLayout(state_dir=state, session_id="child-BBBB22").manifest_path.read_text(
             encoding="utf-8"
         )
     )
@@ -1289,9 +1284,9 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
     from agent6.app import resume as resume_mod
 
     repo, _turn1, head = _fork_fixture(tmp_path, monkeypatch)
-    state_dir = resolved_state_dir(repo)
+    state = state_dir(repo)
     assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
-    layout = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    layout = SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["merged"] = {"into": "main", "sha": head, "tip": manifest["forked_from_sha"]}
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -1317,9 +1312,9 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
     from agent6.app import resume as resume_mod
 
     repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
-    state_dir = resolved_state_dir(repo)
+    state = state_dir(repo)
     assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
-    layout = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    layout = SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["merged"] = {"into": "main", "sha": head, "tip": turn1}
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -1352,10 +1347,10 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
     assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["user_task"] == "do the thing"
 
     # No providers configured, so the leg never starts; the steer is queued and
@@ -1375,10 +1370,10 @@ def test_only_the_first_steer_names_a_fork(tmp_path: Path, monkeypatch: pytest.M
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
     assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
-    dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
 
     assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="create README.md only") == 2
     assert _cmd_resume(None, "brave-yak-BBBB22", force=False, steer="also fix the typo") == 2
@@ -1395,8 +1390,8 @@ def test_a_steered_ordinary_run_keeps_its_task(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
 
     assert _cmd_resume(None, "sunny-otter-AAAA11", force=False, steer="and add tests") == 2
 
@@ -1415,14 +1410,14 @@ def test_a_fork_records_the_untracked_files_of_its_own_checkout(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    src = _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
     (repo / "notes.txt").write_text("the operator's own file\n", encoding="utf-8")
     (src.session_dir / "untracked-at-start").write_bytes(b"notes.txt")
 
     assert _cmd_fork(None, "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 0
 
-    dst = SessionLayout(state_dir=state_dir, session_id="brave-yak-BBBB22")
+    dst = SessionLayout(state_dir=state, session_id="brave-yak-BBBB22")
     worktree = Path(json.loads(dst.manifest_path.read_text(encoding="utf-8"))["worktree"])
     assert not (worktree / "notes.txt").exists(), "a fresh checkout has none of it"
     assert read_untracked_at_start(dst.session_dir) == frozenset()
@@ -1439,8 +1434,8 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
     # The branch a removed run left behind, pointing at a different commit.
     (repo / "other.txt").write_text("other\n")
     sp.run(["git", "add", "other.txt"], cwd=repo, check=True)
@@ -1451,9 +1446,7 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
 
     assert "could not cut fork refs" in capsys.readouterr().err
     assert chain_tip(repo, chain_ref_for("brave-yak-BBBB22")) is None
-    assert not SessionLayout(
-        state_dir=state_dir, session_id="brave-yak-BBBB22"
-    ).session_dir.exists()
+    assert not SessionLayout(state_dir=state, session_id="brave-yak-BBBB22").session_dir.exists()
 
     # The same refusal over an id whose chain ref already holds commits: that
     # ref is the earlier run's anchor and must survive.
@@ -1482,11 +1475,11 @@ def test_fork_refuses_a_run_the_model_controls_git_in(
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
-    state_dir = resolved_state_dir(repo)
-    _seed_source_run(state_dir, "src-MOD11", head_sha=head, turns=(1,))
+    state = state_dir(repo)
+    _seed_source_run(state, "src-MOD11", head_sha=head, turns=(1,))
 
     rc = _cmd_fork(None, "src-MOD11", new_session_id="child-MOD22", no_run=True)
 
     assert rc == 2
     assert 'control = "model"' in capsys.readouterr().err
-    assert not SessionLayout(state_dir=state_dir, session_id="child-MOD22").manifest_path.exists()
+    assert not SessionLayout(state_dir=state, session_id="child-MOD22").manifest_path.exists()

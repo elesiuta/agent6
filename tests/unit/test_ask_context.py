@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.ui.cli._ask import (
     build_ask_session_digest as _build_ask_session_digest,
 )
@@ -39,7 +39,7 @@ def _make_run(tmp_path: Path) -> str:
     (tmp_path / "m.py").write_text("x = 2  # changed by the run\n", encoding="utf-8")
     _git(tmp_path, "commit", "-aqm", "run change")
     rid = "sunny-otter-AAA111"
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / rid
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(
@@ -90,7 +90,7 @@ def test_ask_run_digest_continue_picks_a_run(
 def test_ask_run_digest_unknown_run_returns_none(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (resolved_state_dir(tmp_path) / "sessions" / "runs").mkdir(parents=True)
+    (state_dir(tmp_path) / "sessions" / "runs").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
     assert _build_ask_session_digest(tmp_path, "nope", latest=False) is None
 
@@ -100,7 +100,7 @@ def test_ask_from_latest_no_sessions_names_the_flag(
 ) -> None:
     """The error names the flag the operator typed; `--run-latest` became
     `--from-latest` when seeding stopped being runs-only."""
-    (resolved_state_dir(tmp_path) / "sessions" / "runs").mkdir(parents=True)
+    (state_dir(tmp_path) / "sessions" / "runs").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
     assert _build_ask_session_digest(tmp_path, "", latest=True) is None
@@ -171,7 +171,7 @@ def test_ask_repl_multi_turn_carries_context(
         def format_summary(self) -> str:
             return "cost: $0.00"
 
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="x", subdir="asks")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="x", subdir="asks")
     layout.session_dir.mkdir(parents=True)
     wf = _FakeWf()
     inputs = iter(["a follow-up", "/quit"])
@@ -359,7 +359,7 @@ def test_ask_run_digest_pruned_branch_falls_back_to_merge_stamp(
     though the manifest's merge stamp still names the commit that carries the
     run's content. The stamped commit is diffed instead."""
     rid = _make_run(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / rid
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     _git(tmp_path, "checkout", "-q", m["base_sha"])
     _git(tmp_path, "merge", "--squash", "agent6/run")
@@ -383,7 +383,7 @@ def test_ask_run_digest_fast_forward_merge_keeps_earlier_commits(
     lost its first change from the digest. The stamp's `tip` names that case
     (sha == tip), and the digest diffs base..merged instead."""
     rid = _make_run(tmp_path)  # leaves one commit on agent6/run
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / rid
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     (tmp_path / "second.py").write_text("y = 3  # second run commit\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
@@ -411,7 +411,7 @@ def test_ask_run_digest_does_not_call_a_present_branch_pruned(
     the branch still sitting there, so the digest told the model the branch was
     gone when the model could have read it."""
     rid = _make_run(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / rid
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     _git(tmp_path, "checkout", "-q", m["base_sha"])
     _git(tmp_path, "merge", "--squash", "agent6/run")
@@ -434,7 +434,7 @@ def test_ask_run_digest_reports_unavailable_diff(
     rendered as an empty diff block the model reads as "no changes"; the digest
     now says why the diff is unavailable."""
     rid = _make_run(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / rid
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / rid
     m = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     _git(tmp_path, "checkout", "-q", m["base_sha"])
     _git(tmp_path, "branch", "-D", "agent6/run")
@@ -445,7 +445,7 @@ def test_ask_run_digest_reports_unavailable_diff(
 
 
 def _session(tmp_path: Path, bucket: str, sid: str, mode: str, *, run_branch: str | None) -> None:
-    d = resolved_state_dir(tmp_path) / "sessions" / bucket / sid
+    d = state_dir(tmp_path) / "sessions" / bucket / sid
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(
         json.dumps(

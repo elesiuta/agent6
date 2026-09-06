@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.paths import state_dir
 from agent6.ui.cli._common import _runs_dir, styled_status  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli.sessions_cmds import (
     _cmd_list,  # pyright: ignore[reportPrivateUsage]
@@ -282,11 +283,10 @@ def test_the_json_row_carries_the_whole_task(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    from agent6.config.layer import resolved_state_dir
     from agent6.sessions.layout import SessionLayout
 
     task = "fix the parser bug\nsecond line of the task\nthird line"
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-TASK11")
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="run-TASK11")
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": task}) + "\n",

@@ -11,11 +11,12 @@ from pathlib import Path
 import pytest
 
 from agent6.config import ConfigError
-from agent6.config.layer import load_effective, repo_config_path_for
+from agent6.config.layer import load_effective
+from agent6.paths import repo_config_path
 
 
 def _write_repo_config(repo: Path, toml: str) -> None:
-    p = repo_config_path_for(repo)
+    p = repo_config_path(repo)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(toml, encoding="utf-8")
 

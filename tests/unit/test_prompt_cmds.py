@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.paths import state_dir
 from agent6.ui.cli.prompt_cmds import _cmd_prompt_show  # pyright: ignore[reportPrivateUsage]
 
 
@@ -69,12 +70,11 @@ def test_prompt_show_includes_recorded_memories(
     never passed the memories (or skills) the run loop injects: an operator
     checking whether a recorded memory would reach future runs saw '(none
     recorded yet)' while the real prompt carried it."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.memory import add
 
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     state.mkdir(parents=True, exist_ok=True)
     add(state, "facts", "the deploy script needs sudo")
 

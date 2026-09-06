@@ -54,7 +54,7 @@ from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.commit_message import render_commit_trailer
 from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
+from agent6.config.layer import load_effective_with_overlay
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -67,6 +67,7 @@ from agent6.git_ops import (
 )
 from agent6.git_ops import status as git_status
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
+from agent6.paths import state_dir
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox.jail import die_with_parent
 from agent6.sessions.ipc import (
@@ -237,7 +238,7 @@ class _MachineBridges:
 
 
 def _build_machine_bridges(
-    instance_dir: Path, state_dir: Path, events: EventSink
+    instance_dir: Path, agent_state: Path, events: EventSink
 ) -> _MachineBridges:
     """Wire run-level approval/question/steer bridges to a machine agent state.
 
@@ -251,28 +252,28 @@ def _build_machine_bridges(
     # counters restart at 1, so an answer file left by the aborted attempt would
     # satisfy this execution's first prompt unseen. Drop the stale bridge state
     # first (front-end claims live on the instance dir, so this touches none).
-    clear_pending_answers(state_dir, before=time.time())
+    clear_pending_answers(agent_state, before=time.time())
 
     def approve(request: ApprovalRequest, /) -> ApprovalAnswer:
         if frontend_is_live(instance_dir):
-            answer = read_answer(state_dir, request.id, live_dir=instance_dir)
+            answer = read_answer(agent_state, request.id, live_dir=instance_dir)
             if answer is not None:
-                return ApprovalAnswer(record_answer(state_dir, answer, request.scope), "frontend")
+                return ApprovalAnswer(record_answer(agent_state, answer, request.scope), "frontend")
         if away_mode(instance_dir) == "wait":
             reply = await_frontend_reply(
                 instance_dir,
                 lambda: read_answer(
-                    state_dir, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
+                    agent_state, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
                 ),
             )
-            approved = reply is not None and record_answer(state_dir, reply, request.scope)
+            approved = reply is not None and record_answer(agent_state, reply, request.scope)
             return ApprovalAnswer(approved, "await-frontend")
         return ApprovalAnswer(False, "headless")  # no operator to ask: deny safely
 
     def ask(request: QuestionRequest, /) -> QuestionAnswer:
         empty = tuple("" for _ in request.questions)
         if frontend_is_live(instance_dir):
-            answers = read_question_answers(state_dir, request.id, live_dir=instance_dir)
+            answers = read_question_answers(agent_state, request.id, live_dir=instance_dir)
             if answers is not None:
                 return QuestionAnswer(answers, "frontend")
         if away_mode(instance_dir) == "wait":
@@ -280,30 +281,30 @@ def _build_machine_bridges(
             reply = await_frontend_reply(
                 instance_dir,
                 lambda: read_question_answers(
-                    state_dir, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
+                    agent_state, request.id, timeout_s=20.0, dead_grace_s=8.0, live_dir=instance_dir
                 ),
             )
             return QuestionAnswer(reply if isinstance(reply, tuple) else empty, "await-frontend")
         return QuestionAnswer(empty, "headless")
 
     prompts = OperatorPrompts(
-        approver=approve, questioner=ask, journal=events.emit, session_dir=state_dir
+        approver=approve, questioner=ask, journal=events.emit, session_dir=agent_state
     )
 
     def steer_requested() -> bool:
-        return steer_request_pending(state_dir)
+        return steer_request_pending(agent_state)
 
     def steer_clear() -> None:
-        clear_steer_answer(state_dir)
-        clear_steer_request(state_dir)
+        clear_steer_answer(agent_state)
+        clear_steer_request(agent_state)
 
     def steer_prompt() -> str | None:
         if not frontend_is_live(instance_dir):
-            clear_steer_request(state_dir)
+            clear_steer_request(agent_state)
             return None
-        answer = read_steer_answer(state_dir, live_dir=instance_dir)
+        answer = read_steer_answer(agent_state, live_dir=instance_dir)
         if answer is None:
-            clear_steer_request(state_dir)
+            clear_steer_request(agent_state)
         return answer
 
     return _MachineBridges(prompts, steer_requested, steer_clear, steer_prompt)
@@ -415,9 +416,9 @@ def run_one(
     # Needs a per-state log (events_sink) for the front-end to see the prompt.
     bridges: _MachineBridges | None = None
     if events_sink is not None and req.events_log is not None:
-        state_dir = req.events_log.parent
+        agent_state = req.events_log.parent
         instance_dir = req.transcript_dir.parent
-        bridges = _build_machine_bridges(instance_dir, state_dir, events_sink)
+        bridges = _build_machine_bridges(instance_dir, agent_state, events_sink)
     dispatcher = ToolDispatcher(
         root=req.root,
         config=cfg,
@@ -433,7 +434,7 @@ def run_one(
         # mode="run" agent state participates in cross-run memory like any
         # other run; for read-only states the dispatcher mode guard and
         # the machine/agent prompt assembly keep it inert.
-        state_dir=resolved_state_dir(req.root),
+        state_dir=state_dir(req.root),
     )
     rm = cfg.models.resolve("worker")
     compact_drop, compact_summarise, keep_recent = resolve_compaction_thresholds(
@@ -461,7 +462,7 @@ def run_one(
         ),
         chain_fallback_parent=_machine_head_sha(req.root) if not read_only else None,
         commit_per_step=cfg.git.commit_per_step,
-        state_dir=resolved_state_dir(req.root),
+        state_dir=state_dir(req.root),
         compact_drop_at_chars=compact_drop,
         compact_summarise_at_chars=compact_summarise,
         context_summary_max_tokens=cfg.context.summary_max_tokens,

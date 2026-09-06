@@ -19,6 +19,7 @@ import pytest
 
 from agent6.app import run as run_mod
 from agent6.config import Config
+from agent6.paths import state_dir
 from agent6.tools.operator_prompts import QuestionAnswer, QuestionRequest
 
 
@@ -112,9 +113,8 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
         == 2
     )
 
-    from agent6.config.layer import resolved_state_dir
     from agent6.sessions.layout import bucket_dir
 
-    runs = bucket_dir(resolved_state_dir(repo), "runs")
+    runs = bucket_dir(state_dir(repo), "runs")
     pids = list(runs.glob("*/worker.pid"))
     assert [p for p in pids if p.read_text(encoding="utf-8").strip()] == []

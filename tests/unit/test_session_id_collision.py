@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 
 
 def _init_repo(path: Path) -> None:
@@ -57,7 +57,7 @@ def test_run_refuses_an_explicit_id_held_by_another_bucket(
 ) -> None:
     from agent6.app.run import run_task
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     (state / "sessions" / "plans" / "demo").mkdir(parents=True)
 
     rc = run_task(_load_cfg(), "do a thing", frontend=MagicMock(), session_id="demo", mode="run")

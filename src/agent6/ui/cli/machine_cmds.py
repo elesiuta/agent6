@@ -33,8 +33,6 @@ from agent6.config import (
 from agent6.config.io import upsert_toml_leaf
 from agent6.config.layer import (
     load_effective_with_overlay,
-    repo_config_path_for,
-    resolved_state_dir,
 )
 from agent6.machine import (
     EngineError,
@@ -48,7 +46,7 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.paths import chown_to_real_user
+from agent6.paths import chown_to_real_user, repo_config_path, state_dir
 from agent6.sandbox.detect import IsolationUnavailableError, resolve_isolation
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import machines_root
@@ -79,7 +77,7 @@ def _cmd_machine_list() -> int:
     the TUI machines page shows): every instance newest first joined with the
     authored `.asm.toml` that declares it, then the files no instance ran."""
     cwd = Path.cwd()
-    machines = machine_rows(cwd, resolved_state_dir(cwd))
+    machines = machine_rows(cwd, state_dir(cwd))
     if not machines:
         print('no machines yet. Draft one with `agent6 machine create "<task>"`.')
         return 0
@@ -194,7 +192,7 @@ def _resolve_network_refusal(  # noqa: PLR0911
     if choice != "a":
         print("Stopped; nothing changed.", file=sys.stderr)
         return 2
-    target = repo_config_path_for(cwd)
+    target = repo_config_path(cwd)
     target.parent.mkdir(parents=True, exist_ok=True)
     for key, value in fix.items():
         upsert_toml_leaf(target, key, value)
@@ -222,7 +220,7 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
     .../greet.asm.toml". When the argument is an `.asm.toml` file, read its
     `machine` name and suggest that instance id (a file that does not parse
     is still a file); else offer the closest existing instance name."""
-    machines = machines_root(resolved_state_dir(cwd))
+    machines = machines_root(state_dir(cwd))
     existing = sorted(p.name for p in machines.iterdir() if p.is_dir()) if machines.is_dir() else []
     candidate = Path(machine_id)
     if machine_id.endswith(".asm.toml") or candidate.is_file():
@@ -246,7 +244,7 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
 
 def _cmd_machine_replay(machine_id: str) -> int:
     cwd = Path.cwd()
-    root = machines_root(resolved_state_dir(cwd)) / machine_id
+    root = machines_root(state_dir(cwd)) / machine_id
     if not root.is_dir():
         error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
@@ -280,7 +278,7 @@ def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | 
 
 def _cmd_machine_status(machine_id: str) -> int:
     cwd = Path.cwd()
-    root = machines_root(resolved_state_dir(cwd)) / machine_id
+    root = machines_root(state_dir(cwd)) / machine_id
     if not root.is_dir():
         error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
@@ -366,7 +364,7 @@ def _cmd_machine_poke(
     machine_id: str, *, data: str | None = None, message: str | None = None
 ) -> int:
     cwd = Path.cwd()
-    root = machines_root(resolved_state_dir(cwd)) / machine_id
+    root = machines_root(state_dir(cwd)) / machine_id
     if not root.is_dir():
         error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
@@ -404,7 +402,7 @@ def _cmd_machine_stop(machine_id: str) -> int:
     is not running gets a refusal, not a marker that would ambush the next
     `machine run`."""
     cwd = Path.cwd()
-    root = machines_root(resolved_state_dir(cwd)) / machine_id
+    root = machines_root(state_dir(cwd)) / machine_id
     if not root.is_dir():
         error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2
@@ -455,7 +453,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     when the worker is dead (parked or crashed), when the instance ended, or on
     Ctrl-C. Read-only."""
     cwd = Path.cwd()
-    root = machines_root(resolved_state_dir(cwd)) / machine_id
+    root = machines_root(state_dir(cwd)) / machine_id
     if not root.is_dir():
         error(f"no machine instance at {root}.{_no_instance_hint(machine_id, cwd)}")
         return 2

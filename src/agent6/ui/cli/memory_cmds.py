@@ -10,18 +10,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent6.config.layer import resolved_state_dir
 from agent6.memory import add, decisions_path, index_text, memory_dir, remove, show
+from agent6.paths import state_dir
 
 
 def _cmd_memory_add(name: str, body: str) -> int:
-    path = add(resolved_state_dir(Path.cwd()), name, body)
+    path = add(state_dir(Path.cwd()), name, body)
     print(f"wrote {path}")
     return 0
 
 
 def _cmd_memory_list() -> int:
-    state = resolved_state_dir(Path.cwd())
+    state = state_dir(Path.cwd())
     text = index_text(state)
     if not text:
         print(f"(no memories; files live under {memory_dir(state)})")
@@ -31,12 +31,12 @@ def _cmd_memory_list() -> int:
 
 
 def _cmd_memory_show(name: str) -> int:
-    print(show(resolved_state_dir(Path.cwd()), name), end="")
+    print(show(state_dir(Path.cwd()), name), end="")
     return 0
 
 
 def _cmd_memory_decisions() -> int:
-    state = resolved_state_dir(Path.cwd())
+    state = state_dir(Path.cwd())
     path = decisions_path(state)
     try:
         text = path.read_text(encoding="utf-8")
@@ -48,6 +48,6 @@ def _cmd_memory_decisions() -> int:
 
 
 def _cmd_memory_rm(name: str) -> int:
-    remove(resolved_state_dir(Path.cwd()), name)
+    remove(state_dir(Path.cwd()), name)
     print(f"removed {name}")
     return 0

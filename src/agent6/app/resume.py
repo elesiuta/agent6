@@ -42,9 +42,6 @@ from agent6.config import (
     Config,
     ConfigError,
 )
-from agent6.config.layer import (
-    resolved_state_dir,
-)
 from agent6.directive import steer_problem
 from agent6.events import EventSink
 from agent6.git_ops import (
@@ -60,6 +57,7 @@ from agent6.git_ops import (
     untracked_paths,
     verify_git_identity,
 )
+from agent6.paths import state_dir
 from agent6.providers import (
     TranscriptSink,
 )
@@ -281,7 +279,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     as *cwd*; the process cwd stays the repository.
     """
     repo = Path.cwd()
-    state_dir = resolved_state_dir(repo)
+    state = state_dir(repo)
     if steer.strip() and (problem := steer_problem(steer)) is not None:
         reporter.error(f"--steer: {problem}")
         return 2
@@ -290,7 +288,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # resumable mode writes to, so splitting plans/ out of runs/ does not
         # hide a plan from the bare form, and so the no-id path finds what the
         # by-id path below already accepts.
-        buckets = resumable_bucket_dirs(state_dir)
+        buckets = resumable_bucket_dirs(state)
         latest = newest_session_dir(buckets)
         if latest is None:
             reporter.err('nothing to resume yet. Start a session with `agent6 run "<task>"`.')
@@ -302,7 +300,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     # One resolver, no per-bucket fallback: a runs/-only fallback would make an
     # id that prefixes BOTH a run and an ask silently pick the run.
     try:
-        layout = resolve_session(state_dir, session_id)
+        layout = resolve_session(state, session_id)
     except SessionIdError as exc:
         reporter.error(str(exc))
         return 2
@@ -450,7 +448,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # The lock lives with the checkout's state dir: a fork's worktree has
         # its own, so it never contends with the repository's checkout.
         if mode == "run":
-            checkout_state_dir = resolved_state_dir(cwd)
+            checkout_state_dir = state_dir(cwd)
             repo_lock_fd = acquire_repo_writer(checkout_state_dir, session_id)
             if repo_lock_fd is None:
                 holder = repo_writer_holder(checkout_state_dir) or "another run"
@@ -740,7 +738,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             events=events,
             transcript_sink=transcript_sink,
             cwd=cwd,
-            state_dir=state_dir,
+            state_dir=state,
         )
         detach_requested = end.detach_requested
         return end.rc

@@ -44,7 +44,7 @@ from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.preflight import SessionRefused, budget_preflight
 from agent6.app.reporter import Reporter
 from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective_with_overlay, resolved_state_dir
+from agent6.config.layer import load_effective_with_overlay
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -77,6 +77,7 @@ from agent6.machine import (
     machine_lock,
     write_bundle,
 )
+from agent6.paths import state_dir
 from agent6.sandbox.jail import JailUnavailableError, run_in_jail
 from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.sessions.layout import machines_root
@@ -370,7 +371,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                     reporter.error(str(exc))
                     return 2
                 commit_identity = CommitIdentity(name=name, email=email)
-            root = machines_root(resolved_state_dir(cwd)) / spec.machine
+            root = machines_root(state_dir(cwd)) / spec.machine
             # The engine is a host-netns supervisor; each agent state runs in
             # its own subprocess.
             agent_runner = build_machine_agent_runner(
@@ -397,7 +398,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
         reporter.refuse(str(exc))
         return 2
     warn_cleartext_credential_endpoints(cfg, reporter=reporter)
-    root = machines_root(resolved_state_dir(cwd)) / spec.machine
+    root = machines_root(state_dir(cwd)) / spec.machine
     journal = MachineJournal(root, snapshot_keep=snapshot_keep)
     # Persistent, writable scratch for tool scripts (see LiveWorld.data_dir).
     data_dir = root / "data"

@@ -27,10 +27,10 @@ from pathlib import Path
 from agent6.config.layer import (
     effective_leaf,
     load_effective,
-    repo_config_path_for,
 )
 from agent6.config.write import set_config_value
 from agent6.errors import OperatorError
+from agent6.paths import repo_config_path
 from agent6.verify_infer import infer_verify_command
 
 _EMPTY_CONFIG = """\
@@ -252,7 +252,7 @@ def init_workspace(
     auto-detection.
     """
     root = root.resolve()
-    cfg_path = repo_config_target or repo_config_path_for(root)
+    cfg_path = repo_config_target or repo_config_path(root)
     detected = ecosystem or _detect_ecosystem(root)
     # Non-interactive: take every step's default answer.
     ask: _Ask = _ask if interactive else _accept_default

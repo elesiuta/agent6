@@ -14,13 +14,13 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.layout import bucket_dir
 from agent6.ui.cli import completers
 
 
 def _seed(tmp_path: Path) -> None:
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     for bucket, mode, sid in (
         ("runs", "run", "runny-one-AAAAAA"),
         ("plans", "plan", "planny-two-BBBBB"),
@@ -131,7 +131,7 @@ def test_live_only_verbs_offer_only_live_sessions(
 
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
-    live = bucket_dir(resolved_state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
+    live = bucket_dir(state_dir(tmp_path), "runs") / "runny-one-AAAAAA"
     write_worker_pid(live, os.getpid())
     offered = completers._complete_live_session_ids("")  # pyright: ignore[reportPrivateUsage]
     assert offered == ["runny-one-AAAAAA"]
@@ -164,7 +164,7 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
     from agent6.sessions.ipc import write_worker_pid
 
     monkeypatch.chdir(tmp_path)
-    ended = bucket_dir(resolved_state_dir(tmp_path), "runs") / "ended-one-EEEEEE"
+    ended = bucket_dir(state_dir(tmp_path), "runs") / "ended-one-EEEEEE"
     ended.mkdir(parents=True)
     (ended / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run"})

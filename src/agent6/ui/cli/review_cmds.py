@@ -15,8 +15,9 @@ from agent6.budget import BudgetExceeded, BudgetTracker
 from agent6.config import (
     Config,
 )
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import load_effective
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, git_hardening_flags
+from agent6.paths import state_dir
 from agent6.providers import (
     ProviderError,
     TranscriptSink,
@@ -233,7 +234,7 @@ def _cmd_review(  # noqa: PLR0911
     # Reviewer-only: route the "reviewer" role per [models.reviewer]. Budget
     # is per-invocation since this command is a one-shot.
     budget = budget_tracker(cfg)
-    layout_root = resolved_state_dir(root) / "reviews"
+    layout_root = state_dir(root) / "reviews"
     layout_root.mkdir(parents=True, exist_ok=True)
     transcript_sink = TranscriptSink(layout_root)
 

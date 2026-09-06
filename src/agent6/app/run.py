@@ -53,7 +53,6 @@ from agent6.app.preflight import (
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
 from agent6.config import Config
-from agent6.config.layer import resolved_state_dir
 from agent6.events import EventSink
 from agent6.git_ops import (
     GitError,
@@ -63,7 +62,7 @@ from agent6.git_ops import (
     stash_tracked_changes,
     untracked_paths,
 )
-from agent6.paths import mkdir_for_real_user
+from agent6.paths import mkdir_for_real_user, state_dir
 from agent6.providers import TranscriptSink
 from agent6.sessions.id import (
     SessionIdError,
@@ -213,19 +212,19 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         except SessionIdError as exc:
             reporter.error(str(exc))
             return 2
-    state_dir = resolved_state_dir(cwd)
+    state = state_dir(cwd)
     bucket = session_bucket(mode)
     # Same-bucket reuse is the resume/park flow below; another bucket's id is
     # a collision every surface would see as ambiguous.
-    if session_id and (held := session_id_bucket(state_dir, session_id)) not in (None, bucket):
+    if session_id and (held := session_id_bucket(state, session_id)) not in (None, bucket):
         reporter.error(
             f"--session-id {session_id!r} already names a session under {held}/;"
             " ids are unique across every bucket. Pick another id."
         )
         return 2
-    effective_session_id = session_id or unused_session_id(state_dir, bucket)
+    effective_session_id = session_id or unused_session_id(state, bucket)
     layout = SessionLayout(
-        state_dir=state_dir,
+        state_dir=state,
         session_id=effective_session_id,
         subdir=bucket,
     )
@@ -299,7 +298,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         answerable = frontend.capabilities.can_ask or away_mode(layout.session_dir) == "wait"
         unmerged_run = (
             unmerged_run_holding_the_tree(
-                cwd, state_dir, except_id=effective_session_id, modified=modified
+                cwd, state, except_id=effective_session_id, modified=modified
             )
             if must_ask
             else ""
@@ -485,7 +484,7 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             events=events,
             transcript_sink=transcript_sink,
             cwd=cwd,
-            state_dir=state_dir,
+            state_dir=state,
         )
         detach_requested = end.detach_requested
         return end.rc

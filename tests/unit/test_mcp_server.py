@@ -13,9 +13,9 @@ from typing import Any
 import pytest
 
 from agent6.config import Config, load_config
-from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import write_node
+from agent6.paths import state_dir
 from agent6.sessions.ipc import register_frontend
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import MANIFEST_VERSION
@@ -257,7 +257,7 @@ def test_list_runs_empty(tmp_path: Path) -> None:
 def test_list_runs_reads_manifests(tmp_path: Path) -> None:
     import os
 
-    runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
+    runs = state_dir(tmp_path) / "sessions" / "runs"
     (runs / "run-a").mkdir(parents=True)
     (runs / "run-b").mkdir(parents=True)
     (runs / "run-a" / "manifest.json").write_text(
@@ -340,7 +340,7 @@ def test_query_dag_rejects_traversing_run_id(tmp_path: Path, bad: str) -> None:
 
 
 def test_query_dag_reads_persisted_nodes(tmp_path: Path) -> None:
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="r1")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="r1")
     layout.ensure()
     node = TaskNode(
         id="01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -699,7 +699,7 @@ def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: Path) -> N
     MCP enumerated every directory, so an editor driving agent6 saw sessions the
     CLI and the web hub denied existed.
     """
-    runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
+    runs = state_dir(tmp_path) / "sessions" / "runs"
     (runs / "real-run").mkdir(parents=True)
     (runs / "real-run" / "manifest.json").write_text(
         json.dumps({"user_task": "alpha"}), encoding="utf-8"

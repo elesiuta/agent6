@@ -12,8 +12,9 @@ import pytest
 
 from agent6.app import finalize as finmod
 from agent6.app.reporter import STDIO_REPORTER
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import load_effective
 from agent6.git_ops import chain_ref_for
+from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout
 
 
@@ -47,7 +48,7 @@ def _setup_run_on_branch(
     # The worktree carries the run's work, exactly as a finished run leaves it.
     for name, content, _msg in commits:
         (tmp_path / name).write_text(content, encoding="utf-8")
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -82,7 +83,7 @@ def test_auto_merge_squashes_and_lands_on_base(
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AM1111"),
+        layout=SessionLayout(state_dir(tmp_path), "run-AM1111"),
         cfg=cfg,
         reporter=STDIO_REPORTER,
     )
@@ -90,9 +91,7 @@ def test_auto_merge_squashes_and_lands_on_base(
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"  # one squash commit
     assert _git(tmp_path, "status", "--porcelain") == ""  # index+worktree brought forward
     m = json.loads(
-        (
-            resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-AM1111" / "manifest.json"
-        ).read_text()
+        (state_dir(tmp_path) / "sessions" / "runs" / "run-AM1111" / "manifest.json").read_text()
     )
     assert m["merged"]["into"] == "main"
     assert m["merged"]["sha"]
@@ -118,15 +117,13 @@ def test_auto_merge_lands_the_hidden_chain_ref(
     git2 = cfg.git.model_copy(update={"auto_merge": True})
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AMREF1"),
+        layout=SessionLayout(state_dir(tmp_path), "run-AMREF1"),
         cfg=cfg.model_copy(update={"git": git2}),
         reporter=STDIO_REPORTER,
     )
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
     m = json.loads(
-        (
-            resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-AMREF1" / "manifest.json"
-        ).read_text()
+        (state_dir(tmp_path) / "sessions" / "runs" / "run-AMREF1" / "manifest.json").read_text()
     )
     assert m["merged"]["into"] == "main"
 
@@ -146,7 +143,7 @@ def test_auto_merge_noop_without_run_branch(
     _git(tmp_path, "checkout", "-q", "main")
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AM2222"),
+        layout=SessionLayout(state_dir(tmp_path), "run-AM2222"),
         cfg=cfg,
         reporter=STDIO_REPORTER,
     )
@@ -171,7 +168,7 @@ def test_auto_merge_conflict_keeps_run_branch_intact(
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AM3333"),
+        layout=SessionLayout(state_dir(tmp_path), "run-AM3333"),
         cfg=cfg,
         reporter=STDIO_REPORTER,
     )
@@ -201,15 +198,13 @@ def test_auto_merge_skips_when_base_branch_is_gone(
     cfg = load_effective(tmp_path, None).config
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=SessionLayout(resolved_state_dir(tmp_path), "run-GONE11"),
+        layout=SessionLayout(state_dir(tmp_path), "run-GONE11"),
         cfg=cfg,
         reporter=STDIO_REPORTER,
     )
     assert _git(tmp_path, "branch", "--list", "main") == ""  # base NOT fabricated
     manifest = json.loads(
-        (
-            resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-GONE11" / "manifest.json"
-        ).read_text()
+        (state_dir(tmp_path) / "sessions" / "runs" / "run-GONE11" / "manifest.json").read_text()
     )
     assert manifest.get("merged") is None  # no phantom merge recorded
     assert "failed" in capsys.readouterr().err.lower()
@@ -232,7 +227,7 @@ def test_auto_prune_deletes_reachable_merge_branch(
     cfg2 = cfg.model_copy(update={"git": git2})
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AP1111"),
+        layout=SessionLayout(state_dir(tmp_path), "run-AP1111"),
         cfg=cfg2,
         reporter=STDIO_REPORTER,
     )
@@ -259,7 +254,7 @@ def test_auto_prune_follows_a_recorded_noop_merge(
     )
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AP3333"),
+        layout=SessionLayout(state_dir(tmp_path), "run-AP3333"),
         cfg=cfg.model_copy(update={"git": git2}),
         reporter=STDIO_REPORTER,
     )
@@ -285,7 +280,7 @@ def test_auto_prune_keeps_squash_branch(
     cfg2 = cfg.model_copy(update={"git": git2})
     finmod.finalize_auto_merge(
         tmp_path,
-        layout=SessionLayout(resolved_state_dir(tmp_path), "run-AP2222"),
+        layout=SessionLayout(state_dir(tmp_path), "run-AP2222"),
         cfg=cfg2,
         reporter=STDIO_REPORTER,
     )

@@ -52,7 +52,7 @@ from agent6.app.finalize import EXIT_VERIFY_FAILED
 from agent6.app.manifest import write_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
-from agent6.config.layer import materialize, resolved_state_dir
+from agent6.config.layer import materialize
 from agent6.directive import parse_spec
 from agent6.git_ops import (
     GitError,
@@ -192,9 +192,9 @@ def _recorded_merged(origin: Path, clone: Path, tip: str) -> bool:
     that still holds it. The evidence `--delete-squashed` requires, read here
     so a squash-merged lane's clone (whose commits are unreachable by design)
     is still sweepable."""
-    state_dir = resolved_state_dir(origin)
+    state = state_dir(origin)
     for branch in list_run_branches(clone):
-        layout = session_layout(state_dir, branch.removeprefix("agent6/"))
+        layout = session_layout(state, branch.removeprefix("agent6/"))
         if layout is None:
             continue
         try:

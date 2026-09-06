@@ -19,6 +19,7 @@ import argcomplete
 
 from agent6.errors import OperatorError
 from agent6.events import EventWriteError
+from agent6.paths import state_dir
 from agent6.ui.cli._common import _enforce_root_policy, error, refuse
 from agent6.ui.cli.parser import _command_index, _inject_default_verb, build_parser
 
@@ -106,11 +107,10 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     if not args.task and seed_from:
         # A plan id alone runs that plan: its text is the task, and digesting
         # the same text as a seed would double it.
-        from agent6.config.layer import resolved_state_dir  # noqa: PLC0415
         from agent6.sessions.id import SessionIdError, resolve_session  # noqa: PLC0415
 
         try:
-            layout = resolve_session(resolved_state_dir(Path.cwd()), seed_from)
+            layout = resolve_session(state_dir(Path.cwd()), seed_from)
         except SessionIdError as exc:
             error(f"{exc}")
             return 2
@@ -180,13 +180,12 @@ def _minted_session_id(explicit: str, mode: str) -> str:
     that one rather than whatever the repo's newest happens to be. Minting
     reserves nothing on disk, so a run that refuses leaves no session behind.
     """
-    from agent6.config.layer import resolved_state_dir  # noqa: PLC0415
     from agent6.sessions.id import unused_session_id  # noqa: PLC0415
     from agent6.types import session_bucket  # noqa: PLC0415
 
     if explicit:
         return explicit
-    return unused_session_id(resolved_state_dir(Path.cwd()), session_bucket(mode))
+    return unused_session_id(state_dir(Path.cwd()), session_bucket(mode))
 
 
 def _prompt_for_the_next_input(args: argparse.Namespace, rc: int, session_id: str) -> int:

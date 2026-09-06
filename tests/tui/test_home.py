@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.ipc import (
     approvals_dir,
     clear_pending_answers,
@@ -498,7 +498,7 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
 
     monkeypatch.setattr(home, "run_home", _capture)
     assert plan_watch._cmd_tui() == 0  # pyright: ignore[reportPrivateUsage]
-    assert seen == [resolved_state_dir(tmp_path)]
+    assert seen == [state_dir(tmp_path)]
 
 
 def test_merge_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:

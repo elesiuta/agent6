@@ -194,7 +194,7 @@ def test_the_runs_journal_streams_out_as_session_update(
     def _writing_run(*_a: object, **kw: object) -> int:
         session_id = kw["session_id"]
         assert isinstance(session_id, str)
-        layout = SessionLayout(state_dir=runner.resolved_state_dir(tmp_path), session_id=session_id)
+        layout = SessionLayout(state_dir=runner.state_dir(tmp_path), session_id=session_id)
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         layout.logs_path.write_bytes(recorded.read_bytes())
         return 0
@@ -618,7 +618,7 @@ def test_a_second_prompt_resumes_the_same_run(
     def _minted(*_a: object, **_k: object) -> str:
         return "run-AAAA11"
 
-    monkeypatch.setattr(runner, "resolved_state_dir", _state_dir)
+    monkeypatch.setattr(runner, "state_dir", _state_dir)
     monkeypatch.setattr(runner, "unused_session_id", _minted)
     monkeypatch.setattr(runner, "load_session_config", _loaded)
 
@@ -667,7 +667,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
 
     def _gated_run(*_a: object, **kw: Any) -> int:
         layout = SessionLayout(
-            state_dir=runner.resolved_state_dir(tmp_path), session_id=str(kw["session_id"])
+            state_dir=runner.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layouts.append(layout)
         layout.session_dir.mkdir(parents=True, exist_ok=True)
@@ -777,7 +777,7 @@ def test_a_tool_call_id_is_unique_across_a_sessions_turns(
     monkeypatch.chdir(tmp_path)
 
     def _layout(session_id: str) -> SessionLayout:
-        return SessionLayout(state_dir=runner.resolved_state_dir(tmp_path), session_id=session_id)
+        return SessionLayout(state_dir=runner.state_dir(tmp_path), session_id=session_id)
 
     def _run_task(*_a: object, **kw: Any) -> int:
         layout = _layout(str(kw["session_id"]))
@@ -863,7 +863,7 @@ def test_the_runs_notices_reach_the_editor(tmp_path: Path, monkeypatch: pytest.M
 
     def _noticing_run(*_a: object, **kw: Any) -> int:
         layout = SessionLayout(
-            state_dir=runner.resolved_state_dir(tmp_path), session_id=str(kw["session_id"])
+            state_dir=runner.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = EventSink(layout.logs_path)
@@ -911,7 +911,7 @@ def test_the_editor_gets_each_ending_fact_once(
 
     def _ending_run(*_a: object, **kw: Any) -> int:
         layout = SessionLayout(
-            state_dir=runner.resolved_state_dir(tmp_path), session_id=str(kw["session_id"])
+            state_dir=runner.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = EventSink(layout.logs_path)
@@ -1019,7 +1019,7 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
 
     def _gated_run(*_a: object, **kw: Any) -> int:
         layout = SessionLayout(
-            state_dir=runner.resolved_state_dir(tmp_path), session_id=str(kw["session_id"])
+            state_dir=runner.state_dir(tmp_path), session_id=str(kw["session_id"])
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = EventSink(layout.logs_path)
@@ -1171,7 +1171,7 @@ def test_a_turn_that_cannot_choose_its_run_says_why(
     def _broken(*_a: object, **_kw: object) -> object:
         raise ConfigError("Config file cannot be read (config.toml)")
 
-    monkeypatch.setattr(runner, "resolved_state_dir", _broken)
+    monkeypatch.setattr(runner, "state_dir", _broken)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))

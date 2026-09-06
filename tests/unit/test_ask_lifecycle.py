@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config
+from agent6.paths import state_dir
 from agent6.sessions.layout import session_layout
 from agent6.sessions.manifest import ManifestError, read_manifest
 
@@ -82,11 +83,10 @@ def test_a_run_can_be_seeded_from_an_ask(tmp_path: Path, monkeypatch: pytest.Mon
     import json
 
     from agent6.config import Config
-    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli.run import _compose_task  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
-    ask = resolved_state_dir(tmp_path) / "sessions" / "asks" / "quiet-fox-AAAAAA"
+    ask = state_dir(tmp_path) / "sessions" / "asks" / "quiet-fox-AAAAAA"
     ask.mkdir(parents=True)
     (ask / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": "ask", "user_task": "how do I convert h264"}),

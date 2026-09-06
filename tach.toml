@@ -178,7 +178,7 @@ path = "agent6.ui.spawn"
 # validates its models, refuses a busy checkout, and locates the new session
 # dir among the listing's.
 depends_on = [
-  "agent6.config.layer",
+  "agent6.paths",
   "agent6.directive",
   "agent6.models.validate",
   "agent6.sandbox",
@@ -207,12 +207,12 @@ path = "agent6.ui.acp"
 # The types SessionFrontend's own signatures name: implementing the seam means
 # naming what it passes. The same set ui.cli has, minus everything that draws.
 depends_on = [
+  "agent6.paths",
   "agent6.ui.steer",
   "agent6",
   "agent6.app",
   "agent6.budget",
   "agent6.config",
-  "agent6.config.layer",
   "agent6.events",
   "agent6.sessions.id",
   # session/cancel drops the same stop marker the TUI and web do: a marker,
@@ -241,6 +241,7 @@ depends_on = [
 # machine spec/journal. The write side drives the frontend bridge. No UI toolkit.
 path = "agent6.ui.web"
 depends_on = [
+  "agent6.paths",
   # /undo forks in-process (app.fork), the same direction ui.acp already uses.
   "agent6.app",
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
@@ -290,7 +291,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.init"
-depends_on = ["agent6.config.layer", "agent6.config.write", "agent6.errors", "agent6.verify_infer"]
+depends_on = ["agent6.config.layer", "agent6.config.write", "agent6.errors", "agent6.paths", "agent6.verify_infer"]
 
 [[modules]]
 path = "agent6.verify_infer"
@@ -546,6 +547,7 @@ depends_on = []
 [[modules]]
 path = "agent6.ui.mcp_server"
 depends_on = [
+  "agent6.paths",
   "agent6",
   "agent6.config",
   "agent6.config.layer",

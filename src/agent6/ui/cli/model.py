@@ -15,10 +15,10 @@ from agent6.config import (
     ConfigError,
     RoleName,
 )
-from agent6.config.layer import load_effective, repo_config_path_for
+from agent6.config.layer import load_effective
 from agent6.config.write import ConfigLeafValue, set_config_table
 from agent6.models.choices import provider_model_choices
-from agent6.paths import global_config_path
+from agent6.paths import global_config_path, repo_config_path
 from agent6.providers.claude_code import login_status
 from agent6.secrets import load_oauth_tokens, resolve_api_key
 from agent6.ui.cli._common import error
@@ -195,7 +195,7 @@ def _cmd_model(
     if not model:
         error("no model given.")
         return 2
-    target = repo_config_path_for(Path.cwd()) if to_repo else global_config_path()
+    target = repo_config_path(Path.cwd()) if to_repo else global_config_path()
     fields: dict[str, ConfigLeafValue] = {"provider": provider, "model": model}
     if effort:
         fields["effort"] = effort

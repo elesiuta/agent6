@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.ipc import steer_request_pending, take_steer_answer, write_worker_pid
 from agent6.ui.cli import main
 
 
 def _run_session(tmp_path: Path, session_id: str) -> Path:
-    d = resolved_state_dir(tmp_path) / "sessions" / "runs" / session_id
+    d = state_dir(tmp_path) / "sessions" / "runs" / session_id
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text("", encoding="utf-8")
     return d

@@ -34,7 +34,7 @@ from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.reporter import Reporter
 from agent6.app.resume import resume_task
 from agent6.app.run import run_task
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.id import unused_session_id
 from agent6.types import session_bucket
 from agent6.ui.acp.frontend import PERMISSION_TIMEOUT_S, acp_frontend
@@ -231,7 +231,7 @@ class RunBridge:
     _asked: int = 0
 
     def sessions(self) -> Sessions:
-        return Sessions(run=self.run, state_dir_for=resolved_state_dir)
+        return Sessions(run=self.run, state_dir_for=state_dir)
 
     def ask(
         self,
@@ -347,14 +347,14 @@ class RunBridge:
         first save, starts fresh under a new id."""
         if not session.session_id:
             return False
-        layout = session.layout(resolved_state_dir(session.cwd))
+        layout = session.layout(state_dir(session.cwd))
         return (layout.session_dir / "loop_state.json").is_file()
 
     def had_journal(self, session: Session) -> bool:
         """Whether this turn got far enough to write a journal of its own."""
         if not session.session_id:
             return False
-        return session.layout(resolved_state_dir(session.cwd)).logs_path.exists()
+        return session.layout(state_dir(session.cwd)).logs_path.exists()
 
     def run(self, session: Session, text: str) -> StopReason:
         # BEFORE the queue, not after. `_runs` is held for a whole run, so a
@@ -370,7 +370,7 @@ class RunBridge:
             resuming = self._resumable(session)
             if not resuming:
                 session.session_id = unused_session_id(
-                    resolved_state_dir(session.cwd), session_bucket(ACP_MODE)
+                    state_dir(session.cwd), session_bucket(ACP_MODE)
                 )
         except Exception as exc:
             # A config that cannot be read raises here, before any journal.
@@ -417,7 +417,7 @@ class RunBridge:
         self.server.notify_raw(message_update(session.acp_id, f"the run could not start: {exc}"))
 
     def _run(self, session: Session, text: str, *, resuming: bool) -> StopReason:
-        layout = session.layout(resolved_state_dir(session.cwd))
+        layout = session.layout(state_dir(session.cwd))
         os.chdir(session.cwd)
         session.turn += 1
 

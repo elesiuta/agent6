@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.layout import machines_root
 from agent6.ui.cli.parser import (
     _inject_default_verb,  # pyright: ignore[reportPrivateUsage]
@@ -143,7 +143,7 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
     assert ok is True and msg == "started"
     assert captured_argv[-1][1:] == ["machine", "run", str(mf)]
     started = started_fns[-1]
-    instance = machines_root(resolved_state_dir(tmp_path)) / "tiny"
+    instance = machines_root(state_dir(tmp_path)) / "tiny"
     instance.mkdir(parents=True)
     assert started(4242) is False  # no worker.pid yet
     write_worker_pid(instance, 4242)
@@ -156,7 +156,7 @@ def test_spawn_machine_run_started_signal_is_child_worker_pid(
 
 def _ended_machine(cwd: Path, name: str) -> Path:
     """An instance whose journal records a MachineEnd, with one state-log dir."""
-    inst = resolved_state_dir(cwd) / "machines" / name
+    inst = state_dir(cwd) / "machines" / name
     (inst / "states" / "0000-route").mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "states" / "0000-route" / "logs.jsonl").write_text("", encoding="utf-8")
@@ -204,7 +204,7 @@ def test_machine_steer_refuses_ended_machine(tmp_path: Path) -> None:
 def _parked_machine(cwd: Path, name: str) -> Path:
     """An instance parked on an armed wait (no live worker, no MachineEnd) whose
     newest state dir is a COMPLETED agent state."""
-    inst = resolved_state_dir(cwd) / "machines" / name
+    inst = state_dir(cwd) / "machines" / name
     (inst / "states" / "0001-work").mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "states" / "0001-work" / "logs.jsonl").write_text("", encoding="utf-8")
@@ -237,7 +237,7 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: Path) -> None:
     the answer and reported success with no worker left to consume it -- the
     same shape as the typed steer that used to reach a corpse. Every sibling
     action already refuses "run is not live"."""
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "dead-run-A1"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "dead-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         '{"version":2,"session_id":"dead-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
@@ -266,7 +266,7 @@ def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: Pa
 
     from agent6.sessions.ipc import read_answer, read_question_answers
 
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "tty-run-A1"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "tty-run-A1"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         '{"version":2,"session_id":"tty-run-A1","mode":"run","user_task":"t"}', encoding="utf-8"
@@ -296,7 +296,7 @@ def test_machine_prompt_answers_refuse_a_machine_that_is_not_running(tmp_path: P
     prompt box never cleared, so the operator had every reason to think it landed."""
     from agent6.ui.web import actions
 
-    inst = resolved_state_dir(tmp_path) / "machines" / "dead"
+    inst = state_dir(tmp_path) / "machines" / "dead"
     (inst / "states" / "0001-work").mkdir(parents=True)
     (inst / "machine.asm.toml").write_text("machine = 'x'\n", encoding="utf-8")
     (inst / "journal.jsonl").write_text("", encoding="utf-8")
@@ -346,7 +346,7 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     """
     import json
 
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "done-WEB111"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "done-WEB111"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": "done-WEB111", "mode": "run", "user_task": "t"}),
@@ -413,14 +413,14 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
     without spawning (the plan itself is untouched either way)."""
     import json
 
-    plan = resolved_state_dir(tmp_path) / "sessions" / "plans" / "planny-one-AAAAAA"
+    plan = state_dir(tmp_path) / "sessions" / "plans" / "planny-one-AAAAAA"
     plan.mkdir(parents=True)
     (plan / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": plan.name, "mode": "plan", "user_task": "t"}),
         encoding="utf-8",
     )
     (plan / "logs.jsonl").write_text("", encoding="utf-8")
-    run = resolved_state_dir(tmp_path) / "sessions" / "runs" / "runny-one-AAAAAA"
+    run = state_dir(tmp_path) / "sessions" / "runs" / "runny-one-AAAAAA"
     run.mkdir(parents=True)
     (run / "manifest.json").write_text(
         json.dumps({"version": 2, "session_id": run.name, "mode": "run", "user_task": "t"}),
@@ -432,7 +432,7 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
     def _fake_spawn(argv: list[str], _cwd: Path, **kw: object) -> tuple[Path, str]:
         seen["argv"] = argv
         seen["env"] = kw.get("env")
-        child = resolved_state_dir(tmp_path) / "sessions" / "runs" / "fresh-run-BBBBBB"
+        child = state_dir(tmp_path) / "sessions" / "runs" / "fresh-run-BBBBBB"
         child.mkdir(parents=True, exist_ok=True)
         return child, ""
 
@@ -499,12 +499,12 @@ def test_a_now_steer_writes_the_urgent_marker(
     is the text alone and the request marker carries the urgency."""
     import os
 
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
     from agent6.sessions.ipc import STEER_ANSWER_FILE, STEER_REQUEST_FILE, write_worker_pid
     from agent6.ui.web import actions
 
     monkeypatch.chdir(tmp_path)
-    d = resolved_state_dir(tmp_path) / "sessions" / "runs" / "live-one-AAAAAA"
+    d = state_dir(tmp_path) / "sessions" / "runs" / "live-one-AAAAAA"
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text('{"type": "session.start", "mode": "run"}\n', encoding="utf-8")
     write_worker_pid(d, os.getpid())

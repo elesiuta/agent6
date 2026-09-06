@@ -28,10 +28,9 @@ from agent6.config import (
 )
 from agent6.config.layer import (
     load_effective,
-    resolved_state_dir,
 )
 from agent6.git_ops import GitError, git_common_dir
-from agent6.paths import private_dirs, secrets_path
+from agent6.paths import private_dirs, secrets_path, state_dir
 from agent6.sandbox import (
     JailUnavailableError,
     landlock_abi,
@@ -441,7 +440,7 @@ def _fork_git_grant(cfg: Config, ws: Workspace, selected: IsolationLevel) -> Pat
         repo = git_common_dir(ws.root).parent
     except GitError:
         return None
-    for worktree, sessions in worktree_owners(resolved_state_dir(repo)).items():
+    for worktree, sessions in worktree_owners(state_dir(repo)).items():
         if worktree.resolve() != ws.root:
             continue
         git_dir = next((m.worktree_git_dir for _d, m in sessions if m.worktree_git_dir), None)

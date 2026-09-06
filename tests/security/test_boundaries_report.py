@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from agent6.config import Config, SandboxConfig
-from agent6.paths import jail_cache_home
+from agent6.paths import jail_cache_home, state_dir
 from agent6.sandbox._tool_paths import ToolMountNotes
 from agent6.ui.cli import check_cmds
 
@@ -134,7 +134,6 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     import json
     import subprocess
 
-    from agent6.config.layer import resolved_state_dir
     from agent6.git_ops import add_worktree
     from agent6.sessions.layout import SessionLayout
 
@@ -149,7 +148,7 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     worktree = tmp_path / "wt"
     add_worktree(repo, worktree, "HEAD")
     git_dir = (repo / ".git").resolve()
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="fork-AAAA11")
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="fork-AAAA11")
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(

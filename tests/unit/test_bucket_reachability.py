@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 
 
 def _seed(state: Path, bucket: str, session_id: str, *, mode: str, marker: str = "") -> Path:
@@ -42,7 +42,7 @@ def test_history_graph_without_an_id_finds_a_plan(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     _seed(state, "plans", "brave-oak-AAAAAA", mode="plan", marker="graph")
 
     main(["sessions", "graph"])
@@ -59,7 +59,7 @@ def test_history_transcript_without_an_id_finds_a_plan(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     d = _seed(state, "plans", "brave-oak-AAAAAA", mode="plan", marker="transcripts")
     (d / "transcripts" / "0001.json").write_text(
         json.dumps({"seq": 1, "request": {}, "response": {}}), encoding="utf-8"
@@ -77,7 +77,7 @@ def test_sessions_diff_names_the_real_problem_for_a_plan(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     _seed(state, "plans", "brave-oak-AAAAAA", mode="plan")
     # A populated runs/ so the resolver takes its real path rather than
     # short-circuiting on a missing bucket with a different error.
@@ -95,7 +95,7 @@ def test_the_repl_watch_reads_its_own_log(
     so it always reported a missing log."""
     from agent6.ui.cli._repl import repl_show_recent_events  # pyright: ignore[reportPrivateUsage]
 
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     _seed(state, "asks", "brave-oak-AAAAAA", mode="ask")
 
     repl_show_recent_events(tmp_path, "brave-oak-AAAAAA", n=5)
@@ -111,7 +111,7 @@ def test_the_mcp_tools_see_every_bucket(tmp_path: Path) -> None:
     from agent6.config import Config
     from agent6.ui.mcp_server import MCPServer
 
-    state = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
     _seed(state, "plans", "brave-oak-AAAAAA", mode="plan")
     _seed(state, "asks", "quiet-fox-BBBBBB", mode="ask")
 

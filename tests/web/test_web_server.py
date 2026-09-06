@@ -20,7 +20,7 @@ from typing import Any, cast
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.ipc import register_frontend, write_worker_pid
 from agent6.ui.cli import main
 from agent6.ui.web.server import (
@@ -54,7 +54,7 @@ reason = "routed"
 
 
 def _make_run(cwd: Path, session_id: str, events: list[dict[str, object]]) -> None:
-    runs = resolved_state_dir(cwd) / "sessions" / "runs" / session_id
+    runs = state_dir(cwd) / "sessions" / "runs" / session_id
     runs.mkdir(parents=True)
     body = "".join(json.dumps(e) + "\n" for e in events)
     (runs / "logs.jsonl").write_text(body, encoding="utf-8")
@@ -224,7 +224,7 @@ def test_unknown_run_is_404(server: tuple[WebServer, int]) -> None:
 def test_meta_resolves_the_target_kind(tmp_path: Path) -> None:
     # `agent6 web <target>` deep-links on load; the page asks /api/meta what
     # kind of view the target names.
-    runs = resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-t"
+    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-t"
     runs.mkdir(parents=True)
     (runs / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
     srv = WebServer(("127.0.0.1", 0), tmp_path, "run-t")
@@ -277,7 +277,7 @@ def test_resume_refused_while_the_worker_is_alive(
 
     _srv, port = server
     _make_run(tmp_path, "run-l", [{"type": "session.start"}])
-    runs = resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-l"
+    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-l"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     status, data = _post(port, "/api/session/run-l/resume", {"text": ""})
     assert status == 422
@@ -291,7 +291,7 @@ def test_stop_step_and_compact_drop_markers_on_a_live_run(
 
     _srv, port = server
     _make_run(tmp_path, "run-m", [{"type": "session.start"}])
-    runs = resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-m"
+    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-m"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     status, data = _post(port, "/api/session/run-m/stop_step", {})
     assert status == 200 and data["ok"] is True
@@ -345,7 +345,7 @@ def test_config_endpoint(server: tuple[WebServer, int]) -> None:
 
 def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "appr-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "appr-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
@@ -359,7 +359,7 @@ def test_approve_writes_answer_file(server: tuple[WebServer, int], tmp_path: Pat
 
 
 def _run_asking_one_question(tmp_path: Path, session_id: str) -> Path:
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / session_id
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / session_id
     session_dir.mkdir(parents=True)
     events = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -403,7 +403,7 @@ def test_answer_refuses_a_list_that_does_not_match_the_prompt(
 
 def test_steer_writes_answer_and_request(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "steer-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "steer-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -423,7 +423,7 @@ def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Pa
     status, data = _post(port, "/api/session/run-sd/steer", {"text": "abort"})
     assert status == 422
     assert "not live" in str(data["error"])
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "run-sd"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "run-sd"
     assert not (session_dir / "steer.answer").exists()
     assert not (session_dir / "steer.request").exists()
 
@@ -431,7 +431,7 @@ def test_steer_refused_on_a_dead_run(server: tuple[WebServer, int], tmp_path: Pa
 def test_approve_id_traversal_is_contained(server: tuple[WebServer, int], tmp_path: Path) -> None:
     # A malicious answer id must not escape the run's approvals/ dir.
     _srv, port = server
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "trav-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "trav-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     write_worker_pid(session_dir, os.getpid())  # a prompt is answerable only while live
@@ -455,7 +455,7 @@ def _make_machine_with_state(
     """A machine instance dir + one per-state agent-log dir. Returns (instance,
     state). ``running`` records this test process as the machine's worker, so
     steer (which refuses a machine no state is executing under) is offered."""
-    inst = resolved_state_dir(cwd) / "machines" / name
+    inst = state_dir(cwd) / "machines" / name
     inst.mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "journal.jsonl").write_text("", encoding="utf-8")
@@ -536,10 +536,10 @@ def test_run_id_traversal_is_404(server: tuple[WebServer, int]) -> None:
 def test_extra_api_path_segments_are_404(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     _make_run(tmp_path, "seg-run", [{"type": "session.start", "user_task": "x"}])
-    machine = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    machine = state_dir(tmp_path) / "machines" / "tiny"
     machine.mkdir(parents=True)
     (machine / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-    draft = resolved_state_dir(tmp_path) / "sessions" / "machines" / "drafty"
+    draft = state_dir(tmp_path) / "sessions" / "machines" / "drafty"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text('{"type": "session.start"}\n', encoding="utf-8")
 
@@ -551,7 +551,7 @@ def test_extra_api_path_segments_are_404(server: tuple[WebServer, int], tmp_path
 def test_draft_snapshot_folds_the_draft_log(server: tuple[WebServer, int], tmp_path: Path) -> None:
     # A machine-create draft is watched through the run endpoints.
     _srv, port = server
-    draft = resolved_state_dir(tmp_path) / "sessions" / "machines" / "brave-otter"
+    draft = state_dir(tmp_path) / "sessions" / "machines" / "brave-otter"
     draft.mkdir(parents=True)
     (draft / "logs.jsonl").write_text(
         '{"type": "session.start", "user_task": "author a fixer machine"}\n', encoding="utf-8"
@@ -694,7 +694,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_leg(
             {"type": "session.end", "all_passed": True},
         ],
     )
-    logs = resolved_state_dir(tmp_path) / "sessions" / "runs" / "resume-run" / "logs.jsonl"
+    logs = state_dir(tmp_path) / "sessions" / "runs" / "resume-run" / "logs.jsonl"
     conn = HTTPConnection("127.0.0.1", port, timeout=10)
     try:
         conn.request("GET", "/api/session/resume-run/events")
@@ -726,7 +726,7 @@ def test_sse_run_frame_carries_the_compare_outcome(
     _srv, port = server
     _make_run(tmp_path, "cmp-run", [{"type": "session.start", "user_task": "x"},
                                     {"type": "session.end", "all_passed": True}])  # fmt: skip
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "cmp-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "cmp-run"
     (session_dir / "manifest.json").write_text(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),
         encoding="utf-8",
@@ -890,7 +890,7 @@ def test_sse_run_dead_worker_frame_is_terminal(
         "dead-worker",
         [{"type": "session.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
     )
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "dead-worker"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "dead-worker"
     (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     _srv, port = server
     conn = HTTPConnection("127.0.0.1", port, timeout=5)
@@ -924,7 +924,7 @@ def test_sse_run_pidless_stale_frame_is_terminal(
         "pidless-stale",
         [{"type": "session.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
     )
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "pidless-stale"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "pidless-stale"
     assert not (session_dir / "worker.pid").exists()
     old = 1_000_000_000.0  # silent far past the stale window
     os.utime(session_dir / "logs.jsonl", (old, old))
@@ -972,7 +972,7 @@ def test_sse_run_created_frame_is_terminal(
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "created-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "created-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
     _srv, port = server
@@ -1016,7 +1016,7 @@ def test_sse_run_parked_keeps_streaming(
     import agent6.ui.web._sse as sse_mod
 
     monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "parked-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "parked-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "manifest.json").write_text(
@@ -1063,7 +1063,7 @@ def test_sse_machine_frame_carries_the_idle_age(
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
-    inst = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    inst = state_dir(tmp_path) / "machines" / "tiny"
     log = next(inst.glob("states/*/logs.jsonl"), None)
     if log is None:  # a pure wait/branch machine runs no agent state
         log = inst / "states" / "0001-work" / "logs.jsonl"
@@ -1107,7 +1107,7 @@ def test_sse_machine_dead_worker_frame_is_terminal(
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
     capsys.readouterr()
-    inst = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    inst = state_dir(tmp_path) / "machines" / "tiny"
     # Un-end the journal (drop the MachineEnd line): the machine now reads as
     # mid-state, and its recorded worker pid points at a dead process.
     journal = inst / "journal.jsonl"
@@ -1363,7 +1363,7 @@ def test_steer_compact_directive_routes_to_compact_request(
     """A composer `/compact <focus>` on a live run becomes a compact request
     carrying the focus -- never a steer message the loop would read as text."""
     _srv, port = server
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "compact-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "compact-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -1411,11 +1411,11 @@ def test_steer_btw_opens_a_side_ask(
     import agent6.ui.btw as btw_mod
 
     _srv, port = server
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "btw-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "btw-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    asks = resolved_state_dir(tmp_path) / "sessions" / "asks"
+    asks = state_dir(tmp_path) / "sessions" / "asks"
 
     def launch(cwd: Path, argv: list[str], env: dict[str, str]) -> str:
         d = asks / "quiet-fox-DDDDDD"
@@ -1473,7 +1473,7 @@ def test_step_diff_serves_one_step_or_the_cumulative_chain(
     and is refused, as is a sha that is not one of its commits."""
     _srv, port = server
     base, c1, c2 = _git_chain(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "steps-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "steps-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "manifest.json").write_text(
@@ -1501,7 +1501,7 @@ def test_session_snapshot_as_of_a_step(server: tuple[WebServer, int], tmp_path: 
     widgets follow the step picked in the Latest commit card) and stamps
     `as_of`; a sha the run never made is refused."""
     _srv, port = server
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "runs" / "asof-run"
+    session_dir = state_dir(tmp_path) / "sessions" / "runs" / "asof-run"
     session_dir.mkdir(parents=True)
     events = [
         {"type": "session.start", "session_id": "asof-run", "mode": "run", "user_task": "t"},
@@ -1608,7 +1608,7 @@ def test_the_draft_route_serves_what_the_step_picker_asks_for(
     server: tuple[WebServer, int], tmp_path: Path
 ) -> None:
     _, port = server
-    draft = resolved_state_dir(tmp_path) / "sessions" / "machines" / "draft-AAAAAAAA"
+    draft = state_dir(tmp_path) / "sessions" / "machines" / "draft-AAAAAAAA"
     draft.mkdir(parents=True)
     sha = "1" * 40
     draft.joinpath("logs.jsonl").write_text(
@@ -1639,7 +1639,7 @@ def test_the_web_names_a_crashed_run_where_it_paints_no_conversation(
 
     _, port = server
     _make_run(tmp_path, "stale-run1", [{"type": "session.start", "mode": "run", "user_task": "t"}])
-    d = resolved_state_dir(tmp_path) / "sessions" / "runs" / "stale-run1"
+    d = state_dir(tmp_path) / "sessions" / "runs" / "stale-run1"
     (d / "worker.pid").write_text("999999999", encoding="utf-8")
 
     status, body, _ = _get(port, "/api/session/stale-run1")

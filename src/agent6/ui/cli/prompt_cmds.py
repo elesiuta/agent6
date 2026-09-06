@@ -8,7 +8,8 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import load_effective
+from agent6.paths import state_dir
 from agent6.verify_infer import infer_verify_command, read_agents_md
 from agent6.workflows import ModelExchange, model_exchange_for
 
@@ -37,7 +38,7 @@ def _cmd_prompt_show(
         inferred = infer_verify_command(cwd, read_agents_md(cwd), llm_call=None)
         if inferred is not None:
             cfg = cfg.with_verify_command(inferred.argv)
-    exchange = model_exchange_for(cfg, cwd, mode, state_dir=resolved_state_dir(cwd))
+    exchange = model_exchange_for(cfg, cwd, mode, state_dir=state_dir(cwd))
     print(_as_json(exchange) if as_json else _as_text(exchange))
     return 0
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 
 
 @pytest.fixture
@@ -163,7 +163,7 @@ def test_set_profile_table_typo_reports_profile_error(
 
 def test_set_profile_repo_targets_repo_config(iso: Path) -> None:
     assert _run(["config", "set", "preset", "quick", "--repo"]) == 0
-    repo_cfg = (resolved_state_dir(iso) / "config.toml").read_text(encoding="utf-8")
+    repo_cfg = (state_dir(iso) / "config.toml").read_text(encoding="utf-8")
     assert 'preset = "quick"' in repo_cfg
     assert not (iso / "g" / "agent6" / "config.toml").is_file()
 
@@ -621,7 +621,7 @@ def test_config_path_lists_every_directory_agent6_writes_to(
     for label in ("global config", "repo config", "secrets", "config dir", "cache"):
         assert f"{label}" in out
     assert str(iso / "st") in out  # state base
-    assert str(resolved_state_dir(iso)) in out  # this repo's own dir
+    assert str(state_dir(iso)) in out  # this repo's own dir
     assert str(iso / "dt" / "agent6" / "skills") in out
     assert str(iso / "ch") in out
 

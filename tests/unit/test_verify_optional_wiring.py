@@ -15,7 +15,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
-from agent6.config.layer import EffectiveConfig, resolved_state_dir
+from agent6.config.layer import EffectiveConfig
+from agent6.paths import state_dir
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.types import RepoSummary
 from agent6.workflows._prompt_blocks import build_system_prompt
@@ -280,7 +281,7 @@ def test_a_withheld_resumed_leg_is_not_regated_by_the_snapshot(
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
-    session_dir = resolved_state_dir(repo) / "sessions" / "runs" / "withheld-AAAA11"
+    session_dir = state_dir(repo) / "sessions" / "runs" / "withheld-AAAA11"
     session_dir.mkdir(parents=True)
     (session_dir / "manifest.json").write_text(
         json.dumps(

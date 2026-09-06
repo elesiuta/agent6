@@ -550,9 +550,9 @@ def test_run_parallel_forwards_pins_to_the_default_spawner(
 ) -> None:
     """run_parallel must carry --pin into every lane's bridge spawner (which
     turns them into repeatable --pin argv, already tested)."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "1")
     captured: list[dict[str, object]] = []
@@ -661,9 +661,9 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 def test_run_parallel_imports_branches_and_stamps_lineage(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -709,9 +709,9 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     origin already holds with other content (written here before the lane was
     seeded, so not a seeded copy) is held back, kept in the lane's imported
     run dir, and the note says where."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     memory.add(origin_state, "repo-fact", "The build needs BUILD_ID set.")
     lanes = _specs(tmp_path, cfg, "fan", "1")
@@ -753,9 +753,9 @@ def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
 ) -> None:
     """`run --parallel --auto-approve` must reach the lane's own default (real)
     bridge spawner, same plumbing as --max-usd."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "1")
     captured: list[dict[str, object]] = []
@@ -782,9 +782,9 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
     """The fan-out's auto-compare stamps a `compare` block into EVERY imported
     lane's manifest (winner + loser), recording rank/of/winner and, with no
     reviewer configured, ranked_by="mechanical" with an empty rationale."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()  # no reviewer -> mechanical ranking
     lanes = _specs(tmp_path, cfg, "fan", "2")
     # Lane 2 passes verify, lane 1 finishes without it -> lane 2 wins (rank 1)
@@ -825,9 +825,9 @@ def test_compare_stamp_records_judge_rationale_truncated(
     """When the judge ranks (not the mechanical fallback), every lane records
     ranked_by="judge", the SAME rationale, truncated to bound the manifest, and
     the SAME group judge cost."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -862,9 +862,9 @@ def test_run_parallel_removes_its_emptied_workdir_levels(
 ) -> None:
     """`run --parallel` clones sit at `<base>/<repo>/<fan-out>/lane-N`: the
     fan-out dir and the per-repo dir go once empty, the base stays."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     per_repo = parallel.workdir_base(cfg, origin)
     lanes = build_lane_specs(
@@ -892,9 +892,9 @@ def test_run_parallel_removes_its_emptied_workdir_levels(
 def test_run_parallel_symlink_appears_before_import(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -921,9 +921,9 @@ def test_run_parallel_symlink_appears_before_import(
 def test_failed_lane_does_not_stop_others(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "3")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fail={2})
@@ -950,9 +950,9 @@ def test_failed_lane_does_not_stop_others(
 def test_report_ranks_passing_lane_first(
     origin: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], runtime: LaneRuntime
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()  # no reviewer model -> mechanical ranking
     lanes = _specs(tmp_path, cfg, "fan", "2")
     # Lane 1 fails verify but is cheaper; lane 2 passes. Verify-pass wins.
@@ -985,9 +985,9 @@ def test_report_ranks_passing_lane_first(
 def test_run_parallel_all_failed_returns_1(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fail={1, 2})
@@ -1015,9 +1015,9 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
     """An atomic_write OSError while stamping lineage (disk full / read-only
     mount) must not abort the import loop mid-way: each lane's import stands, the
     degradation prints, and the remaining lanes still import + report."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -1057,9 +1057,9 @@ def test_ctrl_c_during_spawn_loop_stops_imports_and_reports(
     """A KeyboardInterrupt while still spawning (before the await) routes into the
     same stop-grace + import-what-exists + report path: the already-started lane
     is imported, the run exits 130, and lanes never spawned are simply absent."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "3")
     base = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -1108,9 +1108,9 @@ def test_await_waits_for_worker_pid_to_clear(
     The await gate must keep waiting through that window (terminal = non-running
     status AND pid cleared/dead); importing inside it would misread the lane as
     still running and cleanup would destroy its only copy."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "1")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", pid_lanes={1})
@@ -1157,9 +1157,9 @@ def test_cleanup_preserves_unimported_lane(
     """A lane whose import is refused keeps its clone, run state, and live
     symlink (the clone holds the only copy of its branch), and the report names
     what was kept. Imported lanes are still cleaned up."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
     # Pre-existing branch in the origin makes lane 1's import refuse.
@@ -1203,9 +1203,9 @@ def test_await_uses_real_run_dir_not_symlink(
     """The symlink is a view for the hub, not the source of truth: with symlink
     creation failing entirely, the lane is still awaited on its REAL run dir
     (its true status is observed, not '?') and imported."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "1")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -1249,9 +1249,9 @@ def test_run_lane_to_completion_imports_and_stamps(
     await to terminal, import its branch + run dir into the origin, and stamp
     `<group>` lineage. The live symlink is visible while the lane runs (so a hub
     can see + answer it) and is replaced by the real dir after import."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1")
     spec = LaneSpec(
@@ -1302,9 +1302,9 @@ def test_run_lane_to_completion_imports_and_stamps(
 def test_run_lane_to_completion_failed_spawn_imports_nothing(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fail={1})
     spec = LaneSpec(
@@ -1334,9 +1334,9 @@ def test_a_failed_lane_never_joins_the_coordinator(
     merged its half-done branch into the coordinator's checkout and told the
     model "joined at <sha>". Candidacy is ONE question (`produced_result`),
     the same one the fan-out asks."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(
         origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "failed"}
@@ -1369,9 +1369,9 @@ def test_a_crashed_lane_never_joins_the_coordinator(
 ) -> None:
     """The died-without-end half of the same gate (a lane with no session.end
     folds "stale"): imported, named in the error, never joined."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(
         origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "stale"}
@@ -1404,7 +1404,7 @@ def test_build_lane_spawner_over_cap_refused(
     /parallel steer is a fan-out: it must refuse over-cap BEFORE any clone or
     spawn, exactly as `run --parallel` does in build_lane_specs. The loop turns
     the raise into 'group dispatch failed' coordinator feedback."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
     cfg = Config.model_validate({"parallel": {"max_lanes": 2}})
     called: list[str] = []
@@ -1415,7 +1415,7 @@ def test_build_lane_spawner_over_cap_refused(
 
     monkeypatch.setattr(parallel, "run_lane_to_completion", fake_rltc)
     dispatch = parallel.build_lane_spawner(
-        cfg, origin, resolved_state_dir(origin), coordinator_session_id="co", runtime=runtime
+        cfg, origin, state_dir(origin), coordinator_session_id="co", runtime=runtime
     )
     with pytest.raises(ParallelError, match="max_lanes"):
         dispatch([LaneTask(task="t", model=None)] * 3, "p1")
@@ -1432,9 +1432,9 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     including the per-repo dir goes, the base above it stays. Only the imported
     (ok=True) lane is cleaned; a failed import keeps its clone (it may hold the
     only copy of the branch)."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
     per_repo = parallel.workdir_base(cfg, origin)
@@ -1486,9 +1486,9 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
 ) -> None:
     """The group dispatcher names lanes `<coord>-<group>-l<i>`, puts them under a
     per-group workdir, and returns results in dispatch order despite the pool."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     seen: list[tuple[int, str, str, str, str]] = []
 
@@ -1526,9 +1526,9 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
 def test_build_lane_spawner_forwards_auto_approve(
     origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     seen: list[object] = []
 
@@ -1649,9 +1649,9 @@ def test_crashed_lane_is_not_a_rankable_candidate(
     ranking then sorts by cost, so the cheapest (earliest-crashing) lane ranked
     first and was stamped compare.winner=true, wearing the winner glyph in every
     listing while the report called it "no-verify"."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "crsh", "2")
     spawner = _FakeSpawner(
@@ -1718,9 +1718,9 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
     command for a branch with nothing on it, and exited 0. `failed` is reserved
     for a run that did not finish deliberately -- a deliberate finish over a red
     gate is `finished` and still ranks, which the sibling test above covers."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "allf", "2")
     spawner = _FakeSpawner(
@@ -1986,9 +1986,9 @@ def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
 ) -> None:
     """A held-back deletion keeps nothing, so a note pointing at memory-held/
     named a directory that did not exist."""
-    from agent6.config.layer import resolved_state_dir
+    from agent6.paths import state_dir
 
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     memory.add(origin_state, "d-fact", "D first.")
     lane_state = tmp_path / "lane-state"
     memory.seed_store(origin_state, lane_state)

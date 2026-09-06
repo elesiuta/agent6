@@ -20,7 +20,6 @@ from typing import Any
 
 from agent6.app.fork import create_fork, undo_fork
 from agent6.app.reporter import Reporter
-from agent6.config.layer import resolved_state_dir
 from agent6.config.write import ConfigLeafValue, set_config_table
 from agent6.directive import parse_btw, parse_compact, parse_now
 from agent6.errors import OperatorError
@@ -31,6 +30,7 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
+from agent6.paths import state_dir
 from agent6.sessions.ipc import (
     read_worker_pid,
     request_compact,
@@ -105,7 +105,7 @@ def spawn_machine_run(
         spec = load_machine(Path(machine_file))
     except MachineError as exc:
         return False, f"invalid machine file: {exc}"
-    instance = machines_root(resolved_state_dir(cwd)) / spec.machine
+    instance = machines_root(state_dir(cwd)) / spec.machine
     err = spawn_and_confirm(
         [*agent6_argv(config_path), "machine", "run", machine_file],
         cwd,
@@ -272,7 +272,7 @@ def run_plan(
         return None, f"{session_id!r} is not a plan"
     if not (session_dir / "plan.md").is_file():
         return None, "this plan has no plan.md yet (it is still planning, or never finished)"
-    runs = bucket_dir(resolved_state_dir(cwd), "runs")
+    runs = bucket_dir(state_dir(cwd), "runs")
     runs.mkdir(parents=True, exist_ok=True)
     new_dir, err = spawn_and_locate(
         [*agent6_argv(config_path), "run", "--from", session_id],
@@ -333,7 +333,7 @@ def _machine_state_dir(cwd: Path, name: str, state: str = "") -> Path | None:
 def _machine_dir_or_missing(cwd: Path, name: str) -> Path:
     """The instance dir the verb refusal reads: a missing one is still a Path,
     so `machine_verb_refusal` names an unknown machine as unknown."""
-    return model.machine_dir_for(cwd, name) or machines_root(resolved_state_dir(cwd)) / name
+    return model.machine_dir_for(cwd, name) or machines_root(state_dir(cwd)) / name
 
 
 def machine_stop(cwd: Path, name: str) -> tuple[bool, str]:
@@ -366,10 +366,10 @@ def _state_dir_for_verb(
     """The agent-state dir a prompt answer or a steer lands in, or the refusal."""
     if refusal := machine_verb_refusal(_machine_dir_or_missing(cwd, name), name, verb):
         return False, refusal
-    state_dir = _machine_state_dir(cwd, name, state)
-    if state_dir is None:
+    agent_state = _machine_state_dir(cwd, name, state)
+    if agent_state is None:
         return False, f"no active agent state for machine {name!r}"
-    return state_dir
+    return agent_state
 
 
 def machine_approve(

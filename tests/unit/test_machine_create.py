@@ -16,12 +16,12 @@ import pytest
 from agent6.app import machine_agent
 from agent6.app.machine import create as _create
 from agent6.config import Config
-from agent6.config.layer import resolved_state_dir
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
     build_authoring_prompt,
 )
+from agent6.paths import state_dir
 from agent6.ui.cli import main
 
 VALID_MACHINE = """\
@@ -1119,8 +1119,8 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     # The jail masks the state dir, so a workspace inside it would be hidden
     # from the run that must write there (a live create burned 200 iterations
     # on `list_dir: Path is hidden from this run`).
-    state_dir = resolved_state_dir(tmp_path)
-    assert state_dir not in root.parents, "the workspace sits outside the state dir"
+    state = state_dir(tmp_path)
+    assert state not in root.parents, "the workspace sits outside the state dir"
     assert isinstance(cfg, dict)
     # The operator's own settings ride as the overlay: the workspace's per-repo
     # layer is empty, so without them a repo-pinned worker model is invisible

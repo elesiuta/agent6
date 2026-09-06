@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.ipc import write_worker_pid
 from agent6.ui.cli import main
 from agent6.ui.cli.ps_cmd import cmd_ps
@@ -57,8 +57,8 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
     f.write_text(WAITER, encoding="utf-8")
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    assert not (resolved_state_dir(tmp_path) / "sessions").exists()
-    instance = resolved_state_dir(tmp_path) / "machines" / "waiter_demo"
+    assert not (state_dir(tmp_path) / "sessions").exists()
+    instance = state_dir(tmp_path) / "machines" / "waiter_demo"
     write_worker_pid(instance, os.getpid())  # this process: alive by the pid rule
     assert cmd_ps() == 0
     out = capsys.readouterr().out

@@ -27,6 +27,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.budget import BudgetTracker
+from agent6.paths import state_dir
 from agent6.ui.cli._repl import REPL_HELP
 from agent6.ui.cli.run import build_repl_hook  # pyright: ignore[reportPrivateUsage]
 
@@ -282,13 +283,12 @@ def test_watch_shows_audit_events_not_streaming_fragments(
     every other log view shows (deltas and the loop's mirrors skipped)."""
     import json
 
-    from agent6.config.layer import resolved_state_dir
     from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli._repl import repl_show_recent_events
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     layout = SessionLayout(
-        state_dir=resolved_state_dir(tmp_path), session_id="watchy-run-AAAAAA", subdir="runs"
+        state_dir=state_dir(tmp_path), session_id="watchy-run-AAAAAA", subdir="runs"
     )
     layout.session_dir.mkdir(parents=True)
     events: list[dict[str, object]] = [

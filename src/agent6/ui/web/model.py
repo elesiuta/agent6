@@ -20,9 +20,10 @@ from typing import Any
 from agent6.app.confine import resolved_config_values
 from agent6.app.parallel import subordinate_workdir_root
 from agent6.config import ConfigError
-from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
+from agent6.config.layer import available_preset_names, load_effective
 from agent6.git_ops import EMPTY_TREE, commit_diff, diff_range, run_branch_tips
 from agent6.models.choices import config_value_choices
+from agent6.paths import state_dir
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -67,7 +68,7 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
         return None
     found: Path | None = None
     for sub in HUB_BUCKETS:
-        d = bucket_dir(resolved_state_dir(cwd), sub) / session_id
+        d = bucket_dir(state_dir(cwd), sub) / session_id
         if d.is_dir() and not is_session_husk(d):
             if found is not None:
                 return None
@@ -78,7 +79,7 @@ def session_dir_for(cwd: Path, session_id: str) -> Path | None:
 def machine_dir_for(cwd: Path, name: str) -> Path | None:
     if not is_safe_session_id(name):
         return None
-    d = machines_root(resolved_state_dir(cwd)) / name
+    d = machines_root(state_dir(cwd)) / name
     return d if d.is_dir() else None
 
 
@@ -87,7 +88,7 @@ def draft_dir_for(cwd: Path, name: str) -> Path | None:
     the authoring agent, so it is watched through the run endpoints."""
     if not is_safe_session_id(name):
         return None
-    d = bucket_dir(resolved_state_dir(cwd), "machines") / name
+    d = bucket_dir(state_dir(cwd), "machines") / name
     return d if d.is_dir() else None
 
 
@@ -130,7 +131,7 @@ def _diff_payload(
 
 def draft_dir_paths(cwd: Path) -> list[Path]:
     """Every machine-create draft directory (where `machine create` writes)."""
-    d = bucket_dir(resolved_state_dir(cwd), "machines")
+    d = bucket_dir(state_dir(cwd), "machines")
     return [p for p in d.iterdir() if p.is_dir()] if d.is_dir() else []
 
 
@@ -152,7 +153,7 @@ def _session_summary(session_dir: Path, branch_tips: Mapping[str, str]) -> dict[
 def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     """Every session a hub lists, summarized, newest first (`session_dirs`)."""
     tips = run_branch_tips(cwd)
-    return [_session_summary(p, tips) for p in session_dirs(resolved_state_dir(cwd))]
+    return [_session_summary(p, tips) for p in session_dirs(state_dir(cwd))]
 
 
 def _machine_row(s: MachineSummary) -> dict[str, Any]:
@@ -177,7 +178,7 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
 def _list_machines(cwd: Path) -> list[dict[str, Any]]:
     """Machine instances, newest first (`viewmodel.machine_instance_dirs`), each
     a watchable run of an authored machine, summarized by the shared fold."""
-    dirs = machine_instance_dirs(resolved_state_dir(cwd))
+    dirs = machine_instance_dirs(state_dir(cwd))
     return [_machine_row(summarize_machine_dir(d)) for d in dirs]
 
 

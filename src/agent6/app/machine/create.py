@@ -28,7 +28,7 @@ from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.preflight import SessionRefused
 from agent6.app.reporter import Reporter
 from agent6.config import ConfigError
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import load_effective
 from agent6.events import EventSink
 from agent6.git_ops import CommitIdentity, GitError, init_repo, verify_git_identity
 from agent6.machine import (
@@ -39,6 +39,7 @@ from agent6.machine import (
     dry_run,
     load_machine,
 )
+from agent6.paths import state_dir
 from agent6.portable import atomic_write
 from agent6.sessions.id import unused_session_id
 from agent6.sessions.ipc import emit_session_start
@@ -152,7 +153,7 @@ def _discard_workspace(workspace: Path, reporter: Reporter) -> None:
     drafting workspace is neither. Its own per-repo state dir goes with it.
     """
     errors: list[str] = []
-    for path in (resolved_state_dir(workspace), workspace):
+    for path in (state_dir(workspace), workspace):
         # A workspace that never ran has no state dir, and rmtree reports a
         # missing path through onexc like any other failure.
         if path.exists():
@@ -203,11 +204,11 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
     except SessionRefused as refusal:
         return refusal.rc
 
-    state_dir = resolved_state_dir(cwd)
+    state = state_dir(cwd)
     bucket = session_bucket("machine")
     # Through the owner: `mkdir(exist_ok=True)` on a collision reused a live
     # draft's directory, overwriting its prompt and appending to its journal.
-    scratch = bucket_dir(state_dir, bucket) / unused_session_id(state_dir, bucket)
+    scratch = bucket_dir(state, bucket) / unused_session_id(state, bucket)
     scratch.mkdir(parents=True)
     # Persist the natural-language task that drove this draft, so the draft dir is
     # self-describing (the agent_transcripts/ embed it inside the authoring prompt,

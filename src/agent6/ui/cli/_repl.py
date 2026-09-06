@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from agent6.ui.cli._console_view import ConsoleView
 
 from agent6.budget import BudgetTracker
-from agent6.config.layer import repo_config_path_for, resolved_state_dir
 from agent6.init import init_workspace
+from agent6.paths import repo_config_path, state_dir
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.tools.mcp_client import MCPManager
 from agent6.types import AutoCommitDirective
@@ -150,7 +150,7 @@ def repl_show_recent_events(root: Path, session_id: str, *, n: int) -> None:
     # Across buckets: the REPL runs inside an ask, whose dir is asks/ -- a
     # runs/-only path never found the session's own log.
     try:
-        layout = resolve_session(resolved_state_dir(root), session_id)
+        layout = resolve_session(state_dir(root), session_id)
     except SessionIdError as exc:
         print(f"[agent6] /watch: {exc}", file=sys.stderr)
         return
@@ -217,7 +217,7 @@ def repl_run_init(root: Path) -> None:
     try:
         rc = init_workspace(
             root,
-            repo_config_target=repo_config_path_for(root),
+            repo_config_target=repo_config_path(root),
             interactive=sys.stdin.isatty(),
         )
     except Exception as exc:

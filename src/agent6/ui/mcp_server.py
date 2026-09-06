@@ -36,8 +36,9 @@ from typing import IO, Any
 
 from agent6 import __version__
 from agent6.config import Config
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import load_effective
 from agent6.graph.storage import load_graph
+from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import (
     SESSION_BUCKETS,
@@ -206,7 +207,7 @@ class MCPServer:
     ) -> None:
         self._root = root.resolve()
         self._config = config
-        self._agent6_dir = resolved_state_dir(self._root)
+        self._agent6_dir = state_dir(self._root)
         self._stdin = stdin
         self._stdout = stdout
         self._dispatcher = ToolDispatcher(root=self._root, config=_no_one_to_ask(config))

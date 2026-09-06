@@ -11,6 +11,7 @@ from textual.app import App
 from textual.widgets import DataTable, Input
 
 from agent6.machine import MachineSpec
+from agent6.paths import state_dir
 from agent6.ui.tui import machines as machmod
 from agent6.ui.tui.machines import (
     CreateMachineModal,
@@ -199,7 +200,6 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
     """The Machines watch screen renders the state overview (current marked `>`,
     visited `.`), the transition in the log, and the ended status -- the in-TUI
     equivalent of `agent6 attach`."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
@@ -207,7 +207,7 @@ def test_watch_screen_shows_states_transitions_and_end(tmp_path: Path, monkeypat
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
-    instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    instance = state_dir(tmp_path) / "machines" / "tiny"
     spec = load_machine(f)
 
     class _Host(App[None]):
@@ -239,7 +239,6 @@ def test_watch_screen_does_not_reannounce_a_stale_end(tmp_path: Path, monkeypatc
     desktop notification for the stale end; the end flag seeds from the same
     fold that seeds notification history. A machine ending WHILE watched still
     announces (ended is None at mount)."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
     from agent6.ui.tui import machines as machines_mod
@@ -254,7 +253,7 @@ def test_watch_screen_does_not_reannounce_a_stale_end(tmp_path: Path, monkeypatc
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
-    instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    instance = state_dir(tmp_path) / "machines" / "tiny"
     spec = load_machine(f)
 
     class _Host(App[None]):
@@ -283,7 +282,6 @@ def test_watch_screen_disables_steer_and_message_when_ended(
     """An ended machine takes no input: the watch screen dims Steer/Message (like
     the web disables both buttons) and their actions are no-ops, never dropping a
     steer marker into the dead per-state dir."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
@@ -291,7 +289,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
-    instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    instance = state_dir(tmp_path) / "machines" / "tiny"
     spec = load_machine(f)
     # A per-state dir so _current_state_dir() resolves -- the "dead dir" a steer would hit.
     state = instance / "states" / "0000-route"
@@ -327,7 +325,6 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     which must NOT render as a live thinking line while the header says ended."""
     from textual.widgets import RichLog
 
-    from agent6.config.layer import resolved_state_dir
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
@@ -335,7 +332,7 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0  # terminates at once -> ended
-    instance = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    instance = state_dir(tmp_path) / "machines" / "tiny"
     spec = load_machine(f)
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
@@ -836,7 +833,6 @@ def test_machines_page_lists_instances_with_their_files(
     """The page shows the rows `agent6 machine` lists: an instance's status
     and current state joined with its authored file, then the files no
     instance ran (blank status)."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
@@ -844,11 +840,11 @@ def test_machines_page_lists_instances_with_their_files(
     f.write_text(TINY, encoding="utf-8")
     (tmp_path / "other.asm.toml").write_text(TINY.replace('"tiny"', '"other"'), encoding="utf-8")
     assert cli_main(["machine", "run", str(f)]) == 0
-    state_dir = resolved_state_dir(tmp_path)
+    state = state_dir(tmp_path)
 
     class _Host(App[None]):
         def on_mount(self) -> None:
-            self.push_screen(MachinesScreen(state_dir, tmp_path))
+            self.push_screen(MachinesScreen(state, tmp_path))
 
     async def scenario() -> None:
         app = _Host()
@@ -872,14 +868,13 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
 ) -> None:
     """`x` on a machine with no live worker prints the CLI's refusal. Disabling
     the binding made it a silent no-op that Help still listed."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
     monkeypatch.chdir(tmp_path)  # type: ignore[attr-defined]
     f = _write(tmp_path / "waiter.asm.toml")
     assert cli_main(["machine", "run", str(f), "--exit-on-wait"]) == 0  # parks, worker gone
-    instance = resolved_state_dir(tmp_path) / "machines" / "waiter_demo"
+    instance = state_dir(tmp_path) / "machines" / "waiter_demo"
     spec = load_machine(f)
 
     class _WatchHost(App[None]):

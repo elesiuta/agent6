@@ -17,7 +17,7 @@ from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
 from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
 from agent6.commit_message import render_commit_trailer
 from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import load_effective
 from agent6.git_ops import (
     BRANCH_PREFIX,
     CommitIdentity,
@@ -37,6 +37,7 @@ from agent6.git_ops import (
     verify_git_identity,
 )
 from agent6.git_ops import status as git_status
+from agent6.paths import state_dir
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, SessionLayout, session_layout
 from agent6.sessions.manifest import (
@@ -368,13 +369,13 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     except GitError as exc:
         error(f"{exc}")
         return 2
-    state_dir = resolved_state_dir(cwd)
+    repo_state = state_dir(cwd)
     deleted = squashed_deleted = merged_kept = unmerged_kept = live_kept = 0
     for br in branches:
         if br == current:
             print(f"[agent6] skipped {br} (checked out)", file=sys.stderr)
             continue
-        layout = session_layout(state_dir, br.removeprefix(BRANCH_PREFIX))
+        layout = session_layout(repo_state, br.removeprefix(BRANCH_PREFIX))
         if layout is not None and worker_is_alive(layout.session_dir):
             # The run is still committing to it, whatever git makes of its tip
             # and whether its manifest reads.
@@ -403,8 +404,8 @@ def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None
     # `branch_per_run` off there is never one, and once prune has deleted the
     # last branch the refs it kept for a later pass would be unreachable by
     # this command forever.
-    refs_deleted, refs_kept = _prune_chain_refs(cwd, state_dir, delete_squashed=delete_squashed)
-    clones_note, swept_any = _sweep_workdirs(cwd, state_dir, config_path)
+    refs_deleted, refs_kept = _prune_chain_refs(cwd, repo_state, delete_squashed=delete_squashed)
+    clones_note, swept_any = _sweep_workdirs(cwd, repo_state, config_path)
     if not branches and not (refs_deleted or refs_kept or swept_any):
         print("[agent6] nothing to prune: no agent6/* run branches, no chain refs.")
         return 0

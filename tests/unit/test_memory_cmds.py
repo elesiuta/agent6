@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent6.memory import MemoryStoreError
+from agent6.paths import state_dir
 from agent6.ui.cli.memory_cmds import (
     _cmd_memory_add,  # pyright: ignore[reportPrivateUsage]
     _cmd_memory_list,  # pyright: ignore[reportPrivateUsage]
@@ -51,7 +52,6 @@ def test_bad_name_refuses_loud(env: Path) -> None:
 def test_decisions_prints_the_rulings_or_says_none(
     env: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
     from agent6.memory import record_decision
     from agent6.ui.cli.memory_cmds import (
         _cmd_memory_decisions,  # pyright: ignore[reportPrivateUsage]
@@ -59,7 +59,7 @@ def test_decisions_prints_the_rulings_or_says_none(
 
     assert _cmd_memory_decisions() == 0
     assert "no rulings recorded" in capsys.readouterr().out
-    record_decision(resolved_state_dir(Path.cwd()), question="Q?", answer="A", session="s", when=0)
+    record_decision(state_dir(Path.cwd()), question="Q?", answer="A", session="s", when=0)
     assert _cmd_memory_decisions() == 0
     assert capsys.readouterr().out == "- 1970-01-01 00:00Z [s] Q: Q?\n  A: A\n"
 

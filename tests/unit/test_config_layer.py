@@ -18,10 +18,10 @@ from agent6.config import (
 from agent6.config.layer import (
     load_effective,
     materialize,
-    repo_config_path_for,
 )
 from agent6.config.write import set_config_value, unset_config_value
 from agent6.errors import OperatorError
+from agent6.paths import repo_config_path
 from agent6.viewmodel.config_view import (
     ConfigSetting,
     ConfigView,
@@ -58,7 +58,7 @@ def repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True)
-    rcfg = repo_config_path_for(repo_root)  # out of the workspace, under the state base
+    rcfg = repo_config_path(repo_root)  # out of the workspace, under the state base
     rcfg.parent.mkdir(parents=True, exist_ok=True)
     rcfg.write_text(_REPO, encoding="utf-8")
     return repo_root
@@ -183,7 +183,7 @@ def test_config_write_keeps_the_edit_when_another_layer_was_already_invalid(
     err = set_config_value(repo, "sandbox.run_commands", "no", to_repo=True)
 
     assert err is None, "a pre-existing error elsewhere must not refuse this edit"
-    assert "run_commands" in repo_config_path_for(repo).read_text(encoding="utf-8")
+    assert "run_commands" in repo_config_path(repo).read_text(encoding="utf-8")
 
 
 def test_set_then_unset_config_value(repo: Path) -> None:
@@ -212,7 +212,7 @@ def test_unset_refuses_a_shape_the_surgery_cannot_carve(repo: Path) -> None:
     """A dotted top-level key has no [table] header to match: the refusal is an
     OperatorError for the one boundary, never a returned string a caller would
     print as a revalidation failure."""
-    rcfg = repo_config_path_for(repo)
+    rcfg = repo_config_path(repo)
     before = 'sandbox.run_commands = "yes"\n'
     rcfg.write_text(before, encoding="utf-8")
     with pytest.raises(OperatorError):
@@ -249,7 +249,7 @@ def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: Path)
     not a Field constraint, must still be caught on a masked write. The check
     validates the leaf against the provider MODEL, which runs the validator; a
     bare TypeAdapter of the annotation dropped it and let the bad value land."""
-    repo_config_path_for(repo).write_text(
+    repo_config_path(repo).write_text(
         '[providers.x]\napi_format = "openai"\nbase_url = "https://good.example/v1"\n',
         encoding="utf-8",
     )
@@ -403,7 +403,7 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
 
     # The repo layer masks models.worker.effort with a valid value, so only the
     # standalone per-leaf check catches a bad `thinking` written to global.
-    repo_config_path_for(repo).write_text(
+    repo_config_path(repo).write_text(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude"\nthinking = "off"\n',
         encoding="utf-8",
     )
@@ -534,7 +534,7 @@ def test_provenance_survives_a_format_changing_provider_replace(repo: Path) -> N
         + "http_timeout_s = 30.0\n",
         encoding="utf-8",
     )
-    rpath = repo_config_path_for(repo)
+    rpath = repo_config_path(repo)
     rpath.write_text(
         rpath.read_text(encoding="utf-8") + '\n[providers.foo]\napi_format = "anthropic"\n',
         encoding="utf-8",
@@ -716,7 +716,7 @@ def test_config_write_hands_the_dir_over_before_writing(
     monkeypatch.setattr(write_mod, "upsert_toml_leaf", killed)
     with pytest.raises(KeyboardInterrupt):
         set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
-    assert handed[0] == repo_config_path_for(repo).parent  # before the write, not after it
+    assert handed[0] == repo_config_path(repo).parent  # before the write, not after it
 
 
 def test_config_write_hands_the_file_over_after_a_rejected_edit(
@@ -730,7 +730,7 @@ def test_config_write_hands_the_file_over_after_a_rejected_edit(
     handed: list[Path] = []
     monkeypatch.setattr(write_mod, "chown_to_real_user", handed.append)
     assert set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True) is not None
-    assert repo_config_path_for(repo) in handed
+    assert repo_config_path(repo) in handed
 
 
 def test_engine_writers_refuse_a_write_into_an_unparseable_target(
@@ -768,7 +768,7 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
     assert err is not None
     assert "kept as written" in err and "lock" in err
     # NOT restored: the invalid value is still in the file for the operator.
-    text = repo_config_path_for(repo).read_text(encoding="utf-8")
+    text = repo_config_path(repo).read_text(encoding="utf-8")
     assert 'run_commands = "bogus_value"' in text
 
 
@@ -777,7 +777,7 @@ def test_an_optional_section_is_written_leaf_by_leaf(repo: Path) -> None:
     optional; read as leaves they were written inline under a `[models]` header
     of their own, which declares the same key the existing `[models.worker]`
     block does -- refused as "invalid TOML", blaming a file that parses."""
-    rcfg = repo_config_path_for(repo)
+    rcfg = repo_config_path(repo)
     rcfg.write_text(
         '[models.worker]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-5"\n', encoding="utf-8"
     )
@@ -794,7 +794,7 @@ def test_a_name_keyed_table_is_written_entry_by_entry(repo: Path) -> None:
     """`providers` and `mcp.servers` are tables of entries, not one value:
     written whole, a `config set providers '{...}'` replaced every provider the
     operator had, with their keys and their comments, at exit 0."""
-    rcfg = repo_config_path_for(repo)
+    rcfg = repo_config_path(repo)
     rcfg.write_text(
         '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "A"\n', encoding="utf-8"
     )
@@ -818,7 +818,7 @@ def test_a_table_valued_leaf_replaces_the_block_it_already_has(repo: Path) -> No
     """A dict-typed leaf is one value, written whole -- and the other shape it
     can already have on disk is its own `[table.leaf]` block, which the inline
     write must replace rather than declare twice."""
-    rcfg = repo_config_path_for(repo)
+    rcfg = repo_config_path(repo)
     rcfg.write_text('[skills.state]\nalpha = "enabled"\n', encoding="utf-8")
 
     assert set_config_value(repo, "skills.state", '{ gamma = "always" }', to_repo=True) is None
@@ -833,7 +833,7 @@ def test_an_invalid_value_is_refused_even_where_its_section_was_broken(repo: Pat
     write stands. This edit's own value being invalid is, whatever else in the
     section was already wrong -- it landed with a warning that blamed a value
     "in another layer" and exit 0."""
-    rcfg = repo_config_path_for(repo)
+    rcfg = repo_config_path(repo)
     before = '[web]\nhost = "0.0.0.0"\n'  # already invalid: non-loopback, not opted in
     rcfg.write_text(before, encoding="utf-8")
 
@@ -852,7 +852,7 @@ def test_set_config_leaves_refuses_a_headerless_ancestor(
     boundary, never a traceback -- and the file is untouched."""
     from agent6.config.write import set_config_leaves
 
-    rcfg = repo_config_path_for(repo)
+    rcfg = repo_config_path(repo)
     before = '[providers]\nanthropic = { api_format = "anthropic" }\n'
     rcfg.write_text(before, encoding="utf-8")
 
@@ -871,7 +871,7 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
     from agent6.config import write as write_mod
     from agent6.config.write import set_config_leaves
 
-    rcfg = repo_config_path_for(repo)
+    rcfg = repo_config_path(repo)
     before = '[providers.anthropic]\napi_format = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
 
@@ -911,7 +911,7 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
         return None
 
     monkeypatch.setattr(portable_mod, "_acquire_lock", _no_lock)
-    rcfg = repo_config_path_for(repo)
+    rcfg = repo_config_path(repo)
     before = '[providers.anthropic]\napi_format = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
     real = write_mod.upsert_toml_leaf

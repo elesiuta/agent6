@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.layout import bucket_dir
 from agent6.ui import spawn
 
@@ -137,7 +137,7 @@ def test_spawn_and_confirm_clean_fast_exit_is_ok(tmp_path: Path) -> None:
 
 
 def _run_dir(cwd: Path, session_id: str) -> Path:
-    d = bucket_dir(resolved_state_dir(cwd), "runs") / session_id
+    d = bucket_dir(state_dir(cwd), "runs") / session_id
     d.mkdir(parents=True)
     return d
 

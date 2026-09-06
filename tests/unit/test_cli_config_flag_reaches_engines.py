@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.layout import bucket_dir
 from agent6.ui.cli import sessions_merge
 
@@ -146,7 +146,7 @@ def test_detached_resume_reapplies_the_overlay(
         pass
 
     monkeypatch.setattr(spawn_mod, "keep_out_of_the_sweep", _no_sweep)
-    run = bucket_dir(resolved_state_dir(tmp_path), "runs") / "run-1"
+    run = bucket_dir(state_dir(tmp_path), "runs") / "run-1"
     run.mkdir(parents=True)
     (run / "worker.pid").write_text("4242", encoding="utf-8")  # the fake child owns the run
     cfg = tmp_path / "overlay.toml"

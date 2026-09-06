@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import load_effective, repo_config_path_for
+from agent6.config.layer import load_effective
 from agent6.init import init_workspace
+from agent6.paths import repo_config_path
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +30,7 @@ def test_init_empty_dir_creates_scaffold(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     rc = init_workspace(repo)  # default is non-interactive: accept defaults
     assert rc == 0
-    assert repo_config_path_for(repo).is_file()  # config lives OUT of the workspace
+    assert repo_config_path(repo).is_file()  # config lives OUT of the workspace
     assert not (repo / ".agent6").exists()
     assert (repo / "AGENTS.md").is_file()
     gi = (repo / ".gitignore").read_text(encoding="utf-8")
@@ -60,7 +61,7 @@ def test_cmd_init_reports_invalid_config_cleanly(
         encoding="utf-8",
     )
     # Invalid per-repo config: worker references a provider that does not exist.
-    cfgp = repo_config_path_for(repo)
+    cfgp = repo_config_path(repo)
     cfgp.parent.mkdir(parents=True, exist_ok=True)
     cfgp.write_text('[models.worker]\nprovider = "typoprovider"\nmodel = "x/y"\n', encoding="utf-8")
 
@@ -113,7 +114,7 @@ def test_init_detects_ecosystem_for_gitignore(tmp_path: Path) -> None:
 def test_init_never_overwrites_or_writes_suggested(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    cfgp = repo_config_path_for(repo)
+    cfgp = repo_config_path(repo)
     cfgp.parent.mkdir(parents=True, exist_ok=True)
     cfgp.write_text('[workflow]\nverify_command = ["my-test"]\n', encoding="utf-8")
     (repo / "AGENTS.md").write_text("# mine\n", encoding="utf-8")

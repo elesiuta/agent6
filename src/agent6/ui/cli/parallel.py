@@ -24,10 +24,10 @@ from agent6.app.parallel import (
 )
 from agent6.app.preflight import budget_preflight
 from agent6.config import Config
-from agent6.config.layer import resolved_state_dir
 from agent6.directive import DirectiveError
 from agent6.git_ops import GitError, modified_paths
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
+from agent6.paths import state_dir
 from agent6.sessions.id import friendly_token
 from agent6.ui.cli._common import error, refuse, warn
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
@@ -94,7 +94,7 @@ def dispatch_parallel(
     lanes, then hand off to the headless `run_parallel`. Called from `run.py`.
     `auto_approve` forwards `--auto-approve` to every lane, same as `max_usd`."""
     origin = cwd
-    origin_state = resolved_state_dir(origin)
+    origin_state = state_dir(origin)
     for err in (budget_preflight(cfg), _parallel_approval_refusal(cfg)):
         if err is not None:
             refuse(f"{err}")

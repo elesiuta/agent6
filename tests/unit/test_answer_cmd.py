@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.paths import state_dir
 from agent6.sessions.ipc import read_question_answers, set_away_mode, write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli.answer_cmd import _cmd_answer  # pyright: ignore[reportPrivateUsage]
@@ -27,9 +28,8 @@ def _run_with_question(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    from agent6.config.layer import resolved_state_dir
 
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="curious-fox-AAAA11")
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="curious-fox-AAAA11")
     layout.ensure()
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -103,9 +103,8 @@ def test_answer_refuses_a_run_that_is_not_waiting(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    from agent6.config.layer import resolved_state_dir
 
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="curious-fox-AAAA11")
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="curious-fox-AAAA11")
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
@@ -172,9 +171,8 @@ def test_a_live_run_with_no_question_says_so(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    from agent6.config.layer import resolved_state_dir
 
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="curious-fox-AAAA11")
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="curious-fox-AAAA11")
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",

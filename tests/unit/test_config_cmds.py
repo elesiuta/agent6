@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.paths import repo_config_path
 from agent6.ui.cli import config_cmds as cc
 
 
@@ -451,11 +452,10 @@ def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
     # The exact motivating case: prompt.decompose is stale in the REPO layer; setting a
     # VALID value GLOBALLY (which the repo still shadows) must be KEPT + warn, NEVER
     # reverted -- the leaf appears in the merged error but this write is not its cause.
-    from agent6.config.layer import repo_config_path_for
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
-    repo_cfg = repo_config_path_for(tmp_path)
+    repo_cfg = repo_config_path(tmp_path)
     repo_cfg.parent.mkdir(parents=True, exist_ok=True)
     repo_cfg.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
@@ -549,11 +549,10 @@ def test_config_fix_drops_an_unknown_key(
 def test_config_fix_labels_a_repo_layer_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.config.layer import repo_config_path_for
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    rpath = repo_config_path_for(tmp_path)
+    rpath = repo_config_path(tmp_path)
     rpath.parent.mkdir(parents=True, exist_ok=True)
     rpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
 
@@ -586,7 +585,6 @@ def test_config_fix_on_valid_config_reports_nothing_to_fix(
 def test_config_fix_repairs_both_layers_and_labels_each(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.config.layer import repo_config_path_for
     from agent6.paths import global_config_path
     from agent6.ui.cli import main
 
@@ -594,7 +592,7 @@ def test_config_fix_repairs_both_layers_and_labels_each(
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    rpath = repo_config_path_for(tmp_path)
+    rpath = repo_config_path(tmp_path)
     rpath.parent.mkdir(parents=True, exist_ok=True)
     rpath.write_text('[sandbox]\nrun_commands = "bogus"\n', encoding="utf-8")
 

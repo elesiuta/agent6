@@ -9,12 +9,13 @@ import contextlib
 from pathlib import Path
 
 from agent6.app.compare import RankOutcome, manifest_task, print_ranked_candidates
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import load_effective
 from agent6.git_ops import (
     GitError,
     branch_exists,
     diff_range,
 )
+from agent6.paths import state_dir
 from agent6.sessions.layout import (
     SessionLayout,
 )
@@ -214,7 +215,7 @@ def _cmd_compare(
     reviewer = cfg.models.resolve("reviewer")
     # `sessions compare` is advisory and stateless: it ranks + prints but never stamps
     # a manifest (only the fan-out's auto-compare does), so `ranked_by` is unused.
-    outcome = rank(cfg, candidates, transcript_dir=resolved_state_dir(cwd) / "compare")
+    outcome = rank(cfg, candidates, transcript_dir=state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
     print_ranked_candidates(candidates, outcome, merged_into=merged)
     # A fresh judgment can contradict the fan-out's recorded verdict (the star in

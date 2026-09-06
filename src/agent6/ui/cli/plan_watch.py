@@ -13,8 +13,8 @@ import sys
 import time
 from pathlib import Path
 
-from agent6.config.layer import resolved_state_dir
 from agent6.errors import read_operator_file
+from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError, resolve_session_id
 from agent6.sessions.ipc import (
     register_frontend,
@@ -183,7 +183,7 @@ def _cmd_tui(config_path: Path | None = None) -> int:
     cwd = Path.cwd()
     # The STATE dir: every bucket lookup below it goes through `bucket_dir`,
     # which appends `sessions/` itself.
-    agent6_dir = resolved_state_dir(cwd)
+    agent6_dir = state_dir(cwd)
     while True:
         session_dir = run_home(agent6_dir, cwd, config_path)
         if session_dir is None:

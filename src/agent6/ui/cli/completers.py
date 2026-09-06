@@ -21,8 +21,8 @@ from agent6.config.layer import (
     leaf_keys,
     load_effective,
     preset_catalog,
-    resolved_state_dir,
 )
+from agent6.paths import state_dir
 from agent6.ui.cli._common import (
     _plans_dir,
     all_session_dirs,
@@ -274,7 +274,7 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
     from agent6.sessions.ipc import listening_ports  # noqa: PLC0415
     from agent6.sessions.layout import session_layout  # noqa: PLC0415
 
-    layout = session_layout(resolved_state_dir(Path.cwd()), target) if target else None
+    layout = session_layout(state_dir(Path.cwd()), target) if target else None
     if layout is None:
         return []
     return [str(p) for p in listening_ports(layout.session_dir) if str(p).startswith(prefix)]
@@ -291,7 +291,7 @@ def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     out: list[str] = []
     from agent6.app.resume import resumable_bucket_dirs  # noqa: PLC0415
 
-    for bucket in resumable_bucket_dirs(resolved_state_dir(Path.cwd())):
+    for bucket in resumable_bucket_dirs(state_dir(Path.cwd())):
         if not bucket.is_dir():
             continue
         out += [d.name for d in bucket.iterdir() if d.is_dir() and d.name.startswith(prefix)]
@@ -329,7 +329,7 @@ def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
     """argcomplete: live machine instance ids (dirs under the per-repo state dir's machines/)."""
     from agent6.sessions.layout import machines_root  # noqa: PLC0415
 
-    base = machines_root(resolved_state_dir(Path.cwd()))
+    base = machines_root(state_dir(Path.cwd()))
     if not base.is_dir():
         return []
     return sorted(p.name for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix))
@@ -349,7 +349,7 @@ def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
     out: set[str] = set()
     from agent6.sessions.layout import machines_root  # noqa: PLC0415
 
-    for base in (Path.cwd(), machines_root(resolved_state_dir(Path.cwd()))):
+    for base in (Path.cwd(), machines_root(state_dir(Path.cwd()))):
         if base.is_dir():
             out.update(str(p) for p in base.rglob("*.asm.toml"))
     return sorted(p for p in out if p.startswith(prefix))

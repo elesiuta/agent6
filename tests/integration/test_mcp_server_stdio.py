@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.manifest import MANIFEST_VERSION
 from tests.jail_env import require_userns_jail
 
@@ -63,8 +63,8 @@ def test_mcp_serve_roundtrip(tmp_path: Path) -> None:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(_VALID_TOML, encoding="utf-8")
     # Seed a run dir so list_sessions has something to enumerate.
-    (resolved_state_dir(tmp_path) / "sessions" / "runs" / "demo").mkdir(parents=True)
-    (resolved_state_dir(tmp_path) / "sessions" / "runs" / "demo" / "manifest.json").write_text(
+    (state_dir(tmp_path) / "sessions" / "runs" / "demo").mkdir(parents=True)
+    (state_dir(tmp_path) / "sessions" / "runs" / "demo" / "manifest.json").write_text(
         json.dumps({"user_task": "demo-task"}), encoding="utf-8"
     )
 

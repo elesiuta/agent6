@@ -15,7 +15,6 @@ from pathlib import Path
 
 from agent6.app.fork import remove_fork_worktree, uncommitted_in_worktree, worktree_owners
 from agent6.app.resume import covering_stamp
-from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import (
     DIFF_SHOW_SAFETY_FLAGS,
     GitError,
@@ -29,6 +28,7 @@ from agent6.git_ops import (
     run_branch_for,
     run_branch_tips,
 )
+from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import request_stop
 from agent6.sessions.layout import (
@@ -82,7 +82,7 @@ def _cmd_list(*, as_json: bool = False) -> int:
     """
 
     cwd = Path.cwd()
-    dirs = session_dirs(resolved_state_dir(cwd), SESSION_BUCKETS)
+    dirs = session_dirs(state_dir(cwd), SESSION_BUCKETS)
     if not dirs:
         print("[]" if as_json else nothing_yet())  # the empty listing is output, not an error
         return 0
@@ -310,7 +310,7 @@ def _resolve_session_manifest(
         if latest is None:
             # Over a plan or an ask alone (sessions without a run branch) the
             # verb says so; a fresh state dir keeps the first-contact copy.
-            print_nothing_yet("runs" if session_dirs(resolved_state_dir(cwd)) else "sessions")
+            print_nothing_yet("runs" if session_dirs(state_dir(cwd)) else "sessions")
             return 2
         layout = layout_of(latest)
         print(f"[agent6] {recent_note}: {layout.session_id}", file=sys.stderr)
@@ -444,7 +444,7 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
     outright). Sessions live under sessions/<bucket>/, one bucket per mode."""
     cwd = Path.cwd()
     if not session_id:
-        print(resolved_state_dir(cwd))
+        print(state_dir(cwd))
         return 0
     try:
         layout = resolve_session_layout(cwd, session_id)
@@ -461,7 +461,7 @@ def _rm_asks(cwd: Path, session_id: str) -> int:
     if session_id:
         error("--asks clears this directory's asks; drop the run id.")
         return 2
-    bucket = bucket_dir(resolved_state_dir(cwd), "asks")
+    bucket = bucket_dir(state_dir(cwd), "asks")
     gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
     try:
         shutil.rmtree(bucket)
@@ -524,7 +524,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     sharing = (
         [
             d.name
-            for d, _m in worktree_owners(resolved_state_dir(cwd)).get(worktree, [])
+            for d, _m in worktree_owners(state_dir(cwd)).get(worktree, [])
             if d != layout.session_dir
         ]
         if worktree is not None

@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
 from agent6.graph.models import TaskNode
 from agent6.graph.storage import write_node
+from agent6.paths import state_dir
 from agent6.sessions.ipc import register_frontend
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
@@ -55,7 +55,7 @@ def _seed_tree(tmp_path: Path, session_id: str) -> None:
         sub1b
       step2 (failed)
     """
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id=session_id)
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id=session_id)
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     root_id = "0" * 25 + "R"
@@ -109,7 +109,7 @@ def test_a_half_linked_task_is_still_shown(
     walked children only, so the operator's view omitted the very task the run
     was working on."""
     monkeypatch.chdir(tmp_path)
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="half-run-AAAA11")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="half-run-AAAA11")
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     root_id, orphan_id = "0" * 25 + "R", "0" * 25 + "C"
@@ -131,7 +131,7 @@ def test_history_graph_uses_most_recent_when_no_arg(
     monkeypatch.chdir(tmp_path)
     _seed_tree(tmp_path, "older-run-AAAA11")
     _seed_tree(tmp_path, "newer-run-BBBB22")
-    runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
+    runs = state_dir(tmp_path) / "sessions" / "runs"
     for name in ("older-run-AAAA11", "newer-run-BBBB22"):
         (runs / name / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
     os.utime(runs / "older-run-AAAA11" / "logs.jsonl", (100, 100))
@@ -158,7 +158,7 @@ def test_history_graph_empty_graph_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="empty-run-CCCC33")
+    layout = SessionLayout(state_dir=state_dir(tmp_path), session_id="empty-run-CCCC33")
     layout.ensure()
     (layout.session_dir / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     rc = main(["sessions", "graph", "empty-run-CCCC33"])

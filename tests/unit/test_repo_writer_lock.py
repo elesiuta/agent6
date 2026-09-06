@@ -20,8 +20,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from agent6.config import Config
-from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import GitError, chain_commit, chain_ref_for
+from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.lock import (
     acquire_repo_writer,
@@ -133,7 +133,7 @@ def test_second_run_parks_with_the_verbatim_task(repo: Path) -> None:
     with no tree mutation (no stash, no branch cut)."""
     from agent6.app.run import run_task
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     long_task = "fix the thing " + "x" * 5000  # > the 4000-char display cap
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:
@@ -176,7 +176,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
     from agent6.app import resume as resume_mod
     from agent6.app.manifest import stamp_parked, write_session_manifest
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-PARKED2")
     layout.ensure()
     write_session_manifest(
@@ -218,7 +218,7 @@ def test_resume_refuses_while_another_run_drives_the_checkout(
     refuse (a resumed worker drives the tree exactly like a fresh one)."""
     from agent6.app import resume as resume_mod
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-B")
     layout.ensure()
     layout.manifest_path.write_text(
@@ -258,7 +258,7 @@ def test_hub_new_work_preflight_refuses_while_checkout_busy(
         raise AssertionError("must not spawn")
 
     monkeypatch.setattr(spawn, "spawn_and_locate", must_not_spawn)
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:
         session_dir, err = spawn.spawn_new_work(repo, "run", "another task")
@@ -290,7 +290,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
         return None
 
     monkeypatch.setattr(spawn, "directive_model_refusal", no_refusal)
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:
         session_dir, err = spawn.spawn_new_work(repo, "run", "/parallel 2 another task")
@@ -310,7 +310,7 @@ def test_runs_show_reports_a_parked_run_as_parked(
     from agent6.app.run import run_task
     from agent6.ui.cli.sessions_show import _cmd_status  # pyright: ignore[reportPrivateUsage]
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:
         rc = run_task(
@@ -339,7 +339,7 @@ def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: Pa
     from agent6.app.run import run_task
     from agent6.config.layer import load_effective
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:
         rc = run_task(
@@ -367,7 +367,7 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
     from agent6.app import resume as resume_mod
     from agent6.app.manifest import stamp_parked, write_session_manifest
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-PSTEER")
     layout.ensure()
     write_session_manifest(
@@ -401,7 +401,7 @@ def test_run_task_seeds_initial_steer_on_the_bridge(repo: Path) -> None:
     from agent6.app.run import run_task
     from agent6.sessions.ipc import read_steer_answer, steer_request_pending
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     holder_fd = acquire_repo_writer(state, "run-LIVE")
     try:
         rc = run_task(
@@ -442,7 +442,7 @@ def test_teardown_raise_still_releases_both_writer_locks(
             _load_cfg(), "do a thing", frontend=frontend, session_id="run-TD", mode="run"
         )
     # Both flocks are free for the next in-process run: the checkout's...
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     fd = acquire_repo_writer(state, "run-NEXT")
     assert fd is not None
     release_single_writer(fd)
@@ -463,7 +463,7 @@ def test_resume_keeps_a_stop_request_pending_after_the_previous_leg_ended(
     from agent6.app import resume as resume_mod
     from agent6.sessions.ipc import request_stop, stop_request_pending
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-C")
     layout.ensure()
     layout.manifest_path.write_text(
@@ -516,7 +516,7 @@ def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
     from agent6.app._leg import LegEnd
     from agent6.sessions.ipc import request_stop, steer_request_pending, stop_request_pending
 
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="chat", subdir="asks")
     layout.ensure()
     layout.logs_path.write_text(
@@ -560,7 +560,7 @@ def test_resume_treats_a_file_that_arrived_between_legs_as_the_operators(
     from agent6.workflows._session_state import SessionSnapshot
 
     save_secret("anthropic", "x")  # the provider preflight runs before the leg
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     layout = SessionLayout(state_dir=state, session_id="run-U")
     layout.ensure()
     layout.manifest_path.write_text(

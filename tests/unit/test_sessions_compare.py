@@ -20,7 +20,7 @@ import pytest
 
 from agent6.budget import BudgetTracker
 from agent6.config import Config
-from agent6.config.layer import repo_config_path_for, resolved_state_dir
+from agent6.paths import repo_config_path, state_dir
 from agent6.providers import Provider, ProviderError
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import _compare as compare_mod
@@ -70,7 +70,7 @@ def _setup_run(
         _git(repo, "commit", "-q", "-m", msg)
     _git(repo, "checkout", "-q", current)
 
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
+    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text(
         json.dumps(
@@ -297,7 +297,7 @@ def test_compare_excludes_a_run_that_never_finished(
         cost=0.01,
     )
     # A recorded-but-dead worker pid is what makes an unfinished run read "stale".
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-FFFF66")
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="run-FFFF66")
     (layout.session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
 
     assert main(["sessions", "compare", "run-EEEE55", "run-FFFF66"]) == 0
@@ -334,7 +334,7 @@ def test_compare_excludes_a_run_that_is_still_live(
         status="crashed",  # no session.end...
         cost=0.01,
     )
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-HHHH88")
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="run-HHHH88")
     (layout.session_dir / "worker.pid").write_text(
         str(os.getpid()), encoding="utf-8"
     )  # ...but LIVE
@@ -354,13 +354,13 @@ def test_compare_is_read_only(repo: Path) -> None:
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")])
     head_before = _git(repo, "rev-parse", "main")
     manifest_before = (
-        SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-AAAA11").manifest_path
+        SessionLayout(state_dir=state_dir(repo), session_id="run-AAAA11").manifest_path
     ).read_text(encoding="utf-8")
     rc = main(["sessions", "compare", "run-AAAA11", "run-BBBB22"])
     assert rc == 0
     assert _git(repo, "rev-parse", "main") == head_before
     assert (
-        SessionLayout(state_dir=resolved_state_dir(repo), session_id="run-AAAA11").manifest_path
+        SessionLayout(state_dir=state_dir(repo), session_id="run-AAAA11").manifest_path
     ).read_text(encoding="utf-8") == manifest_before
 
 
@@ -370,7 +370,7 @@ def test_compare_is_read_only(repo: Path) -> None:
 
 
 def _write_reviewer_config(repo: Path) -> None:
-    p = repo_config_path_for(repo)
+    p = repo_config_path(repo)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
         '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "FAKE_KEY_NOT_SET"\n\n'
@@ -796,10 +796,8 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     _git(repo, "commit", "-q", "-m", "squash p")
     landed = _git(repo, "rev-parse", "HEAD")
     _git(repo, "branch", "-D", "agent6/run-PPPP77")
-    state_dir = resolved_state_dir(repo)
-    manifest = SessionLayout(
-        state_dir=state_dir, session_id="run-PPPP77", subdir="runs"
-    ).manifest_path
+    state = state_dir(repo)
+    manifest = SessionLayout(state_dir=state, session_id="run-PPPP77", subdir="runs").manifest_path
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["merged"] = {"into": "main", "sha": landed, "tip": tip}
     manifest.write_text(json.dumps(data), encoding="utf-8")

@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from agent6.paths import state_dir
 from agent6.sessions.ipc import write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.ui import cli
@@ -204,10 +205,9 @@ def test_exec_and_forward_resolve_a_session_the_way_every_other_verb_does(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    from agent6.config.layer import resolved_state_dir
 
     for name in ("ambig-one11", "ambig-two11"):
-        layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=name)
+        layout = SessionLayout(state_dir=state_dir(repo), session_id=name)
         layout.ensure()
         layout.manifest_path.write_text(
             json.dumps({"version": 3, "session_id": name, "mode": "run", "user_task": "t"}) + "\n",
@@ -283,9 +283,8 @@ def test_exec_refuses_a_run_that_is_over(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
-    from agent6.config.layer import resolved_state_dir
 
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="over-run-AAAA11")
+    layout = SessionLayout(state_dir=state_dir(repo), session_id="over-run-AAAA11")
     layout.ensure()
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})

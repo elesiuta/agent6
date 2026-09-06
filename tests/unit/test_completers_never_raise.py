@@ -28,7 +28,7 @@ def test_there_are_completers_to_check() -> None:
 
 
 # The completers that consult the per-repo state dir when called with a bare
-# prefix. The other nine never reach `resolved_state_dir` (they return early or read
+# prefix. The other nine never reach `state_dir` (they return early or read
 # config only), so parametrizing them here forced nothing; the decorator test
 # below carries their never-raise promise.
 _STATE_DIR_CONSUMERS = [
@@ -58,8 +58,8 @@ def test_an_unresolvable_state_dir_does_not_reach_the_shell(
         calls.append(root)
         raise ConfigError("config is not valid TOML")
 
-    monkeypatch.setattr(completers, "resolved_state_dir", _boom)
-    monkeypatch.setattr(_common, "resolved_state_dir", _boom)
+    monkeypatch.setattr(completers, "state_dir", _boom)
+    monkeypatch.setattr(_common, "state_dir", _boom)
 
     fn = getattr(completers, name)
     result = fn("", parsed_args=None)

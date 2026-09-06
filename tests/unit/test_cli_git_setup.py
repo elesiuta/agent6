@@ -14,6 +14,7 @@ import pytest
 from agent6.app.preflight import headless_approval_refusal, require_git_repo
 from agent6.config import Config
 from agent6.git_ops import init_repo, is_git_repo
+from agent6.paths import state_dir
 from agent6.ui.cli import main
 from agent6.ui.cli.init_cmds import _offer_git_setup  # pyright: ignore[reportPrivateUsage]
 
@@ -206,7 +207,6 @@ def test_an_unanswerable_run_creates_no_session(
     forever as a run that never ran. Refusing before anything is created is the
     whole fix, so the pin is on the absence.
     """
-    from agent6.config.layer import resolved_state_dir
 
     init_repo(tmp_path)
     for key, value in (("user.email", "t@example.com"), ("user.name", "t")):
@@ -247,7 +247,7 @@ def test_an_unanswerable_run_creates_no_session(
 
     assert rc == 2
     assert "needs someone to answer" in capsys.readouterr().err
-    assert not (resolved_state_dir(tmp_path) / "sessions" / "runs" / "picked-id").exists()
+    assert not (state_dir(tmp_path) / "sessions" / "runs" / "picked-id").exists()
 
 
 def test_init_never_commits_the_operators_own_edits(

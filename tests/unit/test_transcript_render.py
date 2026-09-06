@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from agent6.paths import state_dir
 from agent6.sessions.ipc import register_frontend
 from agent6.viewmodel.transcript_render import (
     conversation_transcripts,
@@ -530,7 +531,6 @@ def test_cmd_history_transcript_end_to_end(
 ) -> None:
     """`agent6 sessions transcript <run>` resolves the run, folds its transcripts,
     and prints the conversation (full tool I/O), with --json as the raw escape."""
-    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli.history_cmds import (
         _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
     )
@@ -539,7 +539,7 @@ def test_cmd_history_transcript_end_to_end(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    tdir = resolved_state_dir(repo) / "sessions" / "runs" / "my-run" / "transcripts"
+    tdir = state_dir(repo) / "sessions" / "runs" / "my-run" / "transcripts"
     tdir.mkdir(parents=True)
     (tdir.parent / "logs.jsonl").write_text("{}\n", encoding="utf-8")
     (tdir / "20260101-000001.json").write_text(json.dumps(_OPENAI[0]), encoding="utf-8")
@@ -565,7 +565,6 @@ def test_cmd_history_transcript_end_to_end(
 def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.config.layer import resolved_state_dir
     from agent6.ui.cli.history_cmds import (
         _cmd_history_transcript,  # pyright: ignore[reportPrivateUsage]
     )
@@ -574,7 +573,7 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = resolved_state_dir(repo) / "sessions" / "runs"
+    runs = state_dir(repo) / "sessions" / "runs"
     for name in ("older-run", "newer-run"):
         tdir = runs / name / "transcripts"
         tdir.mkdir(parents=True)

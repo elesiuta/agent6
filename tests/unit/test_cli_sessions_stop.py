@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.ipc import stop_request_pending, write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import main
 
 
 def _session_dir(repo: Path, session_id: str) -> Path:
-    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
+    layout = SessionLayout(state_dir=state_dir(repo), session_id=session_id)
     layout.ensure()
     layout.manifest_path.write_text('{"version": 2}', encoding="utf-8")
     (layout.session_dir / "logs.jsonl").write_text("", encoding="utf-8")

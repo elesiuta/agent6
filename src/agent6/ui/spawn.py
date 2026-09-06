@@ -18,9 +18,9 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import IO
 
-from agent6.config.layer import resolved_state_dir
 from agent6.directive import DirectiveError, parse_directive, steer_problem
 from agent6.models.validate import directive_model_refusal
+from agent6.paths import state_dir
 from agent6.sandbox.jail import keep_out_of_the_sweep
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.ipc import read_worker_pid
@@ -88,7 +88,7 @@ def spawn_new_work(  # noqa: PLR0911
         except DirectiveError as exc:
             return None, str(exc)
     if segments is None:
-        if mode == "run" and repo_writer_held(state := resolved_state_dir(cwd)):
+        if mode == "run" and repo_writer_held(state := state_dir(cwd)):
             holder = repo_writer_holder(state) or "another run"
             return None, (
                 f"run {holder} is already driving this checkout; steer it with this task"
@@ -132,7 +132,7 @@ def _spawn_run(
     if spec:
         argv += ["--parallel", spec]
     argv += ["--", task]
-    state = resolved_state_dir(cwd)
+    state = state_dir(cwd)
     return spawn_and_locate(
         argv,
         cwd,
@@ -175,7 +175,7 @@ def spawn_detached_resume(
     if steer and (problem := steer_problem(steer)) is not None:
         return problem
     try:
-        session_dir = resolve_session(resolved_state_dir(cwd), session_id).session_dir
+        session_dir = resolve_session(state_dir(cwd), session_id).session_dir
     except SessionIdError as exc:
         return str(exc)
     argv = [*agent6_argv(config_path), "resume", session_id]

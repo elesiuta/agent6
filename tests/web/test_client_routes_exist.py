@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.ui.web import model
 from agent6.ui.web.page import CLIENT_JS
 from agent6.ui.web.server import WebServer
@@ -30,7 +30,7 @@ _ID = "brave-oak-AAAAAA"
 
 @pytest.fixture
 def served(tmp_path: Path) -> Iterator[int]:
-    session = resolved_state_dir(tmp_path) / "sessions" / "runs" / _ID
+    session = state_dir(tmp_path) / "sessions" / "runs" / _ID
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",

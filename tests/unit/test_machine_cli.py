@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
 from agent6.machine import MachineJournal
+from agent6.paths import state_dir
 from agent6.sessions.ipc import clear_worker_pid, write_worker_pid
 from agent6.ui.cli import main
 
@@ -68,7 +68,7 @@ def test_run_exit_on_wait_yields_waiting(
     out = capsys.readouterr().out
     assert "WAITING" in out
     # The wait was armed and persisted.
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     pending = MachineJournal(root).read_pending_wait()
     assert pending is not None
     assert pending.state == "poll"
@@ -125,7 +125,7 @@ def test_status_reports_waiting_state_and_spend(
     capsys.readouterr()  # drop run output
     # `machine run --exit-on-wait` exits the process, so the worker pid is dead;
     # in-process it is this live pytest, so clear it to model the parked reality.
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     clear_worker_pid(root)
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
@@ -151,7 +151,7 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert MachineJournal(root).read_pending_wait() is not None
     # The run cleared its own pid on exit; re-stamp a live worker (this pytest).
     write_worker_pid(root, os.getpid())
@@ -173,7 +173,7 @@ def test_status_shows_a_pending_poke_until_it_is_acked(
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     clear_worker_pid(root)
     assert main(["machine", "poke", "waiter_delayed", "--message", "go"]) == 0
     capsys.readouterr()
@@ -199,7 +199,7 @@ def test_status_of_an_alive_but_parked_instance_reads_waiting(
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     write_worker_pid(root, os.getpid())  # a LIVE worker alongside the persisted wait
 
     assert main(["machine", "status", "waiter_delayed"]) == 0
@@ -219,7 +219,7 @@ def test_status_tolerates_a_corrupt_pending_wait(
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     clear_worker_pid(root)
     MachineJournal(root).wait_path.write_text("{ not valid json", encoding="utf-8")
 
@@ -273,7 +273,7 @@ def test_status_reports_stopped_for_a_crashed_instance(
     from agent6.machine.journal import StepEvent, ToolFact
 
     monkeypatch.chdir(tmp_path)
-    root = resolved_state_dir(tmp_path) / "machines" / "crasher"
+    root = state_dir(tmp_path) / "machines" / "crasher"
     root.mkdir(parents=True)
     (root / "machine.asm.toml").write_text(CRASHER, encoding="utf-8")
     journal = MachineJournal(root)
@@ -335,7 +335,7 @@ def test_status_asm_file_path_hints_the_instance_id(
     f = _write_machine(tmp_path)  # machine = "waiter_delayed"
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    clear_worker_pid(resolved_state_dir(tmp_path) / "machines" / "waiter_delayed")
+    clear_worker_pid(state_dir(tmp_path) / "machines" / "waiter_delayed")
     code = main(["machine", "status", "waiter.asm.toml"])
     assert code == 2
     err = capsys.readouterr().err
@@ -410,7 +410,7 @@ def _stalled_instance(tmp_path: Path, *, parked: bool) -> None:
     pid -- plus an armed pending wait when *parked*."""
     from agent6.machine.journal import MachineJournal, PendingWait
 
-    inst = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    inst = state_dir(tmp_path) / "machines" / "tiny"
     inst.mkdir(parents=True)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -458,7 +458,7 @@ def test_watch_follows_a_live_machine_in_a_wait(
 
     monkeypatch.chdir(tmp_path)
     _stalled_instance(tmp_path, parked=True)
-    inst = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    inst = state_dir(tmp_path) / "machines" / "tiny"
     write_worker_pid(inst, os.getpid())
     result: list[int] = []
     t = threading.Thread(target=lambda: result.append(main(["attach", "tiny"])), daemon=True)
@@ -512,7 +512,7 @@ def test_run_refuses_uncommitted_machine(
     err = capsys.readouterr().err
     assert "uncommitted" in err and "committed machine" in err
     # Refused before touching the state dir: no instance journal was created.
-    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    root = state_dir(tmp_path) / "machines" / "tiny"
     assert not (root / "journal.jsonl").exists()
 
 
@@ -574,7 +574,7 @@ def test_first_run_records_the_bundle_and_drift_refuses_continuation(
 
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     assert "WAITING" in capsys.readouterr().out
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     recorded = root / "scripts" / "do.py"
     assert recorded.read_text(encoding="utf-8") == "print('hi')\n"
 
@@ -623,7 +623,7 @@ def test_run_refuses_rerun_of_ended_instance(
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0  # runs to a terminal
     capsys.readouterr()
-    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    root = state_dir(tmp_path) / "machines" / "tiny"
     # Stand in for the previous worker having exited: a pid that is never alive.
     sentinel = 10**9
     write_worker_pid(root, sentinel)
@@ -650,7 +650,7 @@ def test_poke_drops_signal_for_waiting_machine(
     assert code == 0
     assert "poked" in capsys.readouterr().out
     # The signal is now pending for the next take_signal().
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert MachineJournal(root).take_signal() == (True, None)
 
 
@@ -662,7 +662,7 @@ def test_poke_carries_data_payload(
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
     assert main(["machine", "poke", "waiter_delayed", "--data", '{"cmd": "go"}']) == 0
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     j = MachineJournal(root)
     assert j.take_signal() == (True, {"cmd": "go"})
     j.ack_signal()
@@ -695,7 +695,7 @@ def test_poke_refuses_ended_machine(
     code = main(["machine", "poke", "tiny"])
     assert code == 1
     assert "already ended" in capsys.readouterr().err
-    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    root = state_dir(tmp_path) / "machines" / "tiny"
     assert not (root / "signal").exists()  # no signal was dropped
 
 
@@ -1136,7 +1136,7 @@ def test_machine_stop_marks_a_running_worker_and_refuses_a_dead_one(
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
-    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    root = state_dir(tmp_path) / "machines" / "tiny"
     assert main(["machine", "stop", "tiny"]) == 1  # ended: nothing to stop
     assert "already ended" in capsys.readouterr().err
     assert not (root / "stop").exists()
@@ -1144,7 +1144,7 @@ def test_machine_stop_marks_a_running_worker_and_refuses_a_dead_one(
     w = _write_machine(tmp_path)  # waiter: parks WAITING, journal not ended
     assert main(["machine", "run", str(w), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    wroot = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    wroot = state_dir(tmp_path) / "machines" / "waiter_delayed"
     assert main(["machine", "stop", "waiter_delayed"]) == 1  # parked, worker dead
     assert "not running" in capsys.readouterr().err
     assert not (wroot / "stop").exists()
@@ -1166,7 +1166,7 @@ def test_run_start_clears_a_stale_stop_marker(
     monkeypatch.chdir(tmp_path)
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
-    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    root = state_dir(tmp_path) / "machines" / "tiny"
     root.mkdir(parents=True)
     (root / "stop").touch()
     assert main(["machine", "run", str(f)]) == 0
@@ -1189,7 +1189,7 @@ def test_hub_spawn_away_mode_reaches_the_instance(
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
-    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    root = state_dir(tmp_path) / "machines" / "tiny"
     assert away_mode(root) == "wait"
 
 
@@ -1204,7 +1204,7 @@ def test_attach_degrades_a_corrupt_journal_like_status(
     f.write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(f)]) == 0
     capsys.readouterr()
-    root = resolved_state_dir(tmp_path) / "machines" / "tiny"
+    root = state_dir(tmp_path) / "machines" / "tiny"
     (root / "journal.jsonl").write_text('{"type": "machine.begin"\n', encoding="utf-8")
     code = main(["attach", "tiny"])
     assert code == 1
@@ -1318,7 +1318,7 @@ def test_status_and_list_name_a_parked_approval(
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()
-    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    root = state_dir(tmp_path) / "machines" / "waiter_delayed"
     MachineJournal(root).clear_pending_wait()
     write_worker_pid(root, os.getpid())
     leg = root / "states" / "0001-attempt"

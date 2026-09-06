@@ -41,7 +41,6 @@ from agent6.config.layer import (
     flatten_leaves,
     leaf_keys,
     load_effective,
-    repo_config_path_for,
 )
 from agent6.config.model import Config, ConfigError
 from agent6.errors import OperatorError, read_operator_file
@@ -50,6 +49,7 @@ from agent6.paths import (
     effective_user,
     global_config_path,
     mkdir_for_real_user,
+    repo_config_path,
 )
 from agent6.portable import atomic_write, locked_file
 
@@ -93,7 +93,7 @@ def resolved_write_path(target: Path) -> Path:
 
 def _write_target(repo_root: Path, *, to_repo: bool) -> Path:
     """The config file for this layer, resolved."""
-    return resolved_write_path(repo_config_path_for(repo_root) if to_repo else global_config_path())
+    return resolved_write_path(repo_config_path(repo_root) if to_repo else global_config_path())
 
 
 def _prepare_write_target(repo_root: Path, *, to_repo: bool) -> Path:

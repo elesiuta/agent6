@@ -32,8 +32,6 @@ from agent6.config.layer import (
     load_global_only,
     materialize,
     preset_catalog,
-    repo_config_path_for,
-    resolved_state_dir,
 )
 from agent6.config.write import (
     keep_or_rollback,
@@ -58,8 +56,10 @@ from agent6.paths import (
     effective_user,
     global_config_path,
     mkdir_for_real_user,
+    repo_config_path,
     secrets_path,
     state_base,
+    state_dir,
 )
 from agent6.portable import atomic_write, locked_file
 from agent6.ui.cli._common import error, warn
@@ -126,11 +126,11 @@ def _cmd_config_path() -> int:
     user = effective_user()
     rows: list[tuple[str, Path, bool]] = [
         ("global config", global_config_path(user), True),
-        ("repo config", repo_config_path_for(Path.cwd()), True),
+        ("repo config", repo_config_path(Path.cwd()), True),
         ("secrets", secrets_path(user), True),
         ("config dir", global_config_path(user).parent, False),
         ("state (all repos)", state_base(user), False),
-        ("state (this repo)", resolved_state_dir(Path.cwd()), False),
+        ("state (this repo)", state_dir(Path.cwd()), False),
         ("skills", data_dir(user) / "skills", False),
         ("cache", cache_dir(user), False),
     ]
@@ -215,7 +215,7 @@ def _config_write_target(*, repo: bool, machine: Path | None) -> tuple[Path, str
             raise OperatorError("use either --repo or --machine-file, not both")
         return machine, "config."
     if repo:
-        return resolved_write_path(repo_config_path_for(Path.cwd())), ""
+        return resolved_write_path(repo_config_path(Path.cwd())), ""
     return resolved_write_path(global_config_path()), ""
 
 

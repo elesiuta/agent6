@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
 from agent6.ui.cli._common import resolve_or_newest_layout
 
@@ -32,7 +32,7 @@ def _session_dir(state: Path, bucket: str, session_id: str, *, log_mtime: float)
 def test_explicit_id_resolves_across_buckets(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     (state / "sessions" / "asks" / "ask-xyz").mkdir(parents=True)
     (state / "sessions" / "asks" / "ask-xyz" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
@@ -44,7 +44,7 @@ def test_explicit_id_resolves_across_buckets(tmp_path: Path) -> None:
 def test_empty_id_picks_the_newest_across_buckets(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    state = resolved_state_dir(repo)
+    state = state_dir(repo)
     _session_dir(state, "runs", "old-run", log_mtime=1000.0)
     _session_dir(state, "asks", "new-ask", log_mtime=2000.0)
 
@@ -63,8 +63,8 @@ def test_empty_id_with_no_runs_returns_none(tmp_path: Path) -> None:
 def test_bad_explicit_id_raises(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
-    (resolved_state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
+    (state_dir(repo) / "sessions" / "runs" / "run-abc").mkdir(parents=True)
+    (state_dir(repo) / "sessions" / "runs" / "run-abc" / "logs.jsonl").write_text(
         "{}\n", encoding="utf-8"
     )
     with pytest.raises(SessionIdError):

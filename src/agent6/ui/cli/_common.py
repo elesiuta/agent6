@@ -9,13 +9,11 @@ import sys
 from pathlib import Path
 
 from agent6.app.reporter import STDIO_REPORTER
-from agent6.config.layer import (
-    resolved_state_dir,
-)
 from agent6.paths import (
     effective_user,
     is_root,
     root_optin_enabled,
+    state_dir,
 )
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import (
@@ -150,12 +148,12 @@ def sgr(text: str, code: str) -> str:
 
 def _runs_dir(repo_root: Path) -> Path:
     """The `runs/` directory under the per-repo state dir."""
-    return bucket_dir(resolved_state_dir(repo_root), "runs")
+    return bucket_dir(state_dir(repo_root), "runs")
 
 
 def _plans_dir(repo_root: Path) -> Path:
     """The `plans/` directory under the per-repo state dir."""
-    return bucket_dir(resolved_state_dir(repo_root), "plans")
+    return bucket_dir(state_dir(repo_root), "plans")
 
 
 # What a fresh install is told when it has nothing yet. One string: the same
@@ -203,7 +201,7 @@ def session_bucket_dirs(repo_root: Path) -> list[Path]:
     """The session bucket dirs under `sessions/` in the state
     dir, the cross-bucket scope for latest-run resolution and history. A missing
     bucket is still listed; iterators skip non-dirs."""
-    state = resolved_state_dir(repo_root)
+    state = state_dir(repo_root)
     return [bucket_dir(state, subdir) for subdir in SESSION_BUCKETS]
 
 
@@ -237,7 +235,7 @@ def resolve_session_layout(
     an empty session and advising a resume that fails. `allow_husk` is for
     `sessions rm`, whose whole job is deleting one.
     """
-    layout = resolve_session(resolved_state_dir(repo_root), query)
+    layout = resolve_session(state_dir(repo_root), query)
     from agent6.viewmodel import is_session_husk  # noqa: PLC0415
 
     if not allow_husk and is_session_husk(layout.session_dir):
@@ -258,7 +256,7 @@ def resolve_target(target: str) -> SessionLayout | None:
         error(f"{exc}")
         return None
     if layout is None:
-        print_no_session_match(target, resolved_state_dir(Path.cwd()))
+        print_no_session_match(target, state_dir(Path.cwd()))
     return layout
 
 

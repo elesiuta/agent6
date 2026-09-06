@@ -17,8 +17,8 @@ import json
 import sys
 from pathlib import Path
 
-from agent6.config.layer import resolved_state_dir
 from agent6.machine import JournalError, MachineError, load_machine
+from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.layout import machines_root
 from agent6.ui.cli._common import (
@@ -96,7 +96,7 @@ def _cmd_watch_target(  # noqa: PLR0911
         return 2
     cwd = Path.cwd()
     runs_dir = _runs_dir(cwd)
-    machines_dir = machines_root(resolved_state_dir(cwd))
+    machines_dir = machines_root(state_dir(cwd))
 
     # An ambiguous run prefix is a run-intent error: surface the disambiguation
     # rather than falling through to machine lookup and printing "no match".

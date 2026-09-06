@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from agent6.app._setup import BudgetOverrides, SandboxOverrides
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.cli import _session_prompt as prompt_mod
 
@@ -23,9 +23,7 @@ def _seed_session(
     tty guard rather than short-circuiting on SessionIdError."""
 
     monkeypatch.setenv("XDG_STATE_HOME", str(repo_root / ".state"))
-    layout = SessionLayout(
-        state_dir=resolved_state_dir(repo_root), session_id=session_id, subdir="runs"
-    )
+    layout = SessionLayout(state_dir=state_dir(repo_root), session_id=session_id, subdir="runs")
     layout.session_dir.mkdir(parents=True, exist_ok=True)
     (layout.session_dir / "logs.jsonl").write_text(
         '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'

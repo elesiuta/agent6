@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from agent6.budget import BudgetTracker
-from agent6.config.layer import resolved_state_dir
 from agent6.errors import read_operator_file
 from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening_flags
+from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
@@ -136,18 +136,18 @@ def build_ask_session_digest(cwd: Path, session_id: str, *, latest: bool) -> str
     same shape, and the useful direction is whichever way the operator is
     working -- an ask that worked something out, then a run to do it.
     """
-    state_dir = resolved_state_dir(cwd)
+    state = state_dir(cwd)
     if latest:
         # runs/ and asks/ only: a machine draft is an authoring log, not a
         # session with a task and an outcome, and picking the newest one made
         # `--from-latest` fail on a project that had just written a machine.
-        newest = newest_session_dir([bucket_dir(state_dir, "runs"), bucket_dir(state_dir, "asks")])
+        newest = newest_session_dir([bucket_dir(state, "runs"), bucket_dir(state, "asks")])
         if newest is None:
-            error(f"--from-latest: no run or ask under {state_dir}")
+            error(f"--from-latest: no run or ask under {state}")
             return None
         session_id = newest.name
     try:
-        layout = resolve_session(state_dir, session_id)
+        layout = resolve_session(state, session_id)
     except SessionIdError as exc:
         error(f"{exc}")
         return None

@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 from agent6 import secrets
-from agent6.config.layer import resolved_state_dir
 from agent6.models.cache import KeyProbeResult
+from agent6.paths import state_dir
 from agent6.ui.cli import main
 
 
@@ -475,7 +475,7 @@ def test_model_all_interactive_prompts_once(
 def test_model_repo_scope_writes_repo(iso: Path, tmp_path: Path) -> None:
     rc = main(["model", "reviewer", "anthropic", "claude-o", "--repo"])
     assert rc == 0
-    repo_cfg = (resolved_state_dir(tmp_path) / "config.toml").read_text(encoding="utf-8")
+    repo_cfg = (state_dir(tmp_path) / "config.toml").read_text(encoding="utf-8")
     assert "[models.reviewer]" in repo_cfg
 
 

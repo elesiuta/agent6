@@ -54,7 +54,7 @@ from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.resume import commits_note, resumable_bucket_dirs
 from agent6.config import Config, ConfigError
-from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.config.layer import load_effective
 from agent6.git_ops import (
     CommitIdentity,
     GitError,
@@ -85,6 +85,7 @@ from agent6.graph.storage import (
     write_cursor,
     write_node,
 )
+from agent6.paths import state_dir
 from agent6.portable import atomic_write
 from agent6.sandbox.detect import resolve_isolation
 from agent6.sessions.id import (
@@ -410,8 +411,8 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     lock is held across the commit and the rewind, unless this process is the
     session's live worker (the loop's own `/undo`, which holds it already):
     any other live run driving the checkout refuses."""
-    state_dir = resolved_state_dir(cwd)
-    target = undo_target(state_dir, session_id, reporter=reporter)
+    state = state_dir(cwd)
+    target = undo_target(state, session_id, reporter=reporter)
     if target is None:
         return None
     undone = target.session
@@ -448,7 +449,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         return None
     lock_fd: int | None = None
     if read_worker_pid(undone.session_dir) != os.getpid():
-        lock_state_dir = resolved_state_dir(checkout)
+        lock_state_dir = state_dir(checkout)
         lock_fd = acquire_repo_writer(lock_state_dir, undone.session_id)
         if lock_fd is None:
             holder = repo_writer_holder(lock_state_dir) or "another run"
@@ -491,7 +492,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
         )
         if rc != 0:
             return None
-        child_layout = SessionLayout(state_dir=state_dir, session_id=child, subdir=undone.subdir)
+        child_layout = SessionLayout(state_dir=state, session_id=child, subdir=undone.subdir)
         sha = read_manifest(child_layout.session_dir).forked_from_sha or ""
         turn = f"turn {target.turn} ({sha[:12]})"
         try:
@@ -592,8 +593,8 @@ def _plan_fork(
     None; a reason refuses BEFORE anything is created, the order `run` keeps,
     so no never-started fork stays listed and its id stays free.
     """
-    state_dir = resolved_state_dir(cwd)
-    src = _resolve_source(state_dir, source_session_id, reporter=reporter)
+    state = state_dir(cwd)
+    src = _resolve_source(state, source_session_id, reporter=reporter)
     if src is None:
         raise _ForkRefused(2)
 
@@ -660,21 +661,19 @@ def _plan_fork(
             raise _ForkRefused(2) from exc
         # Any bucket holding it makes the id ambiguous on every surface; the
         # same-bucket case would also fail the target-dir check later.
-        if (held := session_id_bucket(state_dir, new_session_id)) is not None:
+        if (held := session_id_bucket(state, new_session_id)) is not None:
             reporter.error(
                 f"--session-id {new_session_id!r} already names a session under {held}/;"
                 " ids are unique across every bucket. Pick another id."
             )
             raise _ForkRefused(2)
-    child_id = new_session_id or unused_session_id(state_dir, session_bucket(src_mode))
+    child_id = new_session_id or unused_session_id(state, session_bucket(src_mode))
     return _ForkPlan(
         src=src,
         # A fork keeps its source's mode, so its dir belongs in that mode's
         # bucket: a forked plan in runs/ would be the one session whose
         # directory disagreed with its own manifest.
-        dst=SessionLayout(
-            state_dir=state_dir, session_id=child_id, subdir=session_bucket(src_mode)
-        ),
+        dst=SessionLayout(state_dir=state, session_id=child_id, subdir=session_bucket(src_mode)),
         checkpoint_path=checkpoint_path,
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_iteration,
@@ -710,13 +709,13 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
     dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
-    state_dir = resolved_state_dir(worktree)
+    state = state_dir(worktree)
     if not remove_worktree(repo, worktree):
         return False, (
             "could not be removed: not a linked worktree of this repository,"
             " or a file in it would not delete"
         )
-    return True, _drop_checkout_lock(state_dir)
+    return True, _drop_checkout_lock(state)
 
 
 def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:

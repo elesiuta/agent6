@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.paths import state_dir
 from agent6.ui.cli import main
 from agent6.ui.cli.plan_watch import (
     _most_recent_plan_session_id,  # pyright: ignore[reportPrivateUsage]
@@ -22,13 +22,13 @@ def test_newest_run_dir_none_for_missing_bucket(tmp_path: Path) -> None:
 
 
 def test_newest_run_dir_none_when_empty(tmp_path: Path) -> None:
-    runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
+    runs = state_dir(tmp_path) / "sessions" / "runs"
     runs.mkdir(parents=True)
     assert newest_session_dir([runs]) is None
 
 
 def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
-    runs = resolved_state_dir(tmp_path) / "sessions" / "runs"
+    runs = state_dir(tmp_path) / "sessions" / "runs"
     runs.mkdir(parents=True)
     older = runs / "alpha-bravo-charlie"
     newer = runs / "delta-echo-foxtrot"
@@ -45,7 +45,7 @@ def test_newest_run_dir_uses_log_activity_not_frontend_dir_touch(tmp_path: Path)
 
 
 def test_most_recent_plan_run_id_uses_log_activity_not_frontend_dir_touch(tmp_path: Path) -> None:
-    plans = resolved_state_dir(tmp_path) / "sessions" / "plans"
+    plans = state_dir(tmp_path) / "sessions" / "plans"
     plans.mkdir(parents=True)
     older = plans / "older-plan"
     newer = plans / "newer-plan"
@@ -81,7 +81,7 @@ def test_run_no_task_points_at_most_recent_plan(
     # No task given but a prior plan exists: non-interactively (pytest stdin is
     # not a TTY) refuse, but point the user at the plan + the --from form.
     monkeypatch.chdir(tmp_path)
-    session_dir = resolved_state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
+    session_dir = state_dir(tmp_path) / "sessions" / "plans" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     (session_dir / "plan.md").write_text("# Plan: wire up the thing\n", encoding="utf-8")
     rc = main(["run"])
