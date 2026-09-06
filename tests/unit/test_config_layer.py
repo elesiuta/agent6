@@ -313,6 +313,58 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
     assert "drop_at_chars = 200000" in text and "summarise_at_chars = 400000" in text
 
 
+def test_a_dict_typed_leaf_is_replaced_whole(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`providers.<name>.extra_body` is one VALUE, not a table: writing it leaf
+    by leaf merged into the old value where it landed at all, and elsewhere
+    refused with "set it as a whole" -- the command the operator had run."""
+    from agent6.config.write import set_config_value
+
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    (gdir / "config.toml").write_text(
+        "[providers.openrouter]\n"
+        'api_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        'extra_body = { provider = { sort = "throughput" } }  # prefer fast backends\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    err = set_config_value(repo_root, "providers.openrouter.extra_body", '{ order = ["x"] }')
+
+    assert err is None, err
+    text = (gdir / "config.toml").read_text(encoding="utf-8")
+    assert 'extra_body = { order = ["x"] }' in text
+    assert "sort" not in text, "the old value was merged into, not replaced"
+    assert "# prefer fast backends" in text
+
+
+def test_a_write_that_breaks_the_toml_is_rolled_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The revalidation reads the file it just wrote; when that read raises,
+    the rollback it exists for must still run, or the operator is left with a
+    config no command can read."""
+    from agent6.config.write import set_config_value
+
+    gdir = tmp_path / "g"
+    gdir.mkdir()
+    before = '[sandbox]\nnetwork = "none"\n'
+    (gdir / "config.toml").write_text(before, encoding="utf-8")
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(gdir))
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+
+    err = set_config_value(repo_root, "providers.openai.extra_headers.X Title", "b")
+
+    assert err is not None and "invalid TOML" in err
+    assert (gdir / "config.toml").read_text(encoding="utf-8") == before
+
+
 def test_written_value_error_catches_a_section_wide_rule() -> None:
     """A rule spanning two keys is a model_validator, and pydantic reports it at
     the SECTION -- a PARENT of the written key. Accepting a parent loc only for

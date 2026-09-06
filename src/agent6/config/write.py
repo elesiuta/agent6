@@ -22,7 +22,7 @@ import difflib
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
 from pydantic_core import ErrorDetails
@@ -317,6 +317,34 @@ def _error_about(err: ErrorDetails, key: str, value: object) -> str | None:
     return f"{key}: {detail}"
 
 
+def _section_is_broken(head: str, leaves: dict[str, Any]) -> bool:
+    """Whether *head*'s section already fails its own rules with just *leaves*
+    (the file's, minus what this edit wrote). Nested keys walk down from the
+    top-level section, as `written_value_error` builds them."""
+    if not head or not leaves:
+        # Nothing of this section predates the edit, so nothing in it can.
+        return False
+    parts = head.split(".")
+    nested: dict[str, Any] = {}
+    cur = nested
+    for part in parts[:-1]:
+        child: dict[str, Any] = {}
+        cur[part] = child
+        cur = child
+    cur[parts[-1]] = leaves
+    try:
+        Config.model_validate(nested)
+    except ValidationError as exc:
+        # A section without this edit's leaves is PARTIAL, not broken: a
+        # missing child only means the container is filled in over several
+        # writes (the rule `written_value_error` applies to the same case), and
+        # an unknown key is this edit's own doing.
+        return any(err["type"] not in ("missing", "extra_forbidden") for err in exc.errors())
+    except ConfigError:
+        return True
+    return False
+
+
 def revalidate_write(
     repo_root: Path,
     target: Path,
@@ -344,10 +372,29 @@ def revalidate_write(
     explode once the mask is gone -- while a rule spanning two leaves of one
     section can still see its sibling, whether it was already in the file or
     written by this same edit."""
-    doc = read_toml_file(target)
+    try:
+        doc = read_toml_file(target)
+    except ConfigError as exc:
+        # The write itself emitted TOML the parser cannot read: that is always
+        # this edit's doing, and leaving it on disk is a config no command can
+        # read. Rolled back here, because a raise would escape the rollback
+        # this function exists for.
+        return keep_or_rollback(target, prior, str(exc), held=held)
+    mine = {k for k, _v in written}
     for wkey, wvalue in written:
-        value_err = written_value_error(wkey, wvalue, section=_section_leaves(doc, wkey))
-        if value_err is not None:
+        section = _section_leaves(doc, wkey)
+        value_err = written_value_error(wkey, wvalue, section=section)
+        if value_err is None:
+            continue
+        # The section context is the file as it now stands, so a rule spanning
+        # two leaves fires over a sibling that was ALREADY wrong -- and pydantic
+        # reports a section rule at the section, which reads as this leaf's
+        # fault. Blame this edit only when the section without its own leaves
+        # was fine; otherwise the merged check below decides, and its "broken
+        # before this edit" rule keeps the write.
+        head = wkey.rsplit(".", 1)[0]
+        before = {leaf: v for leaf, v in section.items() if f"{head}.{leaf}" not in mine}
+        if not _section_is_broken(head, before):
             return keep_or_rollback(target, prior, value_err, held=held)
     err = merged_config_error(repo_root)
     if err is None:
@@ -358,6 +405,54 @@ def revalidate_write(
     if not was_valid and not target_unparseable(target):
         return None  # broken before this edit; not ours to refuse
     return keep_or_rollback(target, prior, err, held=held)
+
+
+def _models_at(model: type[BaseModel], part: str) -> tuple[type[BaseModel], ...] | None:
+    """The model(s) *part* resolves to under *model*, or None when it is a leaf
+    (a scalar, a list, or a dict-typed value) or unknown. A name-keyed table
+    (`providers`, `mcp.servers`) resolves through its VALUE type, which may be a
+    union of entry models."""
+    field = model.model_fields.get(part)
+    if field is None:
+        return None
+    annotation = field.annotation
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return (annotation,)
+    if get_origin(annotation) is dict:
+        return _model_members(get_args(annotation)[1]) or None
+    return None
+
+
+def _model_members(annotation: object) -> tuple[type[BaseModel], ...]:
+    """Every BaseModel in *annotation*, unwrapping `Annotated` and unions (a
+    name-keyed table's value type is a discriminated union of entry models)."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return (annotation,)
+    args = get_args(annotation)
+    return tuple(m for arg in args for m in _model_members(arg))
+
+
+def names_a_section(dotted_key: str) -> bool:
+    """Whether *dotted_key* names a `[table]` in the Config schema rather than a
+    leaf. A section's dict value is written leaf by leaf so its siblings
+    survive; a dict-typed leaf (`providers.<name>.extra_body`) is one value and
+    is written whole. A name-keyed entry (`providers.<name>`) is a section."""
+    models: tuple[type[BaseModel], ...] = (Config,)
+    keyed = False  # the previous part was a name-keyed table, so this part is a name
+    for part in dotted_key.split("."):
+        if keyed:
+            keyed = False
+            continue
+        resolved = [m for model in models for m in (_models_at(model, part) or ())]
+        if not resolved:
+            return False
+        keyed = any(
+            get_origin(model.model_fields[part].annotation) is dict
+            for model in models
+            if part in model.model_fields
+        )
+        models = tuple(resolved)
+    return not keyed
 
 
 def set_config_value(
@@ -376,16 +471,24 @@ def set_config_value(
         read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
         parsed = parse_cli_value(raw_value)
-        if isinstance(parsed, dict):
-            # A table's own value: `config set context '{ a = 1, b = 2 }'`, the
-            # form a sibling-rule refusal recommends. Written as ONE key it
+        if isinstance(parsed, dict) and names_a_section(dotted_key):
+            # A SECTION's own value: `config set context '{ a = 1, b = 2 }'`,
+            # the form a sibling-rule refusal recommends. Written as one key it
             # replaces the whole `[table]`, taking every other leaf and comment
-            # in it with no warning; written per leaf, the siblings survive and
-            # both halves of a pair land under one revalidation.
-            fields = {k: v for k, v in parsed.items()}
-            for key, val in fields.items():
-                upsert_toml_leaf(target, f"{dotted_key}.{key}", val)
-            written = [(f"{dotted_key}.{k}", v) for k, v in fields.items()]
+            # in it with no warning; written per leaf the siblings survive, and
+            # both halves of a pair land under one revalidation. A dict-typed
+            # LEAF (`providers.x.extra_body`) is a value, not a table: it keeps
+            # the single write, so setting it replaces it rather than merging.
+            if not parsed:
+                raise ConfigError(f"{dotted_key} = {{}} sets nothing; name the leaves to set")
+            try:
+                for leaf, val in parsed.items():
+                    upsert_toml_leaf(target, f"{dotted_key}.{leaf}", val)
+            except ConfigError as exc:
+                # A refusal mid-way leaves earlier leaves on disk; the file must
+                # not stay half-written.
+                return keep_or_rollback(target, prior, str(exc), held=held)
+            written = [(f"{dotted_key}.{leaf}", v) for leaf, v in parsed.items()]
         else:
             upsert_toml_leaf(target, dotted_key, parsed)
             written = [(dotted_key, parsed)]
