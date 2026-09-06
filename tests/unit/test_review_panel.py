@@ -18,7 +18,7 @@ from agent6.workflows._panel import (
     ReviewContext,
     ReviewDecision,
     ReviewVerdict,
-    _cite_path,  # pyright: ignore[reportPrivateUsage]
+    _dedup_key,  # pyright: ignore[reportPrivateUsage]
     aggregate_verdicts,
     diff_touched_ranges,
     is_grounded,
@@ -95,7 +95,8 @@ def test_is_grounded_accepts_a_line_col_citation() -> None:
     ranges = diff_touched_ranges(SAMPLE_DIFF)
     assert is_grounded("foo.py:11:5", ranges)  # line 11 is inside 10..14
     assert not is_grounded("foo.py:99:5", ranges)  # column must not rescue it
-    assert _cite_path("foo.py:11:5") == "foo.py"  # dedup keys on the same path
+    # the dedup key drops the column and lands in the hunk
+    assert _dedup_key(_block("security", "foo.py:11:5"), ranges) == ("foo.py", "security", (10, 14))
 
 
 # --- executable grounding in aggregation --------------------------------------
@@ -582,3 +583,35 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
 
     prompt = _build_user_message(ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
+
+
+# A second hunk in foo.py, well away from the first.
+TWO_HUNKS_DIFF = SAMPLE_DIFF.replace(
+    "--- /dev/null\n",
+    "@@ -40,2 +42,3 @@ def g():\n     a = 1\n+    b = 2\n     return a\n--- /dev/null\n",
+    1,
+)
+
+
+def test_two_findings_in_different_hunks_of_one_file_both_survive() -> None:
+    """The dedup key was (path, category): a second finding in another hunk of
+    the same file was dropped as a duplicate of the first, and the report
+    never said it existed. The key carries the hunk."""
+    ctx = ReviewContext(diff=TWO_HUNKS_DIFF)
+    seat = _seat("m1", _block("security", "foo.py:11"), _block("security", "foo.py:43"))
+    res = _agg([seat], ctx=ctx)
+    assert [f.file_line for f in res.merged_findings] == ["foo.py:11", "foo.py:43"]
+
+
+def test_a_re_citation_in_one_hunk_dedups_and_a_prior_one_does_not_gate() -> None:
+    """Two seats citing one defect two lines apart collapse to one finding; a
+    prior finding in that hunk absorbs the re-citation and, already injected,
+    counts toward no gate. A path-only citation is its own finding."""
+    a = _block("security", "foo.py:11")
+    b = _block("security", "foo.py:13")
+    res = _agg([_seat("m1", a), _seat("m2", b, seat="t")])
+    assert len(res.merged_findings) == 1
+    res = _agg([_seat("m1", b)], ctx=_ctx(prior_findings=(a,)))
+    assert res.merged_findings == () and not res.blocked
+    res = _agg([_seat("m1", a, _block("security", "foo.py"))])
+    assert len(res.merged_findings) == 2

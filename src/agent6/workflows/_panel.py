@@ -221,15 +221,23 @@ def is_grounded(file_line: str, ranges: dict[str, list[tuple[int, int]]]) -> boo
     return any(c_lo <= hi and lo <= c_hi for (lo, hi) in ranges.get(path, ()))
 
 
-def _cite_path(file_line: str) -> str:
-    """The normalized path of a citation, dropping any position suffix, so dedup
-    keys on (path, category) as documented and a line-drifted re-citation of the
-    same finding still dedups."""
-    return _split_cite(file_line)[0]
+DedupKey = tuple[str, str, tuple[int, int] | None]
 
 
-def _dedup_key(f: Finding) -> tuple[str, str]:
-    return (_cite_path(f.file_line), f.category)
+def _dedup_key(f: Finding, ranges: dict[str, list[tuple[int, int]]]) -> DedupKey:
+    """A finding's identity across seats and iterations: its file, its category
+    and the hunk its citation falls in (the first touched range overlapping the
+    cited span), so a re-citation a few lines off collapses while a second
+    finding in another hunk of the same file stays. A citation outside every
+    hunk keys on its own span, a path-only one on the file."""
+    path, span = _split_cite(f.file_line)
+    if span is None:
+        return (path, f.category, None)
+    lo, hi = span
+    for r_lo, r_hi in ranges.get(path, ()):
+        if lo <= r_hi and r_lo <= hi:
+            return (path, f.category, (r_lo, r_hi))
+    return (path, f.category, span)
 
 
 _SEV_ORDER = {"block": 0, "warn": 1, "nit": 2}
@@ -259,13 +267,17 @@ def _ground_seat(
     return replace(v, findings=tuple(out))
 
 
-def _has_new_block(v: ReviewVerdict, prior_keys: set[tuple[str, str]]) -> bool:
+def _has_new_block(
+    v: ReviewVerdict, prior_keys: set[DedupKey], ranges: dict[str, list[tuple[int, int]]]
+) -> bool:
     """True when the seat carries a surviving block that is NOT an already-
     injected prior finding. `prior_findings` is "for dedup (not re-count)":
     a block whose key dedups away is dropped from `merged_findings`, so
     letting it gate would reject the work while reporting no blocking
     findings."""
-    return any(f.severity == "block" and _dedup_key(f) not in prior_keys for f in v.findings)
+    return any(
+        f.severity == "block" and _dedup_key(f, ranges) not in prior_keys for f in v.findings
+    )
 
 
 def _decide(
@@ -274,7 +286,8 @@ def _decide(
     quorum: int,
     non_abstain: list[ReviewVerdict],
     n_total: int,
-    prior_keys: set[tuple[str, str]],
+    prior_keys: set[DedupKey],
+    ranges: dict[str, list[tuple[int, int]]],
 ) -> bool:
     if decision == "advisory" or not non_abstain:
         return False
@@ -291,7 +304,7 @@ def _decide(
         # must be non-abstaining. So a panel that mostly failed to respond does
         # NOT block on one vote, but a fully-responding (or majority-responding)
         # panel that unanimously blocks still gates.
-        if not all(_has_new_block(v, prior_keys) for v in non_abstain):
+        if not all(_has_new_block(v, prior_keys, ranges) for v in non_abstain):
             return False
         return len(non_abstain) * 2 > n_total
     return False  # pragma: no cover - exhaustive
@@ -311,7 +324,9 @@ def aggregate_verdicts(
        `file_line` is in the diff AND its category is allowed to block (and a
        `verify-uncovered-correctness` claim is only coherent when verify
        actually passed). Otherwise it is downgraded to `warn`.
-    2. Dedup across seats and against `prior_findings` by (path, category). An
+    2. Dedup across seats and against `prior_findings` by (path, category,
+       hunk): a re-citation of one defect a few lines off collapses, a second
+       finding in another hunk of the same file stays (`_dedup_key`). An
        already-injected block neither re-surfaces nor counts toward the gate
        (otherwise a rejection could ship with zero merged findings).
     3. Decide: advisory never blocks; veto blocks on any surviving block; quorum
@@ -321,7 +336,7 @@ def aggregate_verdicts(
        actually responded (abstentions cannot let a lone blocker gate under "all").
     """
     ranges = diff_touched_ranges(ctx.diff)
-    prior_keys = {_dedup_key(f) for f in ctx.prior_findings}
+    prior_keys = {_dedup_key(f, ranges) for f in ctx.prior_findings}
 
     grounded_seats: list[ReviewVerdict] = []
     blocking_models: set[str] = set()  # distinct models with >=1 surviving non-prior block
@@ -333,14 +348,14 @@ def aggregate_verdicts(
             continue
         gv = _ground_seat(v, ctx, ranges)
         grounded_seats.append(gv)
-        if _has_new_block(gv, prior_keys):
+        if _has_new_block(gv, prior_keys, ranges):
             blocking_models.add(v.model)
 
     # Merge + dedup all findings (post-grounding); drop ones already injected.
-    merged: dict[tuple[str, str], Finding] = {}
+    merged: dict[DedupKey, Finding] = {}
     for v in grounded_seats:
         for f in v.findings:
-            key = _dedup_key(f)
+            key = _dedup_key(f, ranges)
             if key in prior_keys:
                 continue
             cur = merged.get(key)
@@ -352,7 +367,9 @@ def aggregate_verdicts(
 
     n_block = len(blocking_models)  # distinct-model blocking seats
     non_abstain = [v for v in grounded_seats if v.error is None]
-    blocked = _decide(decision, n_block, quorum, non_abstain, len(grounded_seats), prior_keys)
+    blocked = _decide(
+        decision, n_block, quorum, non_abstain, len(grounded_seats), prior_keys, ranges
+    )
 
     return PanelResult(
         panel_id=panel_id,
