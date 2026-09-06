@@ -30,8 +30,8 @@ from agent6.sessions.ipc import (
     steer_answer_written,
     steer_interrupt_pending,
     steer_request_pending,
+    submit_steer,
     take_steer_answer,
-    write_steer_answer,
 )
 from agent6.ui.cli._common import editor_argv
 from agent6.ui.cli._console_view import ConsoleView
@@ -255,8 +255,8 @@ _JOB_CONTROL_HINT = (
 def _install_status_signal(
     state: dict[str, Any], session_facts: Callable[[], SessionFacts] | None
 ) -> Any:
-    """Ctrl-Z: print the run's state, and stand an armed pause back down, so
-    checking on a run never costs it a step. Replaces SIGTSTP's default on
+    """Ctrl-Z: print the run's state, and stand a pause that has not opened its
+    menu back down, so checking on a run never costs it a step. Replaces SIGTSTP's default on
     purpose -- a suspended agent freezes its live provider stream, which the
     server then kills mid-response: a real suspend would not pause the run,
     it would corrupt it. The printed hint names the alternative."""
@@ -265,7 +265,10 @@ def _install_status_signal(
 
     def _handler(_signum: int, _frame: Any) -> None:
         line = _status_suffix(session_facts).strip() or "no live facts for this leg"
-        if state["stage"] == 1:
+        # An open pause menu stands on stage 1 (its action is the steer answer
+        # the next boundary consumes while requested() holds); only a pause
+        # that has not opened its menu is stood down.
+        if state["stage"] == 1 and not state["prompting"]:
             state["stage"] = 0
             tty_message(
                 f"\n[agent6] {line}\n[agent6] pause cancelled; the run continues.\n"
@@ -297,7 +300,8 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
     * 3rd Ctrl-C (or Ctrl-C at the pause prompt itself): KeyboardInterrupt,
       stopping the run (resumable with `agent6 resume`).
     * Ctrl-Z prints the same one-line status WITHOUT arming anything, and
-      cancels an armed pause -- so checking on a run costs it nothing. It also
+      cancels a pause that has not opened its menu, so checking on a run
+      costs it nothing. It also
       replaces SIGTSTP's default: a suspended agent freezes its live provider
       stream, which the server then kills mid-response, so a real suspend
       would corrupt the run rather than pause it. The hint it prints names
@@ -418,7 +422,10 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
         if action is None or not action.strip():
             state["stage"] = 0
             return
-        write_steer_answer(session_dir, action)
+        # The request marker, not the in-memory stage, keeps the action
+        # alive: requested() survives a Ctrl-Z, and the next Ctrl-C does not
+        # drop it as a stale answer.
+        submit_steer(session_dir, action)
 
     def restore() -> None:
         with contextlib.suppress(Exception):

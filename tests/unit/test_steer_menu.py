@@ -553,3 +553,79 @@ def test_exit_maps_to_exit_and_stop_stays_abort(tmp_path: Path) -> None:
     assert pause_line("exit the retry loop early", tmp_path) == "exit the retry loop early"
     assert pause_menu(tmp_path, input_fn=_feed(["/exit"])) == "exit"
     assert pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"
+
+
+def test_ctrl_z_does_not_stand_down_the_stage_an_open_pause_menu_needs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-Z stands an armed pause down, but not the stage an OPEN pause menu
+    stands on: `prompt_now`'s menu writes its action as the steer answer and
+    the next boundary consumes it only while `requested()` holds. Disarming
+    under it filed the operator's instruction for nobody to read, and the next
+    Ctrl-C deleted it as stale."""
+    import signal
+
+    from agent6.events import EventSink
+    from agent6.ui.cli import _steer
+
+    monkeypatch.setattr(_steer, "tty_message", lambda _t: None)  # type: ignore[misc]
+    monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(_steer, "menu_capable", lambda: False)
+
+    def at_the_open_menu(_text: str, **_kw: object) -> str:
+        handler = signal.getsignal(signal.SIGTSTP)
+        assert callable(handler)
+        handler(signal.SIGTSTP, None)  # Ctrl-Z, menu still open
+        return "focus on the failing test"
+
+    monkeypatch.setattr(_steer, "tty_prompt", at_the_open_menu)
+
+    state = _steer.install_steer_sigint(EventSink(tmp_path / "logs.jsonl"), tmp_path)
+    try:
+        sigint = signal.getsignal(signal.SIGINT)
+        assert callable(sigint)
+        sigint(signal.SIGINT, None)  # one Ctrl-C arms the pause
+        state.prompt_now()  # the menu an approval prompt opens after its answer
+        assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == (
+            "focus on the failing test"
+        )
+        assert state.requested() is True
+    finally:
+        state.restore()
+
+
+def test_ctrl_z_after_the_pause_menu_keeps_the_typed_steer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The action `prompt_now` files rides the steer request marker, not the
+    in-memory stage: a Ctrl-Z between the menu closing and the next boundary
+    stood the stage down, the boundary saw no request, and the next Ctrl-C
+    deleted the operator's typed steer as a stale answer."""
+    import signal
+
+    from agent6.events import EventSink
+    from agent6.ui.cli import _steer
+
+    def typed(_text: str, **_kw: object) -> str:
+        return "focus on the failing test"
+
+    monkeypatch.setattr(_steer, "tty_message", lambda _t: None)  # type: ignore[misc]
+    monkeypatch.setattr(_steer, "frontend_is_live", lambda _d: False)  # type: ignore[misc]
+    monkeypatch.setattr(_steer, "menu_capable", lambda: False)
+    monkeypatch.setattr(_steer, "tty_prompt", typed)
+
+    state = _steer.install_steer_sigint(EventSink(tmp_path / "logs.jsonl"), tmp_path)
+    try:
+        sigint = signal.getsignal(signal.SIGINT)
+        sigtstp = signal.getsignal(signal.SIGTSTP)
+        assert callable(sigint) and callable(sigtstp)
+        sigint(signal.SIGINT, None)  # one Ctrl-C arms the pause
+        state.prompt_now()  # the menu after an approval's answer; the action is filed
+        sigtstp(signal.SIGTSTP, None)  # Ctrl-Z with the menu closed, before the boundary
+        assert state.requested() is True
+        sigint(signal.SIGINT, None)  # a later Ctrl-C must not drop the filed steer
+        assert (tmp_path / "steer.answer").read_text(encoding="utf-8") == (
+            "focus on the failing test"
+        )
+    finally:
+        state.restore()
