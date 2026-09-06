@@ -77,7 +77,11 @@ from agent6.sessions.ipc import (
     submit_steer,
     write_worker_pid,
 )
-from agent6.sessions.layout import LOGS_NAME, SessionLayout, write_untracked_at_start
+from agent6.sessions.layout import (
+    SessionLayout,
+    session_has_record,
+    write_untracked_at_start,
+)
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
     acquire_repo_writer,
@@ -96,7 +100,7 @@ def discard_husk_dir(session_dir: Path) -> None:
     (no manifest, no logs). Otherwise a refused start (e.g. dirty worktree)
     leaves an empty husk that `agent6 sessions` lists as '(no logs)' forever. Guarded
     on the manifest/logs check so a real run's dir is never removed."""
-    if (session_dir / "manifest.json").exists() or (session_dir / LOGS_NAME).exists():
+    if session_has_record(session_dir):
         return
     with contextlib.suppress(OSError):
         shutil.rmtree(session_dir)

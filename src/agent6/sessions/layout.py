@@ -15,6 +15,7 @@ from pathlib import Path
 
 from agent6.paths import mkdir_for_real_user
 from agent6.portable import atomic_write
+from agent6.sessions.manifest import MANIFEST_NAME
 
 
 def is_safe_session_id(session_id: str) -> bool:
@@ -36,7 +37,6 @@ def is_safe_session_id(session_id: str) -> bool:
 # hardcodes the wrong one silently finds nothing, which is indistinguishable
 # from an empty session.
 LOGS_NAME = "logs.jsonl"
-MANIFEST_NAME = "manifest.json"
 # The files that were untracked when the run started (repo-root-relative,
 # NUL-separated). They are the operator's: every chain commit and dirty check
 # of the run leaves them out.
@@ -152,6 +152,12 @@ SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines")
 # hub gives it its own card, keyed by the machine being authored. (An `agent`
 # state has no bucket at all; its sessions live inside the machine instance.)
 HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks")
+
+
+def session_has_record(session_dir: Path) -> bool:
+    """Whether a session dir holds a run's record (a manifest or a journal):
+    a dir with neither was refused before it started, or orphaned."""
+    return (session_dir / MANIFEST_NAME).exists() or (session_dir / LOGS_NAME).exists()
 
 
 def machines_root(state_dir: Path) -> Path:

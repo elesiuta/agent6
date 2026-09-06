@@ -564,7 +564,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.sessions.layout"
-depends_on = ["agent6.paths", "agent6.portable"]
+depends_on = ["agent6.paths", "agent6.portable", "agent6.sessions.manifest"]
 
 [[modules]]
 # The single manifest.json reader (the writer is app.manifest). A pure leaf:

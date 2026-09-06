@@ -19,6 +19,7 @@ from agent6.events import EventSink
 from agent6.portable import atomic_write
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.manifest import (
+    MANIFEST_NAME,
     MANIFEST_VERSION,
     FanoutStamp,
     ManifestError,
@@ -189,7 +190,7 @@ def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:
     cut). The fresh start's manifest rewrite replaces all three."""
     m = read_manifest(session_dir)
     write_manifest(
-        session_dir / "manifest.json",
+        session_dir / MANIFEST_NAME,
         m.model_copy(update={"parked_task": task, "parked_reason": reason, "run_branch": None}),
     )
 
@@ -202,7 +203,7 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
     the recorded model, so both must describe the leg that is live."""
     m = read_manifest(session_dir)
     write_manifest(
-        session_dir / "manifest.json",
+        session_dir / MANIFEST_NAME,
         m.model_copy(
             update={
                 "models": ModelsBrief(
@@ -221,7 +222,7 @@ def stamp_preset(session_dir: Path, name: str) -> None:
     (`WorkflowStamp.replay_preset`)."""
     m = read_manifest(session_dir)
     workflow = m.workflow.model_copy(update={"preset": name, "preset_from_flag": True})
-    write_manifest(session_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))
+    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"workflow": workflow}))
 
 
 def stamp_fork_task(session_dir: Path, steer: str, *, source_dir: Path) -> None:
@@ -250,7 +251,7 @@ def stamp_fork_task(session_dir: Path, steer: str, *, source_dir: Path) -> None:
         return  # already sent somewhere; this steer is a follow-up
     with contextlib.suppress(ManifestError, OSError):
         write_manifest(
-            session_dir / "manifest.json",
+            session_dir / MANIFEST_NAME,
             m.model_copy(update={"user_task": operator_task_text(steer)[:4000]}),
         )
 
@@ -266,7 +267,7 @@ def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> No
     workflow = m.workflow.model_copy(
         update={"verify_command": tuple(argv), "verify_origin": origin}
     )
-    write_manifest(session_dir / "manifest.json", m.model_copy(update={"workflow": workflow}))
+    write_manifest(session_dir / MANIFEST_NAME, m.model_copy(update={"workflow": workflow}))
 
 
 def pin_gate(

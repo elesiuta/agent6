@@ -17,7 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
-from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, MANIFEST_NAME, bucket_dir
+from agent6.sessions.layout import (
+    HUB_BUCKETS,
+    LOGS_NAME,
+    MANIFEST_NAME,
+    bucket_dir,
+    session_has_record,
+)
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.task_text import operator_task_text
 from agent6.viewmodel.events import event_epoch
@@ -129,9 +135,7 @@ def is_session_husk(session_dir: Path) -> bool:
     Exception: a dir with a LIVE worker.pid is a just-launched run in its
     pre-manifest preflight window, not a husk -- keep it listed (it reads
     "starting"). Only a dir with no live worker is a true husk."""
-    if (session_dir / "manifest.json").exists() or (session_dir / LOGS_NAME).exists():
-        return False
-    return not worker_is_alive(session_dir)
+    return not session_has_record(session_dir) and not worker_is_alive(session_dir)
 
 
 def session_compare(session_dir: Path) -> CompareStamp | None:

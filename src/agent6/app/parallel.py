@@ -82,6 +82,7 @@ from agent6.sessions.ipc import (
 )
 from agent6.sessions.layout import SessionLayout, bucket_dir, session_layout
 from agent6.sessions.manifest import (
+    MANIFEST_NAME,
     CompareStamp,
     FanoutStamp,
     ManifestError,
@@ -698,7 +699,7 @@ def _stamp(session_dir: Path, **updates: object) -> str | None:
     the degradation). The one stamping helper: `_stamp_compare_outcomes`
     (post-ranking) goes through it; lineage itself is written by the LANE at
     birth (the spawn env), so a coordinator death cannot orphan the grouping."""
-    mpath = session_dir / "manifest.json"
+    mpath = session_dir / MANIFEST_NAME
     try:
         m = read_manifest(session_dir)
     except ManifestError as exc:

@@ -190,6 +190,7 @@ class CompareStamp(BaseModel):
 # The shape this binary writes. Stamp-rewrites re-stamp it (see write_manifest)
 # so a manifest's version claim always matches the shape actually on disk.
 MANIFEST_VERSION = 3
+MANIFEST_NAME = "manifest.json"
 
 
 class SessionManifest(BaseModel):
@@ -300,7 +301,7 @@ def read_manifest(session_dir: Path) -> SessionManifest:
     object, or fails validation degrades through the one typed error the render
     consumers already catch; the fork/resume gate turns it into a loud refusal.
     """
-    path = session_dir / "manifest.json"
+    path = session_dir / MANIFEST_NAME
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
