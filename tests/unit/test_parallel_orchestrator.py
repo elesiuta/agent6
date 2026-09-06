@@ -703,8 +703,9 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     """The harness nudges a lane to write memory like any run, and the import
     carried only its rulings before tearing the lane's state dir down: every
     memory file the lane wrote, and its index line, went with it. A name the
-    origin already holds (its seeded copy, here edited by the lane) is held
-    back, and the note says so: the count was dropped on the floor."""
+    origin already holds with other content (written here before the lane was
+    seeded, so not a seeded copy) is held back, kept in the lane's imported
+    run dir, and the note says where."""
     from agent6.config.layer import resolved_state_dir
 
     origin_state = resolved_state_dir(origin)
@@ -735,7 +736,13 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
         memory.index_text(origin_state).count("repo-fact") == 1
     )  # the seeded copy is not a second line
     assert "BUILD_NO" not in memory.show(origin_state, "repo-fact")
-    assert "lane 1: 1 memory file(s) carried over, 1 already recorded" in capsys.readouterr().err
+    held = origin_state / "sessions" / "runs" / lanes[0].session_id / "memory-held" / "repo-fact.md"
+    assert "BUILD_NO" in held.read_text(encoding="utf-8")
+    err = capsys.readouterr().err
+    assert (
+        "lane 1: memory 1 carried, held back (changed here too, or the name is taken):"
+        f" repo-fact, kept at {held.parent}"
+    ) in err
 
 
 def test_run_parallel_forwards_auto_approve_to_the_default_spawner(

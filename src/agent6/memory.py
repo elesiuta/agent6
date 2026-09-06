@@ -12,10 +12,14 @@ memory across repos is the operator copying it.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import shutil
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from agent6.errors import OperatorError
 from agent6.portable import atomic_write
@@ -30,6 +34,9 @@ DECISIONS_INJECT_CAP = 4_096
 # The index is injected whole; past the cap it is clipped with a pointer so
 # a runaway index cannot flood every prompt in the repo.
 INDEX_INJECT_CAP = 4_096
+# Beside a lane's store: the sha256 of every file `seed_store` copied in, by
+# name, so the import can tell an untouched copy from a lane's edit.
+SEED_NAME = "memory-seed.json"
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
@@ -44,6 +51,10 @@ def memory_dir(state_dir: Path) -> Path:
 
 def index_path(state_dir: Path) -> Path:
     return memory_dir(state_dir) / INDEX_NAME
+
+
+def seed_path(state_dir: Path) -> Path:
+    return state_dir / SEED_NAME
 
 
 def decisions_path(state_dir: Path) -> Path:
@@ -115,51 +126,103 @@ def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]
     return len(fresh), len(entries) - len(fresh)
 
 
-def merge_memory(src_state_dir: Path, dst_state_dir: Path) -> tuple[int, int]:
-    """Carry the memories recorded under *src_state_dir* into *dst_state_dir*
-    (a fan-out lane's facts outlive its state dir, like its rulings): a file
-    the destination lacks is copied with its index line; one whose name it
-    already holds (the seeded copy, edited or not) is held back; a file the
-    lane's own index does not list is left where it is. Returns
-    (carried, held). The rulings have `merge_decisions`."""
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryMerge:
+    """What a lane's memory left in the origin's store at import, by name."""
+
+    carried: tuple[str, ...] = ()  # new names, landed with their index lines
+    updated: tuple[str, ...] = ()  # the lane's edit replaced a copy unchanged since seeding
+    deleted: tuple[str, ...] = ()  # the lane's deletion removed such a copy
+    held: tuple[str, ...] = ()  # changed on both sides, or a name already taken: kept aside
+
+
+def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) -> MemoryMerge:
+    """Carry a lane's memory into the origin's store the way its branch comes
+    back. A copy unchanged since seeding is nothing. A change over a copy the
+    origin has not touched since seeding lands: an edit replaces the file and
+    its index line, a deletion removes both. A change on both sides is held
+    back (the lane's version kept under *held_dir*) and named. A new name
+    lands with its index line, or is held when the origin holds that name with
+    other content (two lanes invented it); a file the lane's own index does
+    not list is left where it is. The rulings have `merge_decisions`."""
     src = memory_dir(src_state_dir)
     if not src.is_dir():
-        return 0, 0
+        return MemoryMerge()
     dst = memory_dir(dst_state_dir)
     dst.mkdir(parents=True, exist_ok=True)
+    try:
+        seeds: dict[str, str] = json.loads(seed_path(src_state_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        seeds = {}
     src_index = index_text(src_state_dir).splitlines()
-    carried = held = 0
-    for path in sorted(src.glob("*.md")):
-        if path.name in (INDEX_NAME, DECISIONS_NAME):
+    lane = {p.stem: p for p in src.glob("*.md") if p.name not in (INDEX_NAME, DECISIONS_NAME)}
+    landed: dict[str, list[str]] = {"carry": [], "update": [], "delete": [], "hold": []}
+    for name in sorted(seeds.keys() | lane.keys()):
+        path = lane.get(name)
+        origin = dst / f"{name}.md"
+        seed = seeds.get(name)
+        theirs = _sha256(path) if path is not None else None
+        ours = _sha256(origin) if origin.is_file() else None
+        hook = _index_hook(src_index, name)
+        taken = seed is None and (ours is not None or _index_has(dst_state_dir, name))
+        fate = _fate(seed, theirs, ours, hook=hook, taken=taken)
+        if fate == "skip":
             continue
-        name = path.stem
-        pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")
-        line = next((ln for ln in src_index if pattern.match(ln)), None)
-        if line is None:
-            continue  # unindexed in the lane: invisible there, and stays so
-        if (dst / path.name).exists() or _index_has(dst_state_dir, name):
-            held += 1
-            continue
-        shutil.copyfile(path, dst / path.name)
-        _append_index_line(dst_state_dir, name, line.split(":", 1)[1].strip())
-        carried += 1
-    return carried, held
+        if fate == "delete":
+            _drop_index_line(dst_state_dir, name)
+            origin.unlink()
+        elif fate == "hold":
+            if path is not None:
+                held_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, held_dir / path.name)
+        else:
+            assert path is not None and hook is not None  # a carry or update has a file and a line
+            shutil.copyfile(path, origin)
+            if fate == "carry":
+                _append_index_line(dst_state_dir, name, hook)
+            else:
+                _replace_index_line(dst_state_dir, name, hook)
+        landed[fate].append(name)
+    return MemoryMerge(*(tuple(landed[k]) for k in ("carry", "update", "delete", "hold")))
+
+
+def _fate(
+    seed: str | None, theirs: str | None, ours: str | None, *, hook: str | None, taken: bool
+) -> Literal["skip", "carry", "update", "delete", "hold"]:
+    """One name's fate at import, from the digests of the seeded copy, the
+    lane's file and the origin's file (None: absent), whether the lane's index
+    lists it (*hook*) and whether the origin already uses the name (*taken*)."""
+    if theirs in (seed, ours):
+        return "skip"  # untouched in the lane, or the same content on both sides
+    if seed is None:  # new in the lane
+        if hook is None:
+            return "skip"  # unindexed there: invisible there, and stays so
+        return "hold" if taken else "carry"
+    if ours != seed:
+        return "hold"  # changed on both sides
+    return "delete" if theirs is None else "update"
 
 
 def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
     """Copy the repo's memory (index, facts, recorded rulings) into a fresh
-    state dir, leaving anything already there. Returns the files copied.
+    state dir, leaving anything already there, and record each copied fact's
+    digest in `seed_path` for the import. Returns the files copied.
 
     A `--parallel` lane clones the repo into a workspace of its own, so its
     state dir is new and its memory empty; without this the lanes run blind to
     the rulings every other run on that repo is given. Copies, never a link: a lane
-    must not write the origin's store mid-run, and `merge_decisions` carries its
-    new rulings back at import.
+    must not write the origin's store mid-run; `merge_memory` and
+    `merge_decisions` carry what it wrote back at import.
     """
     src = memory_dir(src_state_dir)
     if not src.is_dir():
         return 0
     copied = 0
+    digests: dict[str, str] = {}
     dst = memory_dir(dst_state_dir)
     dst.mkdir(parents=True, exist_ok=True)
     for path in sorted(src.iterdir()):
@@ -168,6 +231,9 @@ def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
             continue
         shutil.copyfile(path, target)
         copied += 1
+        if path.suffix == ".md" and path.name not in (INDEX_NAME, DECISIONS_NAME):
+            digests[path.stem] = _sha256(target)
+    atomic_write(seed_path(dst_state_dir), json.dumps(digests, indent=1) + "\n")
     return copied
 
 
@@ -210,6 +276,43 @@ def _check_name(name: str) -> str:
 def _index_has(state_dir: Path, name: str) -> bool:
     pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")
     return any(pattern.match(ln) for ln in index_text(state_dir).splitlines())
+
+
+def _index_hook(index_lines: list[str], name: str) -> str | None:
+    """The hook text an index line carries for *name*, None when it has none."""
+    pattern = re.compile(rf"^\s*[-*]\s*{re.escape(name)}\s*:")
+    line = next((ln for ln in index_lines if pattern.match(ln)), None)
+    return None if line is None else line.split(":", 1)[1].strip()
+
+
+def _index_pattern(name: str) -> re.Pattern[bytes]:
+    return re.compile(rb"^\s*[-*]\s*" + re.escape(name.encode("utf-8")) + rb"\s*:")
+
+
+def _drop_index_line(state_dir: Path, name: str) -> None:
+    """Remove the index line naming *name*, over bytes: a rewrite through the
+    replacing reader would turn every byte that is not UTF-8 into U+FFFD, in
+    lines the operator wrote."""
+    idx = index_path(state_dir)
+    pattern = _index_pattern(name)
+    kept = [ln for ln in idx.read_bytes().split(b"\n") if not pattern.match(ln)]
+    atomic_write(idx, b"\n".join(kept))
+
+
+def _replace_index_line(state_dir: Path, name: str, hook: str) -> None:
+    """Rewrite the index line naming *name* in place (over bytes, like
+    `_drop_index_line`), appending one when there is none."""
+    idx = index_path(state_dir)
+    pattern = _index_pattern(name)
+    try:
+        lines = idx.read_bytes().split(b"\n")
+    except OSError:
+        lines = []
+    if not any(pattern.match(ln) for ln in lines):
+        _append_index_line(state_dir, name, hook)
+        return
+    new = f"- {name}: {hook}".encode()
+    atomic_write(idx, b"\n".join(new if pattern.match(ln) else ln for ln in lines))
 
 
 def _append_index_line(state_dir: Path, name: str, hook: str) -> None:
@@ -268,12 +371,7 @@ def remove(state_dir: Path, name: str) -> None:
     if not path.is_file() and not had_line:
         raise MemoryStoreError(f"no memory named {name!r}")
     if had_line:
-        # Over bytes: a rewrite through the replacing reader would turn every
-        # byte that is not UTF-8 into U+FFFD, in lines the operator wrote.
-        idx = index_path(state_dir)
-        pattern = re.compile(rb"^\s*[-*]\s*" + re.escape(name.encode("utf-8")) + rb"\s*:")
-        kept = [ln for ln in idx.read_bytes().split(b"\n") if not pattern.match(ln)]
-        atomic_write(idx, b"\n".join(kept))
+        _drop_index_line(state_dir, name)
     if path.is_file():
         path.unlink()
 

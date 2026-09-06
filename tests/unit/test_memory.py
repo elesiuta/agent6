@@ -4,11 +4,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from agent6.memory import (
+    MemoryMerge,
     MemoryStoreError,
     add,
     decisions_path,
@@ -16,8 +18,11 @@ from agent6.memory import (
     index_text,
     memory_dir,
     merge_decisions,
+    merge_memory,
     record_decision,
     remove,
+    seed_path,
+    seed_store,
     show,
 )
 
@@ -216,3 +221,93 @@ def test_merge_decisions_starts_on_its_own_line(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == (
         "- 2026-01-01 00:00Z [x] Q: a?\n  A: b\n- 1970-01-01 00:00Z [lane] Q: c?\n  A: d\n"
     )
+
+
+def _seeded_lane(tmp_path: Path, origin: Path, name: str = "lane") -> Path:
+    lane = tmp_path / name
+    seed_store(origin, lane)
+    return lane
+
+
+def test_merge_memory_lands_new_facts_and_leaves_untouched_copies_alone(tmp_path: Path) -> None:
+    """A lane's store is a copy of the origin's. At import a fact the lane
+    added lands with its index line; the copies it never touched are nothing
+    to report (every one read as "already recorded" before), and the same
+    content on both sides is nothing either."""
+    origin = tmp_path / "origin"
+    add(origin, "repo-fact", "The build needs BUILD_ID set.")
+    lane = _seeded_lane(tmp_path, origin)
+    assert list(json.loads(seed_path(lane).read_text(encoding="utf-8"))) == ["repo-fact"]
+    add(lane, "lane-fact", "The flaky test is test_clock.")
+    held = tmp_path / "held"
+    assert merge_memory(lane, origin, held_dir=held) == MemoryMerge(carried=("lane-fact",))
+    assert "test_clock" in show(origin, "lane-fact")
+    assert index_text(origin).splitlines() == [
+        "- repo-fact: The build needs BUILD_ID set.",
+        "- lane-fact: The flaky test is test_clock.",
+    ]
+    assert not held.exists()
+    assert merge_memory(lane, origin, held_dir=held) == MemoryMerge()
+
+
+def test_merge_memory_fast_forwards_a_lanes_edit_and_deletion(tmp_path: Path) -> None:
+    """Over a copy the origin has not touched since seeding, the lane's edit
+    replaces the file and its index line in place, and its deletion removes
+    both: the branch rule, applied to the store. Before, an edit was held
+    back silently and the lane's version ended with its state dir."""
+    origin = tmp_path / "origin"
+    add(origin, "a-fact", "A first.")
+    add(origin, "b-fact", "B first.")
+    add(origin, "c-fact", "C first.")
+    lane = _seeded_lane(tmp_path, origin)
+    (memory_dir(lane) / "a-fact.md").write_text("A second, refined.\n", encoding="utf-8")
+    idx = index_path(lane)
+    idx.write_text(idx.read_text(encoding="utf-8").replace("A first.", "A second, refined."))
+    remove(lane, "c-fact")
+    held = tmp_path / "held"
+    assert merge_memory(lane, origin, held_dir=held) == MemoryMerge(
+        updated=("a-fact",), deleted=("c-fact",)
+    )
+    assert show(origin, "a-fact") == "A second, refined.\n"
+    assert not (memory_dir(origin) / "c-fact.md").exists()
+    assert index_text(origin).splitlines() == ["- a-fact: A second, refined.", "- b-fact: B first."]
+    assert not held.exists()
+
+
+def test_merge_memory_holds_back_a_change_on_both_sides(tmp_path: Path) -> None:
+    """Changed in the lane and in the origin since seeding: the origin keeps
+    its version, the lane's is kept under held_dir, and both names are
+    reported. A lane deletion over an origin edit is held the same way, with
+    nothing to keep."""
+    origin = tmp_path / "origin"
+    add(origin, "a-fact", "A first.")
+    add(origin, "d-fact", "D first.")
+    lane = _seeded_lane(tmp_path, origin)
+    (memory_dir(lane) / "a-fact.md").write_text("A per the lane.\n", encoding="utf-8")
+    (memory_dir(origin) / "a-fact.md").write_text("A per the origin.\n", encoding="utf-8")
+    remove(lane, "d-fact")
+    (memory_dir(origin) / "d-fact.md").write_text("D per the origin.\n", encoding="utf-8")
+    held = tmp_path / "held"
+    assert merge_memory(lane, origin, held_dir=held) == MemoryMerge(held=("a-fact", "d-fact"))
+    assert show(origin, "a-fact") == "A per the origin.\n"
+    assert show(origin, "d-fact") == "D per the origin.\n"
+    assert (held / "a-fact.md").read_text(encoding="utf-8") == "A per the lane.\n"
+    assert not (held / "d-fact.md").exists()
+
+
+def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: Path) -> None:
+    """Two lanes recording different facts under one new name: the first
+    lands, the second is held with its version kept, so neither silently
+    overwrites the other."""
+    origin = tmp_path / "origin"
+    l1, l2 = _seeded_lane(tmp_path, origin, "l1"), _seeded_lane(tmp_path, origin, "l2")
+    add(l1, "shared-name", "What lane one saw.")
+    add(l2, "shared-name", "What lane two saw.")
+    assert merge_memory(l1, origin, held_dir=tmp_path / "h1") == MemoryMerge(
+        carried=("shared-name",)
+    )
+    assert merge_memory(l2, origin, held_dir=tmp_path / "h2") == MemoryMerge(held=("shared-name",))
+    assert (tmp_path / "h2" / "shared-name.md").read_text(
+        encoding="utf-8"
+    ) == "What lane two saw.\n"
+    assert show(origin, "shared-name") == "What lane one saw.\n"
