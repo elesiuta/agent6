@@ -64,7 +64,6 @@ from agent6.ui.tui.widgets import (
     ActionItem,
     ChoiceField,
     TypeaheadField,
-    choice_field,
     focus_neighbor,
 )
 from agent6.viewmodel.config_view import (
@@ -311,7 +310,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                     classes="edit-input edit-gap",
                 )
             yield Static("save to", classes="edit-label")
-            yield choice_field(("global config", "repo config"), "global config", "edit-target")
+            yield ChoiceField(("global config", "repo config"), "global config", id="edit-target")
             with Horizontal(id="edit-actions"):
                 yield ActionItem("Save", "save")
                 yield ActionItem("Unset → default", "unset")
@@ -404,12 +403,12 @@ class ProviderModal(_FormModal[None]):
                 classes="edit-input edit-gap",
             )
             yield Static("api_format", classes="edit-label")
-            yield choice_field(
-                tuple(choices["api_format"]), choices["api_format"][0], "prov-format"
+            yield ChoiceField(
+                tuple(choices["api_format"]), choices["api_format"][0], id="prov-format"
             )
             yield Static("deployment", classes="edit-label")
-            yield choice_field(
-                tuple(choices["deployment"]), choices["deployment"][0], "prov-deployment"
+            yield ChoiceField(
+                tuple(choices["deployment"]), choices["deployment"][0], id="prov-deployment"
             )
             yield Static("base_url", classes="edit-label")
             yield Input(
@@ -424,7 +423,7 @@ class ProviderModal(_FormModal[None]):
                 classes="edit-input",
             )
             yield Static("save to", classes="edit-label")
-            yield choice_field(("global config", "repo config"), "global config", "prov-target")
+            yield ChoiceField(("global config", "repo config"), "global config", id="prov-target")
             with Horizontal(id="prov-actions"):
                 yield ActionItem("Add", "add")
                 yield ActionItem("Cancel", "cancel")

@@ -45,11 +45,6 @@ from agent6.sessions.layout import SessionLayout
 # ---- atomic write + flock helpers ----------------------------------------
 
 
-def _atomic_write(path: Path, data: str | bytes) -> None:
-    """Write data via tmp file + rename, fsyncing both file and parent dir."""
-    atomic_write(path, data)
-
-
 def _append_line(path: Path, line: str) -> None:
     """Append one line durably; raise on a short write instead of losing bytes."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -298,7 +293,7 @@ def write_node(layout: SessionLayout, nodes: dict[str, TaskNode], node: TaskNode
     if node.children:
         child_dir = path.with_suffix("")
         child_dir.mkdir(exist_ok=True)
-    _atomic_write(path, _dump_frontmatter(node))
+    atomic_write(path, _dump_frontmatter(node))
     # Remove any STALE .md for this same id at a different path. The canonical
     # path can move -- e.g. load_graph re-roots an orphan (parent_id -> None when
     # its parent file was malformed/skipped), shifting the node from a nested
@@ -361,7 +356,7 @@ def write_journal(layout: SessionLayout, entry: dict[str, object]) -> None:
 
 def write_cursor(layout: SessionLayout, node_id: str | None) -> None:
     payload = json.dumps({"node_id": node_id})
-    _atomic_write(layout.cursor_path, payload)
+    atomic_write(layout.cursor_path, payload)
 
 
 def read_cursor(layout: SessionLayout) -> str | None:
@@ -415,4 +410,4 @@ def write_dot(layout: SessionLayout, nodes: dict[str, TaskNode]) -> None:
         for dep in n.depends_on:
             lines.append(f'  "{dep}" -> "{n.id}" [style=dashed, color=blue];')
     lines.append("}")
-    _atomic_write(layout.dot_path, "\n".join(lines) + "\n")
+    atomic_write(layout.dot_path, "\n".join(lines) + "\n")

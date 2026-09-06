@@ -260,12 +260,6 @@ class ChoiceField(Widget, can_focus=True):
             self.refresh()
 
 
-def choice_field(
-    options: tuple[str, ...], current: str, widget_id: str, *, classes: str | None = None
-) -> ChoiceField:
-    return ChoiceField(options, current, id=widget_id, classes=classes)
-
-
 class TypeaheadField(Widget, can_focus=True):
     """A type-to-narrow picker for big lists (e.g. model ids): an editable text
     line plus, while focused, the top matching suggestions. Type to narrow; ↓

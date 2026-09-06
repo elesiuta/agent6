@@ -47,14 +47,6 @@ def _run_intent(repo_root: Path, target: str) -> tuple[bool, str | None]:
     return (True, None)
 
 
-def _session_json_snapshot(session_dir: Path, repo: Path) -> int:
-    """Print a session's snapshot as one JSON object (the wire form the web
-    serves; `viewmodel.session_snapshot`, the merged claim checked against
-    *repo* like the web's)."""
-    print(json.dumps(session_snapshot(session_dir, repo=repo)))
-    return 0
-
-
 def _machine_json_snapshot(machine_dir: Path) -> int:
     """Print a machine's snapshot as one JSON object (`viewmodel.machine_snapshot`)."""
     try:
@@ -120,7 +112,9 @@ def _cmd_watch_target(  # noqa: PLR0911
         if session_dir is None or not session_dir.is_dir():
             print_no_session_match(target, runs_dir.parent)
             return 2
-        return _session_json_snapshot(session_dir, cwd)
+        # The wire form the web serves, the merged claim checked against the repo.
+        print(json.dumps(session_snapshot(session_dir, repo=cwd)))
+        return 0
 
     # Else a machine by name.
     machine_dir = machines_dir / target

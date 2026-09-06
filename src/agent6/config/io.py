@@ -19,12 +19,6 @@ from agent6.errors import read_operator_file
 from agent6.portable import atomic_write, locked_file, toml_basic_string
 
 
-def _write(path: Path, text: str) -> None:
-    """Publish config text via tmp+rename (all-or-nothing), matching every
-    other agent6 state writer."""
-    atomic_write(path, text)
-
-
 def _header_name(line: str) -> str | None:
     """The table name of a `[table]` header line, or None if it is not one.
 
@@ -98,11 +92,11 @@ def upsert_toml_table(path: Path, table: str, fields: dict[str, ConfigLeafValue]
         if start is None:
             prefix = text if not text or text.endswith("\n") else text + "\n"
             sep = "\n" if prefix and not prefix.endswith("\n\n") else ""
-            _write(path, prefix + sep + block + "\n")
+            atomic_write(path, prefix + sep + block + "\n")
             return
         end = _region_end(lines, start + 1)
         new_lines = lines[:start] + block.splitlines() + [""] + lines[end:]
-        _write(path, "\n".join(new_lines).rstrip("\n") + "\n")
+        atomic_write(path, "\n".join(new_lines).rstrip("\n") + "\n")
 
 
 # What a config leaf can hold, matching what `format_toml_value` serializes:
@@ -216,7 +210,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
             if start is None:
                 text = "\n".join(lines) + "\n" if lines else ""
                 sep = "\n" if text and not text.endswith("\n\n") else ""
-                _write(path, text + sep + f"[{table}]" + "\n" + new_line + "\n")
+                atomic_write(path, text + sep + f"[{table}]" + "\n" + new_line + "\n")
                 return
             region = start + 1
         else:
@@ -234,7 +228,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
             if span == 1 and (comment := _line_comment(lines[j])):
                 replacement = f"{new_line}  {comment}"
             lines[j : j + span] = [replacement]
-            _write(path, "\n".join(lines).rstrip("\n") + "\n")
+            atomic_write(path, "\n".join(lines).rstrip("\n") + "\n")
             return
         insert_at = end
         while insert_at - 1 >= region and lines[insert_at - 1].strip() == "":
@@ -244,7 +238,7 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
         flush_against_header = insert_at < len(lines) and lines[insert_at].lstrip().startswith("[")
         gap = [""] if not table and flush_against_header else []
         lines[insert_at:insert_at] = [new_line, *gap]
-        _write(path, "\n".join(lines).rstrip("\n") + "\n")
+        atomic_write(path, "\n".join(lines).rstrip("\n") + "\n")
 
 
 def _drop_table_lines(lines: list[str], table: str) -> tuple[list[str], bool]:
@@ -465,7 +459,7 @@ def remove_toml_leaf(path: Path, dotted_key: str) -> bool:
                 if all(not rest.strip() for rest in lines[start + 1 : remaining_end]):
                     del lines[start:remaining_end]
             out = "\n".join(lines).rstrip("\n") + "\n" if lines else ""
-            _write(path, out)
+            atomic_write(path, out)
             return True
         return False
 
@@ -484,7 +478,7 @@ def remove_toml_table(path: Path, table: str) -> bool:
         if not removed:
             return False
         out = "\n".join(kept).rstrip("\n") + "\n" if any(ln.strip() for ln in kept) else ""
-        _write(path, out)
+        atomic_write(path, out)
         return True
 
 

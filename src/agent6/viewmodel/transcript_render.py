@@ -94,14 +94,6 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _request_body(t: dict[str, Any]) -> dict[str, Any]:
-    return _as_dict(_as_dict(t.get("request")).get("body"))
-
-
-def _response_body(t: dict[str, Any]) -> dict[str, Any]:
-    return _as_dict(_as_dict(t.get("response")).get("body"))
-
-
 def _shape(req: dict[str, Any], resp: dict[str, Any]) -> str:
     """Detect the provider wire shape of one transcript."""
     if isinstance(resp.get("choices"), list):
@@ -374,8 +366,8 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     prev_output: list[Any] = []  # a Responses call's output items, echoed by the next request
     for t in transcripts:
         seq = int(t.get("seq", 0))
-        req = _request_body(t)
-        resp = _response_body(t)
+        req = _as_dict(_as_dict(t.get("request")).get("body"))
+        resp = _as_dict(_as_dict(t.get("response")).get("body"))
         shape = _shape(req, resp)
         msgs = _request_items(req, shape)
         # Anthropic and Responses keep the system prompt out of the message
