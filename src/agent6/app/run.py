@@ -377,6 +377,15 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
                         f" {holder!r} with:\n    /parallel 1 <the same task>"
                     ),
                 )
+            # Every refusal is behind us and the run is about to ask the
+            # operator something (the dirty-tree question) and mutate the tree,
+            # so this process is now a live worker. The pid is what every
+            # surface gates on: without it a run parked on its own start
+            # question read "created" in the listings and `agent6 answer`
+            # refused the answer it was waiting for. The teardown clears it on
+            # every exit path, so a later refusal leaves none behind.
+            write_worker_pid(layout.session_dir, os.getpid())
+
             # Settle the operator's uncommitted changes BEFORE the run's first
             # commit can sweep them up: config decides when it can, else the
             # operator is asked over the same channel as `ask_user`.
@@ -450,10 +459,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
             )
             return cfg
 
-        # The pid lands only once every refusal is behind: `sessions show` reads
-        # it as a live worker (a long provider call emits no events), and a run
-        # that refused never had one.
-        write_worker_pid(layout.session_dir, os.getpid())
         end = run_leg(
             cfg,
             layout,
