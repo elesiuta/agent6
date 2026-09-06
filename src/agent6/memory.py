@@ -129,10 +129,15 @@ def decisions_text(state_dir: Path) -> str:
 
 def index_text(state_dir: Path) -> str:
     """The index body for prompt injection; "" when absent or unreadable
-    (memory is context, one stray byte must not kill every run)."""
+    (memory is context, one stray byte must not kill every run).
+
+    A byte that is not UTF-8 is REPLACED rather than fatal: read strictly, one
+    of them emptied the whole index for every run, and the next `memory add`
+    then rebuilt the file from that empty read -- deleting every line it had.
+    An unreadable FILE (a permission, a directory) is still ""."""
     try:
-        return index_path(state_dir).read_text(encoding="utf-8").strip()
-    except (OSError, ValueError):
+        return index_path(state_dir).read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
         return ""
 
 
@@ -150,10 +155,17 @@ def _index_has(state_dir: Path, name: str) -> bool:
 
 
 def _append_index_line(state_dir: Path, name: str, hook: str) -> None:
+    """Append one line to the index, keeping every line already there.
+
+    A rebuild from an EMPTY read is a delete: with the index unreadable this
+    wrote a one-line file over it, so a single bad byte cost every memory the
+    repo had. Unreadable and empty are one answer here, so it appends."""
     idx = index_path(state_dir)
-    existing = index_text(state_dir)
     line = f"- {name}: {hook}"
-    idx.write_text((existing + "\n" if existing else "") + line + "\n", encoding="utf-8")
+    with idx.open("a", encoding="utf-8") as fh:
+        if idx.stat().st_size and not index_text(state_dir).endswith("\n"):
+            fh.write("\n")
+        fh.write(line + "\n")
 
 
 def add(state_dir: Path, name: str, body: str) -> Path:

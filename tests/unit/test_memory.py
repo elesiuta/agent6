@@ -89,14 +89,28 @@ def test_show_reads_one_entry(tmp_path: Path) -> None:
         show(tmp_path, "absent")
 
 
-def test_index_text_degrades_to_empty(tmp_path: Path) -> None:
-    """Memory is context: an absent or unreadable index is "" for injection,
-    never an error that kills every run in the repo."""
+def test_a_bad_byte_costs_one_character_not_the_index(tmp_path: Path) -> None:
+    """Memory is context: an absent index is "" for injection, never an error
+    that kills every run in the repo. A byte that is not UTF-8 costs itself and
+    nothing else -- read strictly, one of them emptied the index for every run,
+    and the next `memory add` rebuilt the file from that empty read, deleting
+    every line the operator had."""
+    from agent6.memory import add
+
     assert index_text(tmp_path) == ""
-    d = memory_dir(tmp_path)
-    d.mkdir(parents=True)
-    (d / "MEMORY.md").write_bytes(b"\xff\xfe broken")
-    assert index_text(tmp_path) == ""
+    add(tmp_path, "alpha", "the parser is generated")
+    add(tmp_path, "beta", "the cache is per repo")
+    idx = memory_dir(tmp_path) / "MEMORY.md"
+    idx.write_bytes(idx.read_bytes() + b"- gamma: caf\xe9 a latin-1 byte\n")
+
+    kept = index_text(tmp_path)
+
+    assert "alpha" in kept and "beta" in kept and "gamma" in kept
+
+    add(tmp_path, "delta", "a third fact")
+
+    after = index_text(tmp_path)
+    assert all(name in after for name in ("alpha", "beta", "gamma", "delta")), after
 
 
 def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(tmp_path: Path) -> None:
