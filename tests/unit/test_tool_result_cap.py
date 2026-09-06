@@ -91,3 +91,12 @@ def test_truncation_envelope_for_unknown_tool_still_well_formed() -> None:
     parsed = json.loads(capped)
     assert parsed["tool"] == "some_new_tool"
     assert parsed["_tool_result_truncated"] is True
+
+
+def test_the_cap_is_a_parameter() -> None:
+    """A provider that hands the model less than the loop's default gets a
+    tighter bound through the same envelope."""
+    content = json.dumps({"content": "x" * 3_000})
+    assert _cap_tool_result(content, tool_name="read_file") == content
+    capped = _cap_tool_result(content, tool_name="read_file", cap=2_000)
+    assert len(capped) <= 2_000 and json.loads(capped) != json.loads(content)

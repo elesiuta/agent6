@@ -23,6 +23,7 @@ from agent6.app._session import (
     build_session_providers,
     build_session_tools,
     session_facts_provider,
+    tool_result_cap_chars,
 )
 from agent6.app._setup import (
     BudgetOverrides,
@@ -260,6 +261,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             chain_fallback_parent=inputs.base_sha or None,
             untracked_at_start=inputs.untracked_at_start,
             commit_per_step=cfg.git.commit_per_step,
+            tool_result_cap_chars=tool_result_cap_chars(cfg),
             max_iterations=cfg.workflow.max_iterations,
             provider=session.provider,
             dispatcher=dispatcher,

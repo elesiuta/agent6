@@ -34,6 +34,7 @@ from agent6.providers import (
 )
 from agent6.providers._claude_code_wire import (
     CLAUDE_CODE_ENV,
+    CLAUDE_CODE_RESULT_CAP_CHARS,
     claude_argv,
     plan_usage_from_rate_limit,
     render_history,
@@ -1001,3 +1002,43 @@ def test_the_child_stdout_is_read_buffered(tmp_path: Path) -> None:
     assert session is not None
     assert isinstance(session.proc.stdout, io.BufferedReader)
     provider.close()
+
+
+def test_an_oversize_tool_result_is_refused_before_claude_code_persists_it(
+    tmp_path: Path,
+) -> None:
+    """A result over the 50,000-byte threshold would be written under
+    ~/.claude/projects and reach the model as a preview: the provider refuses
+    it (fatal) instead of lying about what the model saw."""
+    binary, _cap = _install(
+        tmp_path,
+        {"turns": [[_round(tool_uses=[{"id": "toolu_1", "name": "read_file", "input": {}}])]]},
+    )
+    provider = _provider(binary)
+    first = provider.call(system="s", messages=USER0, tools=TOOLS)
+    history = [
+        *USER0,
+        {"role": "assistant", "content": first.raw["content"]},
+        {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "x" * 50_001}],
+        },
+    ]
+    with pytest.raises(ProviderError, match="50000-byte threshold") as exc:
+        provider.call(system="s", messages=history, tools=TOOLS)
+    assert exc.value.fatal
+    provider.close()
+
+
+def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
+    from agent6.app._session import tool_result_cap_chars
+    from agent6.workflows._compaction import TOOL_RESULT_CHAR_CAP
+
+    cc = Config.model_validate(
+        {
+            "providers": {"claude": {"api_format": "claude_code"}},
+            "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
+        }
+    )
+    assert tool_result_cap_chars(cc) == CLAUDE_CODE_RESULT_CAP_CHARS < TOOL_RESULT_CHAR_CAP
+    assert tool_result_cap_chars(Config()) == TOOL_RESULT_CHAR_CAP

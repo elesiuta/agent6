@@ -39,6 +39,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from agent6.app._session import tool_result_cap_chars
 from agent6.app._setup import apply_git_ops_policy
 from agent6.app.confine import check_hide_paths_support, check_network_support
 from agent6.app.machine._spend import Spend, read_budget_totals
@@ -488,6 +489,7 @@ def run_one(
             cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
         ),
         max_iterations=cfg.workflow.max_iterations,
+        tool_result_cap_chars=tool_result_cap_chars(cfg),
         provider=provider,
         summariser_provider=summariser_provider,
         dispatcher=dispatcher,

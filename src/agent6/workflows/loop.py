@@ -90,6 +90,7 @@ from agent6.workflows._compaction import (
     DROP_BLOCKS_AT_CHARS,
     KEEP_RECENT_CHARS,
     SUMMARISE_AT_CHARS,
+    TOOL_RESULT_CHAR_CAP,
     GistRequest,
     cap_tool_result,
     compact_old_tool_results,
@@ -408,6 +409,9 @@ class Workflow:
     # Tiered context compaction thresholds (chars).
     compact_drop_at_chars: int = DROP_BLOCKS_AT_CHARS
     compact_summarise_at_chars: int = SUMMARISE_AT_CHARS
+    # One tool result's size bound before it enters the conversation; a
+    # provider that hands the model less than the default gets a tighter one.
+    tool_result_cap_chars: int = TOOL_RESULT_CHAR_CAP
     # Verbatim recent-history tail kept through a tier-2 restart (chars; 0
     # keeps none). Sized to pi's keepRecentTokens default.
     keep_recent_chars: int = KEEP_RECENT_CHARS
@@ -1201,7 +1205,9 @@ class Workflow:
                 ToolResultItem(
                     tool_use_id=tu.id,
                     content=cap_tool_result(
-                        served if served is not None else content, tool_name=name
+                        served if served is not None else content,
+                        tool_name=name,
+                        cap=self.tool_result_cap_chars,
                     ),
                     for_call=tu,
                 )

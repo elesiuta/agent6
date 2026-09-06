@@ -15,6 +15,14 @@ from typing import Any
 from agent6.budget import PlanUsage, PlanWindow
 from agent6.child_env import curated_env
 
+# Claude Code writes a tool result above this many bytes under
+# ~/.claude/projects and hands the model a 2 KB preview of it.
+CLAUDE_CODE_PERSIST_BYTES = 50_000
+# The loop's result cap for this provider: under the threshold, with room
+# for multibyte text.
+CLAUDE_CODE_RESULT_CAP_CHARS = 45_000
+
+
 MCP_SERVER = "agent6"
 # Claude Code names an sdk-server tool `mcp__<server>__<tool>` to the model;
 # `tools/call` carries the bare name.

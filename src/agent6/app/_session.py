@@ -36,10 +36,10 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
-from agent6.config import Config, RoleModel, RoleName
+from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
-from agent6.providers import Provider, TranscriptSink
+from agent6.providers import CLAUDE_CODE_RESULT_CAP_CHARS, Provider, TranscriptSink
 from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import SessionNetwork
 from agent6.sessions.layout import SessionLayout
@@ -47,6 +47,7 @@ from agent6.tools.dispatch import Approver, ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.schema import UserQuestion
 from agent6.types import IsolationLevel, ResumableMode
+from agent6.workflows._compaction import TOOL_RESULT_CHAR_CAP
 from agent6.workflows.review import ReviewSeat
 
 
@@ -61,6 +62,18 @@ def resolve_isolation_or_refuse(
     except IsolationUnavailableError as exc:
         reporter.refuse(str(exc))
         raise SessionRefused(2) from exc
+
+
+def tool_result_cap_chars(cfg: Config) -> int:
+    """The size bound for one tool result entering the worker's conversation:
+    the loop's default, or the tighter bound of a worker provider that hands
+    the model less (Claude Code persists a result above its threshold and
+    serves a preview)."""
+    rm = cfg.models.resolve("worker")
+    entry = cfg.providers.get(rm.provider) if rm is not None else None
+    if isinstance(entry, ClaudeCodeProviderEntry):
+        return CLAUDE_CODE_RESULT_CAP_CHARS
+    return TOOL_RESULT_CHAR_CAP
 
 
 def select_isolation(
