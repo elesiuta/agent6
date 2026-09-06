@@ -65,6 +65,10 @@ def _fetch_serving(
         "ftp://example.com/x",
         "/etc/passwd",
         "https:///nohost",
+        # urlsplit itself refuses this one; the dispatcher's catch-all
+        # relabelled it "failed:", the one fetch refusal that read unlike the
+        # others.
+        "https://[::1",
     ],
 )
 def test_only_https_with_a_host_is_fetched(url: str) -> None:

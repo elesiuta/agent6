@@ -96,6 +96,19 @@ def test_enum_value_completion_is_derived_from_the_schema(
         )
         assert offered, f"{key} offers no values on TAB"
 
+    # A bool is as closed a set as any enum, and `config set` takes exactly
+    # `true` or `false` there: the 17 bool leaves completed to nothing while
+    # every enum completed, and `True` and `yes` are both refused.
+    bools = {
+        s.key for s in build_config_view(load_effective(tmp_path)).settings if s.py_type == "bool"
+    }
+    assert len(bools) > 10, "expected many bool leaves in the schema"
+    for key in sorted(bools):
+        offered = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]
+            "", argparse.Namespace(key=key)
+        )
+        assert set(offered) == {"true", "false"}, f"{key} offers {offered}"
+
     # sandbox.isolation keeps its deliberate omission: TAB must not put
     # "disable the sandbox" one keystroke away.
     iso = completers._complete_config_values(  # pyright: ignore[reportPrivateUsage]

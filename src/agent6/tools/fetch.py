@@ -105,7 +105,13 @@ def check_url(url: str) -> Checked:
     that name's authoritative server, so resolving ahead of the operator's
     gate was itself an egress channel. `fetch` resolves behind the gate.
     """
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError as exc:
+        # urlsplit itself refuses a malformed literal ("http://[::1"), and the
+        # dispatcher's catch-all relabelled it "failed:" -- the one fetch
+        # refusal that did not read like the others.
+        raise FetchRefused(f"the URL cannot be read: {exc}") from exc
     if parts.scheme != "https":
         raise FetchRefused(f"only https is fetched, not {parts.scheme or 'a bare path'!r}")
     if parts.username or parts.password:

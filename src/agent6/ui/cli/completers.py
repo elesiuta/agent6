@@ -136,9 +136,13 @@ _WITHHELD_ENUM_VALUES: dict[str, frozenset[str]] = {"sandbox.isolation": frozens
 
 
 def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str, ...]]:
-    """Every enum leaf's allowed values, read from the schema through the same
-    view the config surfaces render. A hand-kept copy drifted: leaves added
-    since offered nothing on TAB."""
+    """Every closed-value leaf's allowed values, read from the schema through
+    the same view the config surfaces render. A hand-kept copy drifted: leaves
+    added since offered nothing on TAB.
+
+    A bool is as closed a set as any enum, and `config set` takes exactly
+    `true` or `false` there (`True` and `yes` are refused), so it completes
+    like one."""
     from agent6.viewmodel.config_view import build_config_view  # noqa: PLC0415
 
     try:
@@ -157,6 +161,9 @@ def _config_enum_choices(config_path: Path | None = None) -> dict[str, tuple[str
         )
     out: dict[str, tuple[str, ...]] = {}
     for setting in view.settings:
+        if setting.py_type == "bool":
+            out[setting.key] = ("true", "false")
+            continue
         if setting.py_type != "choice" or not setting.choices:
             continue
         withheld = _WITHHELD_ENUM_VALUES.get(setting.key, frozenset())
