@@ -716,8 +716,7 @@ def _dispatch_skills(args: argparse.Namespace) -> int:
 def _dispatch_ps(args: argparse.Namespace) -> int:
     from agent6.ui.cli.ps_cmd import cmd_ps  # noqa: PLC0415
 
-    del args
-    return cmd_ps()
+    return cmd_ps(as_json=args.json)
 
 
 def _dispatch_history(args: argparse.Namespace) -> int:

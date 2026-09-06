@@ -325,13 +325,18 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_skills_parser(sub)
 
-    _sub(
+    ps_p = _sub(
         sub,
         "ps",
         help=(
             "Live agent6 sessions across every repository on this machine"
             " (directory, id, mode, status, pid, front-end; per-repo views: `sessions`)."
         ),
+    )
+    ps_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the rows as a JSON array (directory, repo_id, id, mode, status, pid, attached).",
     )
 
     hist_p = _sub(

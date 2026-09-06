@@ -89,3 +89,26 @@ def test_ps_lists_a_linked_lane_once(
     (coordinator / "fan-l1").symlink_to(lane, target_is_directory=True)
     assert cmd_ps() == 0
     assert capsys.readouterr().out.count("fan-l1") == 1
+
+
+def test_ps_json_carries_the_row_facts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`ps` was the one listing with no --json, so the cross-repo view could
+    not be read by a script."""
+    base = tmp_path / "state"
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(base))
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+    lane = base / "lane-repo-000000" / "sessions" / "runs" / "fan-l1"
+    lane.mkdir(parents=True)
+    (lane / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
+    (lane / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(lane, os.getpid())
+    assert main(["ps", "--json"]) == 0
+    (row,) = json.loads(capsys.readouterr().out)
+    assert row["id"] == "fan-l1" and row["mode"] == "run" and row["pid"] == os.getpid()
+    assert row["attached"] is False and row["repo_id"] == "lane-repo-000000"
+    assert row["directory"] is None  # a state-dir id with no checkout behind it
