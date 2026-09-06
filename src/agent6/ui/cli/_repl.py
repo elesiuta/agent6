@@ -41,11 +41,12 @@ REPL_HELP = (
     "                              into the agent's tool surface\n"
     "  /init                    - run the `agent6 init` setup wizard in the\n"
     "                              current cwd (prompts; never overwrites files)\n"
-    "  /undo                    - fork back before the last message (the\n"
-    "                              same /undo as steering, the TUI and web):\n"
-    "                              this run ends, the fork holds the state\n"
-    "                              before it, resume it with the message\n"
-    "                              edited. Nothing is rewritten.\n"
+    "  /undo                    - take back the last message (the same /undo\n"
+    "                              as steering, the TUI and web): this run\n"
+    "                              ends, the tree as it stands is committed on\n"
+    "                              this run's chain ref, the tree goes back to\n"
+    "                              the turn before, and a fork holds that\n"
+    "                              state; resume it with the message edited.\n"
     "  /help                    - show this help\n"
     "  /quit                    - stop the agent cleanly after this commit\n"
     "  /exit                    - stop and leave (no follow-up prompt; resume later)\n"
@@ -66,8 +67,8 @@ def build_repl_hook(
     `/diff` and `/init`), the current run id (for `/diff` and
     `/watch`), and the live MCP manager (for `/mcp`) in a closure
     so Workflow stays agnostic of the CLI's extra state. `/undo` is the
-    loop's own undo (fork back before the last message), returned as a
-    directive.
+    loop's own undo (take back the last message: the tree goes back and a
+    fork holds the state before it), returned as a directive.
     """
 
     def hook(iteration: int, sha: str) -> AutoCommitDirective:

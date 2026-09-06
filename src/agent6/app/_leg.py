@@ -92,7 +92,8 @@ class LegInputs:
     untracked_at_start: frozenset[str]
     resume_state_path: Path
     # `/undo` from the composer or the pause menu: forks back before the last
-    # message; the leg body records the outcome for its end block.
+    # message and rewinds the checkout; the leg body records the outcome for
+    # its end block.
     undo_forker: Callable[[], tuple[str, str] | None]
     # A one-shot ask records its answer under this question; None when the
     # REPL already saved each turn.

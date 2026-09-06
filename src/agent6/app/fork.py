@@ -28,7 +28,12 @@ journal-recorded mutation stamped after it, so the fork's tasks, statuses,
 and cursor match the turn its conversation came from.
 
 `/undo` (:func:`undo_fork`) clones the state the same way but adds no
-worktree: the fork keeps the undone session's checkout.
+worktree: the fork keeps the undone session's checkout, and that checkout is
+put back to the checkpoint's tree. Nothing is lost: the tree as it stands
+(the session's in-flight edits, every file that appeared since it started)
+is committed onto the undone session's ref first, so the later commits and
+that one stay there; the session's untracked-at-start files (the operator's)
+are left alone, and so are HEAD and the index.
 """
 
 from __future__ import annotations
@@ -36,6 +41,7 @@ from __future__ import annotations
 import contextlib
 import datetime as _dt
 import json
+import os
 import shutil
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -50,14 +56,20 @@ from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
 from agent6.git_ops import (
+    CommitIdentity,
     GitError,
     add_worktree,
+    chain_commit,
     chain_ref_for,
+    chain_tip,
     create_branch_at,
     merge_stamp_holds,
     remove_worktree,
     run_branch_for,
     set_ref,
+    sync_worktree,
+    tree_diff_paths,
+    worktree_tree,
 )
 from agent6.graph.replay import graph_at_version, journal_prefix
 from agent6.graph.storage import (
@@ -79,12 +91,13 @@ from agent6.sessions.id import (
     unused_session_id,
     validate_explicit_session_id,
 )
-from agent6.sessions.ipc import worker_is_alive
+from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import (
     SessionLayout,
     read_untracked_at_start,
     write_untracked_at_start,
 )
+from agent6.sessions.lock import acquire_repo_writer, release_single_writer, repo_writer_holder
 from agent6.sessions.manifest import (
     ManifestError,
     SessionManifest,
@@ -255,9 +268,11 @@ def _operator_messages(messages: list[dict[str, Any]]) -> list[str]:
 
 @dataclass(frozen=True, slots=True)
 class UndoTarget:
-    """Where `/undo` forks a session: *source*'s checkpoint at *at_turn*, with
-    the message it takes back (composer-refill text)."""
+    """Where `/undo` forks *session*: *source*'s checkpoint at *at_turn* (the
+    session itself, or an ancestor up its fork lineage), with the message it
+    takes back (composer-refill text)."""
 
+    session: SessionLayout
     source_session_id: str
     at_turn: int
     undone_text: str
@@ -304,12 +319,12 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
             task = read_manifest(src.session_dir).user_task
         except ManifestError:
             task = ops[0] if ops else ""
-        return UndoTarget(src.session_id, turns[0], task)
+        return UndoTarget(src, src.session_id, turns[0], task)
     target = _newest_checkpoint_below(src, len(ops))
     if target is None:
         reporter.err(f"nothing to undo: no state before the last message of {src.session_id}.")
         return None
-    return UndoTarget(target[0], target[1], ops[-1])
+    return UndoTarget(src, target[0], target[1], ops[-1])
 
 
 def _newest_checkpoint_below(
@@ -342,32 +357,135 @@ def _newest_checkpoint_below(
     return _newest_checkpoint_below(parent_layout, current_ops, seen=seen | {layout.session_id})
 
 
-def undo_fork(
+def _rewind_checkout(checkout: Path, *, tip: str, sha: str, exclude: frozenset[str]) -> list[str]:
+    """Put *checkout* back to *sha*'s tree for every tracked path whose
+    content differs from it (minus *exclude*, the session's untracked-at-start
+    files); HEAD and the shared index stay untouched. Returns the paths put
+    back. The current content is staged as a tree first (seeded on *tip*, the
+    chain commit that holds it), so the two-tree sync moves exactly the paths
+    that differ and nothing identical is rewritten."""
+    current = worktree_tree(checkout, tip, exclude)
+    paths = tree_diff_paths(checkout, sha, current)
+    if paths:
+        sync_worktree(checkout, current, sha)
+    return paths
+
+
+def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     config_path: Path | None,
     session_id: str,
     *,
     cwd: Path,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, str] | None:
-    """`/undo`: fork *session_id* at its undo target, unstarted, in the
-    session's own checkout. Returns `(child_id, undone_text)`: the text goes
-    back in the composer to edit and resend. None with the reason already
-    printed. *cwd* is the repository (the state dir's anchor)."""
+    """`/undo`: commit the tree as it stands onto *session_id*'s ref, fork the
+    session at its undo target (unstarted, in the session's own checkout), and
+    put that checkout back to the target's tree. Returns `(child_id,
+    undone_text)`: the text goes back in the composer to edit and resend. None
+    with the reason already printed.
+
+    *cwd* is the repository (the state dir's anchor); the checkout rewound is
+    the session's worktree when it has one, else *cwd*. The checkout's writer
+    lock is held across the commit and the rewind, unless this process is the
+    session's live worker (the loop's own `/undo`, which holds it already):
+    any other live run driving the checkout refuses."""
     state_dir = resolved_state_dir(cwd)
     target = undo_target(state_dir, session_id, reporter=reporter)
     if target is None:
         return None
-    child, rc = create_fork(
-        config_path,
-        target.source_session_id,
-        at_turn=target.at_turn,
-        cwd=cwd,
-        worktree=False,
-        reporter=reporter,
-    )
-    if rc != 0:
+    undone = target.session
+    try:
+        manifest = read_manifest(undone.session_dir)
+    except ManifestError as exc:
+        reporter.error(f"cannot read the manifest of {undone.session_id}: {exc}")
         return None
+    checkout = manifest.worktree or cwd
+    if manifest.worktree is not None and not (checkout / ".git").exists():
+        commits = manifest.run_branch or chain_ref_for(undone.session_id)
+        reporter.error(
+            f"cannot undo {undone.session_id}: its worktree {checkout} is gone (pruned or"
+            f" removed). Its commits are on {commits}; `agent6 fork {undone.session_id}`"
+            " continues them in a new worktree."
+        )
+        return None
+    try:
+        cfg = load_effective(cwd, config_path).config
+    except ConfigError as exc:
+        reporter.error(str(exc))
+        return None
+    lock_fd: int | None = None
+    if read_worker_pid(undone.session_dir) != os.getpid():
+        lock_state_dir = resolved_state_dir(checkout)
+        lock_fd = acquire_repo_writer(lock_state_dir, undone.session_id)
+        if lock_fd is None:
+            holder = repo_writer_holder(lock_state_dir) or "another run"
+            reporter.refuse(
+                f"run {holder!r} is driving this checkout, and /undo would put the tree back"
+                " under it. Stop it first:\n"
+                f"    agent6 sessions stop {holder}"
+            )
+            return None
+    ref = chain_ref_for(undone.session_id)
+    where = manifest.run_branch or ref
+    exclude = read_untracked_at_start(undone.session_dir)
+    try:
+        try:
+            kept = chain_commit(
+                checkout,
+                f"agent6 undo: the tree before turn {target.at_turn} was taken back",
+                ref=ref,
+                fallback_parent=manifest.base_sha or None,
+                identity=CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email),
+                also_branch=manifest.run_branch,
+                exclude=exclude,
+            )
+        except GitError as exc:
+            reporter.error(f"the tree as it stands could not be committed onto {where}: {exc}")
+            return None
+        child, rc = create_fork(
+            config_path,
+            target.source_session_id,
+            at_turn=target.at_turn,
+            cwd=cwd,
+            worktree=False,
+            checkout=manifest.worktree,
+            reporter=reporter,
+        )
+        if rc != 0:
+            return None
+        child_layout = SessionLayout(state_dir=state_dir, session_id=child, subdir=undone.subdir)
+        sha = read_manifest(child_layout.session_dir).forked_from_sha or ""
+        turn = f"turn {target.at_turn} ({sha[:12]})"
+        try:
+            paths = _rewind_checkout(
+                checkout, tip=chain_tip(checkout, ref) or sha, sha=sha, exclude=exclude
+            )
+        except GitError as exc:
+            reporter.error(
+                f"the checkout was NOT put back to {turn}: {exc}."
+                f" Fork {child} continues from the tree as it is."
+            )
+            return child, target.undone_text
+    finally:
+        release_single_writer(lock_fd)
+    _report_rewind(reporter, paths, turn=turn, kept=kept, where=where)
     return child, target.undone_text
+
+
+def _report_rewind(
+    reporter: Reporter, paths: list[str], *, turn: str, kept: str | None, where: str
+) -> None:
+    """The undo notice: the paths put back (HEAD and the index stay), and
+    where the tree as it stood and the later commits live."""
+    if paths:
+        shown = ", ".join(paths[:10]) + (f", +{len(paths) - 10} more" if len(paths) > 10 else "")
+        reporter.note(
+            f"put {len(paths)} path(s) back to {turn}: {shown} (HEAD and the index are untouched)"
+        )
+    else:
+        reporter.note(f"the checkout already matches {turn}")
+    stood = f"the tree as it stood is commit {kept[:12]} on {where}; " if kept else ""
+    reporter.note(f"{stood}the later commits stay on {where}")
 
 
 class _ForkRefused(Exception):
@@ -386,9 +504,6 @@ class _ForkPlan:
     from, the manifest facts carried forward, and the child's config."""
 
     src: SessionLayout
-    # The source's own worktree (None: the operator's checkout), which a
-    # child made without one of its own keeps.
-    src_worktree: Path | None
     dst: SessionLayout
     checkpoint_path: Path
     graph_version: int
@@ -508,7 +623,6 @@ def _plan_fork(
     child_id = new_session_id or unused_session_id(state_dir, session_bucket(src_mode))
     return _ForkPlan(
         src=src,
-        src_worktree=sm.worktree,
         # A fork keeps its source's mode, so its dir belongs in that mode's
         # bucket: a forked plan in runs/ would be the one session whose
         # directory disagreed with its own manifest.
@@ -601,6 +715,7 @@ def create_fork(
     sandbox_overrides: SandboxOverrides | None = None,
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
     worktree: bool = True,
+    checkout: Path | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, int]:
     """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
@@ -609,9 +724,11 @@ def create_fork(
     + DAG, the manifest, `agent6/<child>` cut at the checkpoint's committed
     HEAD, the lineage record and, for a run with *worktree* set, a linked
     worktree detached at that sha which the manifest names and `resume` runs
-    the leg in. With *worktree* off (`/undo`) the child keeps its source's
-    checkout; a plan or ask fork never edits and reads the operator's
-    checkout, so it gets none either way. Returns `(child_id, 0)` on success,
+    the leg in. With *worktree* off (`/undo`) the child works in *checkout*
+    (a worktree, or None for the operator's): the checkout the undone
+    session ran in, which its source, an ancestor up the lineage, need not
+    share. A plan or ask fork never edits and reads the operator's checkout,
+    so it gets no worktree either way. Returns `(child_id, 0)` on success,
     else `("", rc)` after printing the reason. The caller (`ui/cli/fork.py`)
     then either reports the created id (`--no-run`) or continues it over
     resume. *cwd* is the repository; see :func:`_plan_fork` for
@@ -630,7 +747,7 @@ def create_fork(
         )
     except _ForkRefused as refused:
         return "", refused.rc
-    path = plan.src_worktree
+    path = checkout
     added = worktree and plan.mode == "run"
     if added:
         path = subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)

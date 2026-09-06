@@ -480,9 +480,11 @@ class Workflow:
     # steer feedback and continue -- never a crash. Depth 1: the ui side tags lane
     # spawns AGENT6_SUBRUN=1 and run.py leaves this None inside a lane.
     lane_spawner: GroupLaneSpawner | None = None
-    # `/undo`: forks this session at the state before its last operator
-    # message (app.fork.undo_fork, injected -- workflows never import app) and
-    # returns (new_session_id, undone_text), or None with the reason printed.
+    # `/undo`: commits the tree as it stands onto this session's ref, forks
+    # the session at the state before its last operator message, and puts the
+    # checkout back to that state's tree (app.fork.undo_fork, injected:
+    # workflows never import app); returns (new_session_id, undone_text), or
+    # None with the reason printed.
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
     # In-loop review panel. When `review_trigger != "off"` and `review_seats`
     # is non-empty, the panel runs at the configured trigger (verify-failure /

@@ -95,6 +95,9 @@ agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
 - state is snapshotted before each model call and checkpointed per turn
 - `fork` rolls a copy back to a turn and continues it as a new run in its own git worktree (under `[parallel].workdir`), so the original run and your checkout stay as they are; `sessions merge <fork>` lands it, `sessions prune` removes the worktree once it is merged (`sessions rm <fork>` removes it with the record)
     - the fork's tree is the turn's committed content; it copies the source's untracked-at-start list (the exclusion list, not the files)
+- `/undo` (a composer, the pause menu, `run -i`; a hub on a finished run) takes back the last message in place: the tree as it stands is committed on the run's chain ref (and branch), every tracked path that differs from the turn before is put back, and a fork continues in the same checkout with the message back in the composer
+    - the run's untracked-at-start files stay, and so do HEAD and the index; the later commits and the pre-undo commit stay on the run's ref
+    - refused while another live run drives the checkout
 
 Exit codes for `agent6 run` and `resume`, for scripts to branch on:
 
