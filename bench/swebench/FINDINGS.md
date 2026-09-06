@@ -769,3 +769,30 @@ Read: the shipped default is worth +5 resolved on this split (43.6% ->
 48.2%). Against the leaderboard's 58-62 (mean of 5, 128K context) the
 single-run gap narrows from 14-19 to 10-14 points. Caveats: n=1 per side;
 the board reports 5-run means.
+
+### Test-first on SWE-rebench 2026_03: a null on resolves, fewer wall empties (2026-08-24)
+
+One run per side, same 110, same gate-on default (`verify_when = finish`);
+the arm adds only the AGENTS.md probe-test instruction
+(`AGENT6_SB_TESTFIRST=1`): write a failing test at /tmp/probe_test.py
+reproducing the issue before the first edit. $1 / 1200s, medium effort,
+conc 4, official scorer. Three image-pull 429s were re-run and re-scored
+before this read (infra, the driver named them; no agent involvement).
+
+| metric (gate-on -> test-first) | gate-on | test-first | better |
+|---|---|---|---|
+| resolved | 53/110 | 52/110 | within single-run noise |
+| empty patches | 12 | 8 | test-first (-4) |
+| harness/pull errors after re-run | 0 | 0 | tie |
+
+Instance-level churn: 6 won, 7 lost. Three of gate-on's wall-timeout
+empties resolve under test-first (meltano-9950, fromager-1124,
+sqlglot-7457): the probe anchored the expected behaviour and the fix
+followed. Every test-first empty is the agent's own 1200s wall timeout
+(sampled and checked); the probe work costs wall and turns, which is
+where the 7 losses went.
+
+Read: test-first does NOT ship as a default on this evidence (a null on
+resolves, n=1 per side). The empty-conversion signal (12 -> 8, with 3
+direct DNF-to-resolve flips) says the wall, not the anchor, is the
+binding constraint: the deadline-steer arm tests that lever directly.
