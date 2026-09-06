@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from agent6.budget import BudgetExceeded, BudgetTracker
+from agent6.budget import BudgetExceeded, BudgetTracker, PlanUsage, PlanWindow
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +86,48 @@ def test_zero_usd_refuses_any_metered_call() -> None:
     _rec(bt, "claude-sonnet-4-5", 10, 10)
     with pytest.raises(BudgetExceeded, match="USD"):
         bt.check()
+
+
+def test_a_plan_call_zeroes_only_its_own_calls_not_the_model_id() -> None:
+    """One model id reaches both a subscription provider and a paid API (a
+    review seat, a machine pin), and the ledger buckets by id: the plan call's
+    authoritative $0 stood for the whole bucket, so the API dollars under that
+    id left the receipt AND the ceiling they were supposed to bind."""
+    bt = BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_percent=-1)
+    bt.record(
+        model="claude-sonnet-4-5",
+        input_tokens=10,
+        output_tokens=10,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        plan_usage=PlanUsage(windows=(PlanWindow("primary", 12.0, 300, 0.0),)),
+    )
+    _rec(bt, "claude-sonnet-4-5", 250_000, 20_000)  # the SAME id, on the paid API
+
+    assert bt.estimate_usd()[0] == pytest.approx(1.05, abs=0.01)
+    with pytest.raises(BudgetExceeded, match="USD"):
+        bt.check()
+    summary = bt.format_summary()
+    assert "$1.05" in summary and "(subscription)" not in summary
+
+
+def test_a_pure_subscription_model_still_costs_an_authoritative_zero() -> None:
+    """Plan calls are not billed per token: an unpriced one reads $0, not "$?
+    (unknown price)", and never draws on the fallback ledger."""
+    bt = BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_percent=-1)
+    for _ in range(3):
+        bt.record(
+            model="unpriced-plan-model",
+            input_tokens=5_000,
+            output_tokens=5_000,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+            plan_usage=PlanUsage(windows=(PlanWindow("primary", 12.0, 300, 0.0),)),
+        )
+
+    bt.check()
+    assert bt.estimate_usd() == (0.0, False)
+    assert "(subscription)" in bt.format_summary()
 
 
 def test_fraction_remaining_tracks_the_tighter_ledger() -> None:

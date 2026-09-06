@@ -195,6 +195,23 @@ def format_usd(usd: float) -> str:
     return f"${usd:.2f}" if usd >= 0.995 else f"${usd:.4f}"
 
 
+def _billed_apart_from_plan(t: _ModelTotals | ModelUsage) -> bool:
+    """Whether the bucket also holds calls that cost money.
+
+    One model id reaches both a subscription provider and a paid API (a review
+    seat, a machine pin, `--from` on another route), and the bucket is keyed by
+    the id: the plan call's authoritative $0 stood for the whole bucket, so
+    every API dollar under that id left the estimate, the receipt and the USD
+    ceiling."""
+    return bool(
+        t.reported_cost_usd
+        or t.unreported_input_tokens
+        or t.unreported_output_tokens
+        or t.unreported_cache_read_tokens
+        or t.unreported_cache_creation_tokens
+    )
+
+
 def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | None:
     """Per-model USD cost: the ONE owner of the pricing arithmetic, shared by
     `_estimate_usd_locked` (the enforced USD ceiling) and `format_summary`
@@ -217,10 +234,10 @@ def _model_cost_usd(model: str, t: _ModelTotals | ModelUsage) -> _ModelCost | No
     since the chat-completions usage block has no separate write-surcharge
     field, so the 1.25x branch is a no-op for them.
     """
-    if t.percent_metered:
+    if t.percent_metered and not _billed_apart_from_plan(t):
         # Included-plan subscription calls: not billed per token, so the figure is
         # an authoritative $0 -- never "unknown", never table-priced.
-        return _ModelCost(0.0, reported=True, estimated=False, partial=t.reported_calls < t.calls)
+        return _ModelCost(0.0, reported=True, estimated=False)
     reported = t.reported_cost_usd > 0.0
     price = lookup_price(model)
     if price is None:
@@ -603,7 +620,7 @@ class BudgetTracker:
                     note = " (reported, some calls unpriced)"
                 elif cost.reported and cost.estimated:
                     note = " (reported + estimated)"
-                elif totals.percent_metered:
+                elif totals.percent_metered and not cost.estimated:
                     note = " (subscription)"
                 elif cost.reported:
                     note = " (reported)"
