@@ -449,18 +449,15 @@ class MCPServer:
     def _h_run_verify(self, _args: dict[str, Any]) -> dict[str, Any]:
         return self._dispatcher.dispatch("run_verify_command", {}).to_wire()
 
+    # The published inputSchema is checked at the call boundary (-32602), so a
+    # handler reads its arguments as typed.
     def _h_run_in_sandbox(self, args: dict[str, Any]) -> dict[str, Any]:
-        argv = args.get("argv")
-        if not isinstance(argv, list) or not argv or not all(isinstance(s, str) for s in argv):
-            raise ToolError("argv must be a non-empty list of strings")
-        return self._dispatcher.dispatch("run_command", {"argv": list(argv)}).to_wire()
+        return self._dispatcher.dispatch("run_command", {"argv": list(args["argv"])}).to_wire()
 
     def _h_apply_patch_in_sandbox(self, args: dict[str, Any]) -> dict[str, Any]:
-        path = args.get("path")
-        patch = args.get("patch")
-        if not isinstance(path, str) or not isinstance(patch, str):
-            raise ToolError("path and patch must be strings")
-        apply_result = self._dispatcher.dispatch("apply_patch", {"path": path, "patch": patch})
+        apply_result = self._dispatcher.dispatch(
+            "apply_patch", {"path": args["path"], "patch": args["patch"]}
+        )
         verify_result = self._dispatcher.dispatch("run_verify_command", {})
         return {"apply": apply_result.to_wire(), "verify": verify_result.to_wire()}
 
@@ -521,11 +518,7 @@ def run_server(config_path: Path | None) -> int:
     :class:`MCPServer` against cwd, and serves until stdin EOF. Returns 0
     on clean exit."""
     root = Path.cwd()
-    try:
-        cfg = load_effective(root, config_path).config
-    except Exception as exc:
-        print(f"ERROR: failed to load config: {exc}", file=sys.stderr)
-        return 2
+    cfg = load_effective(root, config_path).config
     server = MCPServer(
         root=root,
         config=cfg,

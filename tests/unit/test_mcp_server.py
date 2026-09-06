@@ -721,3 +721,31 @@ def test_list_sessions_skips_husks_like_every_other_listing(tmp_path: Path) -> N
     ids = {s["session_id"] for s in resps[0]["result"]["structuredContent"]["sessions"]}
     assert "real-run" in ids
     assert "husk-run" not in ids, f"MCP listed a husk the other surfaces hide: {ids}"
+
+
+def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`run_server` caught every exception around the config load and printed
+    its own "failed to load config" at exit 2, pre-empting `cli_main`'s
+    sorting: a `ConfigError` is already an operator error printed at exit 2,
+    and a bug belongs on the crash path (exit 1, traceback saved)."""
+    from agent6.config.model import ConfigError
+    from agent6.ui import mcp_server
+    from agent6.ui.cli import cli_main
+
+    monkeypatch.chdir(tmp_path)
+    bad = tmp_path / "bad.toml"
+    bad.write_text("[agent6]\nnope = 1\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        mcp_server.run_server(bad)
+    assert cli_main(["--config", str(bad), "mcp", "serve"]) == 2
+    err = capsys.readouterr().err
+    assert "ERROR:" in err and "failed to load config" not in err
+
+    def boom(*_a: object, **_k: object) -> object:
+        raise RuntimeError("a bug in the loader")
+
+    monkeypatch.setattr(mcp_server, "load_effective", boom)
+    with pytest.raises(RuntimeError):
+        mcp_server.run_server(None)
