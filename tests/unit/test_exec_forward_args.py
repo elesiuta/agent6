@@ -13,11 +13,13 @@ port of the newest session."""
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from agent6.sessions.ipc import write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.ui import cli
 
@@ -102,11 +104,12 @@ def test_exec_refuses_a_session_network_nobody_holds(
     monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
     (tmp_path / "run").mkdir()
     layout = SessionLayout(state_dir=tmp_path, session_id="run")
+    write_worker_pid(layout.session_dir, os.getpid())  # live, but holding no network
     cfg = Config.model_validate({"sandbox": {"network": "session"}})
     rc = net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
     err = capsys.readouterr().err
     assert rc == 2
-    assert "no live session network" in err
+    assert "no network of its own to reach into" in err
 
 
 def test_attach_presentation_modes_are_mutually_exclusive(
@@ -143,6 +146,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
 
     layout = SessionLayout(state_dir=tmp_path / "state", session_id="r1")
     layout.ensure()
+    write_worker_pid(layout.session_dir, os.getpid())  # exec joins a live run only
     (layout.session_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -259,3 +263,48 @@ def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: Pa
     out = io.StringIO()
     assert net_cmds.forward(layout, 8765, 0, out=out) == 2
     assert "strict isolation" in out.getvalue()
+
+
+def test_exec_refuses_a_run_that_is_over(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The help promises the run's own jail; a finished run's is gone, and
+    `exec` built a fresh one (today's HEAD, none of the run's processes) and
+    ran the command there in silence, refusing only a run that had recorded
+    the session network, with a remedy that made it worse."""
+    import json
+    import os
+
+    from agent6.config import Config
+    from agent6.sessions.layout import SessionLayout
+    from agent6.types import JailPolicy
+    from agent6.ui.cli.net_cmds import exec_in_session
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    from agent6.config.layer import resolved_state_dir
+
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="over-run-AAAA11")
+    layout.ensure()
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + "\n",
+        encoding="utf-8",
+    )
+    (layout.session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
+    ran: list[tuple[str, ...]] = []
+
+    def fake_run(policy: JailPolicy, **_kw: object) -> int:
+        ran.append(tuple(policy.argv))
+        return os.EX_OK
+
+    monkeypatch.setattr("agent6.ui.cli.net_cmds.run_in_jail", fake_run)
+
+    rc = exec_in_session(layout, Config(), repo, ("pwd",))
+
+    assert rc == 2 and ran == []
+    err = capsys.readouterr().err
+    assert "REFUSING: over-run-AAAA11 is " in err and "exists only while its run does" in err

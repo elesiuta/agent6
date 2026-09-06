@@ -10,6 +10,7 @@ the model reaches none of this.
 
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
@@ -20,7 +21,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.sandbox.jail import SessionNetwork
-from agent6.sessions.ipc import listening_ports, write_session_netns_pid
+from agent6.sessions.ipc import listening_ports, write_session_netns_pid, write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.tools.dispatch import ToolDispatcher
 from agent6.ui.cli.net_cmds import (
@@ -42,6 +43,7 @@ def _serving(
     layout = SessionLayout(state_dir=tmp_path, session_id=session_id, subdir="runs")
     session_dir = layout.session_dir
     session_dir.mkdir(parents=True, exist_ok=True)
+    write_worker_pid(session_dir, os.getpid())  # exec joins a live run only
     net = SessionNetwork.open()
     write_session_netns_pid(session_dir, net.holder_pid)
     dispatcher = ToolDispatcher(

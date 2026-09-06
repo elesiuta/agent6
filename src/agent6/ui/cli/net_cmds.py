@@ -96,7 +96,7 @@ def no_session_network_reason(layout: SessionLayout) -> str:
         return f"{layout.session_id} is {word}; a session network exists only while its run does."
     return (
         f"{layout.session_id} has no network of its own to reach into. A run only makes one"
-        " under the strict isolation with sandbox.network = auto|session; with network = host"
+        " under strict isolation with sandbox.network other than host; with network = host"
         " its commands are already on this machine's."
     )
 
@@ -209,6 +209,12 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     policy timeout meant `exec` could not host a long-lived dependency (a dev
     server, a tail) inside the run's network -- the one thing it is for.
     """
+    # A live run only: the help promises the run's own jail, and a finished
+    # run's jail is gone with it (a fresh one built from its recorded policy
+    # is a different place, at today's HEAD, with none of its processes).
+    if not session_is_live(layout.session_dir):
+        print(f"REFUSING: {no_session_network_reason(layout)}", file=sys.stderr)
+        return 2
     pid = read_session_netns_pid(layout.session_dir)
     # The RUN'S recorded isolation and network, not today's config: an
     # operator who changed [sandbox] since the run started still gets the
@@ -234,15 +240,9 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if policy.network == "session" and pid is None:
-        # Config asked for the session network but this session has none to
-        # join (the run ended, or never held one): refuse rather than open
-        # /proc/None. The command joins a LIVE session's network only.
-        print(
-            f"REFUSING: {layout.session_id} has no live session network to join"
-            " (the run ended, or never held one). Pick a running session, or set"
-            " [sandbox].network away from 'session' for this command.",
-            file=sys.stderr,
-        )
+        # The run recorded the session network but holds none (an isolation
+        # short of strict): refuse rather than open /proc/None.
+        print(f"REFUSING: {no_session_network_reason(layout)}", file=sys.stderr)
         return 2
     if policy.network == "session":
         # The run's network belongs to the run; borrow it through the holder
