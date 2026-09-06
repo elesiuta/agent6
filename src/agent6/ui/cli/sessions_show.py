@@ -130,8 +130,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     pid = read_worker_pid(target)
     alive = worker_is_alive(target)
     last_age = (time.time() - scan.last_ep) if scan.last_ep is not None else None
+    # A live run is still elapsing (a wait on the operator writes no event);
+    # a finished or dead one stopped at its last event.
     elapsed = (
-        (scan.last_ep - scan.start_ep)
+        ((time.time() if alive else scan.last_ep) - scan.start_ep)
         if scan.last_ep is not None and scan.start_ep is not None
         else None
     )

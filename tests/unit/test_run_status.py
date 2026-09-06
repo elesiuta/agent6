@@ -70,6 +70,9 @@ def test_status_json_is_machine_readable(
     assert obj["session_id"] == "winsome-dawn-YWH5ZS"
     assert obj["alive"] is True
     assert obj["state"] == "running"
+    # A live run keeps elapsing while it waits (its last event is 5 s old and
+    # it wrote nothing since); a dead one stops at its last event.
+    assert obj["elapsed_s"] >= 4
 
 
 def test_status_waiting_when_blocked_on_an_operator_answer(
