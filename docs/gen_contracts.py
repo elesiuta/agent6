@@ -111,6 +111,7 @@ CONTRACTS: tuple[Contract, ...] = (
             "tools/_fs_tools.py",
             "tools/_nav_tools.py",
             "tools/_skill_tools.py",
+            "tools/dispatch.py",
         ),
         pins=("tests/unit/test_tool_result_wire.py", "tests/unit/test_tool_result_summaries.py"),
     ),
@@ -353,11 +354,39 @@ def _imported_dotted(tree: ast.Module) -> set[str]:
     return out
 
 
+def _reexports(root: Path) -> dict[str, str]:
+    """``package.Name -> the module that defines it``, read off each package's
+    ``__init__``. Most of the tree reads a contract through its facade
+    (``from agent6.viewmodel import SessionSummary``), so without this the
+    reader set is only the modules that name the defining module directly."""
+    out: dict[str, str] = {}
+    for init in sorted(root.rglob("__init__.py")):
+        rel = init.parent.relative_to(root).as_posix()
+        pkg = "agent6" if rel == "." else f"agent6.{rel.replace('/', '.')}"
+        for node in ast.walk(ast.parse(init.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.level:  # relative: resolve against this package
+                target = f"{pkg}.{node.module}" if node.module else pkg
+            elif node.module:
+                target = node.module
+            else:
+                continue
+            for alias in node.names:
+                out[f"{pkg}.{alias.asname or alias.name}"] = target
+    return out
+
+
+_REEXPORTS = _reexports(_SRC)
+
+
 def _scan(root: Path) -> dict[str, set[str]]:
-    return {
-        p.relative_to(root).as_posix(): _imported_dotted(ast.parse(p.read_text(encoding="utf-8")))
-        for p in sorted(root.rglob("*.py"))
-    }
+    scanned: dict[str, set[str]] = {}
+    for p in sorted(root.rglob("*.py")):
+        dotted = _imported_dotted(ast.parse(p.read_text(encoding="utf-8")))
+        dotted |= {_REEXPORTS[d] for d in dotted if d in _REEXPORTS}
+        scanned[p.relative_to(root).as_posix()] = dotted
+    return scanned
 
 
 _SRC_IMPORTS = _scan(_SRC)

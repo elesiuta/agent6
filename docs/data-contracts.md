@@ -108,8 +108,8 @@ Typed tool-handler results: every handler returns one of these frozen values ins
 
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
 
-- **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools}
-- **Read by:** tools/dispatch, workflows/{_review, _toolset, _verify_gate, loop}
+- **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
+- **Read by:** workflows/{_review, _toolset, _verify_gate, loop}
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (21 test files exercise it)
 
 ## Event union
@@ -121,7 +121,7 @@ Typed read model for the logs.jsonl event families the SessionState fold consume
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** ui/cli/{_console_view, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, log_line, state, transcript}
+- **Read by:** ui/cli/{_console_view, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, log_line, state, transcript}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (4 test files exercise it)
 
 ## MachineSpec
@@ -144,8 +144,8 @@ Parse and validate a `.asm.toml` machine file into a `MachineSpec`.
 | `config` | `dict[str, Any]` | `factory` |
 
 - **Written by:** machine/_semantics
-- **Read by:** machine/{__init__, dryrun, engine, graph, journal}, viewmodel/machine_state
-- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (6 test files exercise it)
+- **Read by:** app/machine/{_bundle, _frontend, _preflight, create, run}, machine/{__init__, dryrun, engine, graph, journal}, ui/cli/{config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{_sse, actions, server}, viewmodel/machine_state
+- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (9 test files exercise it)
 
 ## JournalEvent
 
@@ -156,8 +156,8 @@ Append-only journal, blackboard snapshots, and the single-writer lock for one ma
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpend`
 
 - **Written by:** machine/{engine, journal}
-- **Read by:** machine/{__init__, dryrun}, viewmodel/machine_state
-- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (7 test files exercise it)
+- **Read by:** app/machine/{_spend, run}, machine/{__init__, dryrun}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{machine_state, snapshot}
+- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (8 test files exercise it)
 
 ## TaskNode
 
@@ -199,5 +199,5 @@ Pure event-fold: list[event_dict] -> SessionState.
 **session_state_as_dict** &mdash; The JSON-able wire form of a SessionState, stable field names: what `agent6 attach --json` and a web client serialize.
 
 - **Written by:** viewmodel/{machine_state, state}
-- **Read by:** ui/cli/{_repl, _steer_menu}, ui/tui/{app, conversation, dashboard, logview, modals, prompts}, viewmodel/{__init__, snapshot}
+- **Read by:** ui/cli/{_interact, _repl, _steer_menu, _task_tree, answer_cmd}, ui/tui/{app, conversation, dashboard, logview, machines, modals, prompts}, ui/web/{_sse, actions, model}, viewmodel/{__init__, snapshot}
 - **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (6 test files exercise it)
