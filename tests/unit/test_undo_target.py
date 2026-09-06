@@ -80,9 +80,15 @@ def test_undo_walks_back_one_operator_message(tmp_path: Path) -> None:
 
 
 def test_undo_with_only_the_task_restarts_from_the_first_checkpoint(tmp_path: Path) -> None:
+    """The composer gets the operator's words back, never the skill block or
+    digest composed in front of them (here with no manifest to read them
+    from, so they come out of the checkpoint's opening message)."""
+    from agent6.task_text import SKILLS_PREAMBLE
+
+    composed = f'{SKILLS_PREAMBLE}\n<skill name="tidy">be tidy</skill>\n---\ndo the thing'
     layout = _layout(tmp_path, "run-b")
-    _checkpoint(layout, 1, [_task("do the thing")])
-    _checkpoint(layout, 2, [_task("do the thing"), _assistant("lots of work")])
+    _checkpoint(layout, 1, [_task(composed)])
+    _checkpoint(layout, 2, [_task(composed), _assistant("lots of work")])
     target = undo_target(tmp_path, "run-b")
     assert target is not None
     assert (target.source_session_id, target.at_turn) == ("run-b", 1)

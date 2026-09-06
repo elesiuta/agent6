@@ -18,7 +18,7 @@ from pathlib import Path
 
 from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, bucket_dir
-from agent6.sessions.manifest import CompareStamp, ManifestError, read_manifest
+from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.task_text import operator_task_text
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.format import format_age
@@ -630,8 +630,9 @@ def summarize_session_dir(
 ) -> SessionSummary:
     """One listing row from `logs.jsonl` + the manifest. Replaced the
     near-duplicate scanners in the TUI hub and the web hub that badged a
-    provider_error death as a neutral "done". An "ask" run's task is replaced by
-    its transcript, which shows what was asked.
+    provider_error death as a neutral "done". The manifest owns the task (the
+    event clips it to 200 chars); an "ask" run's task is replaced by its
+    transcript, which shows what was asked.
 
     *branch_tips* is the caller's one-call `git_ops.run_branch_tips` snapshot;
     with it the row says whether the run branch still holds unmerged commits
@@ -639,34 +640,33 @@ def summarize_session_dir(
     `unmerged` stays False: no mark, never a wrong one."""
     logs = session_dir / LOGS_NAME
     scan = scan_session_log(logs) if logs.is_file() else LogScan()
+    manifest: SessionManifest | None = None
+    with contextlib.suppress(ManifestError):
+        manifest = read_manifest(session_dir)
     mode, task = scan.mode, scan.task
+    if manifest is not None:
+        # The mode falls back to the manifest's for a log with no session.start:
+        # a launching run still in preflight (verify inference is a ~80s LLM
+        # call BEFORE the loop's first turn), a manifest-only `fork --no-run`,
+        # or a forked/resumed leg whose log opens with loop.resume.start (which
+        # begins a leg but records no mode).
+        task = manifest.user_task or task
+        if mode == "?":
+            mode = manifest.mode or mode
     if mode == "?" and not task:
-        # The log gave us no mode AND no task: a launching run still in preflight
-        # (verify inference is a ~80s LLM call BEFORE the loop's first turn), a
-        # manifest-only `fork --no-run`, or a forked/resumed leg whose log holds
-        # only loop.resume.start (which begins a leg but records no mode/task).
-        # saw_start alone is true in that last case, so gate on the missing
-        # mode+task instead. The `not task` guard keeps a session.start that carried
-        # a user_task but no `mode` field (mode stays "?") from being blanked.
-        # Read mode+task from the manifest so the row shows its real work, not a
-        # bare "? (no logs)". A truly empty husk (no manifest) keeps "(no logs)".
-        task = "(no logs)"
-        with contextlib.suppress(ManifestError):
-            manifest = read_manifest(session_dir)
-            mode = manifest.mode
-            task = manifest.user_task or "(no logs)"
+        task = "(no logs)"  # a husk: no manifest, and a log naming nothing
     word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if mode == "ask":
         with contextlib.suppress(OSError):
             task = (session_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")
     unmerged = False
-    if branch_tips is not None and word != "undone":
-        with contextlib.suppress(ManifestError):
-            m = read_manifest(session_dir)
-            tip = branch_tips.get(m.run_branch or "")
-            unmerged = (
-                tip is not None and tip != m.base_sha and (m.merged is None or m.merged.tip != tip)
-            )
+    if branch_tips is not None and manifest is not None and word != "undone":
+        tip = branch_tips.get(manifest.run_branch or "")
+        unmerged = (
+            tip is not None
+            and tip != manifest.base_sha
+            and (manifest.merged is None or manifest.merged.tip != tip)
+        )
     return SessionSummary(
         session_id=session_dir.name,
         mode=mode,

@@ -50,6 +50,7 @@ depends_on = [
   "agent6.sandbox",
   "agent6.sandbox.detect",
   "agent6.secrets",
+  "agent6.task_text",
   "agent6.tools",
   "agent6.tools.schema",
   "agent6.types",

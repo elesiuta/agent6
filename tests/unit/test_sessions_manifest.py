@@ -308,6 +308,35 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: Path) -> None:
         assert driver is not None and driver.model == expected
 
 
+def test_write_session_manifest_stores_the_operators_words(tmp_path: Path) -> None:
+    """`user_task` is the display twin of the OPERATOR's words: `run --skill`
+    and `--from` prepend a skill block and a prior-run digest to the task the
+    engine gets, and the composed prompt reached every listing as the task."""
+    from agent6.app.manifest import write_session_manifest
+    from agent6.config import Config
+    from agent6.sessions.layout import SessionLayout
+    from agent6.task_text import SKILLS_PREAMBLE
+
+    words = "fix the parser " * 20  # past the event's 200-char clip
+    composed = (
+        f'{SKILLS_PREAMBLE}\n<skill name="tidy">be tidy</skill>\n---\n'
+        f'<prior-run id="r-earlier">what it found</prior-run>\n\n{words}'
+    )
+    layout = SessionLayout(state_dir=tmp_path, session_id="r-words")
+    layout.ensure()
+    write_session_manifest(
+        layout,
+        session_id="r-words",
+        user_task=composed,
+        base_sha="",
+        base_branch="main",
+        run_branch=None,
+        cfg=Config(),
+        mode="run",
+    )
+    assert read_manifest(layout.session_dir).user_task == words.strip()
+
+
 def test_a_manifest_with_no_mode_key_does_not_fall_open_to_run(tmp_path: Path) -> None:
     """The privilege gate refused an unknown mode VALUE but not a missing KEY:
     the field defaulted to "run", so a manifest that lost its mode (truncated,

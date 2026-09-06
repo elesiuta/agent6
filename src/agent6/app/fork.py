@@ -105,6 +105,7 @@ from agent6.sessions.manifest import (
     model_git_refusal,
     read_manifest,
 )
+from agent6.task_text import operator_task_text
 from agent6.types import ResumableMode, session_bucket
 from agent6.viewmodel import newest_session_dir, session_dirs
 from agent6.workflows._session_state import SessionSnapshot, load_session_snapshot
@@ -337,7 +338,7 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
         try:
             task = read_manifest(src.session_dir).user_task
         except ManifestError:
-            task = ops[0] if ops else ""
+            task = operator_task_text(ops[0]) if ops else ""
         return UndoTarget(src, src.session_id, turns[0], first.next_iteration, task)
     target = _newest_checkpoint_below(src, len(ops))
     if target is None:

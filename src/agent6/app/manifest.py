@@ -27,6 +27,7 @@ from agent6.sessions.manifest import (
     WorkflowStamp,
     read_manifest,
 )
+from agent6.task_text import operator_task_text
 from agent6.types import session_kind
 
 
@@ -111,9 +112,11 @@ def write_session_manifest(
         # read-only session to the privileged write tools.
         mode=mode,
         start_ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
-        # Display stamp only; SessionSnapshot.original_task carries the verbatim
-        # engine copy. Truncation here must never feed the engine.
-        user_task=user_task[:4000],
+        # The display twin of the OPERATOR's words (a seed digest or skill
+        # block `run --from`/`--skill` prepends is context, not the task),
+        # clipped; every listing reads it. SessionSnapshot.original_task
+        # carries the verbatim engine copy, and nothing here feeds the engine.
+        user_task=operator_task_text(user_task)[:4000],
         base_sha=base_sha,
         base_branch=base_branch,
         run_branch=run_branch,

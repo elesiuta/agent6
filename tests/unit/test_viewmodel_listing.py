@@ -417,6 +417,45 @@ def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: Path) -> None:
     assert listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged) == "undone"
 
 
+def test_summary_task_is_the_manifests_operator_words(tmp_path: Path) -> None:
+    """session.start clips user_task to 200 chars; the manifest holds the
+    operator's words (to 4000) and owns the listing's task, so a row (and
+    `sessions list --json`) carries neither the cut copy nor the skill block
+    or prior-run digest `run --skill`/`--from` prepend to the engine's task."""
+    from agent6.app.manifest import write_session_manifest
+    from agent6.config import Config
+    from agent6.sessions.layout import layout_of
+    from agent6.task_text import SKILLS_PREAMBLE, operator_task_text
+
+    words = "fix the bug in the parser " * 12
+    composed = f'{SKILLS_PREAMBLE}\n<skill name="tidy">be tidy</skill>\n---\n{words}'
+    rd = _write_run(
+        tmp_path,
+        "runs",
+        "r-long",
+        [
+            {
+                "type": "session.start",
+                "mode": "run",
+                "user_task": operator_task_text(composed)[:200],
+            },
+            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        ],
+    )
+    write_session_manifest(
+        layout_of(rd),
+        session_id="r-long",
+        user_task=composed,
+        base_sha="",
+        base_branch="main",
+        run_branch=None,
+        cfg=Config(),
+        mode="run",
+    )
+    s = summarize_session_dir(rd)
+    assert (s.mode, s.task, s.status) == ("run", words.strip(), "passed")
+
+
 def test_summary_resume_unfinishes(tmp_path: Path) -> None:
     """A detached resume appends past the first session.end; the run is running
     again, not whatever it last ended as."""
