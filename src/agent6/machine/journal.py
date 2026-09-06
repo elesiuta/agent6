@@ -422,6 +422,33 @@ class MachineJournal:
                 ) from exc
         return events
 
+    def end_event(self) -> MachineEnd | None:
+        """The terminal event, or None while the instance can still take a
+        verb. Reads the journal's tail, not all of it: a verb's gate asks only
+        whether the machine ended, and every instance dir is asked on a TAB."""
+        if not self.journal_path.is_file():
+            return None
+        with self.journal_path.open("rb") as fh:
+            size = fh.seek(0, os.SEEK_END)
+            start = max(0, size - _TAIL_WINDOW)
+            fh.seek(start)
+            lines = fh.read().split(b"\n")
+        if start > 0:
+            lines.pop(0)  # the window opens mid-line
+        if lines and lines[-1] != b"":
+            lines.pop()  # a torn final line was never committed
+        whole = [raw for raw in lines if raw.strip()]
+        if not whole:
+            # A record longer than the window: the full read decides.
+            events = self.read()
+            end = events[-1] if events else None
+            return end if isinstance(end, MachineEnd) else None
+        try:
+            event = _EVENT_ADAPTER.validate_json(whole[-1])
+        except ValidationError as exc:
+            raise JournalError(f"corrupt journal tail in {self.journal_path}: {exc}") from exc
+        return event if isinstance(event, MachineEnd) else None
+
     def write_snapshot(self, snapshot: Snapshot) -> None:
         """Write a snapshot atomically (temp file + rename), pruning old ones.
 

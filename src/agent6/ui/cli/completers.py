@@ -28,6 +28,7 @@ from agent6.ui.cli._common import (
     all_session_dirs,
 )
 from agent6.viewmodel.listing import session_is_live
+from agent6.viewmodel.machine_state import MachineVerb, machine_verb_refusal
 
 
 def _explicit_config(kw: dict[str, object]) -> Path | None:
@@ -324,15 +325,42 @@ def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
     )
 
 
-@_never_raises
-def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: live machine instance ids (dirs under the per-repo state dir's machines/)."""
+def _machine_instance_dirs(prefix: str) -> list[Path]:
+    """The machine instance dirs under the per-repo state dir's machines/."""
     from agent6.sessions.layout import machines_root  # noqa: PLC0415
 
     base = machines_root(state_dir(Path.cwd()))
     if not base.is_dir():
         return []
-    return sorted(p.name for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix))
+    return [p for p in base.iterdir() if p.is_dir() and p.name.startswith(prefix)]
+
+
+@_never_raises
+def _complete_machine_ids(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: every machine instance id, what `machine status`, `machine
+    replay` and `attach` take, finished instances included."""
+    return sorted(p.name for p in _machine_instance_dirs(prefix))
+
+
+def _machine_ids_taking(prefix: str, verb: MachineVerb) -> list[str]:
+    """The instances *verb* would not refuse: `machine_verb_refusal` is the
+    verb's own gate, so the offer and the refusal cannot drift."""
+    return sorted(
+        p.name for p in _machine_instance_dirs(prefix) if not machine_verb_refusal(p, p.name, verb)
+    )
+
+
+@_never_raises
+def _complete_pokable_machine_ids(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: the instances `machine poke` accepts, every one that has
+    not ended (an ended machine consumes no signal)."""
+    return _machine_ids_taking(prefix, "poke")
+
+
+@_never_raises
+def _complete_stoppable_machine_ids(prefix: str, **_kw: object) -> list[str]:
+    """argcomplete: the instances `machine stop` accepts, the running ones."""
+    return _machine_ids_taking(prefix, "stop")
 
 
 @_never_raises

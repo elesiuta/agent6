@@ -10,7 +10,11 @@ import argparse
 from pathlib import Path
 
 from agent6.ui.cli._common import MACHINE_ID_HELP, _add_sandbox_flags, _sub
-from agent6.ui.cli.completers import _complete_machine_ids
+from agent6.ui.cli.completers import (
+    _complete_machine_ids,
+    _complete_pokable_machine_ids,
+    _complete_stoppable_machine_ids,
+)
 
 
 def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -104,7 +108,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         help="Signal a waiting machine to wake on its next check (drops a signal file).",
     )
     machine_poke_id = machine_poke.add_argument("machine_id", help=MACHINE_ID_HELP)
-    machine_poke_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
+    machine_poke_id.completer = _complete_pokable_machine_ids  # type: ignore[attr-defined]
     machine_poke_payload = machine_poke.add_mutually_exclusive_group()
     machine_poke_payload.add_argument(
         "--data",
@@ -126,7 +130,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         ),
     )
     machine_stop_id = machine_stop.add_argument("machine_id", help=MACHINE_ID_HELP)
-    machine_stop_id.completer = _complete_machine_ids  # type: ignore[attr-defined]
+    machine_stop_id.completer = _complete_stoppable_machine_ids  # type: ignore[attr-defined]
     machine_replay = _sub(
         machine_sub,
         "replay",

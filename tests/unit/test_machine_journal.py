@@ -569,3 +569,22 @@ def test_healing_a_torn_tail_never_empties_the_journal(tmp_path: Path) -> None:
     body = inspect.getsource(MachineJournal._heal_torn_tail)  # pyright: ignore[reportPrivateUsage]
     assert "write_bytes" not in body
     assert "os.truncate" in body
+
+
+def test_end_event_reads_a_record_longer_than_its_tail_window(tmp_path: Path) -> None:
+    """The tail window starts mid-line, so a final record longer than the
+    window left only a fragment in it, which read as a corrupt journal and
+    turned every verb into a refusal; a partial first line is skipped, and a
+    window with no whole line falls back to the full read."""
+    from agent6.machine.journal import _TAIL_WINDOW  # pyright: ignore[reportPrivateUsage]
+
+    j = _journal(tmp_path)
+    j.begin(machine="demo", version=1)
+    long_reason = "x" * (_TAIL_WINDOW + 1024)
+    j.append(MachineEnd(ts="t", status="ok", reason=long_reason, state="s", transitions=1))
+    end = j.end_event()
+    assert end is not None and end.reason == long_reason
+
+    j.journal_path.write_bytes(j.journal_path.read_bytes() + b'{"type": "step_event", "st')
+    torn = j.end_event()
+    assert torn is not None and torn.reason == long_reason

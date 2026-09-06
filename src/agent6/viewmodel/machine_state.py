@@ -452,16 +452,19 @@ def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str
     verbs: tuple[MachineVerb, ...] = ("stop", "poke", "steer", "answer")
     if not machine_dir.is_dir():
         return dict.fromkeys(verbs, f"no machine {name!r}")
+    journal = MachineJournal(machine_dir)
     try:
-        events = MachineJournal(machine_dir).read()
+        end = journal.end_event()
     except JournalError as exc:
         return dict.fromkeys(verbs, f"machine {name!r}: {exc}")
-    end = events[-1] if events and isinstance(events[-1], MachineEnd) else None
+    alive = worker_is_alive(machine_dir)
+    # The tail answers "ended"; only a live, unended instance is worth the
+    # full read that answers "waiting" (every instance dir is asked on a TAB).
     return verb_refusals(
         name,
         ended=MachineResult.from_end(end) if end is not None else None,
-        alive=worker_is_alive(machine_dir),
-        waiting=_in_wait_state(machine_dir, events),
+        alive=alive,
+        waiting=end is None and alive and _in_wait_state(machine_dir, journal.read()),
     )
 
 

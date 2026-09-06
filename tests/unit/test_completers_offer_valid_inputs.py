@@ -223,3 +223,62 @@ def test_model_completion_reads_the_typed_config(
         "from-", parsed_args=argparse.Namespace(provider="anthropic", config=custom)
     )
     assert offered == ["from-typed-config"], seen
+
+
+def test_state_restricted_machine_verbs_offer_only_machines_they_accept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`machine poke` refuses an ended machine and `machine stop` refuses one
+    that is not running, so offering every instance dir put two suggestions
+    that fail on Enter one TAB away. `status` and `replay` still take any."""
+    import argparse
+    from collections.abc import Callable
+    from typing import cast
+
+    from agent6.machine.journal import MachineEnd, MachineJournal
+    from agent6.sessions.layout import machines_root
+    from agent6.ui.cli.parser import build_parser
+
+    monkeypatch.chdir(tmp_path)
+    _seed(tmp_path)  # leaves `live-machine`: an instance dir with no worker
+    ended = machines_root(state_dir(tmp_path)) / "ended-machine-FFFFF"
+    ended.mkdir(parents=True)
+    journal = MachineJournal(ended)
+    journal.begin(machine="demo", version=1)
+    journal.append(
+        MachineEnd(
+            ts="2026-01-01T00:00:00Z",
+            status="ok",
+            reason="finish_machine",
+            state="done",
+            transitions=1,
+        )
+    )
+
+    def offered(verb: str) -> list[str]:
+        parser = build_parser()
+        subs = next(
+            a
+            for a in parser._actions  # pyright: ignore[reportPrivateUsage]
+            if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
+        )
+        machine_subs = next(
+            a
+            for a in subs.choices["machine"]._actions  # pyright: ignore[reportPrivateUsage]
+            if isinstance(a, argparse._SubParsersAction)  # pyright: ignore[reportPrivateUsage]
+        )
+        action = next(
+            a
+            for a in machine_subs.choices[verb]._actions  # pyright: ignore[reportPrivateUsage]
+            if a.dest == "machine_id"
+        )
+        completer = cast(
+            Callable[[str], list[str]],
+            action.completer,  # pyright: ignore[reportAttributeAccessIssue]
+        )
+        return sorted(completer(""))
+
+    assert offered("status") == ["ended-machine-FFFFF", "live-machine"]
+    assert offered("replay") == ["ended-machine-FFFFF", "live-machine"]
+    assert offered("poke") == ["live-machine"]
+    assert offered("stop") == []
