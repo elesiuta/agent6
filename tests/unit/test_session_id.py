@@ -12,7 +12,7 @@ import pytest
 from agent6.sessions.id import (
     SessionIdError,
     friendly_token,
-    resolve_session_id,
+    resolve_session,
     validate_explicit_session_id,
 )
 
@@ -99,31 +99,48 @@ def test_friendly_token_suffix_time_sortable() -> None:
     assert suffixes == sorted(suffixes)
 
 
+def _bucket(state_dir: Path, *ids: str) -> None:
+    for sid in ids:
+        (state_dir / "sessions" / "plans" / sid).mkdir(parents=True)
+
+
 def test_resolve_exact_match(tmp_path: Path) -> None:
-    (tmp_path / "sunny-otter-K4Q7B2").mkdir()
-    assert resolve_session_id(tmp_path, "sunny-otter-K4Q7B2") == "sunny-otter-K4Q7B2"
+    _bucket(tmp_path, "sunny-otter-K4Q7B2")
+    layout = resolve_session(tmp_path, "sunny-otter-K4Q7B2", buckets=("plans",))
+    assert (layout.session_id, layout.subdir) == ("sunny-otter-K4Q7B2", "plans")
 
 
 def test_resolve_unambiguous_prefix(tmp_path: Path) -> None:
-    (tmp_path / "sunny-otter-K4Q7B2").mkdir()
-    (tmp_path / "calm-river-AAAA11").mkdir()
-    assert resolve_session_id(tmp_path, "sunny") == "sunny-otter-K4Q7B2"
-    assert resolve_session_id(tmp_path, "calm-riv") == "calm-river-AAAA11"
+    _bucket(tmp_path, "sunny-otter-K4Q7B2", "calm-river-AAAA11")
+    assert resolve_session(tmp_path, "sunny", buckets=("plans",)).session_id == "sunny-otter-K4Q7B2"
+    assert (
+        resolve_session(tmp_path, "calm-riv", buckets=("plans",)).session_id == "calm-river-AAAA11"
+    )
 
 
 def test_resolve_ambiguous_prefix(tmp_path: Path) -> None:
-    (tmp_path / "sunny-otter-K4Q7B2").mkdir()
-    (tmp_path / "sunny-otter-AAAA11").mkdir()
+    _bucket(tmp_path, "sunny-otter-K4Q7B2", "sunny-otter-AAAA11")
     with pytest.raises(SessionIdError, match="ambiguous"):
-        resolve_session_id(tmp_path, "sunny")
+        resolve_session(tmp_path, "sunny", buckets=("plans",))
 
 
 def test_resolve_no_match(tmp_path: Path) -> None:
-    (tmp_path / "sunny-otter-K4Q7B2").mkdir()
+    _bucket(tmp_path, "sunny-otter-K4Q7B2")
     with pytest.raises(SessionIdError, match="no session matches"):
-        resolve_session_id(tmp_path, "zzz")
+        resolve_session(tmp_path, "nope", buckets=("plans",))
+
+
+def test_a_bucket_scoped_query_ignores_the_other_buckets(tmp_path: Path) -> None:
+    """`plan show`'s resolver walked only plans/ through a twin of the shared
+    resolver whose wording had drifted; the shared one takes the buckets, so a
+    plans-only prefix is not ambiguous against a run of the same prefix."""
+    _bucket(tmp_path, "sunny-otter-K4Q7B2")
+    (tmp_path / "sessions" / "runs" / "sunny-otter-AAAA11").mkdir(parents=True)
+    assert resolve_session(tmp_path, "sunny", buckets=("plans",)).session_id == "sunny-otter-K4Q7B2"
+    with pytest.raises(SessionIdError, match="ambiguous"):
+        resolve_session(tmp_path, "sunny")
 
 
 def test_resolve_empty_query(tmp_path: Path) -> None:
     with pytest.raises(SessionIdError, match="empty"):
-        resolve_session_id(tmp_path, "")
+        resolve_session(tmp_path, "")

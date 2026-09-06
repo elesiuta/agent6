@@ -15,7 +15,7 @@ from pathlib import Path
 
 from agent6.errors import read_operator_file
 from agent6.paths import state_dir
-from agent6.sessions.id import SessionIdError, resolve_session_id
+from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.ipc import (
     register_frontend,
     unregister_frontend,
@@ -61,7 +61,7 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
             return None
         session_id = latest
     try:
-        resolved = resolve_session_id(plans_dir, session_id)
+        resolved = resolve_session(state_dir(Path.cwd()), session_id, buckets=("plans",)).session_id
     except SessionIdError as exc:
         error(f"{exc}")
         return None

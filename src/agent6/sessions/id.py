@@ -20,6 +20,7 @@ prefix resolver here. Treat them as opaque strings everywhere else.
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 from agent6._data.words import ADJECTIVES, NOUNS
@@ -123,14 +124,16 @@ def unused_session_id(state_dir: Path, bucket: str) -> str:
     raise RuntimeError(f"could not mint an unused session id under {bucket_dir(state_dir, bucket)}")
 
 
-def resolve_session(state_dir: Path, query: str) -> SessionLayout:
+def resolve_session(
+    state_dir: Path, query: str, *, buckets: Sequence[str] = SESSION_BUCKETS
+) -> SessionLayout:
     """The one session *query* names (an id, or a prefix of exactly one id) in
-    any bucket. Raises SessionIdError otherwise, `ambiguous` set when the
-    prefix names several: every surface words a bad id the same way, and an
-    ambiguous prefix never reads as "no such session"."""
+    *buckets* (every bucket by default). Raises SessionIdError otherwise,
+    `ambiguous` set when the prefix names several: every surface words a bad
+    id the same way, and an ambiguous prefix never reads as "no such session"."""
     if not query:
         raise SessionIdError("empty run id")
-    matches = session_matches(state_dir, query)
+    matches = session_matches(state_dir, query, buckets=buckets)
     if len(matches) > 1:
         preview = ", ".join(f"{m.subdir}/{m.session_id}" for m in matches[:5])
         raise SessionIdError(
@@ -139,36 +142,4 @@ def resolve_session(state_dir: Path, query: str) -> SessionLayout:
         )
     if not matches:
         raise SessionIdError(f"no session matches {query!r} (looked under {state_dir})")
-    return matches[0]
-
-
-def list_session_ids(runs_dir: Path) -> list[str]:
-    """Return run-id directory names under `runs_dir` (unsorted)."""
-
-    if not runs_dir.is_dir():
-        return []
-    return [p.name for p in runs_dir.iterdir() if p.is_dir()]
-
-
-def resolve_session_id(runs_dir: Path, query: str) -> str:
-    """Resolve `query` to an exact run-id under `runs_dir`.
-
-    Accepts an exact match or an unambiguous prefix. Raises
-    `SessionIdError` if no match or more than one match is found.
-    """
-
-    if not query:
-        raise SessionIdError("empty run id")
-    ids = list_session_ids(runs_dir)
-    if query in ids:
-        return query
-    matches = [rid for rid in ids if rid.startswith(query)]
-    if not matches:
-        raise SessionIdError(f"no session matches {query!r} under {runs_dir}")
-    if len(matches) > 1:
-        preview = ", ".join(sorted(matches)[:5])
-        raise SessionIdError(
-            f"run id {query!r} is ambiguous ({len(matches)} matches): {preview}",
-            ambiguous=True,
-        )
     return matches[0]

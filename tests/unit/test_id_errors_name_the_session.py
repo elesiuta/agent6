@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.sessions.id import SessionIdError, resolve_session_id
+from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import bucket_dir
 from agent6.ui.cli._common import resolve_session_layout  # pyright: ignore[reportPrivateUsage]
 
@@ -32,13 +32,6 @@ def test_the_bucket_scoped_resolver_says_session(tmp_path: Path) -> None:
     bucket = bucket_dir(tmp_path, "runs")
     bucket.mkdir(parents=True)
     with pytest.raises(SessionIdError) as caught:
-        resolve_session_id(bucket, "nope-nope-NOPE00")
+        resolve_session(tmp_path, "nope-nope-NOPE00", buckets=("runs",))
     assert "no session matches" in str(caught.value), str(caught.value)
-
-
-def test_the_miss_still_names_what_was_searched(tmp_path: Path) -> None:
-    bucket = bucket_dir(tmp_path, "runs")
-    bucket.mkdir(parents=True)
-    with pytest.raises(SessionIdError) as caught:
-        resolve_session_id(bucket, "nope-nope-NOPE00")
-    assert str(bucket) in str(caught.value)
+    assert str(tmp_path) in str(caught.value)  # the state dir searched

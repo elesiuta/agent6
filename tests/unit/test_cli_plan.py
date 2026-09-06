@@ -45,6 +45,20 @@ def test_plan_show_resolves_prefix(
     assert "# Plan: foo" in capsys.readouterr().out
 
 
+def test_plan_show_prefix_ignores_a_run_of_the_same_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`plan show` resolves inside plans/: a run sharing the prefix is not a
+    second match."""
+    monkeypatch.chdir(tmp_path)
+    _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: foo\n")
+    (state_dir(tmp_path) / "sessions" / "runs" / "happy-tree-zzzz").mkdir(parents=True)
+    assert main(["plan", "show", "happy"]) == 0
+    assert "# Plan: foo" in capsys.readouterr().out
+
+
 def test_plan_show_omit_id_uses_most_recent_plan(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

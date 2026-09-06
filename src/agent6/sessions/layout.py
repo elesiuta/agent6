@@ -9,7 +9,7 @@ in any of them.
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -188,8 +188,11 @@ def layout_of(session_dir: Path) -> SessionLayout:
     )
 
 
-def session_matches(state_dir: Path, session_id: str) -> list[SessionLayout]:
-    """Every session *session_id* names or prefixes, across all buckets.
+def session_matches(
+    state_dir: Path, session_id: str, *, buckets: Sequence[str] = SESSION_BUCKETS
+) -> list[SessionLayout]:
+    """Every session *session_id* names or prefixes, across *buckets* (every
+    bucket by default; a plans-only query names the plans bucket).
 
     Exact ids win outright: a full id that also prefixes a longer one is not
     ambiguous. A caller reports the list; only a single match is actionable.
@@ -198,7 +201,7 @@ def session_matches(state_dir: Path, session_id: str) -> list[SessionLayout]:
         return []
     exact: list[SessionLayout] = []
     prefix: list[SessionLayout] = []
-    for subdir in SESSION_BUCKETS:
+    for subdir in buckets:
         bucket = bucket_dir(state_dir, subdir)
         if not bucket.is_dir():
             continue
