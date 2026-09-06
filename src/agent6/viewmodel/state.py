@@ -26,6 +26,7 @@ from agent6.models.registry import context_window
 from agent6.sessions.ipc import listening_ports
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
+from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel import events
 from agent6.viewmodel.format import status_label
 from agent6.viewmodel.listing import (
@@ -752,6 +753,10 @@ def session_state_as_dict(state: SessionState, session_dir: Path | None = None) 
         # its session network listens on, reachable via `agent6 forward`.
         # A live probe, [] once the network is gone.
         d["ports"] = listening_ports(session_dir)
+        # The background-shell roster, on every frame: the run view streams
+        # from this dict, and a card painted from the snapshot alone vanished
+        # on the first frame.
+        d["shells"] = roster_from_dir(session_dir / SHELLS_DIR)
         if d["mode"] == "plan":
             # The planning run's deliverable (`agent6 plan show` prints the
             # same file), per frame: it lands when the plan finishes.

@@ -15,7 +15,6 @@ from agent6.machine import MachineJournal, load_machine
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
-from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.viewmodel.format import format_branch, format_lineage
 from agent6.viewmodel.listing import session_compare
 from agent6.viewmodel.machine_state import (
@@ -125,7 +124,6 @@ def session_snapshot(
     snap = session_state_as_dict(state, session_dir)
     snap["as_of"] = as_of
     snap.update(manifest_header(session_dir, repo=repo))
-    snap["shells"] = roster_from_dir(session_dir / SHELLS_DIR)
     return snap
 
 

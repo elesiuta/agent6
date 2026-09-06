@@ -1553,3 +1553,40 @@ def test_prune_route_passes_the_squash_opt_in_through(
     assert _post(port, "/api/sessions/prune", {"delete_squashed": True})[0] == 200
 
     assert seen == [False, True]
+
+
+def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: Path) -> None:
+    """Only `session_snapshot` stamped `shells`, and the run view streams from
+    `session_state_as_dict`: the first frame after the snapshot paint wiped the
+    Background shells card, and `/shells` then said there were none."""
+    from agent6.tools.background import SHELLS_DIR
+    from agent6.ui.web._sse import SseChannel, stream_session
+
+    d = tmp_path / "sessions" / "runs" / "shellrun-AAAAAA"
+    d.mkdir(parents=True)
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {"version": 3, "session_id": "shellrun-AAAAAA", "mode": "run", "user_task": "t"}
+        ),
+        encoding="utf-8",
+    )
+    (d / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    bg = d / SHELLS_DIR / "bg1"
+    bg.mkdir(parents=True)
+    (bg / "meta.json").write_text(
+        json.dumps({"id": "bg1", "command": "python -m http.server"}), encoding="utf-8"
+    )
+    frames: list[dict[str, Any]] = []
+
+    def send(payload: Any) -> bool:
+        frames.append(cast(dict[str, Any], payload))
+        return False  # one frame, then the client leaves
+
+    stream_session(SseChannel(send=send, ping=lambda: False), d, repo=tmp_path)
+
+    assert frames and frames[0].get("shells") == [
+        "[bg1] still running (or the run that owns it ended): python -m http.server"
+    ]
