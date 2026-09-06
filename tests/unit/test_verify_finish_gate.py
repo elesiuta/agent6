@@ -18,6 +18,7 @@ from agent6.viewmodel.listing import status_word
 from agent6.workflows._verify_verdict import VerifyVerdict
 from agent6.workflows.loop import (
     LoopState,
+    TurnState,
     Workflow,
 )
 
@@ -730,3 +731,37 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     assert dispatcher.run_verify.call_count == 2
     wf._gate_verify_finish(state, turn2)  # pyright: ignore[reportPrivateUsage]
     assert turn2.finish_signal == "done"
+
+
+def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
+    """The model ran the gate itself and it was red; its next turn is prose
+    with no tool call. The harness gate is skipped (that red already covers
+    the untouched tree), so no verify fails on THIS turn, and the end was
+    accepted as if the gate had never been red. The standing verdict decides."""
+    from agent6.tools.results import ExecResult
+
+    dispatcher = MagicMock()
+    dispatcher.command_policy.return_value = "yes"
+    dispatcher.run_verify.return_value = ExecResult(
+        returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
+    )
+    wf = Workflow(
+        root=Path("/tmp"),
+        config=Config.model_validate(
+            {"workflow": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
+        ),
+        provider=MagicMock(),
+        dispatcher=dispatcher,
+        logger=lambda _m: None,
+        mode="run",
+    )
+    state = LoopState(original_task="t", tool_calls=0)
+    state.verify.note_edit()
+    state.verify.note_fail("sig")
+    turn = TurnState(iteration=4, resp=MagicMock(), assistant=MagicMock())
+
+    wf._end_gates(state, turn, ending="silent_finish")  # pyright: ignore[reportPrivateUsage]
+
+    assert dispatcher.run_verify.call_count == 0, "the standing red covers the tree"
+    assert turn.end_returned is True
+    assert state.verify_finish_retries_used == 1

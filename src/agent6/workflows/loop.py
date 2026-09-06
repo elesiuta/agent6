@@ -2261,7 +2261,9 @@ class Workflow:
         and the before-finish review panel. A red gate with returns left, or a
         rejected panel, hands the end back (`turn.end_returned`) with the
         output; the unexecutable-command abort ends the run as it does on the
-        tool path."""
+        tool path. The STANDING verdict decides the red: the harness gate is
+        skipped over a tree a red already covers, so no verify fails on the
+        ending turn itself."""
         aborted = self._turn_harness_verify(state, turn, ending=True)
         if aborted is not None:
             return aborted
@@ -2269,7 +2271,7 @@ class Workflow:
         red_returned = (
             wf.verify_when != "never"
             and bool(wf.verify_command)
-            and turn.verify_just_failed
+            and state.verify.last_ok is False
             and state.verify.baseline_ok is not False
             and state.verify_finish_retries_used < wf.verify_retries
         )
