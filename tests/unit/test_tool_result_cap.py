@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 
 from agent6.workflows._compaction import (
-    TOOL_RESULT_CHAR_CAP as _TOOL_RESULT_CHAR_CAP,
+    TOOL_RESULT_CAP_BYTES as _TOOL_RESULT_CAP_BYTES,
 )
 from agent6.workflows._compaction import (
     cap_tool_result as _cap_tool_result,
@@ -33,21 +33,21 @@ def test_small_payload_passes_through_unchanged() -> None:
 
 
 def test_payload_at_cap_passes_through_unchanged() -> None:
-    payload = "x" * _TOOL_RESULT_CHAR_CAP
+    payload = "x" * _TOOL_RESULT_CAP_BYTES
     assert _cap_tool_result(payload, tool_name="read_file") == payload
 
 
 def test_oversized_read_file_payload_yields_valid_truncation_envelope() -> None:
     """The big regression: cap a read_file result, parse the output,
     confirm it is valid JSON with explicit truncation signal."""
-    big = "A" * (_TOOL_RESULT_CHAR_CAP * 2)
+    big = "A" * (_TOOL_RESULT_CAP_BYTES * 2)
     raw = json.dumps({"content": big, "size": len(big), "lines_total": 1})
     capped = _cap_tool_result(raw, tool_name="read_file")
     parsed = json.loads(capped)  # must be valid JSON, no mid-string cut
     assert parsed["_tool_result_truncated"] is True
     assert parsed["tool"] == "read_file"
     assert parsed["total_chars"] == len(raw)
-    assert parsed["shown_chars"] <= _TOOL_RESULT_CHAR_CAP
+    assert parsed["shown_chars"] <= _TOOL_RESULT_CAP_BYTES
     assert "start_line" in parsed["guidance"]
     assert "limit" in parsed["guidance"]
     # Head should be a prefix of the original raw payload so the model
@@ -56,7 +56,7 @@ def test_oversized_read_file_payload_yields_valid_truncation_envelope() -> None:
 
 
 def test_oversized_run_command_payload_guidance_points_at_narrowing() -> None:
-    big = "B" * (_TOOL_RESULT_CHAR_CAP + 1)
+    big = "B" * (_TOOL_RESULT_CAP_BYTES + 1)
     capped = _cap_tool_result(big, tool_name="run_command")
     parsed = json.loads(capped)
     assert parsed["_tool_result_truncated"] is True
@@ -70,23 +70,23 @@ def test_cap_total_envelope_size_stays_under_cap() -> None:
     raw-char budget overshoots the cap on escape-heavy content (observed
     118k chars emitted against the 60k cap)."""
     for big in (
-        "C" * (_TOOL_RESULT_CHAR_CAP * 5),  # no escaping: raw == encoded
-        '"\\' * (_TOOL_RESULT_CHAR_CAP * 2),  # every char doubles when encoded
+        "C" * (_TOOL_RESULT_CAP_BYTES * 5),  # no escaping: raw == encoded
+        '"\\' * (_TOOL_RESULT_CAP_BYTES * 2),  # every char doubles when encoded
         ('He said "use \\n"\n' * 20_000),  # mixed quotes/backslashes/newlines
     ):
         capped = _cap_tool_result(big, tool_name="grep")
-        assert len(capped) <= _TOOL_RESULT_CHAR_CAP
+        assert len(capped.encode()) <= _TOOL_RESULT_CAP_BYTES
         parsed = json.loads(capped)  # still a well-formed envelope
         assert parsed["_tool_result_truncated"] is True
         assert parsed["total_chars"] == len(big)
         # A useful amount of head survives; big.startswith proves it is a
         # clean prefix, not a mid-escape cut.
-        assert parsed["shown_chars"] > _TOOL_RESULT_CHAR_CAP // 4
+        assert parsed["shown_chars"] > _TOOL_RESULT_CAP_BYTES // 4
         assert big.startswith(parsed["head"])
 
 
 def test_truncation_envelope_for_unknown_tool_still_well_formed() -> None:
-    big = "D" * (_TOOL_RESULT_CHAR_CAP + 100)
+    big = "D" * (_TOOL_RESULT_CAP_BYTES + 100)
     capped = _cap_tool_result(big, tool_name="some_new_tool")
     parsed = json.loads(capped)
     assert parsed["tool"] == "some_new_tool"
@@ -100,3 +100,15 @@ def test_the_cap_is_a_parameter() -> None:
     assert _cap_tool_result(content, tool_name="read_file") == content
     capped = _cap_tool_result(content, tool_name="read_file", cap=2_000)
     assert len(capped) <= 2_000 and json.loads(capped) != json.loads(content)
+
+
+def test_the_cap_is_a_byte_budget() -> None:
+    """Measured in characters, a 45,000-character CJK result passed the cap at
+    135,000 bytes and hit Claude Code's 50,000-byte persistence threshold as a
+    fatal provider error that ended the run."""
+    wide = "\u6f22" * 45_000
+    capped = _cap_tool_result(wide, tool_name="read_file", cap=49_000)
+    assert len(capped.encode()) <= 49_000
+    parsed = json.loads(capped)
+    assert parsed["_tool_result_truncated"] is True
+    assert parsed["total_chars"] == 45_000 and 0 < parsed["shown_chars"] < 45_000

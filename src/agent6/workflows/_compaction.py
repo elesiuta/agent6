@@ -231,12 +231,13 @@ def parse_gist_lines(text: str, paths: Sequence[str]) -> dict[str, str]:
     return out
 
 
-# Per-tool-result cap: 60_000 chars (~15k tokens) fits most source files
-# whole. Anything over it is wrapped by cap_tool_result in a well-formed JSON
-# truncation notice: a raw mid-JSON slice reads as a malformed result, and a
-# weak model re-calls `read_file` to "see the rest" until the loop-guard
-# latches.
-TOOL_RESULT_CHAR_CAP = 60_000
+# Per-tool-result cap: 60_000 bytes of UTF-8 (~15k tokens) fits most source
+# files whole. Anything over it is wrapped by cap_tool_result in a well-formed
+# JSON truncation notice: a raw mid-JSON slice reads as a malformed result,
+# and a weak model re-calls `read_file` to "see the rest" until the loop-guard
+# latches. Bytes, because the bound that displaces this default for a Claude
+# Code worker (its 50,000-byte persistence threshold) is measured in bytes.
+TOOL_RESULT_CAP_BYTES = 60_000
 
 # compaction thresholds (chars, not tokens - approximate; tokens
 # are roughly chars/4 for English-shaped content).
@@ -244,16 +245,16 @@ DROP_BLOCKS_AT_CHARS = 256_000  # ~64k tokens of tool_result content
 SUMMARISE_AT_CHARS = 768_000  # ~192k tokens: full context restart
 
 
-def cap_tool_result(content: str, *, tool_name: str, cap: int = TOOL_RESULT_CHAR_CAP) -> str:
-    """Cap a serialized tool_result payload at *cap* chars (the loop's
-    `TOOL_RESULT_CHAR_CAP`, or a provider's tighter bound) without producing
+def cap_tool_result(content: str, *, tool_name: str, cap: int = TOOL_RESULT_CAP_BYTES) -> str:
+    """Cap a serialized tool_result payload at *cap* bytes of UTF-8 (the loop's
+    `TOOL_RESULT_CAP_BYTES`, or a provider's tighter bound) without producing
     malformed JSON. If the payload is over the
     cap, wrap it in a new JSON envelope that tells the model:
     (a) the result was truncated, (b) how many chars were shown vs
     total, (c) the head of the original content, (d) actionable next
     steps. This prevents weak models from inferring "the tool itself
     returned a partial result, let me call it again"."""
-    if len(content) <= cap:
+    if len(content.encode()) <= cap:
         return content
     if tool_name == "read_file":
         guidance = (
@@ -288,15 +289,16 @@ def cap_tool_result(content: str, *, tool_name: str, cap: int = TOOL_RESULT_CHAR
             ensure_ascii=False,
         )
 
-    # Size the head by ENCODED length: json.dumps re-escapes quotes/backslashes,
-    # so a raw-char budget overshoots the cap on escape-heavy content (observed
-    # 118k emitted against the 60k cap). Encoded length is monotone in head
-    # length and the empty head always fits, so bisect for the largest head
-    # whose envelope fits (~16 dumps passes).
-    lo, hi = 0, cap
+    # Size the head by ENCODED length: json.dumps re-escapes quotes/backslashes
+    # and a wide character is several bytes, so a raw-char budget overshoots
+    # the cap on escape-heavy or CJK content (observed 118k emitted against
+    # the 60k cap). Encoded length is monotone in head length and the empty
+    # head always fits, so bisect for the largest head whose envelope fits
+    # (~16 dumps passes).
+    lo, hi = 0, min(len(content), cap)
     while lo < hi:
         mid = (lo + hi + 1) // 2
-        if len(envelope(mid)) <= cap:
+        if len(envelope(mid).encode()) <= cap:
             lo = mid
         else:
             hi = mid - 1

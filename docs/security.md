@@ -409,7 +409,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `providers/claude_code.py`: the `api_format = "claude_code"` provider runs the operator-installed Claude Code binary with fixed argv (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory); prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.
   Curated environment, `--tools ""`, `--allowedTools mcp__agent6`, `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`; CLAUDE.md, auto-memory, and auto-compaction off by environment; `system/init` is audited so a tool outside `mcp__agent6__*` or an API-key source refuses the run.
   Unjailed: it needs the operator's login under `$HOME` and its own egress, at the agent process's trust tier.
-  Tool results stay under Claude Code's 50,000-byte persistence threshold (the loop caps them at 45,000 characters for this provider; a wider one is refused), so no tool output is written under `~/.claude`.
+  Tool results stay under Claude Code's 50,000-byte persistence threshold (the loop caps them at 45,000 bytes for this provider; a wider payload is refused), so no tool output is written under `~/.claude`.
   `claude auth status --json` runs the same way for the sign-in preflight.
 - `sessions/ipc.py`: `ps -p <pid> -o lstart=` on hosts without `/proc` (macOS), for the `worker.pid` start-time identity, over a pid agent6 recorded.
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer), so the side question keeps provider egress while the run is confined.

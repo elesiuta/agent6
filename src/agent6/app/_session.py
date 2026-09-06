@@ -39,7 +39,7 @@ from agent6.budget import BudgetTracker
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.events import EventSink
 from agent6.graph.curator import GraphCurator
-from agent6.providers import CLAUDE_CODE_RESULT_CAP_CHARS, Provider, TranscriptSink
+from agent6.providers import CLAUDE_CODE_RESULT_CAP_BYTES, Provider, TranscriptSink
 from agent6.sandbox.detect import Environment, IsolationUnavailableError, resolve_isolation
 from agent6.sandbox.jail import JailUnavailableError, SessionNetwork
 from agent6.sessions.layout import SessionLayout
@@ -47,7 +47,7 @@ from agent6.tools.dispatch import ToolDispatcher
 from agent6.tools.mcp_client import MCPManager
 from agent6.tools.operator_prompts import OperatorPrompts
 from agent6.types import IsolationLevel, ResumableMode
-from agent6.workflows._compaction import TOOL_RESULT_CHAR_CAP
+from agent6.workflows._compaction import TOOL_RESULT_CAP_BYTES
 from agent6.workflows.review import ReviewSeat
 
 
@@ -64,16 +64,16 @@ def resolve_isolation_or_refuse(
         raise SessionRefused(2) from exc
 
 
-def tool_result_cap_chars(cfg: Config) -> int:
-    """The size bound for one tool result entering the worker's conversation:
-    the loop's default, or the tighter bound of a worker provider that hands
-    the model less (Claude Code persists a result above its threshold and
-    serves a preview)."""
+def tool_result_cap_bytes(cfg: Config) -> int:
+    """The size bound, in bytes of UTF-8, for one tool result entering the
+    worker's conversation: the loop's default, or the tighter bound of a
+    worker provider that hands the model less (Claude Code persists a result
+    above its threshold and serves a preview)."""
     rm = cfg.models.resolve("worker")
     entry = cfg.providers.get(rm.provider) if rm is not None else None
     if isinstance(entry, ClaudeCodeProviderEntry):
-        return CLAUDE_CODE_RESULT_CAP_CHARS
-    return TOOL_RESULT_CHAR_CAP
+        return CLAUDE_CODE_RESULT_CAP_BYTES
+    return TOOL_RESULT_CAP_BYTES
 
 
 def select_isolation(

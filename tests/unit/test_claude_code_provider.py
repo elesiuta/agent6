@@ -35,7 +35,7 @@ from agent6.providers import (
 )
 from agent6.providers._claude_code_wire import (
     CLAUDE_CODE_ENV,
-    CLAUDE_CODE_RESULT_CAP_CHARS,
+    CLAUDE_CODE_RESULT_CAP_BYTES,
     claude_argv,
     plan_usage_from_rate_limit,
     render_history,
@@ -1080,8 +1080,15 @@ def test_an_oversize_tool_result_is_refused_before_claude_code_persists_it(
 
 
 def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
-    from agent6.app._session import tool_result_cap_chars
-    from agent6.workflows._compaction import TOOL_RESULT_CHAR_CAP
+    """One bound in one unit: the loop's cap for this provider sits under the
+    byte threshold the provider refuses at with room for the notices the same
+    turn folds into the payload, so a capped result never reaches that
+    refusal, whatever its characters weigh."""
+    from agent6.app._session import tool_result_cap_bytes
+    from agent6.providers._claude_code_wire import CLAUDE_CODE_PERSIST_BYTES
+    from agent6.tools.results import ExecResult
+    from agent6.workflows._compaction import TOOL_RESULT_CAP_BYTES, cap_tool_result
+    from agent6.workflows._verify_gate import harness_verify_notice
 
     cc = Config.model_validate(
         {
@@ -1089,5 +1096,16 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
             "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
         }
     )
-    assert tool_result_cap_chars(cc) == CLAUDE_CODE_RESULT_CAP_CHARS < TOOL_RESULT_CHAR_CAP
-    assert tool_result_cap_chars(Config()) == TOOL_RESULT_CHAR_CAP
+    assert tool_result_cap_bytes(cc) == CLAUDE_CODE_RESULT_CAP_BYTES < TOOL_RESULT_CAP_BYTES
+    assert tool_result_cap_bytes(Config()) == TOOL_RESULT_CAP_BYTES
+    assert CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
+    wide = cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=tool_result_cap_bytes(cc))
+    gate = ExecResult(
+        returncode=1,
+        stdout="FAILED tests/test_x.py::test_y\n" * 60,
+        stderr="",
+        duration_s=3.0,
+        exec_failed=False,
+    )
+    notice = harness_verify_notice(gate, "step")
+    assert len(wide.encode()) + len(notice.encode()) < CLAUDE_CODE_PERSIST_BYTES

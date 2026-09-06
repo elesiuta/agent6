@@ -53,7 +53,7 @@ from agent6.budget import BudgetTracker, PlanUsage
 from agent6.portable import atomic_write, drain_stderr, stderr_tail
 from agent6.providers._claude_code_wire import (
     CLAUDE_CODE_PERSIST_BYTES,
-    CLAUDE_CODE_RESULT_CAP_CHARS,
+    CLAUDE_CODE_RESULT_CAP_BYTES,
     MCP_SERVER,
     TOOL_PREFIX,
     Skeleton,
@@ -628,11 +628,10 @@ class ClaudeCodeProvider:
             size = sum(len(str(item["text"]).encode()) for item in content)
             if size > CLAUDE_CODE_PERSIST_BYTES:
                 raise ProviderError(
-                    f"a {size}-byte tool result is over Claude Code's"
-                    f" {CLAUDE_CODE_PERSIST_BYTES}-byte threshold: it would be written under"
-                    " ~/.claude/projects and reach the model as a 2 KB preview. The loop caps"
-                    f" results at {CLAUDE_CODE_RESULT_CAP_CHARS} characters for this provider;"
-                    " this one is wider in bytes than in characters.",
+                    f"a {size}-byte tool result, with its turn's notices, is over Claude"
+                    f" Code's {CLAUDE_CODE_PERSIST_BYTES}-byte threshold: it would be written"
+                    " under ~/.claude/projects and reach the model as a 2 KB preview. The loop"
+                    f" caps results at {CLAUDE_CODE_RESULT_CAP_BYTES} bytes for this provider.",
                     fatal=True,
                 )
             _write(s, mcp_answer(call.request_id, call.rpc_id, {"content": content}))
