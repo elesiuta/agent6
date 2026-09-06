@@ -283,35 +283,31 @@ def machine_files(cwd: Path) -> list[Path]:
 MachineVerb = Literal["stop", "poke", "steer", "answer"]
 
 
-def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str]:
-    """Why each verb cannot reach machine *name* now, "" where it can. ONE
-    reading of the instance (its dir, the journal's end, the worker, a wait
-    state) and one wording per state and verb, for the CLI, the TUI and the
-    web: an unknown machine is named as unknown (not as stopped); an ended one
-    consumes no signal; a stopped one has no state polling a marker (a poke
-    still wakes it); a live one in a wait state reads no steer (a poke wakes
-    it) but takes a stop and an answer.
+def verb_refusals(
+    name: str,
+    *,
+    ended: MachineEndView | None,
+    alive: bool,
+    waiting: bool,
+) -> dict[MachineVerb, str]:
+    """Why each verb cannot reach machine *name*, "" where it can. THE decision,
+    pure like :func:`machine_status_word`: an unknown machine is named as
+    unknown (not as stopped); an ended one consumes no signal; a stopped one has
+    no state polling a marker (a poke still wakes it); a live one in a wait
+    state reads no steer (a poke wakes it) but takes a stop and an answer.
 
-    A front-end paints every verb at once, so it asks once; the CLI asks for
-    the one verb it is about to run through :func:`machine_verb_refusal`.
+    The probes are the caller's, so a caller holding the fold does not read the
+    journal a second time to reach the same answer.
     """
-    verbs: tuple[MachineVerb, ...] = ("stop", "poke", "steer", "answer")
-    if not machine_dir.is_dir():
-        return dict.fromkeys(verbs, f"no machine {name!r}")
-    try:
-        events = MachineJournal(machine_dir).read()
-    except JournalError as exc:
-        return dict.fromkeys(verbs, f"machine {name!r}: {exc}")
-    end = events[-1] if events and isinstance(events[-1], MachineEnd) else None
-    if end is not None:
-        ended = f"machine {name!r} already ended in {end.state!r} ({end.status}: {end.reason})"
+    if ended is not None:
+        done = f"machine {name!r} already ended in {ended.state!r} ({ended.status}: {ended.reason})"
         return {
-            "stop": f"{ended}; nothing to stop",
-            "poke": f"{ended}; a poke would never be consumed",
-            "steer": f"{ended}; there is no state to steer",
-            "answer": f"{ended}; the prompt is closed",
+            "stop": f"{done}; nothing to stop",
+            "poke": f"{done}; a poke would never be consumed",
+            "steer": f"{done}; there is no state to steer",
+            "answer": f"{done}; the prompt is closed",
         }
-    if not worker_is_alive(machine_dir):
+    if not alive:
         return {
             "stop": (
                 f"machine {name!r} is not running; nothing to stop (a parked instance resumes"
@@ -324,12 +320,36 @@ def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str
             "answer": f"machine {name!r} is not running; poke it to wake a waiting machine",
             "poke": "",  # waking a waiting machine is what a poke is for
         }
-    waiting = (
+    steer = (
         f"machine {name!r} is waiting; a wait state reads no steer (poke it to wake it)"
-        if _in_wait_state(machine_dir, events)
+        if waiting
         else ""
     )
-    return {"stop": "", "poke": "", "answer": "", "steer": waiting}
+    return {"stop": "", "poke": "", "answer": "", "steer": steer}
+
+
+def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str]:
+    """:func:`verb_refusals` over an instance dir, reading the journal itself.
+    A front-end paints every verb at once, so it asks once; the CLI asks for the
+    one verb it is about to run through :func:`machine_verb_refusal`."""
+    verbs: tuple[MachineVerb, ...] = ("stop", "poke", "steer", "answer")
+    if not machine_dir.is_dir():
+        return dict.fromkeys(verbs, f"no machine {name!r}")
+    try:
+        events = MachineJournal(machine_dir).read()
+    except JournalError as exc:
+        return dict.fromkeys(verbs, f"machine {name!r}: {exc}")
+    end = events[-1] if events and isinstance(events[-1], MachineEnd) else None
+    return verb_refusals(
+        name,
+        ended=MachineEndView(
+            status=end.status, reason=end.reason, state=end.state, transitions=end.transitions
+        )
+        if end is not None
+        else None,
+        alive=worker_is_alive(machine_dir),
+        waiting=_in_wait_state(machine_dir, events),
+    )
 
 
 def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str:
@@ -476,10 +496,25 @@ def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> 
     liveness signal is `ended`, and Steer on a parked machine looked live."""
     d = asdict(ms)
     if machine_dir is not None:
-        d["status"] = machine_word_for_dir(ms, machine_dir)
+        parked = machine_is_parked(machine_dir)
+        alive = worker_is_alive(machine_dir)
+        d["status"] = machine_status_word(
+            ms,
+            parked=parked,
+            alive=alive,
+            blocked=bool(machine_operator_blocked(machine_dir)),
+        )
         # Every verb's refusal, so a front-end gates and labels its buttons from
         # the one decision the CLI and the TUI already use instead of deriving
         # its own from the status word (which conflates parked, in-a-wait-state
-        # and live-but-blocked).
-        d["refusals"] = machine_verb_refusals(machine_dir, machine_dir.name)
+        # and live-but-blocked). Fed from THIS fold and these probes: asking
+        # `machine_verb_refusals` would read the journal and fold it again,
+        # doubling the work of every SSE frame.
+        current_kind = next((s.kind for s in ms.states if s.is_current), None)
+        d["refusals"] = verb_refusals(
+            machine_dir.name,
+            ended=ms.ended,
+            alive=alive,
+            waiting=parked or current_kind == "wait",
+        )
     return d

@@ -179,6 +179,36 @@ def test_the_wire_form_carries_every_verb_refusal(tmp_path: Path) -> None:
     assert "reads no steer" in parked["refusals"]["steer"]
 
 
+def test_the_wire_form_reads_the_journal_once(tmp_path: Path) -> None:
+    """The refusals ride on the fold the caller already has. Asking
+    `machine_verb_refusals` for them re-read the journal and re-folded the
+    machine, so every SSE frame did the work twice (50 ms -> 9 ms per frame on
+    a 5,000-event journal)."""
+    import agent6.viewmodel.machine_state as mod
+
+    spec = _spec(tmp_path)
+    live = fold_machine(spec, [])
+    d = tmp_path / "inst"
+    d.mkdir()
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    reads = 0
+    real_read = MachineJournal.read
+
+    def counting_read(self: MachineJournal) -> list[object]:
+        nonlocal reads
+        reads += 1
+        return real_read(self)
+
+    mod.MachineJournal.read = counting_read  # type: ignore[method-assign]
+    try:
+        d_out = machine_state_as_dict(live, d)
+    finally:
+        mod.MachineJournal.read = real_read  # type: ignore[method-assign]
+
+    assert d_out["refusals"]["stop"] == ""
+    assert reads == 0, f"the wire form re-read the journal {reads} time(s)"
+
+
 def test_a_corrupt_wait_file_counts_as_parked(tmp_path: Path) -> None:
     # Better to render "waiting" than to guess "stopped"/close the stream over
     # an unreadable wait record; the one rule every surface shares.
