@@ -902,3 +902,27 @@ Emerging per-class levers, each now evidence-backed at least once:
   quoted literals exactly;
 - pre-existing red tests in the issue's neighbourhood: the touched-scope
   test runner (G3 step 2) would have found the ytmusicapi one directly.
+
+### Autopsy pass 2, quantified: zero-F2P is "one layer short" (2026-08-25)
+
+Across all 23 zero-F2P misses (signals tabulated out of repo): 22 graded
+tests are added by the dataset's test_patch (unreadable in-checkout);
+in-test literal contracts are rare here (2/23) - the literal lever belongs to the
+near-miss class. The dominant signal: 16/23 patches never touched a gold
+code file, and spot-checks show these are SUBSET-of-gold patches, not
+wrong-place patches: moto fixed kms/models.py but not kms/responses.py
+(the layer the tests drive); pygmt registered grdmask in every __init__
+and doc but never wrote src/grdmask.py; pyinfra fixed operations/server.py
+but not connectors/util.py. The fix stops one layer short of the interface
+the graded tests exercise.
+
+Converging lever set (all classes now point at the same two):
+1. touched-scope/interface-layer test running (G3 step 2): catches
+   one-layer-short (any interface-driving test fails at once),
+   pre-existing red tests (ytmusicapi), and broke-P2P (8 misses, 1-2
+   tests each).
+2. an exactness behaviour for near-misses: honor the issue's quoted
+   literals (error strings, rendered output) verbatim.
+Pilot design follows: arm 1 on the zero-F2P + broke-P2P + near-miss set
+once the feature exists; arm 2 as a prompt-block pilot on the near-miss
+set.
