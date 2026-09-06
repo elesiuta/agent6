@@ -178,11 +178,17 @@ def _responses_turns(items: list[Any], names: dict[str, str]) -> list[Turn]:
 
 
 def _same_item(a: Any, b: Any) -> bool:
-    """Whether a replayed Responses input item is the recorded output item."""
+    """Whether a replayed Responses input item is the recorded output item: by
+    id when both carry one, else by what it says, since a replayed message
+    drops the id, status and annotations the response carried."""
     if not isinstance(a, dict) or not isinstance(b, dict) or a.get("type") != b.get("type"):
         return False
     key = "call_id" if a.get("type") == "function_call" else "id"
-    return a.get(key) == b.get(key) if (a.get(key) or b.get(key)) else a == b
+    if a.get(key) and b.get(key):
+        return a.get(key) == b.get(key)
+    if a.get("type") == "message":
+        return a.get("role") == b.get("role") and _item_text(a) == _item_text(b)
+    return a == b
 
 
 def _pretty_args(raw: Any) -> str:

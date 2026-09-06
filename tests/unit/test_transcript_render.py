@@ -757,3 +757,25 @@ def test_load_transcripts_stays_raw_for_the_json_dump(tmp_path: Path) -> None:
             encoding="utf-8",
         )
     assert [t["seat"] for t in load_transcripts(d)] == ["worker", "reviewer", "review:security"]
+
+
+def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
+    """The ChatGPT wire records a message item with an id, status, phase and
+    content annotations, and replays it without them; the fold compared the
+    two dicts whole, so every assistant message printed twice (once from its
+    response, once from the next request's echo)."""
+    import json
+
+    transcripts = json.loads(json.dumps(_RESPONSES))
+    recorded = transcripts[0]["response"]["body"]["output"][1]
+    recorded.update({"id": "msg_1", "status": "completed", "phase": "commentary"})
+    recorded["content"][0].update({"annotations": [], "logprobs": []})
+    turns = fold_conversation(transcripts)
+    assert [(t.role, t.seq) for t in turns] == [
+        ("system", 1),
+        ("user", 1),
+        ("assistant", 1),
+        ("tool", 2),
+        ("assistant", 2),
+    ]
+    assert render_markdown(turns, session_id="s").count("working on it") == 1
