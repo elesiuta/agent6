@@ -257,6 +257,8 @@ depends_on = [
   # config-editor value suggestions: the one owner every editor and TAB
   # completion read
   "agent6.models.choices", "agent6.ui.btw",
+  # the config page resolves adaptive leaves as `config show` does
+  "agent6.models.registry",
 ]
 
 [[modules]]

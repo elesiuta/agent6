@@ -10,10 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from agent6.config.layer import resolved_state_dir
+from agent6.config.layer import load_effective, resolved_state_dir
+from agent6.models.registry import resolved_adaptive_values
 from agent6.sessions.layout import bucket_dir, machines_root
 from agent6.ui.web import model
 from agent6.viewmodel import machine_snapshot, session_snapshot
+from agent6.viewmodel.config_view import render_show
 
 
 def _bucket(cwd: Path, sub: str) -> Path:
@@ -335,6 +337,28 @@ def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: Path) -> None:
     hub = model.hub_payload(tmp_path)
     assert [r["mode"] for r in hub["sessions"]] == ["ask"]
     assert model.session_dir_for(tmp_path, "echo-fern-AA11BB") == ask
+
+
+def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: Path) -> None:
+    """`prompt.decompose = auto` and the unset compaction thresholds resolve
+    from the worker model at runtime; the page showed the raw placeholders
+    (`auto`, `(unset)`) where `config show` printed the resolved values
+    marked adaptive."""
+    cfg = tmp_path / "c.toml"
+    cfg.write_text(
+        '[providers.o]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nprovider = "o"\nmodel = "claude-haiku-4-5"\n',
+        encoding="utf-8",
+    )
+    payload = model.config_payload(tmp_path, cfg)
+    eff = load_effective(tmp_path, cfg)
+    resolved = resolved_adaptive_values(eff.config)
+    shown = json.loads(render_show(eff, as_json=True, resolved=resolved))
+    for key in ("prompt.decompose", "context.drop_at_chars", "context.summarise_at_chars"):
+        assert payload[key] == shown[key]
+        assert payload[key]["adaptive"] is True
+    assert payload["prompt.decompose"]["display"] == "off  (adaptive)"
+    assert isinstance(payload["context.drop_at_chars"]["effective"], int)
 
 
 def test_config_suggestions_providers_and_models(

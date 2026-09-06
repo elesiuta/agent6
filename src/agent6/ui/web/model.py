@@ -21,6 +21,7 @@ from agent6.config import ConfigError
 from agent6.config.layer import available_preset_names, load_effective, resolved_state_dir
 from agent6.git_ops import commit_diff, diff_range, run_branch_tips
 from agent6.models.choices import config_value_choices
+from agent6.models.registry import resolved_adaptive_values
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import (
     HUB_BUCKETS,
@@ -270,9 +271,12 @@ def machine_reasoning_snapshot(machine_dir: Path) -> dict[str, Any]:
 def config_payload(cwd: Path, config_path: Path | None = None) -> dict[str, Any]:
     """The effective config as a per-leaf view (value/effective/default/source/
     modified/adaptive/type/choices), keyed by dotted key. The same structure
-    `agent6 config show --json` prints; never includes secrets."""
+    `agent6 config show --json` prints, its adaptive leaves (the compaction
+    thresholds, `prompt.decompose = auto`) resolved from the worker model the
+    same way; never includes secrets."""
     eff = load_effective(cwd, config_path)
-    return json.loads(render_show(eff, as_json=True))
+    resolved = resolved_adaptive_values(eff.config)
+    return json.loads(render_show(eff, as_json=True, resolved=resolved))
 
 
 def config_suggestions(cwd: Path, key: str, config_path: Path | None = None) -> list[str]:
