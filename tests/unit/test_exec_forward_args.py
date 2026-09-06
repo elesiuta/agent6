@@ -368,3 +368,44 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     )
     assert net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",)) == 0
     assert seen == {"network": "host", "borrowed": False}
+
+
+def test_exec_refuses_when_the_netns_holder_dies_mid_flight(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The holder can exit between exec's `read_session_netns_pid` and its open
+    of `/proc/<pid>/ns/*`: the bare `os.open` pair raised an uncaught
+    FileNotFoundError (exit 1 plus a saved crash traceback) where the identical
+    open in `join_session_network` says the network is gone. The holder here is
+    a real process, really killed inside that window."""
+    import subprocess
+
+    from agent6.config import Config
+    from agent6.sessions.ipc import write_session_netns_pid
+    from agent6.ui.cli import net_cmds
+
+    def _strict(req: str, env: Any) -> str:
+        return "strict"
+
+    monkeypatch.setattr(net_cmds, "resolve_isolation", _strict)
+    (tmp_path / "run").mkdir()
+    layout = SessionLayout(state_dir=tmp_path, session_id="run")
+    write_worker_pid(layout.session_dir, os.getpid())
+    holder = subprocess.Popen(["sleep", "30"])
+    try:
+        write_session_netns_pid(layout.session_dir, holder.pid)
+        real_policy = net_cmds.jail_policy
+
+        def _holder_dies(*args: Any, **kwargs: Any) -> Any:
+            holder.kill()
+            holder.wait()
+            return real_policy(*args, **kwargs)
+
+        monkeypatch.setattr(net_cmds, "jail_policy", _holder_dies)
+        cfg = Config.model_validate({"sandbox": {"network": "session"}})
+        rc = net_cmds.exec_in_session(layout, cfg, tmp_path, ("true",))
+        assert rc == 2
+        assert "the session's network is gone" in capsys.readouterr().err
+    finally:
+        holder.kill()
+        holder.wait()

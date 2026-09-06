@@ -255,11 +255,20 @@ def exec_in_session(layout: SessionLayout, cfg: Config, cwd: Path, argv: tuple[s
     if policy.network == "session":
         # The run's network belongs to the run; borrow it through the holder
         # rather than making one of our own, which would be a different place.
-        borrowed = SessionNetwork(
-            userns_fd=os.open(f"/proc/{pid}/ns/user", os.O_RDONLY),
-            netns_fd=os.open(f"/proc/{pid}/ns/net", os.O_RDONLY),
-            holder_pid=int(pid or 0),
-        )
+        # The holder can exit between the read above and this open.
+        userns_fd = -1
+        try:
+            userns_fd = os.open(f"/proc/{pid}/ns/user", os.O_RDONLY)
+            borrowed = SessionNetwork(
+                userns_fd=userns_fd,
+                netns_fd=os.open(f"/proc/{pid}/ns/net", os.O_RDONLY),
+                holder_pid=int(pid or 0),
+            )
+        except OSError as exc:
+            if userns_fd >= 0:
+                os.close(userns_fd)
+            refuse(f"the session's network is gone: {exc}")
+            return 2
     else:
         borrowed = None
     try:
