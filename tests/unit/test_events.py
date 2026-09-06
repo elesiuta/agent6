@@ -125,3 +125,17 @@ def test_emit_survives_lone_surrogate(tmp_path: Path) -> None:
     ]
     assert [e["type"] for e in lines] == ["session.start", "tool.call"]
     assert "?" in lines[0]["user_task"]  # the surrogate was replaced, not dropped
+
+
+def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: Path) -> None:
+    """The encoder's date branch keys on the datetime types, not on a
+    `isoformat` attribute: a mock (whose every attribute is another mock)
+    recursed without end and hung the journal write."""
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock
+
+    from agent6.events import _json_default  # pyright: ignore[reportPrivateUsage]
+
+    assert _json_default(datetime(2026, 1, 2, tzinfo=UTC)) == "2026-01-02T00:00:00+00:00"
+    mock = MagicMock()
+    assert _json_default(mock) == repr(mock)

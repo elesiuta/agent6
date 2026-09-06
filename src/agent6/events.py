@@ -24,7 +24,7 @@ import json
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -114,6 +114,6 @@ class EventSink:
 def _json_default(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
-    if hasattr(value, "isoformat"):
+    if isinstance(value, datetime | date | time):
         return value.isoformat()
     return repr(value)
