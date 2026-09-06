@@ -494,6 +494,24 @@ class MachineJournal:
         with nothing to re-deliver."""
         self.signal_path.with_suffix(".consuming").unlink(missing_ok=True)
 
+    def read_pending_poke(self) -> tuple[bool, Any]:
+        """A poke not yet acked, without consuming it: `(present, payload)`.
+
+        Reads the signal file, or the claim file of a take whose step is not
+        yet durable; both are a poke the machine has still to act on."""
+        for path in (self.signal_path.with_suffix(".consuming"), self.signal_path):
+            try:
+                raw = path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                continue
+            if not raw.strip():
+                return True, None
+            try:
+                return True, scrub_lone_surrogates(json.loads(raw))
+            except json.JSONDecodeError:
+                return True, None
+        return False, None
+
     def poke(self, payload: Any = None) -> None:
         """Drop a signal file so a blocked or armed `wait` wakes (§6 signal-poke).
 

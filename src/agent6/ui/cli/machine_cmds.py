@@ -339,14 +339,12 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     # while the worker is still live -- a teardown race) reads "waiting" here too,
     # not a bare "running". A terminal end shows its ok/failed, a crashed instance
     # "stopped" -- never the engine's raw "incomplete".
-    ms = fold_machine(spec, events)
-    word = machine_word_for_dir(ms, root)
+    word = machine_word_for_dir(fold_machine(spec, events), root)
 
     print(f"machine: {spec.machine} (v{spec.version})")
     if alive and word == "running":
-        pid = read_worker_pid(root)
         running_in = f", running {inflight_state!r}" if inflight_state else ""
-        print(f"  status: running (worker pid {pid} alive){running_in}")
+        print(f"  status: running (worker pid {read_worker_pid(root)} alive){running_in}")
     else:
         # A live worker blocked on an operator prompt: the word is "waiting"
         # and the line names the state to answer in.
@@ -377,6 +375,9 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
             print(f"  next wake: {pending.wake_at} (waiting in {pending.state!r})")
         else:
             print(f"  waiting for a signal poke (in {pending.state!r})")
+    poked, poke_payload = journal.read_pending_poke()
+    if poked:
+        print("  poke pending: " + ("bare" if poke_payload is None else repr(poke_payload)))
     if snapshot is not None and snapshot.blackboard:
         print("  blackboard:")
         for key, value in snapshot.blackboard.items():

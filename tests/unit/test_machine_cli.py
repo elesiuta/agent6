@@ -140,6 +140,31 @@ def test_status_hints_poke_for_a_live_foreground_wait(
     assert "waiting in 'poll': agent6 machine poke waiter_delayed" in out
 
 
+def test_status_shows_a_pending_poke_until_it_is_acked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A poke the machine has not acted on is state the readout owes the
+    operator: its payload shows from the poke until the wake's step is acked,
+    a claimed-but-unacked take included."""
+    monkeypatch.chdir(tmp_path)
+    f = _write_machine(tmp_path)
+    assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
+    capsys.readouterr()
+    root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
+    clear_worker_pid(root)
+    assert main(["machine", "poke", "waiter_delayed", "--message", "go"]) == 0
+    capsys.readouterr()
+    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert "poke pending: 'go'" in capsys.readouterr().out
+    journal = MachineJournal(root)
+    assert journal.take_signal() == (True, "go")  # claimed, the step not yet durable
+    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert "poke pending: 'go'" in capsys.readouterr().out
+    journal.ack_signal()
+    assert main(["machine", "status", "waiter_delayed"]) == 0
+    assert "poke pending" not in capsys.readouterr().out
+
+
 def test_status_of_an_alive_but_parked_instance_reads_waiting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
