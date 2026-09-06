@@ -174,16 +174,18 @@ data. So:
     enough: `urllib.request` makes real API calls — you do NOT need `requests`.
   - Pass NON-secret config (an endpoint, a user id) as an operator var spliced
     into `command`, e.g. `["python3", "scripts/fetch.py", "{{ feed_url }}"]`.
-  - Read SECRETS (API tokens/keys) from the ENVIRONMENT — `os.environ["X_TOKEN"]`
-    — never hard-coded in a script and never written into the `.asm.toml`. The
-    operator exports them when they run the machine.
+  - A jailed tool sees only `LANG`, `LC_ALL`, `TERM`, `CI`, `PATH`, `HOME` and
+    `AGENT6_MACHINE_DATA_DIR`: the operator's exported secrets do NOT reach it.
+    Never hard-code a secret in a script or the `.asm.toml`; a state that needs
+    one says so in its comment, so the operator arranges it.
   - A tool that touches the network MUST set `network = "host"` on its
     state; without it the tool is network-isolated and the call fails. (The
     operator still has to permit egress via `sandbox.network`; if their
     config blocks it, `agent6 machine run` explains the one-line fix and offers
     to apply it.)
-  - Persist outputs/state to `$AGENT6_MACHINE_DATA_DIR` (the workspace is
-    read-only under `hardened`).
+  - Persist outputs/state to `$AGENT6_MACHINE_DATA_DIR`: under `hardened` a
+    tool jail cannot create new top-level entries in the workspace, and the
+    machine's own bundle is read-only at every level.
 
 ## Test every non-trivial script (offline simulation)
 
@@ -439,20 +441,22 @@ if __name__ == "__main__":
     "inherit" = the worker model) unless pinning one on purpose.
   - A `tool` that calls the network but forgets `network = "host"` — it
     runs network-isolated and the call fails.
-  - Hardcoding a secret/token in a script or the `.asm.toml` — read it from the
-    environment (`os.environ[...]`) instead.
+  - Hardcoding a secret/token in a script or the `.asm.toml` — a jailed tool
+    sees no operator secret at all; say what the state needs in its comment.
   - A bare `{{ listvar }}` inside an `agent` prompt or any other string —
     a list only interpolates as `{{ listvar | json }}` (or spliced as a
     standalone argv element). Bare list references fail `machine check`.
-  - A network script with no `*_test.py`, or a test that hits the REAL network —
-    tests run with NO network and must mock the seam, or they fail the gate.
+  - A test that hits the REAL network — tests run with NO network and must
+    mock the seam, or they fail the gate. A script with no `*_test.py` is not
+    caught by the gate, so write one for every seam.
   - A script that isn't typed or isn't lint-clean — `machine create` runs ruff +
     ty and rejects it. Annotate functions; keep imports used.
   - `list[record]` / `list[{...}]` types — unsupported. Append records to a
     file from a tool script and keep a counter in the blackboard (see above).
-  - A `tool` script that prints to stderr or exits non-zero — capture fires
-    ONLY on exit 0 with non-empty stdout JSON; empty stdout silently leaves the
-    var at its default. Always print your JSON to STDOUT and exit 0 on success.
+  - A `tool` script that exits non-zero or times out — capture does not fire
+    and the blackboard keeps its previous values. Exit 0 with empty or
+    non-conforming stdout HALTS the machine: print one JSON object matching
+    your `output_schema` on stdout and exit 0. stderr is free for diagnostics.
   - A `tool` script that writes outside `$AGENT6_MACHINE_DATA_DIR` — on
     `hardened` the rest of the workspace is read-only to tool jails (new
     top-level files are denied). Write to the data dir (or print to stdout).

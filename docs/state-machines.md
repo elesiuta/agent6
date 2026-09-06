@@ -200,7 +200,7 @@ Where a run state's work lands:
 
 - under the default `ask`, an unattended machine auto-denies every call (`machine run` warns up front when a `mode = "run"` state would hit this)
 - a machine spawned from the web or TUI hub parks each approval and question for the front-end (the spawn carries the detached `wait` away-mode), so the answer never depends on when the viewer attached
-- grant per invocation with `--auto-approve` (ask upgrades to yes; a withheld `no` stays no), or set `sandbox.run_commands = "yes"` in the repo config
+- grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to yes; a withheld `no` stays no); `--no-commands` or `AGENT6_NO_COMMANDS=1` withholds every command tool; or set `sandbox.run_commands = "yes"` in the repo config. Agent states alone read the two env names
 - a machine `[config]` overlay cannot grant it (sandbox policy is operator-only)
 - edits and the auto-commit need no approval; `run_verify_command` and the `verify_when` certification share the same gate: prefer `tool` states over shelling out
 
@@ -261,12 +261,12 @@ A single command, argv-style (never a shell string), through the existing `run_i
 - a bare binary in `command[0]` resolves against the jail PATH (the set `machine check` probes and `run_command` uses), never the host `PATH`; absolute paths for anything elsewhere
 - `machine check` validates the bundle: every `scripts/` entry and static command reference resolves inside it (escaping symlinks rejected)
 - `strict`: the bundle is RO-bound in every jail; a tool or agent cannot rewrite its own machine logic mid-run
-- `hardened`: the cwd is blanket read-write (no mount namespace to carve); the surrounding container bounds the damage
+- `hardened`: Landlock carves the same protection, granting read on the workspace and write on each top-level entry outside the bundle; new top-level entries are denied, so a tool writes to `$AGENT6_MACHINE_DATA_DIR`
 
 Cross-iteration persistence: `$AGENT6_MACHINE_DATA_DIR`.
 
 - a per-machine writable dir under the per-repo state dir (`<state-dir>/<repo-id>/machines/<id>/data/`, out of the workspace), RW in every tool jail
-- under `hardened` the repo cwd is also read-write; the data dir is the durable home either way, and the journal records every transition
+- under `hardened` the workspace's existing entries are writable too, never a new top-level entry; the data dir is the durable home either way, and the journal records every transition
 
 #### `wait`
 
@@ -601,7 +601,7 @@ Sizing for long-running machines:
 |-------------------------------------------|---------------------------------------------------|
 | `agent6 machine create <task> [-o <file>] [--max-attempts N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam), written into a drafting workspace of its own; per-draft gate: `machine check`, ruff, ty, mock tests in a no-network jail; failures hand the problems back (`--max-attempts`, default 3); output: a DRAFT for operator review + commit ([Security considerations](#9-security-considerations)) |
 | `agent6 machine check <file>`             | validate: the `[config]` overlay against the config schema (and its refusals); parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff + ty, config from the nearest `pyproject.toml`/`ruff.toml` above the file); no execution, no network |
-| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/*_test.py` mock tests in a no-network jail; a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
+| `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` does; the bundle's `scripts/*_test.py` mock tests in a no-network jail (`strict` only: elsewhere they count as skipped on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | emit the machine as a diagram. `mermaid` (default) prints `stateDiagram-v2`; `dot` prints Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the broader Graphviz/`xdot` ecosystem. Reachability is already computed at load, so both are pure renders of the same validated graph. |
 | `agent6 machine run <file> [--exit-on-wait] [--auto-approve\|--no-commands] [--dangerously-disable-sandbox]` | start (or resume) a machine. Acquires the lock, drives the loop. With `--exit-on-wait`, persist the next wake and exit 0 (status `waiting`) at the first not-ready `wait`, for an external scheduler (systemd timer / cron) to resume. The approval and sandbox flags are the run flags, for the same reasons and with the same refusals. |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake. Read-only. |
@@ -621,7 +621,7 @@ It is an ordinary agent6 run handed this document's grammar, working in a drafti
 No new tool. The leg has the edit tools; `run_commands = "no"` withholds `run_command`, `run_verify_command` and `stop_background`, the operator's `[workflow].metric` is dropped so `run_metric_command` has nothing to run, and no host is pre-allowed so a headless `fetch` denies. It never sees the operator's checkout, and its writes are bounded by the workspace the way any run's are by its repo.
 
 - the workspace is an empty git repo under `[parallel].workdir` (where lane clones and fork worktrees live), so each iteration commits and the draft survives a failure for the operator to read
-- every draft is gated: `machine check`, ruff (the destination's ruff config), ty, mock tests in a no-network jail
+- every draft is gated: `machine check`, ruff (the destination's ruff config), ty, mock tests in a no-network jail (`strict` only: elsewhere they are counted as skipped)
     - agent6 runs those validators itself between attempts (they need agent6, which no jailed command can reach) and hands the problems back, up to `--max-attempts` (default 3); the agent patches the files it wrote
 - the result is a draft: `-o <file>` overwrites freely, else `<name>.asm.toml` in the cwd, never clobbered (a collision prints to stdout, exits non-zero)
     - scripts land in `scripts/`

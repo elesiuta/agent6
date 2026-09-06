@@ -86,8 +86,9 @@ class SandboxConfig(BaseModel):
     # setting. A leading dot allows subdomains (`.readthedocs.io`). Hosts, not
     # URL prefixes: a prefix invites `evil.com/docs.python.org`.
     #
-    # `fetch` exists because a jailed command has no network; it is hidden when
-    # `network = "host"`, where the worker can already run curl. It is
+    # `fetch` exists because a jailed command has no network; it is hidden
+    # wherever the worker can already run curl: `network = "host"`, or any
+    # isolation but strict (those resolve to the host network). It is
     # still an egress channel a model drives -- a GET can encode data in its
     # path -- so a host not listed here is asked about, and an absent operator
     # is a no.
@@ -98,7 +99,8 @@ class SandboxConfig(BaseModel):
             'operator is a no. Empty: every fetch prompts. `["*"]`: any host. A leading dot allows '
             "subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of "
             "fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when "
-            '`network = "host"`; withheld from machine and agent states.'
+            'a jailed command already has the host network (`network = "host"`, or any isolation '
+            "but `strict`); withheld from machine and agent states."
         ),
     )
     # Make `.git/` read-only from the child's view so a worker that gains

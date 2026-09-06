@@ -219,15 +219,17 @@ While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, re
 - One https URL, GET, no redirects followed, no credential, text only, 1 MiB.
 - Hosts on `sandbox.fetch_hosts` are read without asking (empty by default); any other host prompts.
 - Nothing resolves before that gate: a DNS query delivers the hostname to whoever runs its authoritative server, so an unapproved URL never reaches a resolver.
-- Hidden entirely when `network = "host"`, where a jailed command has its own route off the box.
+- Hidden when a jailed command already has the host network: `network = "host"`, or any isolation but `strict`.
 
-**Which network a jailed child joins.** One of:
+**Which network a jailed child joins.** `sandbox.network` is one of:
 
-- `host`: the machine's network.
-- `session`: the run's own.
+- `auto` *(default)*: the run's own network where the host can give one, the host's with a warning where it cannot.
+- `session`: the run's own, enforced; refuses where the host cannot give one.
   Its members reach each other and nothing off the box.
-- `none`: its own, alone.
-- `auto` *(default)*: the safest of these the host supports.
+- `only_explicit_states`: the run's own, except a machine `tool` state that sets `network = "host"`; `strict` only.
+- `host`: the machine's network.
+
+A run's commands share one launcher, so there is no per-command `none`; a machine `tool` state and an MCP server take their own values.
 
 The run owns one session network.
 A holder process creates it, the run keeps it alive with an open descriptor on `/proc/<holder>/ns/{user,net}`, and every child that asks joins those.
@@ -292,7 +294,7 @@ Under `none` isolation nothing is enforced or refused.
 
 - agent6's own git writes go through `git_ops.py` alone
     - it wraps the safe ops (status, add, commit, diff, branch, checkout)
-    - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo`, `branch -D` / `--force` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable (pinned by `test_git_ops_never_spells_a_destructive_verb`)
+    - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable (pinned by `test_git_ops_never_spells_a_destructive_verb`, which exempts the one `branch -D` below)
     - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags: `sessions diff` and `ask` read only, and `review` stages untracked files with `add -N` so they appear in its diff, undoing it with `reset` in a `finally`; `skills install` clones with fixed argv
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch the manifest confirms was squash-merged (the commit survives in the reflog).
 - `git_ops.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
@@ -368,7 +370,7 @@ Each `tool` state is jailed, so a per-tool `network` sets its netns independentl
 **Operator-gated policy**
 
 - `network` is read only from the operator's config
-    - a machine's `[config]` overlay is rejected at load if it declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, `[mcp.*]`, `machine.notify`, `notify.on_complete`, `git.run_repo_hooks`, or `git.run_repo_filters`
+    - a machine's `[config]` overlay is rejected at load if it declares `[providers.*]`, `[sandbox.*]`, `[presets.*]`, `[mcp.*]`, `machine.notify`, `notify.on_complete`, `git.run_repo_hooks`, `git.run_repo_filters`, or `prompt.system_prompt_file`
 - A `tool` only declares `network`; honoring `allow` is the operator's call, and every conflict is refused at startup naming the state.
 
 **Bundle confinement**

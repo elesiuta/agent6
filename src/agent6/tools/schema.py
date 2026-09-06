@@ -209,8 +209,8 @@ class FetchInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "fetch"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Fetch an https URL (GET; other schemes are refused). Returns status,"
-        " content type, and body text (truncated at a cap). Requires network"
-        " reach from this run."
+        " content type, and body text; a response over 1 MiB is refused, not"
+        " truncated, and a redirect is returned, not followed."
     )
 
     url: str = Field(min_length=1)
@@ -249,7 +249,8 @@ class ReadBackgroundInput(_ToolInput):
 class StopBackgroundInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "stop_background"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Stop a background command by background_id. Returns its final output and returncode."
+        "Stop a background command by background_id. Returns the background roster with"
+        " it marked stopped and its exit code; read its output first with read_background."
     )
 
     id: str

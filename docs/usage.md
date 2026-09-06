@@ -12,7 +12,7 @@ The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across ev
 
 - `agent6 connect` prompts locally; it executes nothing a remote returns
 - already connected: skip this step
-- `agent6 check`: every configured provider's key resolves (never calls the provider)
+- `agent6 check`: every configured provider's key resolves; its one network call is the provider's model listing, refreshed past a 10-minute cache (1.5 s, never fatal)
 - `agent6 model`: the role assignments
 
 agent6 routes three model roles independently:
