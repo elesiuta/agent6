@@ -686,8 +686,22 @@ def summarize_session_dir(
         task = "(no logs)"  # a husk: no manifest, and a log naming nothing
     word, reason = status_for_session_dir(session_dir, scan.status_facts())
     if mode == "ask":
+        # An ask has no task, so its row shows what was asked: the transcript's
+        # own first line, never the whole file. A JSON reader takes this field
+        # whole, and a long answer there is a transcript, not a task.
         with contextlib.suppress(OSError):
-            task = (session_dir / "transcript.md").read_text(encoding="utf-8", errors="replace")
+            transcript = (session_dir / "transcript.md").read_text(
+                encoding="utf-8", errors="replace"
+            )
+            asked = next(
+                (
+                    ln.strip()
+                    for ln in transcript.splitlines()
+                    if ln.strip() and not ln.startswith("#")
+                ),
+                "",
+            )
+            task = asked[:200] or transcript.strip()[:200]
     unmerged = False
     if branch_tips is not None and manifest is not None and word != "undone":
         tip = branch_tips.get(manifest.run_branch or "")

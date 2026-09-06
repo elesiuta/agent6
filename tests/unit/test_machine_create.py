@@ -1130,3 +1130,33 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     assert cfg["models"] == {"worker": {"provider": "openrouter", "model": "test-model"}}
     assert cfg["sandbox"]["run_commands"] == "no", "and it still carries no command tool"
     assert "state_dir" not in cfg.get("agent6", {}), "global-only; the overlay forbids it"
+
+
+def test_create_publishes_the_files_a_referenced_script_needs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A referenced script imports modules and reads data files, and none of
+    those appear in a `tool` command. Publishing only the referenced set gave
+    the operator a bundle that fails at its first state, after the workspace
+    holding the missing file was gone."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            (
+                {
+                    "greeter.asm.toml": SCRIPT_MACHINE,
+                    "scripts/run.py": "from common import helper\n\nprint(helper())\n",
+                    "scripts/common.py": "def helper() -> int:\n    return 1\n",
+                    "scripts/data.json": "{}\n",
+                },
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+            )
+        ],
+    )
+
+    assert main(["machine", "create", "Run a script", "--max-attempts", "1"]) == 0
+
+    assert (tmp_path / "scripts" / "common.py").exists(), "the module it imports"
+    assert (tmp_path / "scripts" / "data.json").exists(), "the data file it reads"

@@ -371,7 +371,10 @@ def _not_a_leaf(key: str, config_path: Path | None) -> str:
     generic pointer."""
     name = key.removeprefix("mcp.servers.")
     if name != key and "." not in name:
-        cfg = load_effective(Path.cwd(), config_path).config
+        try:
+            cfg = load_effective(Path.cwd(), config_path).config
+        except ConfigError:
+            return f"{key!r} is not a config leaf (see `agent6 config show`)."
         if name in cfg.mcp.servers:
             return f"{key!r} is an MCP server entry; remove it with `agent6 mcp remove {name}`."
     return f"{key!r} is not a config leaf (see `agent6 config show`)."
@@ -384,7 +387,15 @@ def _cmd_config_unset(
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
-    if effective_leaf(load_effective(Path.cwd(), config_path), key) is None:
+    # An unset is how an operator repairs a config that no longer loads, so a
+    # merged config that fails validation must not block it: the shape check
+    # applies where a shape can be read, and the write path keeps an edit that
+    # was already invalid (revalidate_write) either way.
+    try:
+        known_leaf = effective_leaf(load_effective(Path.cwd(), config_path), key) is not None
+    except ConfigError:
+        known_leaf = True
+    if not known_leaf:
         print(f"ERROR: {_not_a_leaf(key, config_path)}", file=sys.stderr)
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)

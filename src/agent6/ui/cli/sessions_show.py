@@ -13,7 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.config.layer import resolved_state_dir
-from agent6.git_ops import branch_exists, chain_ref_for, chain_tip, merge_stamp_holds
+from agent6.git_ops import (
+    branch_exists,
+    chain_ref_for,
+    chain_tip,
+    merge_stamp_holds,
+    run_branch_tips,
+)
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import listening_ports, pid_alive, read_worker_pid, worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
@@ -24,6 +30,7 @@ from agent6.viewmodel import (
     existing_run_branch,
     scan_session_log,
     status_for_session_dir,
+    summarize_session_dir,
 )
 from agent6.viewmodel.format import (
     format_branch,
@@ -71,15 +78,27 @@ def _print_parallel_compare(manifest: SessionManifest) -> None:
         print(f"  judge: {rationale}")
 
 
+def _listing_cell(session_dir: Path) -> str:
+    """The status cell every listing shows for this run.
+
+    Read from the listing's own fold rather than recomputed, so `show` and
+    `list` cannot disagree about the mode fold or the unmerged mark.
+    """
+    row = summarize_session_dir(session_dir, branch_tips=run_branch_tips(Path.cwd()))
+    return listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
+
+
 def _status_state(
-    session_dir: Path, scan: LogScan, *, last_age: float | None, mode: str, unmerged: bool
+    session_dir: Path, scan: LogScan, *, last_age: float | None, cell: str
 ) -> tuple[str, str, str]:
     """This run's state as `(status, label, detail)`.
 
-    `status` is the LISTING's own word (`status_for_session_dir`) and `label`
-    is the cell the listing renders from it, so a script reading one surface
-    reads the other; `detail` is this surface's diagnostic: what to do, or why
-    the word applies. The text render joins label and detail; --json emits the
+    `status` is the LISTING's own word (`status_for_session_dir`) and *cell* is
+    the listing's own rendering of it, passed in whole: recomputing the mode
+    and the unmerged mark here made a second rule that disagreed with every
+    listing for a branch cut at base, a branch deleted with commits kept, and
+    a run with no manifest. `detail` is this surface's diagnostic: what to do,
+    or why the word applies. The text render joins them; --json emits the
     three, the word included, so a script never parses prose.
 
     The pre-unification words lied twice: a crashed run led with "stopped"
@@ -90,7 +109,7 @@ def _status_state(
         # The raw end reason is the diagnostic; it is not repeated when the
         # label already carries it (an ask's word, a failure's reason).
         end = "" if scan.end_reason in (word, reason) else scan.end_reason
-        return word, listing_status_label(mode, word, reason, unmerged=unmerged), end
+        return word, cell, end
     detail = {
         "waiting": "needs answer; attach to respond",
         "stale": "no worker, no session.end: likely crashed or killed",
@@ -101,7 +120,7 @@ def _status_state(
     }.get(word, "")
     if word == "running" and last_age is not None and last_age > 120:
         detail = "long step, likely a provider call"
-    return word, listing_status_label(mode, word, reason, unmerged=unmerged), detail
+    return word, cell, detail
 
 
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
@@ -152,10 +171,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     model = (driver.model if driver else "") or "?"
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
-    # The listing's own cell, so a script reading `show` and one reading `list`
-    # get the same words for the same run (the mode folded in, the unmerged mark).
     status, status_cell, status_detail = _status_state(
-        target, scan, last_age=last_age, mode=mode_display or "?", unmerged=changes.unmerged
+        target, scan, last_age=last_age, cell=_listing_cell(target)
     )
     state = f"{status_cell} ({status_detail})" if status_detail else status_cell
 
@@ -244,7 +261,6 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 class _Changes:
     line: str  # the text row; "" for a session with no run branch
     merged_into: str  # the base the run branch is merged into, else ""
-    unmerged: bool = False  # commits are waiting on `sessions merge`
 
 
 def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Changes:
@@ -269,12 +285,8 @@ def _changes(session_id: str, manifest: SessionManifest, *, undone: bool) -> _Ch
         chain = chain_ref_for(session_id)
         if chain_tip(cwd, chain) is None:
             return _Changes(f"{run_branch} (no commits)", "")
-        return _Changes(
-            f"{chain} ({run_branch} is gone; the commits are kept); {merge_hint}", "", True
-        )
-    return _Changes(
-        f"{format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", "", True
-    )
+        return _Changes(f"{chain} ({run_branch} is gone; the commits are kept); {merge_hint}", "")
+    return _Changes(f"{format_branch(run_branch, manifest.base_branch, '')}; {merge_hint}", "")
 
 
 def _print_listening_ports(session_dir: Path) -> None:

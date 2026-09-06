@@ -480,6 +480,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 if manifest.worktree is not None and manifest.worktree_git_dir is not None
                 else None
             ),
+            checkout_untracked=exclude,
             reporter=reporter,
         )
         if rc != 0:
@@ -780,6 +781,7 @@ def create_fork(
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
     worktree: bool = True,
     checkout: Checkout | None = None,
+    checkout_untracked: frozenset[str] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, int]:
     """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
@@ -791,8 +793,10 @@ def create_fork(
     the leg in. With *worktree* off (`/undo`) the child works in *checkout*
     (a worktree with its recorded git dir, or None for the operator's): the
     checkout the undone session ran in, which its source, an ancestor up the
-    lineage, need not share. A plan or ask fork never edits and reads the operator's checkout,
-    so it gets no worktree either way. Returns `(child_id, 0)` on success,
+    lineage, need not share, with *checkout_untracked* the operator's files in
+    THAT checkout (the ancestor's set describes a different one). A plan or ask
+    fork never edits and reads the operator's checkout, so it gets no worktree
+    either way. Returns `(child_id, 0)` on success,
     else `("", rc)` after printing the reason. The caller (`ui/cli/fork.py`)
     then either reports the created id (`--no-run`) or continues it over
     resume. *cwd* is the repository; see :func:`_plan_fork` for
@@ -823,7 +827,12 @@ def create_fork(
             reporter.error(f"could not add the fork's worktree at {path}: {exc}")
             return "", 1
     rc = _materialize_fork(
-        plan, cwd=cwd, checkout=checkout, fresh_checkout=added, reporter=reporter
+        plan,
+        cwd=cwd,
+        checkout=checkout,
+        fresh_checkout=added,
+        checkout_untracked=checkout_untracked,
+        reporter=reporter,
     )
     if rc != 0:
         if added and checkout is not None:
@@ -838,6 +847,7 @@ def _materialize_fork(
     cwd: Path,
     checkout: Checkout | None,
     fresh_checkout: bool,
+    checkout_untracked: frozenset[str] | None = None,
     reporter: Reporter = STDIO_REPORTER,
 ) -> int:
     """Write the fork's state on disk: clone the checkpoint + DAG, the manifest
@@ -860,16 +870,18 @@ def _materialize_fork(
     # The files this fork's commits leave out. A FRESH worktree is a checkout
     # of the sha and nothing else, so its own untracked set is the answer (and
     # is normally empty); the source's set names paths that do not exist there.
-    # An /undo fork continues in the source's checkout, where the source's set
-    # is the answer: chain commits never touch the index, so everything the
-    # source run created still reads untracked, and observing there would make
-    # the fork exclude the very work it is continuing.
-    write_untracked_at_start(
-        dst.session_dir,
-        untracked_paths(checkout.worktree)
-        if fresh_checkout and checkout is not None
-        else read_untracked_at_start(src.session_dir),
-    )
+    # An /undo fork continues in an existing checkout, so the set is the one
+    # for THAT checkout, which the caller knows: chain commits never touch the
+    # index, so everything the run created still reads untracked, and observing
+    # there would make the fork exclude the very work it is continuing. The
+    # source's own set is the fallback, right when the two share a checkout.
+    if fresh_checkout and checkout is not None:
+        excluded = untracked_paths(checkout.worktree)
+    elif checkout_untracked is not None:
+        excluded = checkout_untracked
+    else:
+        excluded = read_untracked_at_start(src.session_dir)
+    write_untracked_at_start(dst.session_dir, excluded)
 
     run_branch = run_branch_for(dst.session_id) if plan.cfg.git.branch_per_run else None
     write_session_manifest(

@@ -12,6 +12,16 @@ from agent6.viewmodel import events
 from agent6.viewmodel.transcript import scrub_terminal_controls
 
 
+def _edit_kind(edit: dict[str, object]) -> str:
+    """The kind an `apply_edit` pair resolves to, as the tool resolves it: an
+    omitted discriminator follows the pair's shape, so a bare create rendered
+    as "replace" in every log view."""
+    kind = str(edit.get("kind") or "")
+    if kind:
+        return kind
+    return "replace" if edit.get("old_string") else "create"
+
+
 def _render_arg_value(key: str, value: Any) -> str:
     """One arg value, human-shaped: argv as a shell line, ask_user's questions as
     their text, apply_edit's edits as their kinds, everything else as its string
@@ -25,9 +35,7 @@ def _render_arg_value(key: str, value: Any) -> str:
     if key == "edits" and isinstance(value, (list, tuple)) and value:
         # apply_edit: the kinds (replace/create), not the raw {old_string, ...}
         # dict repr that flooded the drawer + TUI tool table.
-        return ", ".join(
-            str(e.get("kind", "replace")) if isinstance(e, dict) else str(e) for e in value
-        )
+        return ", ".join(_edit_kind(e) if isinstance(e, dict) else str(e) for e in value)
     return value if isinstance(value, str) else repr(value)
 
 

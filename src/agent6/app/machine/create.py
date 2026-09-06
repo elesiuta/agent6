@@ -19,7 +19,7 @@ from pathlib import Path
 
 from agent6.app._session import select_isolation
 from agent6.app._setup import check_provider_keys
-from agent6.app.machine._bundle import referenced_scripts, validate_bundle
+from agent6.app.machine._bundle import validate_bundle
 from agent6.app.machine._frontend import MachineFrontend
 from agent6.app.machine._scriptcheck import lint_and_typecheck, run_offline_tests
 from agent6.app.machine_agent import build_machine_agent_runner
@@ -97,20 +97,20 @@ def _check_bundle(path: Path) -> tuple[MachineSpec | None, list[str]]:
     return spec, []
 
 
-def _read_scripts(workspace: Path, keep: set[str] | None = None) -> dict[str, str]:
+def _read_scripts(workspace: Path) -> dict[str, str]:
     """The bundle's `scripts/` tree as {bundle-relative path: source}.
 
-    *keep*, when given, is the set the machine references: an attempt that
-    renamed a script leaves the old one on disk, and publishing it put a file
-    in the operator's bundle that nothing runs. Anything that is not a plain
-    readable text file is left out; `validate_bundle` refuses a bundle that
-    needed it.
+    The whole tree, because that is what the validators passed: a referenced
+    script may import a module, read a data file, or sit beside a `lib/`
+    subpackage, and none of those appear in a `tool` command. Publishing an
+    unused file a renamed attempt left behind is cheap; dropping one the
+    machine needs fails it at its first state, after the workspace is gone.
+    Anything that is not a plain readable text file is left out;
+    `validate_bundle` refuses a bundle that needed it.
     """
     out: dict[str, str] = {}
     for path in sorted((workspace / "scripts").rglob("*")):
         rel = str(path.relative_to(workspace))
-        if keep is not None and rel not in keep:
-            continue
         if path.is_symlink() or not path.is_file():
             continue
         try:
@@ -149,11 +149,11 @@ def _discard_workspace(workspace: Path, reporter: Reporter) -> None:
     `lane-*` checkouts) and fork worktrees (a manifest names them), and a
     drafting workspace is neither. Its own per-repo state dir goes with it.
     """
+    errors: list[str] = []
     for path in (resolved_state_dir(workspace), workspace):
-        try:
-            shutil.rmtree(path, ignore_errors=True)
-        except OSError as exc:  # pragma: no cover - rmtree already swallows these
-            reporter.err(f"machine create: could not remove {path}: {exc}")
+        shutil.rmtree(path, onexc=lambda _fn, target, exc: errors.append(f"{target}: {exc}"))
+    if errors:
+        reporter.err(f"machine create: the drafting workspace stays ({errors[0]})")
 
 
 def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
@@ -350,9 +350,8 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 ruff_config_from=output.parent if output is not None else cwd,
             )
             # ruff --fix rewrote the workspace copies, so those are the bytes
-            # that passed; publish what validated, not what the model first wrote,
-            # and only the files this machine actually references.
-            candidate_scripts = _read_scripts(workspace, keep=referenced_scripts(candidate_spec))
+            # that passed; publish what validated, not what the model first wrote.
+            candidate_scripts = _read_scripts(workspace)
             offline = run_offline_tests(workspace, isolation)
             problems.extend(offline.problems)
             if offline.skipped:

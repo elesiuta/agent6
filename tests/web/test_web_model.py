@@ -681,3 +681,24 @@ def test_the_hub_row_and_the_cli_json_row_are_one_shape(
 
     assert set(hub_row) == set(cli_row)
     assert hub_row["session_id"] == cli_row["session_id"] == "r1"
+
+
+def test_a_waiting_machine_is_not_labelled_failed(tmp_path: Path) -> None:
+    """`reason` is set for a live machine blocked on an operator prompt as well
+    as for a failed end; hardcoding "failed · <reason>" told the operator it
+    had died instead of sending them to answer the prompt."""
+    from agent6.viewmodel.machine_state import MachineSummary
+
+    row = model._machine_row(  # pyright: ignore[reportPrivateUsage]
+        MachineSummary(
+            name="inst",
+            machine="m",
+            status="waiting",
+            reason="waiting on an approval in 0001-work",
+            current="work",
+            mtime=0.0,
+        )
+    )
+
+    assert row["label"] == "waiting · waiting on an approval in 0001-work"
+    assert row["level"] == "warn"

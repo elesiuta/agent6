@@ -103,12 +103,15 @@ def test_steer_notes_an_unanswered_prompt_park(
     assert "agent6 attach tiny-run-CCCC33" in out
 
 
-def test_steer_names_the_answer_verb_only_for_a_question_park(
+def test_steer_names_the_answer_verb_only_where_it_can_deliver(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`agent6 answer` writes an ask_user answer and nothing else, so naming it
-    for an approval park sent the operator straight to a refusal."""
+    """`agent6 answer` takes a question, and only from a run that reads the
+    answer file. Naming it for an approval, or for a run waiting at its own
+    terminal, sent the operator straight to a refusal."""
     import json
+
+    from agent6.sessions.ipc import set_away_mode
 
     monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
     monkeypatch.chdir(tmp_path)
@@ -125,8 +128,14 @@ def test_steer_names_the_answer_verb_only_for_a_question_park(
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
+    # No away-mode and no front-end: the answer goes to the run's terminal.
     assert main(["steer", "tiny-run-DDDD44", "hello"]) == 0
-
     out = capsys.readouterr().out
     assert "the run is waiting (question" in out
-    assert "agent6 answer tiny-run-DDDD44" in out
+    assert "agent6 attach tiny-run-DDDD44" in out
+    assert "agent6 answer" not in out
+
+    # Detached on "wait": the verb can deliver, so it is the one named.
+    set_away_mode(d, "wait")
+    assert main(["steer", "tiny-run-DDDD44", "hello"]) == 0
+    assert "agent6 answer tiny-run-DDDD44" in capsys.readouterr().out

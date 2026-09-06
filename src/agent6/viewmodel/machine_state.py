@@ -222,7 +222,7 @@ class MachineSummary:
     machine: str  # the spec's declared name; "" when unreadable
     current: str  # where the machine is; "" when unreadable
     status: str  # machine_word_for_dir's word, or "unreadable"
-    reason: str  # a failed end's reason, else ""
+    reason: str  # a failed end's reason, or what a live instance waits on; else ""
     mtime: float
 
 

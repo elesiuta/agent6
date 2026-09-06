@@ -146,3 +146,42 @@ def test_answer_refuses_a_run_waiting_at_its_own_terminal(
     assert "waiting at its own terminal" in err
     assert "agent6 attach curious-fox-AAAA11" in err
     assert not (layout.session_dir / "questions" / "question-1.answer").exists()
+
+
+def test_a_bare_call_prints_the_question_even_on_a_terminal_bound_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Reading the question needs no delivery channel. Gating the read on one
+    hid the question from the operator it was asked of."""
+    layout = _run_with_question(
+        tmp_path, monkeypatch, questions=[{"question": "Which port?", "options": ["8080"]}]
+    )
+    (layout.session_dir / "approvals" / "away.mode").unlink()  # terminal-bound
+
+    assert _cmd_answer("curious-fox", ()) == 0
+
+    assert "Which port?" in capsys.readouterr().out
+
+
+def test_a_live_run_with_no_question_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The refusal names the state the run is in, not one it is not: a run that
+    is not waiting at all was told it was waiting at its terminal."""
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    from agent6.config.layer import resolved_state_dir
+
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id="curious-fox-AAAA11")
+    layout.ensure()
+    layout.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    write_worker_pid(layout.session_dir, os.getpid())  # live, no away-mode, no front-end
+
+    assert _cmd_answer("curious-fox", ("yes",)) == 2
+
+    assert "is not waiting on a question" in capsys.readouterr().err

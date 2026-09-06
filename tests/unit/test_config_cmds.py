@@ -878,3 +878,28 @@ def test_config_unset_on_an_unknown_key_keeps_the_generic_pointer(
 
     assert rc == 2
     assert "is not a config leaf" in capsys.readouterr().err
+
+
+def test_config_unset_repairs_a_config_that_no_longer_loads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unset is how an operator repairs a config that stopped validating, so
+    the shape precheck must not be the thing that refuses: it loaded the merged
+    config first and died on the very value being removed."""
+    monkeypatch.chdir(tmp_path)
+    cfg_home = tmp_path / "cfg"
+    cfg_home.mkdir()
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(cfg_home))
+    # Valid at 0.0.29; a later invariant refuses it (summarise > keep_recent).
+    (cfg_home / "config.toml").write_text(
+        "[agent6]\nconfig_version = 1\n\n[context]\ndrop_at_chars = 30000\n"
+        "summarise_at_chars = 60000\n",
+        encoding="utf-8",
+    )
+
+    rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
+        "context.summarise_at_chars", repo=False, machine=None
+    )
+
+    assert rc == 0
+    assert "summarise_at_chars" not in (cfg_home / "config.toml").read_text(encoding="utf-8")

@@ -21,7 +21,7 @@ from agent6.sessions.ipc import (
     worker_is_alive,
     write_question_answers,
 )
-from agent6.sessions.layout import LOGS_NAME
+from agent6.sessions.layout import LOGS_NAME, SessionLayout
 from agent6.ui.cli._common import resolve_session_layout
 from agent6.viewmodel import QuestionPrompt, fold_session, tail_events
 
@@ -43,21 +43,25 @@ def _print_question(session_id: str, prompt: QuestionPrompt) -> None:
 
 
 def _unanswerable(session_dir: Path, session_id: str) -> str:
-    """Why this run cannot take a written answer, or "".
+    """Why this run cannot take a WRITTEN answer, or "". Reading the open
+    question is never gated by it.
 
     The run reads the answer file only for a live front-end or an away-mode of
     "wait"; a foreground run with a terminal is blocked on that terminal and
     never looks. Writing one there and printing "answered" left the operator
     waiting on a run that was waiting on them.
     """
-    if not worker_is_alive(session_dir):
-        return f"session {session_id} is not running; only a live run holds a question open."
     if not frontend_is_live(session_dir) and away_mode(session_dir) != "wait":
         return (
             f"{session_id} is waiting at its own terminal, which is where the answer"
             f" has to go: agent6 attach {session_id}"
         )
     return ""
+
+
+def _refuse(reason: str) -> int:
+    print(f"REFUSING: {reason}", file=sys.stderr)
+    return 2
 
 
 def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
@@ -67,30 +71,38 @@ def _cmd_answer(target: str, answers: tuple[str, ...]) -> int:
     except SessionIdError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    if refusal := _unanswerable(layout.session_dir, layout.session_id):
-        print(f"REFUSING: {refusal}", file=sys.stderr)
-        return 2
+    return _answer_resolved(layout, answers)
+
+
+def _answer_resolved(layout: SessionLayout, answers: tuple[str, ...]) -> int:
+    """The verb over a resolved session: liveness, then the open question, then
+    whether a written answer can reach it."""
+    if not worker_is_alive(layout.session_dir):
+        return _refuse(
+            f"session {layout.session_id} is not running; only a live run holds a question open."
+        )
     prompt = _open_question(layout.session_dir)
     if prompt is None:
-        print(
-            f"REFUSING: {layout.session_id} is not waiting on a question"
-            f" (an approval is answered by attaching: agent6 attach {layout.session_id}).",
-            file=sys.stderr,
+        return _refuse(
+            f"{layout.session_id} is not waiting on a question (an approval is answered"
+            f" by attaching: agent6 attach {layout.session_id})."
         )
-        return 2
-    if not answers:
+    if not answers or len(answers) != len(prompt.questions):
+        # Reading the question needs no delivery channel, so the gate below
+        # never stands in the way of seeing what is being asked. Answers align
+        # to the prompt's questions by index, so a short list would answer the
+        # wrong one and a long one would be silently cut.
         _print_question(layout.session_id, prompt)
-        return 0
-    if len(answers) != len(prompt.questions):
-        # Answers align to the prompt's questions by index, so a short list
-        # would answer the wrong one and a long one would be silently cut.
-        _print_question(layout.session_id, prompt)
+        if not answers:
+            return 0
         print(
             f"\nERROR: that prompt has {len(prompt.questions)} question(s);"
             f" {len(answers)} answer(s) given.",
             file=sys.stderr,
         )
         return 2
+    if refusal := _unanswerable(layout.session_dir, layout.session_id):
+        return _refuse(refusal)
     write_question_answers(layout.session_dir, prompt.id, answers)
     print(f"answered {layout.session_id}: {', '.join(answers)}")
     return 0

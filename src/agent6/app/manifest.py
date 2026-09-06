@@ -5,6 +5,7 @@ reader and the on-disk shape (:class:`SessionManifest`) live in `sessions.manife
 
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import os
 from collections.abc import Sequence
@@ -201,22 +202,25 @@ def stamp_fork_task(session_dir: Path, steer: str, *, source_dir: Path) -> None:
     the stamp fires only while the task is still the source's. The source task
     stays reachable through `parent_session_id`.
 
-    Errors are the caller's to survive: a manifest this binary may not rewrite
-    (a newer version) leaves the task as it stands rather than failing a resume
-    that is otherwise fine.
+    A manifest this binary may not rewrite (a newer version) leaves the task as
+    it stands rather than failing a resume that is otherwise fine. A source
+    that is gone (pruned) cannot answer "still the source's task", so the fork
+    keeps what it has and says so.
     """
+    m = read_manifest(session_dir)
+    if m.parent_session_id is None:
+        return
     try:
-        m = read_manifest(session_dir)
-        if m.parent_session_id is None:
-            return
-        if m.user_task != read_manifest(source_dir).user_task:
-            return  # already sent somewhere; this steer is a follow-up
+        source_task = read_manifest(source_dir).user_task
+    except ManifestError:
+        return  # the source is gone; its task is whatever the fork already carries
+    if m.user_task != source_task:
+        return  # already sent somewhere; this steer is a follow-up
+    with contextlib.suppress(ManifestError, OSError):
         write_manifest(
             session_dir / "manifest.json",
             m.model_copy(update={"user_task": operator_task_text(steer)[:4000]}),
         )
-    except (ManifestError, OSError):
-        return
 
 
 def stamp_verify_gate(session_dir: Path, argv: Sequence[str], origin: str) -> None:

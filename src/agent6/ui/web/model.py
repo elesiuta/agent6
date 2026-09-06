@@ -32,6 +32,7 @@ from agent6.sessions.layout import (
 )
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.viewmodel import (
+    MachineSummary,
     fold_session,
     fold_transcript,
     is_session_husk,
@@ -49,7 +50,7 @@ from agent6.viewmodel import (
     tail_events,
 )
 from agent6.viewmodel.config_view import render_show
-from agent6.viewmodel.format import status_level
+from agent6.viewmodel.format import status_label, status_level
 from agent6.viewmodel.transcript_style import item_lines
 
 
@@ -116,25 +117,30 @@ def _list_sessions(cwd: Path) -> list[dict[str, Any]]:
     return [_session_summary(p, tips) for p in session_dirs(resolved_state_dir(cwd))]
 
 
+def _machine_row(s: MachineSummary) -> dict[str, Any]:
+    """One machine-instance row for the hub, from the shared fold."""
+    entry: dict[str, Any] = {
+        "name": s.name,
+        "mtime": s.mtime,
+        "status": s.status,
+        "level": status_level(s.status),
+    }
+    if s.status != "unreadable":
+        entry["machine"] = s.machine
+        entry["current"] = s.current
+    if s.reason:
+        # The shared cell, like every other surface: `reason` is also set for a
+        # LIVE machine blocked on an operator prompt, and hardcoding "failed"
+        # told the operator it had died instead of sending them to answer it.
+        entry["label"] = status_label(s.status, s.reason)
+    return entry
+
+
 def _list_machines(cwd: Path) -> list[dict[str, Any]]:
     """Machine instances, newest first (`viewmodel.machine_instance_dirs`), each
     a watchable run of an authored machine, summarized by the shared fold."""
-    out: list[dict[str, Any]] = []
-    for d in machine_instance_dirs(resolved_state_dir(cwd)):
-        s = summarize_machine_dir(d)
-        entry: dict[str, Any] = {
-            "name": s.name,
-            "mtime": s.mtime,
-            "status": s.status,
-            "level": status_level(s.status),
-        }
-        if s.status != "unreadable":
-            entry["machine"] = s.machine
-            entry["current"] = s.current
-        if s.reason:  # keep the failure reason on the pill, like run/draft rows
-            entry["label"] = f"failed · {s.reason}"
-        out.append(entry)
-    return out
+    dirs = machine_instance_dirs(resolved_state_dir(cwd))
+    return [_machine_row(summarize_machine_dir(d)) for d in dirs]
 
 
 def _list_drafts(cwd: Path) -> list[dict[str, Any]]:

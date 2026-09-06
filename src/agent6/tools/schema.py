@@ -76,8 +76,9 @@ class ApplyEditInput(_ToolInput):
         " Each old_string occurs exactly once in the file, byte for byte."
         ' kind="create" makes a new file and kind="overwrite" replaces an'
         " existing file whole: for both, empty old_string, the full content in"
-        " new_string, the only edit in the array. preview=true returns the"
-        " would-be diff without touching disk."
+        " new_string, the only edit in the array. An omitted kind follows the"
+        ' pair: an empty old_string means "create", any other means "replace".'
+        " preview=true returns the would-be diff without touching disk."
     )
 
     path: str = Field(min_length=1)
@@ -97,7 +98,9 @@ class ApplyEditInput(_ToolInput):
         if len(self.edits) > 1 and whole:
             raise ValueError(
                 f"kind={whole[0]!r} must be the only edit (it writes the entire file);"
-                " do not combine it with other edits"
+                " do not combine it with other edits. An edit with an empty old_string"
+                " resolves to 'create'; to add at the end of a file instead, use its"
+                " last line as old_string"
             )
         return self
 

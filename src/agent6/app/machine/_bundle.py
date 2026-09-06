@@ -88,28 +88,6 @@ def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[st
     return problems
 
 
-def referenced_scripts(spec: MachineSpec) -> set[str]:
-    """The bundle-relative `scripts/...` paths the spec's tool commands name,
-    plus each one's `<name>_test.py` companion. Templated elements resolve
-    only with a blackboard and are left out, as `validate_bundle` leaves them.
-    """
-    refs: set[str] = set()
-    for state in spec.states.values():
-        if not isinstance(state, ToolState):
-            continue
-        for element in state.command:
-            if "{{" in element:
-                continue
-            ref = _bundle_script_ref(element)
-            if ref is None:
-                continue
-            refs.add(ref)
-            stem = Path(ref)
-            if stem.suffix == ".py":
-                refs.add(str(stem.with_name(f"{stem.stem}_test.py")))
-    return refs
-
-
 def validate_bundle(spec: MachineSpec, machine_path: Path) -> list[str]:
     """Validate a machine's script bundle (the `.asm.toml` + a sibling `scripts/`).
 
