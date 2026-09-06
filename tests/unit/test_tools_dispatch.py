@@ -2230,3 +2230,35 @@ def test_a_patch_write_that_fails_part_way_names_what_changed(tmp_path: Path) ->
     with pytest.raises(ToolError, match=r"locked\.txt.*already changed: one\.txt"):
         d.dispatch("apply_patch", {"patch": patch})
     assert (tmp_path / "one.txt").read_text(encoding="utf-8") == "PATCHED ONE\n"
+
+
+def test_the_edit_tools_refuse_a_file_past_the_read_cap(tmp_path: Path) -> None:
+    """read_file caps at MAX_READ_CHARS; the edit tools read the same file
+    whole and uncapped, so one `apply_edit` over a file a jailed command had
+    made OOM-crashed the unsandboxed agent. Refused, never truncated: a
+    partial read must not become a whole-file write."""
+    from agent6.tools._fs_tools import MAX_READ_CHARS
+
+    cfg = _config(tmp_path)
+    (tmp_path / "big.txt").write_text("x" * (MAX_READ_CHARS + 1), encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="larger than the edit tools take"):
+        d.dispatch(
+            "apply_edit", {"path": "big.txt", "edits": [{"old_string": "x", "new_string": "y"}]}
+        )
+
+
+def test_list_dir_caps_a_huge_listing_and_says_so(tmp_path: Path) -> None:
+    """Every sibling result caps and marks; a listing of a vendored directory
+    went whole into the context and the transcript."""
+    from agent6.tools._fs_tools import LIST_DIR_CAP
+
+    cfg = _config(tmp_path)
+    big = tmp_path / "vendored"
+    big.mkdir()
+    for i in range(LIST_DIR_CAP + 1):
+        (big / f"f{i:05d}").write_text("", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    out = d.dispatch("list_dir", {"path": "vendored"}).to_wire()
+    assert len(out["entries"]) == LIST_DIR_CAP
+    assert out["truncated"] is True

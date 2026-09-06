@@ -105,16 +105,21 @@ class ListDirResult(ToolResult):
     # Entries the workspace boundary hides. Counted rather than named: the
     # listing stays true without disclosing what is hidden.
     hidden: int = 0
+    # The listing stops at the cap; the rest is there, unnamed.
+    truncated: bool = False
 
     def to_wire(self) -> dict[str, Any]:
         out: dict[str, Any] = {"entries": list(self.entries)}
         if self.hidden:
             out["hidden"] = self.hidden
+        if self.truncated:
+            out["truncated"] = True
         return out
 
     def summary(self) -> str:
         extra = f", {self.hidden} hidden" if self.hidden else ""
-        return f"{len(self.entries)} entries{extra}"
+        cut = " (truncated)" if self.truncated else ""
+        return f"{len(self.entries)} entries{extra}{cut}"
 
 
 # --- search / navigation -----------------------------------------------------

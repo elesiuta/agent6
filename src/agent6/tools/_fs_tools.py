@@ -68,6 +68,10 @@ from agent6.tools.schema import (
 # enough for any real source file; a bigger file returns its capped prefix with
 # truncated=True. Revisit if a legitimate read hits it.
 MAX_READ_CHARS = 5_000_000
+# Upper bound on a listing: a generated or vendored directory (node_modules)
+# holds tens of thousands of entries, and every one went into the context and
+# the transcript. Capped and marked, like every sibling result.
+LIST_DIR_CAP = 1_000
 
 
 def agent6_docs(raw: dict[str, Any]) -> ToolResult:
@@ -144,8 +148,9 @@ def list_dir(ws: Workspace, raw: dict[str, Any]) -> ListDirResult:
     # stops probing a path it will only be refused.
     visible = [e for e in listing if not ws.is_denied(sp.abs_path / e.name)]
     return ListDirResult(
-        entries=tuple(e.name + "/" if e.is_dir else e.name for e in visible),
+        entries=tuple(e.name + "/" if e.is_dir else e.name for e in visible[:LIST_DIR_CAP]),
         hidden=len(listing) - len(visible),
+        truncated=len(visible) > LIST_DIR_CAP,
     )
 
 
@@ -256,7 +261,16 @@ def _existing_text(sp: SafePath, rel_path: str) -> str | None:
         return None
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {rel_path}")
-    return read_contained(sp)
+    # The read_file cap, refused rather than truncated: a partial read must
+    # never become a whole-file write, and the uncapped read OOM-crashed the
+    # unsandboxed agent on a file a jailed command had made.
+    text = read_contained(sp, limit_chars=MAX_READ_CHARS + 1)
+    if len(text) > MAX_READ_CHARS:
+        raise ToolError(
+            f"{rel_path} is larger than the edit tools take ({MAX_READ_CHARS:,} chars);"
+            " change it with run_command"
+        )
+    return text
 
 
 def apply_edit(
