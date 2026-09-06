@@ -161,7 +161,7 @@ Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpe
 
 ## TaskNode
 
-[`agent6.graph.models`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/graph/models.py) &middot; pydantic model + 7 nested models
+[`agent6.graph.models`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/graph/models.py) &middot; pydantic model + 6 nested models
 
 The persistent task-graph models: nodes plus the LLM-emitted curator intents that mutate them, a doubly-linked tree keyed by time-sortable ULID ids.
 
@@ -187,7 +187,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 | `graph_version` | `int` | `0` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, ui/cli/_task_tree, workflows/{_dag_focus, _parallel_dispatch, loop}
+- **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, workflows/{_dag_focus, _parallel_dispatch, loop}
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (12 test files exercise it)
 
 ## Run/machine wire snapshot
