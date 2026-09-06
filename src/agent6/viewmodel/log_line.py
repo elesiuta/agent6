@@ -159,6 +159,10 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
             salient = f"{event.get('elided')} elided, {event.get('gists')} gists in context"
         case "loop.compact.refused":
             salient = _cut(str(event.get("reason", "")), 160)
+        case "jail.degraded":
+            # The sandbox came up weaker than asked, or left a process behind:
+            # the reason is the row. Startup stderr spans lines; the row is one.
+            salient = _cut(" ".join(str(event.get("detail", "")).split()), 160)
         case "mcp.server_unavailable":
             salient = f"{event.get('server')} unavailable: {_cut(str(event.get('error', '')), 120)}"
         case "loop.skills.warning":

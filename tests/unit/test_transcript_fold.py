@@ -126,6 +126,15 @@ def test_the_scrub_is_default_deny_not_a_csi_blocklist() -> None:
     assert scrub(once) == once == "textbold"
 
 
+def test_a_jail_degradation_is_a_marker_in_the_fold() -> None:
+    """The log view renders the event's detail; the conversation every surface
+    folds from carried nothing, so a run whose sandbox came up weaker than
+    asked read as an ordinary one there."""
+    items = fold_transcript([{"type": "jail.degraded", "detail": "fresh /proc\nmount failed"}])
+    assert [i.kind for i in items] == ["marker"]
+    assert items[0].body == "sandbox degraded: fresh /proc mount failed"
+
+
 def test_parallel_dispatched_renders_a_truthful_marker() -> None:
     # The dispatched event carries only group + per-segment tasks (lane ids do not
     # exist yet); the fold renders a task count + the task summary, never raw json.

@@ -352,8 +352,16 @@ def _compact_refused_body(event: dict[str, Any]) -> str:
     return f"compaction refused: {reason}" if reason else "compaction refused"
 
 
+def _jail_degraded_body(event: dict[str, Any]) -> str:
+    """The sandbox came up weaker than asked, or a stop left a process behind:
+    the reason is the notice."""
+    detail = " ".join(str(event.get("detail", "")).split())
+    return f"sandbox degraded: {detail}" if detail else "sandbox degraded"
+
+
 _MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "mcp.server_unavailable": _mcp_unavailable_body,
+    "jail.degraded": _jail_degraded_body,
     "loop.parallel.dispatched": _parallel_dispatched_body,
     "loop.parallel.joined": _parallel_joined_body,
     "loop.parallel.failed": _parallel_failed_body,

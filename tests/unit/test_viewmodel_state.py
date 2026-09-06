@@ -54,6 +54,17 @@ def test_format_log_line_keeps_the_compaction_reason() -> None:
     assert "keep the auth work" in requested
 
 
+def test_a_jail_degraded_row_carries_its_reason() -> None:
+    """With no case for the type the row was the timestamp and the event name:
+    a sandbox that came up weaker than asked, or a stop that left a process
+    behind, read as nothing having happened."""
+    line = format_log_line(
+        {"type": "jail.degraded", "detail": "[agent6-jail] warning: fresh /proc\nmount failed"}
+    )
+    assert "fresh /proc mount failed" in line
+    assert "\n" not in line
+
+
 def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.MonkeyPatch) -> None:
     """The `ctx N%` readout every surface shows (TUI header + composer, the
     pause menu, the web budget card) comes from one rule: the last completed
