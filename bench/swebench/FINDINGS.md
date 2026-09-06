@@ -1052,3 +1052,29 @@ demonstrably occurs in other attempts (click's original leg). The
 class's remaining live candidates are the product notice (needs
 exposure to judge) and the literal-contract mechanism from the
 stable-fail analysis (unbuilt).
+
+### Fresh full-110 confirm: 58/99 attempted (58.6%), 0 empty (2026-08-26)
+
+One fresh run, scoped-verify wheel + prompt v2, single attempt per
+instance: 58 of 99 attempted resolved; the plan guard stopped the fleet
+at its spend ceiling with batch 10 (11 ids) unattempted (6 of
+its preds exist unscored; a spec KeyError blocks scoring them apart, so
+they rescore with the tail). Floor if all 11 unattempted count as
+failures: 58/110 = 52.7%, already past the prior best full run (53/110
+= 48.2%). At the run's own rate the tail projects ~64/110 (~58%),
+which sits at the 58-62 board range's lower edge.
+
+Attribution stays honest: the subset control showed the arms add
+nothing above ~15% retry variance, so the gain over the 48.2% prior
+best is primarily (a) the away=deny fix now baked in (the prior run
+lost ~19 legs to approval parks; 0 empties here vs 12 then) and (b)
+sample variance (batches ran 5/11 to 10/11). The arms ride along
+unproven. Completing the last 11 legs costs ~1 plan point and closes
+the number.
+
+Completion note: the sequencer's own batch-10 scoring landed after the
+kill: 59/110 as-run (53.6%), 8 of batch 10's 11 legs empty as
+guard-kill artifacts (killed mid-run), not model declines; 1 of its 6
+extracted patches resolved. On legs that ran to completion the rate is
+59/105 (56.2%). Prior best full run: 53/110 (48.2%). A clean 11-leg
+rerun of batch 10 (~1 point) yields the artifact-free 110 number.
