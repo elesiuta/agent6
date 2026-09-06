@@ -12,7 +12,7 @@ import subprocess
 from collections.abc import Collection
 from pathlib import Path
 
-from agent6.app.merge import execute_merge, noop_merge_line
+from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
 from agent6.app.reporter import Reporter
 from agent6.budget import BudgetTracker
 from agent6.child_env import curated_env
@@ -467,6 +467,8 @@ def finalize_auto_merge(
             f"auto_merged {run_branch} into {base_branch} "
             f"({cfg.git.merge_strategy}) -> {outcome.merged_sha[:12]}"
         )
+        if kept := left_behind_line(base_branch, outcome):
+            reporter.note(kept)
     elif outcome.status == "noop":
         reporter.note(f"{noop_merge_line(run_branch, base_branch, outcome)}.")
     elif outcome.status == "conflict":

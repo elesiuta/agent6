@@ -892,6 +892,41 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: Path) 
     assert status(tmp_path).is_clean  # main is checked out: index brought forward
 
 
+def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
+    tmp_path: Path,
+) -> None:
+    """The merge brings a checked-out file forward only where it still matches
+    what the branch held, so an edit of the operator's survives -- and the
+    merge read as landed while the tree they then test and commit holds the
+    older content. The run's own checkout (already at the merged content) is
+    named by nothing: that is every merge."""
+    _init_repo(tmp_path)
+    base = status(tmp_path).head_sha
+    run_tip = _lane_commit(tmp_path, base, "feat.txt", "the run's line\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-ref", "refs/agent6/r1", run_tip], check=True
+    )
+    (tmp_path / "feat.txt").write_text("a third version, the operator's\n", encoding="utf-8")
+
+    res = plumb_merge(tmp_path, "main", "refs/agent6/r1", strategy="squash", message="m")
+
+    assert res.left_behind == ("feat.txt",)
+    assert (tmp_path / "feat.txt").read_text(
+        encoding="utf-8"
+    ) == "a third version, the operator's\n"
+
+    # The same merge onto a checkout that holds the run's own work: nothing kept.
+    second_tip = _lane_commit(tmp_path, res.merged_sha, "next.txt", "y\n")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-ref", "refs/agent6/r2", second_tip], check=True
+    )
+    (tmp_path / "next.txt").write_text("y\n", encoding="utf-8")
+    assert (
+        plumb_merge(tmp_path, "main", "refs/agent6/r2", strategy="squash", message="m").left_behind
+        == ()
+    )
+
+
 def test_add_worktree_is_detached_shares_refs_and_is_removed_alone(tmp_path: Path) -> None:
     """`add_worktree` makes a detached linked worktree at the sha whose refs
     are the repository's own (a chain commit made there is visible from the

@@ -71,6 +71,8 @@ class MergeOutcome:
     # either way; without this, `prune` calls the branch unmerged.
     stamp_error: str = ""
     recorded: bool = False
+    # Paths the checkout kept its own version of (`left_behind_line`).
+    left_behind: tuple[str, ...] = ()
 
 
 def record_merge_in_manifest(
@@ -352,7 +354,23 @@ def execute_merge(
         merged_sha=result.merged_sha,
         stamp_error=stamp_error,
         recorded=noop and not stamp_error,
+        left_behind=result.left_behind,
     )
+
+
+def left_behind_line(target: str, outcome: MergeOutcome) -> str:
+    """The one line for merged files the checkout keeps its own version of, on
+    every surface; "" when it holds everything the merge landed.
+
+    The merge is ref plumbing: it moves the branch and brings the checkout
+    forward only where a file still matches what the branch held, so an edit
+    of the operator's (or another run's work sitting in the tree) is never
+    overwritten. Without this line the merge read as landed while the tree the
+    operator then tests, and commits, holds the older content."""
+    if not outcome.left_behind:
+        return ""
+    named = ", ".join(outcome.left_behind[:4]) + (", ..." if len(outcome.left_behind) > 4 else "")
+    return f"your checkout keeps its own {named}; {target} holds what was merged"
 
 
 def noop_merge_line(run_branch: str, target: str, outcome: MergeOutcome) -> str:

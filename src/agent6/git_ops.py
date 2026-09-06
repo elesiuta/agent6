@@ -1200,6 +1200,9 @@ class MergeResult:
     merged_sha: str
     conflicted: bool
     conflicts: tuple[str, ...]
+    # Paths the checkout keeps its own version of, so it does NOT hold what
+    # was merged: `_bring_index_forward` leaves an edit exactly as it is.
+    left_behind: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1285,11 +1288,10 @@ def plumb_merge(
         ).stdout.strip()
     # Compare-and-swap: refuses (GitError) if the target moved concurrently.
     _run(path, "update-ref", ref, sha, ours)
-    _bring_index_forward(path, target, ours, sha)
-    return MergeResult(sha, False, ())
+    return MergeResult(sha, False, (), _bring_index_forward(path, target, ours, sha))
 
 
-def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) -> None:
+def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) -> tuple[str, ...]:
     """After moving a CHECKED-OUT branch's ref from *old_tip* to *new_tip*
     without a checkout, bring that checkout's index and worktree forward for
     the paths the move changed, each only where it still matches *old_tip*,
@@ -1301,10 +1303,11 @@ def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) ->
     writes. The checkout is whichever worktree of the repository has *target*
     checked out (a fork's leg merges from its own linked worktree); none, or
     one git still records but whose directory is gone, means nothing to
-    bring forward."""
+    bring forward. Returns the paths the checkout keeps a third version of,
+    which the move did not reach."""
     checkout = _worktree_of_branch(path, target)
     if checkout is None or not checkout.is_dir():
-        return
+        return ()
     path = checkout
     changed = _run(path, "diff-tree", "-r", "--no-renames", "-z", old_tip, new_tip).stdout
     staged = {
@@ -1313,6 +1316,7 @@ def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) ->
         if "\t" in entry
     }  # path -> [mode, sha, stage]
     updates: list[str] = []
+    left: list[str] = []
     records = changed.split("\x00")
     i = 0
     while i + 1 < len(records):
@@ -1327,35 +1331,40 @@ def _bring_index_forward(path: Path, target: str, old_tip: str, new_tip: str) ->
         ):
             # mode 000000 removes the entry (a merge-side deletion).
             updates.append(f"{new_mode} {new_sha}\t{rel}")
-        _bring_worktree_file_forward(path, rel, old_mode, old_sha, new_mode, new_sha)
+        if not _bring_worktree_file_forward(path, rel, old_mode, old_sha, new_mode, new_sha):
+            left.append(rel)
     if updates:
         _run(path, "update-index", "-z", "--index-info", stdin_text="\x00".join(updates) + "\x00")
+    return tuple(left)
 
 
 def _bring_worktree_file_forward(
     path: Path, rel: str, old_mode: str, old_sha: str, new_mode: str, new_sha: str
-) -> None:
+) -> bool:
     """Move ONE worktree file from the old tip's content to the new tip's,
     only when it still matches the old tip (absent counts as matching a
     deletion or a not-yet-added path); regular files only -- symlinks and
-    submodule pointers are left to the operator."""
+    submodule pointers are left to the operator.
+
+    False when the checkout keeps a third version (neither tip): the caller
+    names those, since the move it just reported did not reach them."""
     file = path / rel
     if new_mode in ("120000", "160000") or old_mode in ("120000", "160000"):
-        return
+        return True  # left to the operator, and never named as left behind
     try:
-        if old_mode == "000000":
-            current_matches = not file.exists()
-        elif not file.is_file() or file.is_symlink():
-            current_matches = False
-        else:
-            current_matches = (
-                _run(path, "hash-object", "--", rel, check=False).stdout.strip() == old_sha
-            )
-        if not current_matches:
-            return
+        current = (
+            ""
+            if not file.is_file() or file.is_symlink()
+            else _run(path, "hash-object", "--", rel, check=False).stdout.strip()
+        )
+        matches_old = not file.exists() if old_mode == "000000" else current == old_sha
+        if not matches_old:
+            # Already at the new content (every run's own checkout) is landed,
+            # not left behind: only a third version is.
+            return current == new_sha or (new_mode == "000000" and not file.exists())
         if new_mode == "000000":
             file.unlink(missing_ok=True)
-            return
+            return True
         file.parent.mkdir(parents=True, exist_ok=True)
         # Bytes straight from git to the file: _run decodes lossily (str), which
         # would corrupt a binary blob.
@@ -1371,7 +1380,8 @@ def _bring_worktree_file_forward(
         if new_mode == "100755":
             file.chmod(file.stat().st_mode | 0o111)
     except (GitError, OSError, subprocess.SubprocessError):
-        return  # best-effort: an unwritable path leaves truthful dirt, never a crash
+        return False  # best-effort: an unwritable path leaves truthful dirt, never a crash
+    return True
 
 
 def list_run_commits(path: Path, base_sha: str, run_branch: str) -> tuple[CommitRow, ...]:

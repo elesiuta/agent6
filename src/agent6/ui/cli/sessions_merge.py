@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent6.app.fork import sweep_fork_worktrees
-from agent6.app.merge import execute_merge, noop_merge_line
+from agent6.app.merge import execute_merge, left_behind_line, noop_merge_line
 from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
@@ -252,6 +252,8 @@ def _cmd_merge(
         f"[agent6] merged {plan.run_branch} into {plan.target} "
         f"({plan.strategy}) -> {outcome.merged_sha[:12]}{note}"
     )
+    if kept := left_behind_line(plan.target, outcome):
+        print(f"[agent6] {kept}")
     return 0
 
 
