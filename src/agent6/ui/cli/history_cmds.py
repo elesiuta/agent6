@@ -397,7 +397,10 @@ def _parse_seq_window(spec: str) -> tuple[int, int] | None:
         return None
     if "-" in spec:
         a, b = spec.split("-", 1)
-        return int(a), int(b)
+        lo, hi = int(a), int(b)
+        if lo > hi:
+            raise ValueError(f"reversed window {spec!r}")
+        return lo, hi
     n = int(spec)
     return n, n
 
@@ -438,7 +441,7 @@ def _cmd_history_transcript(
     try:
         window = _parse_seq_window(seq)
     except ValueError:
-        print(f"ERROR: --seq expects N or N-M, got {seq!r}", file=sys.stderr)
+        print(f"ERROR: --seq expects N or N-M with N <= M, got {seq!r}", file=sys.stderr)
         return 2
 
     transcripts = load_transcripts(layout.transcripts_dir)
