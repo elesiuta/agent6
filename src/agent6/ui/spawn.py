@@ -206,25 +206,28 @@ def subcommand_label(argv: list[str]) -> str:
     return label
 
 
-def _capture_message(stdout: str, stderr: str) -> str:
-    """Captured CLI output as front-end message text. The CLI prefixes its own
-    lines with "[agent6] " to stand apart from pass-through git output on a
-    console; in a toast every line already comes from agent6, so the prefix is
-    dropped."""
-    lines = [ln.removeprefix("[agent6] ").strip() for ln in (stdout + "\n" + stderr).splitlines()]
+def capture_message(*streams: str) -> str:
+    """Captured CLI output as front-end message text, its console decorations
+    dropped: "[agent6] " marks agent6's own lines among pass-through git
+    output, "ERROR: " marks a failure, and a toast or an API error field
+    already says both."""
+    lines = [
+        ln.removeprefix("[agent6] ").removeprefix("ERROR: ").strip()
+        for ln in "\n".join(streams).splitlines()
+    ]
     return "\n".join(ln for ln in lines if ln)
 
 
 def _child_exit_message(label: str, rc: int | None, captured: str) -> str:
     """What a front-end shows when a spawned child ended before it began: the
-    child's own words (its REFUSING / PARKED / ERROR message), or the exit
-    code when it said nothing."""
-    said = _capture_message("", captured)
+    child's own words (a REFUSING / PARKED line, or its error with the
+    `ERROR: ` marker dropped), or the exit code when it said nothing."""
+    said = capture_message(captured)
     return said or f"agent6 {label} exited {rc} without a word"
 
 
 def _not_started_message(label: str, timeout_s: float, captured: str) -> str:
-    said = _capture_message("", captured)
+    said = capture_message(captured)
     return f"agent6 {label} has not started after {timeout_s:.0f}s" + (f":\n{said}" if said else "")
 
 
@@ -245,7 +248,7 @@ def run_cli_capture(argv: list[str], cwd: Path, *, timeout_s: float = 120.0) -> 
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return False, f"failed to run agent6 {subcommand_label(argv)}: {exc}"
-    message = _capture_message(proc.stdout, proc.stderr)
+    message = capture_message(proc.stdout, proc.stderr)
     return proc.returncode == 0, message or f"exit {proc.returncode}"
 
 

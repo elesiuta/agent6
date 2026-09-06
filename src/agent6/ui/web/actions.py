@@ -43,6 +43,7 @@ from agent6.ui.btw import open_btw
 from agent6.ui.spawn import (
     DETACHED_RUN_ENV,
     agent6_argv,
+    capture_message,
     run_cli_capture,
     spawn_and_confirm,
     spawn_and_locate,
@@ -177,7 +178,7 @@ def undo_session(cwd: Path, session_id: str) -> tuple[dict[str, str] | None, str
     reporter = Reporter(out=said.append, err=said.append)
     result = undo_fork(None, session_dir.name, cwd=cwd, reporter=reporter)
     if result is None:
-        return None, (said[-1].strip() if said else "undo failed")
+        return None, (capture_message(said[-1]) if said else "undo failed")
     child, text = result
     return {"new_session_id": child, "undone_text": text}, ""
 

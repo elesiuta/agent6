@@ -235,6 +235,17 @@ def test_run_cli_capture_strips_console_prefixes(
     assert msg == "merged a into b\ndeleted branch a\nskipped c (checked out)"
 
 
+def test_capture_message_drops_the_error_prefix_a_failure_field_already_states() -> None:
+    """`ERROR: ` is the console's failure marker; an API `error` field or a red
+    toast carried it verbatim (`"error": "ERROR: unknown config key ..."`)."""
+    assert (
+        spawn.capture_message("", "ERROR: unknown config key 'x.y'") == "unknown config key 'x.y'"
+    )
+    assert spawn.capture_message("[agent6] ERROR: no branch\n", "") == "no branch"
+    # A refusal keeps its kind: REFUSING / PARKED say what happened, not that it did.
+    assert spawn.capture_message("REFUSING: run r is live") == "REFUSING: run r is live"
+
+
 def test_agent6_exe_finds_the_binary_beside_the_interpreter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
