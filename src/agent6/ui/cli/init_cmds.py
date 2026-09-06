@@ -178,8 +178,13 @@ def _cmd_init(*, ecosystem: str, assume_yes: bool = False, config_path: Path | N
         )
         # Only where a scaffold commit was on the table: outside a repo (and
         # after a declined `git init`) nothing was committed to leave out of.
-        if theirs and is_git_repo(cwd):
-            names = ", ".join(sorted(p.name for p in theirs))
+        dirty = (
+            tuple(p for p in theirs if paths_dirty(cwd, (str(p.relative_to(cwd)),)))
+            if is_git_repo(cwd)
+            else ()
+        )
+        if dirty:
+            names = ", ".join(sorted(p.name for p in dirty))
             print(f"  left uncommitted (already edited): {names}")
         _print_next_steps(cwd, config_path)
     # Don't leave root-owned scaffolding in the user's repo (sudo case).

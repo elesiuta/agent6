@@ -318,3 +318,28 @@ def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
     ).stdout.split()
     assert head == [".gitignore"], head
     assert (repo / "AGENTS.md").read_text(encoding="utf-8").startswith("theirs\n")
+
+
+def test_init_does_not_call_a_committed_scaffold_uncommitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """AGENTS.md committed before init and untouched since: init leaves it
+    alone, and said "left uncommitted (already edited)" over a clean file."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_repo(repo)
+    (repo / "AGENTS.md").write_text("theirs v1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
+        cwd=repo,
+        check=True,
+    )
+
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    assert main(["init", "--yes"]) == 0
+
+    out = capsys.readouterr().out
+    assert "committed the agent6 scaffold (.gitignore)" in out
+    assert "left uncommitted" not in out
