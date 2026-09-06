@@ -123,11 +123,6 @@ from agent6.workflows._session_state import SessionSnapshot, load_session_snapsh
 _DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "cursor.json")
 
 
-def _lineage_entry(*, child: str, parent: str, turn: int, sha: str, ts: str) -> dict[str, object]:
-    """One per-repo lineage event. Pure: the caller passes the timestamp in."""
-    return {"child": child, "parent": parent, "turn": turn, "sha": sha, "ts": ts}
-
-
 def _resolve_source(state_dir: Path, query: str, *, reporter: Reporter) -> SessionLayout | None:
     """The session to fork, by id or (empty query) the most recent one.
 
@@ -972,16 +967,15 @@ def _materialize_fork(
         shutil.rmtree(dst.session_dir, ignore_errors=True)
         return 1
 
-    # Append the per-repo lineage event (ts minted here, passed into the pure helper).
     append_jsonl(
         src.state_dir / "lineage.jsonl",
-        _lineage_entry(
-            child=dst.session_id,
-            parent=src.session_id,
-            turn=plan.forked_from_turn,
-            sha=plan.forked_from_sha,
-            ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
-        ),
+        {
+            "child": dst.session_id,
+            "parent": src.session_id,
+            "turn": plan.forked_from_turn,
+            "sha": plan.forked_from_sha,
+            "ts": _dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
+        },
     )
     at = f"(branch {run_branch} " if run_branch else f"({chain_ref_for(dst.session_id)} "
     where = f" in {checkout.worktree}" if checkout is not None else ""

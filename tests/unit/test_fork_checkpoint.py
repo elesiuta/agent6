@@ -16,6 +16,7 @@ import json
 import subprocess as sp
 from collections.abc import Generator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -590,7 +591,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     assert ev["parent"] == "sunny-otter-AAAA11"
     assert ev["turn"] == 3
     assert ev["sha"] == head
-    assert ev["ts"]
+    assert datetime.fromisoformat(ev["ts"]).tzinfo == UTC, ev["ts"]
 
     # Source run is untouched: no new checkpoints, manifest unchanged.
     assert sorted(list_checkpoint_turns(src)) == [1, 2, 3]
