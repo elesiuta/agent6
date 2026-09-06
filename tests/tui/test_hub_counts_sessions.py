@@ -56,3 +56,15 @@ def test_one_session_is_singular(tmp_path: Path) -> None:
 
     subtitle = _subtitle(state, repo)
     assert "1 session" in subtitle and "sessions" not in subtitle, subtitle
+
+
+def test_an_empty_hub_says_what_to_do_next(tmp_path: Path) -> None:
+    """A blank table is not an answer: the CLI, the web and the machines screen
+    next door all name the next step, and the hub left the operator looking at
+    an empty grid."""
+    state, repo = tmp_path / "state", tmp_path / "repo"
+    repo.mkdir()
+
+    subtitle = _subtitle(state, repo)
+
+    assert "no sessions yet" in subtitle and "agent6 run" in subtitle, subtitle

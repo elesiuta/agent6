@@ -23,6 +23,22 @@ from agent6.viewmodel.state import (
 )
 
 
+def test_a_log_line_is_one_line() -> None:
+    """Every log pane paints the return value as a row, and the scrubber keeps
+    newlines (a transcript needs them): a provider error carrying an SSE dump
+    or a traceback painted a dozen rows, every one after the first with no
+    timestamp and no event name."""
+    line = format_log_line(
+        {
+            "type": "loop.provider.retry",
+            "error": "non-JSON response (status 200):\n: keepalive\n\n: keepalive\n",
+        }
+    )
+
+    assert "\n" not in line
+    assert "keepalive" in line
+
+
 def test_format_log_line_keeps_the_compaction_reason() -> None:
     """A failed compaction carries its reason in `error`; with no case for these
     types the log view printed the bare event name and dropped it, so a 429'd

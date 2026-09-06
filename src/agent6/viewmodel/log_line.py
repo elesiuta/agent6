@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
 """One-line renderings of a run's events for the log views: the argument
-preview every tool call carries, and the `format_log_line` row."""
+preview every tool call carries, and the `format_log_line` row.
+
+One line means one line: every log pane paints the return value as a row."""
 
 from __future__ import annotations
 
@@ -188,4 +190,10 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: PLR0912, PLR0915
     line = f"{ts[11:23] if len(ts) > 23 else ts}  {etype:<18}"
     # The salient text embeds model-authored fields (args, summaries, output
     # tails): scrub the finished line so no skin's log pane relays an escape.
-    return scrub_terminal_controls(f"{line} {salient}") if salient else line
+    # ONE line by contract -- the scrubber keeps \n (a transcript needs it), so
+    # a provider error carrying an SSE dump painted a dozen rows with no
+    # timestamp and no event name on any of them.
+    if not salient:
+        return line
+    scrubbed = scrub_terminal_controls(f"{line} {salient}")
+    return " ".join(scrubbed.split("\n"))

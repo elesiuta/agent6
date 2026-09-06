@@ -209,7 +209,14 @@ class HomeScreen(ScreenChrome, Screen[None]):
         # "sessions", not "runs": this hub lists every bucket, so a hub of one
         # run, one plan and one ask announced "3 runs".
         count = len(self._runs)
-        self.app.sub_title = f"{self.repo_cwd} · {count} session{'' if count == 1 else 's'}"
+        # The empty state says what to do next, as the CLI and the web do and as
+        # the machines screen next door does: a blank table is not an answer.
+        tally = (
+            'no sessions yet (n starts one, or: agent6 run "<task>")'
+            if not count
+            else f"{count} session{'' if count == 1 else 's'}"
+        )
+        self.app.sub_title = f"{self.repo_cwd} · {tally}"
         # An empty table shouldn't paint a full-height focus cursor over its body.
         table.show_cursor = table.row_count > 0
 
