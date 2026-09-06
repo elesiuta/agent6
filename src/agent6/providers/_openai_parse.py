@@ -131,16 +131,6 @@ def parse_response(  # noqa: PLR0912, PLR0915
                     for i, r in enumerate(recovered)
                 )
                 text = remaining_text
-        # The upstream's own failure signal, seen from OpenRouter as a 200 whose
-        # choice carries `finish_reason: "error"`, a null content and nothing
-        # else. Handing that back as a finished turn spends a went-quiet nudge
-        # on an error, or abstains a review seat as if the model had answered;
-        # raise it as retryable, like a stream that ends without [DONE].
-        if stop_reason == "error" and not text.strip() and not tool_uses:
-            raise ProviderError(
-                "OpenAI response carries finish_reason='error' with no content:"
-                " the upstream failed this completion"
-            )
     usage = data.get("usage") or {}
     # OpenAI's cached_tokens field, when present, lives under
     # usage.prompt_tokens_details.cached_tokens. Treat absent as 0.

@@ -322,4 +322,19 @@ class ProviderCall:
                 cache_creation_tokens=parsed.cache_creation_tokens,
                 cost_usd=parsed.cost_usd,
             )
+        # The upstream's own failure signal, seen from OpenRouter as a 200 whose
+        # choice carries `finish_reason: "error"`, a null content and nothing
+        # else. Returned as a finished turn it spends a went-quiet nudge on an
+        # error and abstains a review seat as if the model had answered; raised
+        # here it retries, like a stream that ends without [DONE]. AFTER the
+        # record: the provider billed those tokens either way.
+        if (
+            parsed.stop_reason.strip().lower() == "error"
+            and not parsed.text.strip()
+            and not parsed.tool_uses
+        ):
+            raise ProviderError(
+                f"{self.api_label} response carries finish_reason='error' with no content:"
+                " the upstream failed this completion"
+            )
         return parsed

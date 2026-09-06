@@ -569,33 +569,41 @@ def test_401_without_credential_is_not_retried() -> None:
     assert calls["n"] == 1
 
 
-def test_an_upstream_error_completion_is_retryable_not_a_quiet_turn() -> None:
+def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
     """Observed from OpenRouter: a 200 whose choice carries
     `finish_reason: "error"`, a null content and nothing else, after the model
     spent its whole budget in the reasoning channel. Returned as a finished
-    turn it spends a went-quiet nudge on an upstream failure, and abstains a
-    review seat as if the model had answered."""
-    from agent6.providers._openai_parse import parse_response
+    turn it spends a went-quiet nudge on an upstream failure and abstains a
+    review seat as if the model had answered; the tokens are billed either
+    way, so it meters first and then retries."""
+    from agent6.budget import BudgetTracker
 
     failed = {
         "choices": [
             {"finish_reason": "error", "message": {"content": None, "reasoning": "thinking"}}
         ],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 16801},
+        "usage": {"prompt_tokens": 12000, "completion_tokens": 16801},
     }
-    with pytest.raises(ProviderError, match="finish_reason='error'"):
-        parse_response(failed)
+    budget = BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1)
+    provider = OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
 
-    # A partial answer under the same finish_reason is still handed back.
+    def fake_post(*_a: Any, **_kw: Any) -> httpx2.Response:
+        return _fake_response(failed)
+
+    with (
+        mock.patch("agent6.providers._transport.http_post", side_effect=fake_post),
+        pytest.raises(ProviderError, match="finish_reason='error'"),
+    ):
+        provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
+
+    snap = budget.snapshot()
+    assert (snap.input_total, snap.output_total) == (12000, 16801), "billed tokens went unmetered"
+
+    # A partial answer under the same finish reason is still handed back.
+    from agent6.providers._openai_parse import parse_response
+
     partial = {
         "choices": [{"finish_reason": "error", "message": {"content": "half an answer"}}],
         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
     }
     assert parse_response(partial).text == "half an answer"
-
-    # And an ordinary empty turn stays the loop's went-quiet case.
-    quiet = {
-        "choices": [{"finish_reason": "stop", "message": {"content": ""}}],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
-    }
-    assert parse_response(quiet).text == ""
