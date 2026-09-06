@@ -551,3 +551,64 @@ def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: Path) -> None:
             assert labels == ["updated", "status", "cost", "id", "task"]
 
     asyncio.run(scenario())
+
+
+def test_delete_action_confirms_then_shells_out(tmp_path: Path, monkeypatch: object) -> None:
+    """Merge had a hub key and delete lived only in the run view's menu, so the
+    two verbs over one row were reached from opposite ends of the app.
+    Pressing `d` opens a confirm modal; confirming runs `agent6 sessions rm`
+    for the selected run (stubbed here so no real CLI is spawned)."""
+    import asyncio
+
+    from textual.widgets import DataTable
+
+    from agent6.ui.tui import home
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.modals import ConfirmModal
+
+    a6 = tmp_path / ".agent6"
+    _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
+    calls: list[str] = []
+
+    def _fake_delete(cwd: Path, session_id: str, config_path: object = None) -> tuple[bool, str]:
+        calls.append(session_id)
+        return True, "removed"
+
+    monkeypatch.setattr(home, "_run_delete_cli", _fake_delete)  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            tbl = app.screen.query_one("#sessions", DataTable)
+            tbl.focus()
+            tbl.move_cursor(row=0)
+            await pilot.press("d")
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmModal)
+            await pilot.press("y")
+            await pilot.pause()
+            assert calls == ["r1"]
+
+    asyncio.run(scenario())
+
+
+def test_delete_is_greyed_out_for_a_live_run(tmp_path: Path) -> None:
+    import asyncio
+    import os
+
+    from agent6.ui.tui.home import Agent6HomeApp
+
+    a6 = tmp_path / ".agent6"
+    live = _write_run(
+        a6, "runs", "r-live", [{"type": "session.start", "mode": "run", "user_task": "x"}]
+    )
+    (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.screen.check_action("delete_selected", ()) is None
+
+    asyncio.run(scenario())

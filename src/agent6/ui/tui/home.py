@@ -118,6 +118,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         Binding("enter", "open_selected", "Open"),
         Binding("l", "view_logs", "View logs"),
         Binding("m", "merge_selected", "Merge run"),
+        Binding("d", "delete_selected", "Delete run"),
         Binding("r", "refresh", "Refresh"),
         Binding("c", "open_config", "Config"),
         Binding("M", "open_machines", "Machines"),
@@ -260,7 +261,8 @@ class HomeScreen(ScreenChrome, Screen[None]):
         )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Grey Merge out on a LIVE run, which `sessions merge` always refuses
+        """Grey Merge and Delete out on a LIVE run, which `sessions merge` and
+        `sessions rm` always refuse
         (the web disables the same button and says why). None, not False:
         False also HIDES the key, and a key missing from the footer reads as a
         capability this hub does not have.
@@ -271,7 +273,7 @@ class HomeScreen(ScreenChrome, Screen[None]):
         commits live only on its chain ref -- one the CLI merges fine.
         """
         del parameters
-        if action == "merge_selected":
+        if action in ("merge_selected", "delete_selected"):
             rd = self._selected_dir()
             if rd is None:
                 return None
@@ -309,6 +311,35 @@ class HomeScreen(ScreenChrome, Screen[None]):
             ),
             self._on_merge_confirm(session_id),
         )
+
+    def action_delete_selected(self) -> None:
+        """Delete the selected run's history, after a confirm: the same verb the
+        run view's menu offers, from the row where the run is selected. History
+        only: the run branch and its commits are git's (`sessions prune` is the
+        branch verb)."""
+        table = self.query_one("#sessions", DataTable)
+        if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
+            return
+        session_id = self._runs[table.cursor_row].name
+        self.app.push_screen(
+            ConfirmModal(
+                f"Delete run {session_id}'s history?",
+                "Runs `agent6 sessions rm`: removes its transcripts, events and manifest from"
+                " the state dir. The run branch and its commits are kept.",
+                confirm_label="Delete",
+            ),
+            self._on_delete_confirm(session_id),
+        )
+
+    def _on_delete_confirm(self, session_id: str) -> Callable[[bool | None], None]:
+        def cb(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            ok, msg = _run_delete_cli(self.repo_cwd, session_id, self.config_path)
+            self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
+            self.action_refresh()
+
+        return cb
 
     def _on_merge_confirm(self, session_id: str) -> Callable[[bool | None], None]:
         def cb(confirmed: bool | None) -> None:
@@ -401,6 +432,17 @@ def _run_merge_cli(
     The hub shells out to the same CLI a user would, so merging stays a CLI concern
     and the UI never touches git_ops. Synchronous: a merge is a quick git op."""
     return run_cli_capture([*agent6_argv(config_path), "sessions", "merge", session_id], repo_cwd)
+
+
+def _run_delete_cli(
+    repo_cwd: Path, session_id: str, config_path: Path | None = None
+) -> tuple[bool, str]:
+    """Run `agent6 sessions rm -- <session_id>` and return (ok, message): the
+    hub shells out to the CLI, like merge, so deletion stays a CLI concern."""
+    ok, msg = run_cli_capture(
+        [*agent6_argv(config_path), "sessions", "rm", "--", session_id], repo_cwd
+    )
+    return ok, msg or ("removed" if ok else "could not remove")
 
 
 def run_home(agent6_dir: Path, repo_cwd: Path, config_path: Path | None = None) -> Path | None:
