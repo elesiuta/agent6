@@ -1032,3 +1032,49 @@ def test_the_run_total_rides_the_receipt_channel(tmp_path: Path) -> None:
     )
     assert any("RUN TOTAL (all 2 legs)" in line for line in receipt)
     assert not any("RUN TOTAL" in line for line in out)
+
+
+def test_a_plan_ends_without_the_no_commit_footer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plan never commits: its deliverable is the plan, printed above, and
+    "no changes were committed" is noise after it. A run over the same clean
+    tree keeps the footer."""
+    import subprocess as sp
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    sp.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+    sp.run(["git", "add", "-A"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+    monkeypatch.chdir(repo)
+    result = SessionResult(
+        completed=True, reason="finish_planning", summary="planned", iterations=1, tool_calls=1
+    )
+    outs: dict[str, str] = {}
+    for mode in ("plan", "run"):
+        layout = _layout(
+            tmp_path,
+            f"end-{mode}",
+            [
+                {"type": "session.start", "session_id": f"end-{mode}", "user_task": "t"},
+                {"type": "session.end", "reason": result.reason, "all_passed": True},
+            ],
+        )
+        layout.manifest_path.write_text(
+            json.dumps({"mode": mode, "run_branch": "", "base_branch": "main"}), encoding="utf-8"
+        )
+        print_session_end(
+            result,
+            layout=layout,
+            cwd=repo,
+            budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
+            console_stream=False,
+            reporter=STDIO_REPORTER,
+        )
+        outs[mode] = capsys.readouterr().out
+    assert "no changes were committed" not in outs["plan"]
+    assert "no changes were committed" in outs["run"]

@@ -358,7 +358,8 @@ def _print_run_branch_footer(
             "\nnothing was committed ([git].commit_per_step = false): the run's edits are in"
             " the working tree"
         )
-    elif result.completed:
+    elif result.completed and (manifest is None or manifest.mode not in ("plan", "ask")):
+        # A plan or an ask never commits: its deliverable printed above.
         _print_no_commit_footer(
             result, layout=layout, cwd=cwd, run_branch=run_branch, reporter=reporter
         )
