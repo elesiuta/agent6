@@ -1158,6 +1158,26 @@ On the 2026_03 window the board reads Junie 61.6 +/- 0.64, Codex 60.4
 within one SD of Codex and Claude Code and below Junie. No claim beyond
 that: a mean-of-5 (~60 points) is what the board reports.
 
+### Full-110 replicate on the fixed staging harness: 66/110 (60.0%); mean of two 64.5/110 (58.6%) (2026-08-31)
+
+One run, same wheel (master at the claude_code provider merge, 0.0.29+58),
+same prompt, single attempt per instance, conc 4, ten batches of 11
+(run ids rfy1-rfy10), 04:46Z-09:10Z with no 5-hour-window pause: 66 resolved, 44 unresolved,
+0 empty, 0 errors. Per batch: 7, 8, 4, 5, 8, 7, 9, 9, 6, 3 of 11. The
+account's weekly reading rose from 0% to 9% over the window, the day's
+dogfoods and review panels (about 2 points) included.
+
+Against the 63/110 run on the same harness: 58 ids resolved in both, 8
+only here, 5 only there, 39 in neither (the stable-fail block). The two
+runs differ by 3, inside the single-run SD of about 3; their mean is
+64.5/110 (58.6%).
+
+On the 2026_03 window the board reads Junie 61.6 +/- 0.64, Codex 60.4
++/- 1.37, Claude Code 59.6 +/- 1.98 (mean of 5). A mean of two at 58.6
+(SEM about 2.1 from the two runs) sits at Claude Code's figure and
+within one SEM of Codex; below Junie. Three more runs would give the
+board's mean-of-5 (about 36 plan points at this rate).
+
 ### The layer notice: a null on its own firing set (2026-08-31)
 
 Arm (branch pilot/layer-notice, wheel from its tip): every run end
