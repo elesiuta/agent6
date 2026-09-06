@@ -138,9 +138,11 @@ def test_loop_guard_fires_on_three_identical_calls(tmp_path: Path) -> None:
 
 def test_polling_a_growing_result_is_not_a_spiral(tmp_path: Path) -> None:
     """`run_command`'s own description tells the model to poll a background
-    job with `read_background`, whose args never change and whose tail grows
-    every call. The guard counted the calls and killed the run for following
-    the instruction, under a notice claiming the result had not changed."""
+    job with `read_background`, whose args never change until the job ends.
+    Counted as a repeat it drew three nudges and then killed the run for
+    following the instruction. A poll is not a repeat -- and a repeat of any
+    OTHER tool still is, however its bytes differ (a duration, a timestamp):
+    re-running the same failing command is the spiral the guard exists for."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -165,6 +167,27 @@ def test_polling_a_growing_result_is_not_a_spiral(tmp_path: Path) -> None:
     last_args = provider.call.call_args_list[-1]
     final_messages: list[dict[str, Any]] = last_args.kwargs.get("messages") or last_args.args[1]
     assert _loop_guard_blocks(final_messages) == []
+
+    # The same shape on a NON-poll tool is a spiral, whatever its bytes do: a
+    # command re-run with identical arguments whose only difference is its own
+    # duration is the case the guard was written for.
+    spiraller = MagicMock()
+    spiraller.call.side_effect = itertools.chain(
+        (_resp_with_tool("run_command", {"argv": ["pytest"]}, tu_id=f"s{i}") for i in range(1, 10)),
+        itertools.repeat(_resp_text("ok")),
+    )
+    spins = MagicMock(operator_wait_s=0.0)
+    runs = iter(f"1 failed in {i}.0s\n" for i in range(1, 20))
+
+    def _timestamped(*_args: object, **_kwargs: object) -> RawResult:
+        return RawResult({"stdout": next(runs)})
+
+    spins.dispatch.side_effect = _timestamped
+    wf2 = _build_wf(repo, spiraller, spins)
+    wf2.run("make the tests pass")
+    last2 = spiraller.call.call_args_list[-1]
+    msgs2: list[dict[str, Any]] = last2.kwargs.get("messages") or last2.args[1]
+    assert _loop_guard_blocks(msgs2), "a repeated command with a changing duration is a spiral"
 
 
 def test_loop_guard_does_not_fire_when_args_change(tmp_path: Path) -> None:

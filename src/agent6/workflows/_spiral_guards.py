@@ -32,10 +32,15 @@ class SpiralGuard:
     error_nudges_used: int = 0
     last_error_was_denial: bool = False
 
-    def note_call(self, sig: str) -> None:
+    def note_call(self, sig: str, *, polling: bool = False) -> None:
         """Same signature back to back extends the repeat streak; anything
-        else restarts it."""
-        if sig == self.last_call_sig:
+        else restarts it.
+
+        A POLL is not a repeat: `read_background` exists to be called again
+        with the same id until the job ends, which `run_command`'s own
+        description tells the model to do. Counted as a spiral it drew three
+        nudges and then killed the run for following the instruction."""
+        if sig == self.last_call_sig and not polling:
             self.call_streak += 1
         else:
             self.last_call_sig = sig
@@ -53,14 +58,7 @@ class SpiralGuard:
 
     def note_success(self, content: str) -> None:
         """A successful dispatch is progress: remember what was served and
-        clear the WHOLE error spiral.
-
-        A repeat that answered something NEW breaks the repeat streak too: the
-        guard's notice says "the tool result has not changed", and polling
-        `read_background` -- which `run_command`'s own description tells the
-        model to do, and whose tail grows every call -- was killed for it."""
-        if content != self.last_served_content:
-            self.call_streak = 1
+        clear the WHOLE error spiral."""
         self.last_served_content = content
         self.error_sig = None
         self.error_streak = 0

@@ -83,6 +83,7 @@ from agent6.tools.results import AnswersResult, ExecResult, MetricResult, ToolRe
 from agent6.tools.schema import (
     FinishPlanningInput,
     FinishSessionInput,
+    ReadBackgroundInput,
 )
 from agent6.types import AutoCommitDirective, RepoSummary
 from agent6.verify_infer import infer_verify_command, read_agents_md
@@ -1180,7 +1181,7 @@ class Workflow:
                 sig = f"{name}:{json.dumps(tool_input, sort_keys=True, ensure_ascii=False)}"
             except (TypeError, ValueError):
                 sig = f"{name}:<unhashable>"
-            state.spiral.note_call(sig)
+            state.spiral.note_call(sig, polling=name == ReadBackgroundInput.TOOL_NAME)
             self._emit("loop.tool.call", name=name, iteration=turn.iteration)
             served = None
             try:
@@ -2154,8 +2155,7 @@ class Workflow:
             notice = (
                 f"[loop-guard] You have called `{latched_name}` with"
                 f" identical arguments {state.spiral.call_streak} times in a row."
-                " The tool result has not changed. Re-issuing the same"
-                " call again will not yield new information. Change"
+                " Re-issuing the same call will not move the run forward. Change"
                 " your approach: try different arguments, a different"
                 " tool, commit to an edit, or call `finish_session` if"
                 " you have already done what the task requires."
