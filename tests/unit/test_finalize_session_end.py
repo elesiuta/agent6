@@ -52,6 +52,7 @@ def test_finish_session_over_red_verify_is_not_headlined_passed(
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -76,6 +77,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: Path, capsys: object) ->
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -104,6 +106,7 @@ def _end_output(
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -223,6 +226,7 @@ def test_end_banner_does_not_claim_merged_from_a_prior_legs_stamp(
     print_session_end(
         result,
         layout=layout,
+        cwd=repo,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -262,6 +266,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -310,6 +315,7 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
     print_session_end(
         result,
         layout=layout,
+        cwd=repo,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -356,6 +362,7 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -385,6 +392,7 @@ def test_interrupt_end_prints_cost_resume_and_branch_hints(
     monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
     print_interrupt_end(
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         reporter=STDIO_REPORTER,
     )
@@ -409,6 +417,7 @@ def test_provider_error_is_headlined_failed(tmp_path: Path, capsys: object) -> N
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -440,6 +449,7 @@ def test_end_banner_adds_the_run_total_across_resume_legs(
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -466,6 +476,7 @@ def test_end_banner_stays_quiet_on_a_single_leg_run(
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
@@ -711,6 +722,7 @@ def test_the_end_of_run_block_goes_through_the_reporter(
             completed=True, reason="finish_session", summary=forged, iterations=1, tool_calls=1
         ),
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=Reporter(out=said.append, err=said.append),
@@ -754,6 +766,7 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
     print_session_end(
         result,
         layout=layout,
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,

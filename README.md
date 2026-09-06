@@ -30,7 +30,7 @@ Long-running workflows can be written, reviewed, edited, resumed, and replayed a
 - **State machines**: long-running workflows as declarative `.asm.toml` files you review, edit, test offline, run, watch, and replay, with waits, operator input, and steering built in ([State machines](https://agent6.dev/state-machines/))
 - **Three session kinds**: `run` edits; `plan` and `ask` never do; `--from <id>` seeds one from another, and `/btw` asks a question beside a live run
 - **Verify gate**: the repo's test command (inferred when unset) certifies the tree before a run may finish, and every surface shows the same green or red
-- **Clean checkout**: every step commits to the run's own hidden ref, so your branch, HEAD, and index are never touched (a visible `agent6/<id>` branch tracks it by default); `sessions merge` lands it, `resume` continues it, `fork` branches it at any turn
+- **Clean checkout**: every step commits to the run's own hidden ref, so your branch, HEAD, and index are never touched (a visible `agent6/<id>` branch tracks it by default); `sessions merge` lands it, `resume` continues it, `fork` branches it at any turn into its own worktree
 - **Task graph**: the worker's plan is a persistent DAG, live on every surface and surviving crashes and compaction
 - **Context control**: compaction is visible everywhere, `/compact [focus]` and `/pin` steer it, and repo memory carries lessons across runs
 - **Four front-ends, one engine**: CLI, TUI, [browser](https://agent6.dev/web/) (desktop or phone), and [editor over ACP](https://agent6.dev/acp/) all drive the same runs

@@ -252,15 +252,18 @@ class ParallelConfig(BaseModel):
             "more is refused before anything is cloned."
         ),
     )
-    # Base directory for subordinate clones (a fan-out gets
+    # Base directory for subordinate working trees (a fan-out gets
     # `<workdir>/<repo-id>/<fanout-id>/lane-<i>`; a machine's run states use a
-    # `machine-<id>` group the same way). "" resolves to `<cache_dir>/parallel`,
+    # `machine-<id>` group the same way; a fork's worktree is
+    # `<workdir>/<repo-id>/<fork-id>`). "" resolves to `<cache_dir>/parallel`,
     # a regenerable cache the orchestrator cleans up after importing each lane.
     # Point it at a fast disk for large repos.
     workdir: str = Field(
         default="",
         description=(
-            "Base directory for the clones lanes and machine run states work in, in a per-repo "
-            "subdirectory. Empty: `<cache_dir>/parallel`. Cleaned up after the work is imported."
+            "Base directory for the working trees lanes, machine run states, and forks work "
+            "in, in a per-repo subdirectory. Empty: `<cache_dir>/parallel`. A lane's clone is "
+            "removed after its work is imported; a fork's worktree by `sessions prune` once "
+            "the fork is merged."
         ),
     )

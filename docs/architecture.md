@@ -303,9 +303,12 @@ Ids are one namespace across every bucket, since every surface addresses a sessi
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor; the planner re-reads it before every turn and is shown it whenever it differs from what it last saw, so answers written there survive the next `finish_planning`.
 `agent6 run --from-plan` feeds it as a new run's task.
 
-**A fork** clones a source run's state as of a checkpoint into a new session dir with a new id.
-It copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`, rebuilds the curator DAG at the checkpoint's `graph_version`, writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha`, and cuts `agent6/<new>` at the turn's sha.
-The source run is never mutated, and one fork edge per line lands in a per-repo `lineage.jsonl`.
+**A fork** clones a source run's state as of a checkpoint into a new session dir with a new id, and gives it a linked git worktree of its own.
+It adds the worktree detached at the turn's sha (`<[parallel].workdir>/<repo-id>/<new>`), copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`, rebuilds the curator DAG at the checkpoint's `graph_version`, writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `worktree`, and cuts `agent6/<new>` at the turn's sha.
+The source run and the operator's checkout are never mutated, and one fork edge per line lands in a per-repo `lineage.jsonl`.
+`agent6 resume <new>` runs the leg in that worktree (the repo's state dir and config still apply); the jail policy builder grants the repository's `.git` read-only there because a linked worktree's own `.git` is a pointer into it, and the worktree's `repo.lock` lives in a second state dir keyed on the worktree path, removed with the worktree.
+The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions rm <new>` removes it with the record.
+The manifest is the only thing that names a worktree as agent6's: a directory under `[parallel].workdir` that no manifest records is never deleted, and a worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.
 
 The rebuild (`graph/replay.py`) undoes every journal-stamped mutation newer than that version, so a fork's tasks, statuses, cursor, and journal match the turn its conversation came from.
 Node content the journal never records (title, rationale, acceptance, paths) is immutable after creation and comes from the current nodes; `notes` and `updated_at` cannot be unwound and stay current.
@@ -314,6 +317,7 @@ A checkpoint with `graph_version: 0` has no version to rebuild at, so its fork c
 A fork's tree is the repo as of that committed sha, nothing more.
 On a gated run, an edit not yet committed at the forked turn is absent from the fork's tree even though the copied transcript mentions it, and the forked run picks it up by re-reading the real files.
 A fork is a commit plus the conversation up to that turn, which is predictable and cheap, rather than snapshotting uncommitted bytes into every checkpoint.
+An `/undo` fork adds no worktree: it keeps the undone session's checkout.
 
 ## Events
 

@@ -21,7 +21,12 @@ from agent6.config import Config
 from agent6.paths import hidden_paths, is_root, jail_cache_home, private_dirs
 from agent6.sandbox.detect import Environment, degrade_reason
 from agent6.sandbox.jail import JailUnavailableError, tool_mount_notes
-from agent6.tools.policy import jail_home_refusal, jail_policy, persistent_jail_home
+from agent6.tools.policy import (
+    jail_home_refusal,
+    jail_policy,
+    linked_worktree_git_dir,
+    persistent_jail_home,
+)
 from agent6.types import IsolationLevel
 
 
@@ -30,6 +35,7 @@ def warn_sandbox_gaps(
     env: Environment,
     cfg: Config,
     *,
+    root: Path,
     reporter: Reporter = STDIO_REPORTER,
 ) -> None:
     """Print a prominent warning when the isolation confines less than it promises.
@@ -156,7 +162,7 @@ def warn_sandbox_gaps(
             "Landlock ABI 3 (Linux 6.2): upgrade the kernel, or run on 'strict', "
             "whose mount namespace confines truncation on any ABI."
         )
-    for hidden, region, source in unmaskable_exposures(cfg, isolation):
+    for hidden, region, source in unmaskable_exposures(cfg, isolation, root):
         reporter.warn(
             f"jailed commands can read {hidden}: it sits inside"
             f" {region} ({source}), which they are granted, and 'hardened' has no"
@@ -289,7 +295,14 @@ def _hardened_grant_regions(cfg: Config, root: Path) -> tuple[tuple[Path, str], 
     ]
     for sysdir in ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/dev"):
         regions.append((Path(sysdir), "a system dir every command is granted"))
-    regions += [(Path(p), "sandbox.extra_read_paths") for p in policy.extra_ro_paths]
+    git_dir = linked_worktree_git_dir(root)
+    for p in policy.extra_ro_paths:
+        if Path(p) == git_dir:
+            regions.append(
+                (Path(p), "the repository's .git, which this linked worktree points into")
+            )
+        else:
+            regions.append((Path(p), "sandbox.extra_read_paths"))
     home = persistent_jail_home(cfg, "hardened")
     regions += [
         (Path(p), "the jail's HOME" if p == home else "sandbox.extra_write_paths")
@@ -310,7 +323,7 @@ def _hardened_grant_regions(cfg: Config, root: Path) -> tuple[tuple[Path, str], 
 
 
 def unmaskable_exposures(
-    cfg: Config, isolation: IsolationLevel
+    cfg: Config, isolation: IsolationLevel, root: Path
 ) -> tuple[tuple[Path, Path, str], ...]:
     """`(hidden path, granted region, region source)` triples this isolation
     cannot mask, hidden-path first. Empty on strict (it masks) and on `none`
@@ -324,7 +337,7 @@ def unmaskable_exposures(
     """
     if isolation != "hardened":
         return ()
-    regions = _hardened_grant_regions(cfg, Path.cwd())
+    regions = _hardened_grant_regions(cfg, root)
     out: list[tuple[Path, Path, str]] = []
     for h in hidden_paths(Path(p) for p in cfg.sandbox.hide_paths):
         hr = h.resolve()
@@ -336,7 +349,7 @@ def unmaskable_exposures(
     return tuple(out)
 
 
-def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | None:
+def check_hide_paths_support(cfg: Config, isolation: IsolationLevel, root: Path) -> str | None:
     """A refusal message when an EXPLICIT `[sandbox].hide_paths` entry cannot
     be honored here, else None.
 
@@ -351,7 +364,7 @@ def check_hide_paths_support(cfg: Config, isolation: IsolationLevel) -> str | No
     if isolation != "hardened":
         return None  # before reading config: every other level masks
     listed = {Path(p) for p in cfg.sandbox.hide_paths}
-    for hidden, region, source in unmaskable_exposures(cfg, isolation):
+    for hidden, region, source in unmaskable_exposures(cfg, isolation, root):
         if hidden in listed:
             return (
                 f"sandbox.hide_paths lists {str(hidden)!r}, which sits inside"
@@ -409,7 +422,7 @@ def config_refusal(
         # one it cannot make. Refusing that here keeps it a message.
         lambda: check_jail_home(cfg, isolation, explicitly_set="sandbox.home" in explicit_leaves),
         lambda: check_mcp_network_support(cfg, isolation),
-        lambda: check_hide_paths_support(cfg, isolation),
+        lambda: check_hide_paths_support(cfg, isolation, workspace),
         lambda: check_workspace_outside_private_dirs(workspace),
         lambda: check_protect_git_support(
             cfg, isolation, explicitly_set="sandbox.protect_git" in explicit_leaves

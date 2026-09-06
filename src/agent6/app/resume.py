@@ -219,9 +219,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
     of the prior run's accounting. Each `agent6 resume` invocation
     starts at 0 against the `[budget]` ledgers. This is by design - the budget is a per-
     invocation runaway-cost circuit breaker.
+
+    Runs from the repository (the process cwd: its state dir, config, and
+    the cwd a detached continuation spawns in). A fork's leg drives the
+    fork's own worktree instead (`manifest.worktree`), handed to every step
+    as *cwd*; the process cwd stays the repository.
     """
-    cwd = Path.cwd()
-    state_dir = resolved_state_dir(cwd)
+    repo = Path.cwd()
+    state_dir = resolved_state_dir(repo)
     if steer.strip() and (problem := steer_problem(steer)) is not None:
         reporter.error(f"--steer: {problem}")
         return 2
@@ -256,6 +261,14 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         mode = manifest.session_mode()
     except ManifestError as exc:
         reporter.error(f"cannot resume {session_id}: {exc}")
+        return 2
+    cwd = manifest.worktree or repo
+    if manifest.worktree is not None and not (cwd / ".git").exists():
+        reporter.error(
+            f"cannot resume {session_id}: its worktree {cwd} is gone (pruned or removed)."
+            f" Its commits are on {manifest.run_branch or chain_ref_for(session_id)};"
+            f" `agent6 fork {session_id}` continues them in a new worktree."
+        )
         return 2
     # One authoritative writer per run dir (see acquire_single_writer). Refuse a
     # second resume of a still-live run before touching any shared state.
@@ -315,7 +328,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 # back would make _select_preset rank it as a flag (the same
                 # rule as the snapshot-resume path below).
                 cfg = load_session_config(
-                    cwd,
+                    repo,
                     config_path,
                     mode=mode,
                     preset=preset or manifest.workflow.replay_preset,
@@ -362,10 +375,13 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         # One live run-mode worker per CHECKOUT (see acquire_repo_writer): a
         # resumed run drives the shared working tree exactly like a fresh one.
+        # The lock lives with the checkout's state dir: a fork's worktree has
+        # its own, so it never contends with the repository's checkout.
         if mode == "run":
-            repo_lock_fd = acquire_repo_writer(state_dir, session_id)
+            checkout_state_dir = resolved_state_dir(cwd)
+            repo_lock_fd = acquire_repo_writer(checkout_state_dir, session_id)
             if repo_lock_fd is None:
-                holder = repo_writer_holder(state_dir) or "another run"
+                holder = repo_writer_holder(checkout_state_dir) or "another run"
                 reporter.refuse(
                     f"run {holder!r} is already driving this checkout; a"
                     " second run-mode worker would interleave auto-commits on the"
@@ -438,7 +454,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
         try:
             effective = load_session_config(
-                Path.cwd(),
+                repo,
                 config_path,
                 mode=mode,
                 preset=preset or manifest_preset,
@@ -468,6 +484,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         try:
             isolation = select_isolation(
                 cfg,
+                cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
                 reporter=reporter,
                 explicit_leaves=explicit_leaves,
@@ -556,7 +573,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
             # Lazy: app.fork imports this module (see run.py's twin).
             from agent6.app.fork import undo_fork  # noqa: PLC0415
 
-            return undo_fork(config_path, session_id, cwd=cwd, reporter=reporter)
+            return undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
 
         end = run_leg(
             cfg,
@@ -604,7 +621,7 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
                 frontend=frontend,
                 cfg=cfg,
                 layout=layout,
-                cwd=cwd,
+                cwd=repo,
                 flags=override_flags(budget_overrides, sandbox_overrides),
                 reporter=reporter,
             )

@@ -201,8 +201,8 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "fork",
         help=(
-            "Clone a run, rolled back to a checkpoint, into a new run and continue"
-            " it (the source run is never mutated)."
+            "Clone a run, rolled back to a checkpoint, into a new run in its own git"
+            " worktree and continue it (the source run and your checkout are never touched)."
         ),
     )
     fork_src = fork_p.add_argument(
@@ -229,7 +229,7 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     fork_p.add_argument(
         "--no-run",
         action="store_true",
-        help="Only create the fork dir; do not continue it (resume it later).",
+        help="Only create the fork (its run dir and worktree); resume it later.",
     )
     _add_config_flag(fork_p)
     fork_p.add_argument(

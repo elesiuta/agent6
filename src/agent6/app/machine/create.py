@@ -149,6 +149,7 @@ def create_machine(  # noqa: PLR0911, PLR0912, PLR0915
         # confirm.
         isolation = select_isolation(
             cfg,
+            cwd=cwd,
             confirm_unconfined=lambda _isolation, _cfg: True,
             reporter=reporter,
             explicit_leaves=eff.explicit_leaves,

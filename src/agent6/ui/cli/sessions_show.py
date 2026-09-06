@@ -48,6 +48,9 @@ def _print_fork_lineage(manifest: SessionManifest) -> None:
     )
     if lineage:
         print(f"forked from: {lineage}")
+    if manifest.worktree is not None:
+        gone = "" if manifest.worktree.is_dir() else " (gone)"
+        print(f"worktree:   {manifest.worktree}{gone}")
 
 
 def _print_parallel_compare(manifest: SessionManifest) -> None:
@@ -164,6 +167,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "parent_session_id": manifest.parent_session_id,
                     "forked_from_turn": manifest.forked_from_turn,
                     "forked_from_sha": manifest.forked_from_sha,
+                    "worktree": str(manifest.worktree) if manifest.worktree else None,
                     "compare": compare_json,
                     # The branch is created at the first commit: null until it exists.
                     "run_branch": manifest.run_branch

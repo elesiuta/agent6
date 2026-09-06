@@ -176,6 +176,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
             verified="failed",
         ),
         layout=SessionLayout(state_dir=tmp_path, session_id="r1"),
+        cwd=tmp_path,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,

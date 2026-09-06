@@ -642,3 +642,181 @@ def test_rm_reports_a_deletion_failure_instead_of_success(
     err = capsys.readouterr().err
     assert "could not remove" in err
     assert target.is_dir()  # nothing pretended otherwise
+
+
+def _fork_with_worktree(repo: Path, session_id: str, *, merged: bool, record: bool = True) -> Path:
+    """A fork session as `create_fork` leaves it: a linked worktree of *repo*
+    under `[parallel].workdir` and a manifest naming it (`record=False`: the
+    worktree of a session whose record `sessions rm` deleted)."""
+    from agent6.app.parallel import subordinate_workdir_root
+    from agent6.config import Config
+    from agent6.git_ops import add_worktree
+
+    base = _git(repo, "rev-parse", "HEAD")
+    worktree = subordinate_workdir_root(Config(), repo, session_id)
+    add_worktree(repo, worktree, base)
+    _git(repo, "branch", f"agent6/{session_id}", base)
+    if record:
+        layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
+        layout.ensure()
+        data: dict[str, object] = {
+            "version": 3,
+            "session_id": session_id,
+            "mode": "run",
+            "base_sha": base,
+            "base_branch": "main",
+            "run_branch": f"agent6/{session_id}",
+            "user_task": "t",
+            "worktree": str(worktree),
+        }
+        if merged:
+            data["merged"] = {"into": "main", "sha": base, "tip": base}
+        layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+    return worktree
+
+
+def test_prune_removes_the_worktree_of_a_merged_fork_and_keeps_an_unmerged_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fork's worktree is its checkout until its work lands: prune removes it
+    (and git's record of it) once the fork's manifest carries the merge stamp,
+    and keeps an unmerged fork's, saying so. The lane sweep treated a
+    worktree dir as an empty fan-out group and deleted it on every prune."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    merged = _fork_with_worktree(tmp_path, "fork-merged11", merged=True)
+    kept = _fork_with_worktree(tmp_path, "fork-unmrgd11", merged=False)
+    (kept / "wip.txt").write_text("in flight\n", encoding="utf-8")
+
+    assert main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    assert not merged.exists()
+    assert (kept / "wip.txt").read_text(encoding="utf-8") == "in flight\n"
+    listed = _git(tmp_path, "worktree", "list", "--porcelain")
+    assert str(merged) not in listed
+    assert str(kept) in listed
+    assert "removed fork-merged11's worktree (merged)" in out
+    assert "kept fork-unmrgd11's worktree (unmerged)" in out
+
+
+def test_prune_leaves_a_worktree_no_manifest_records_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only a worktree a session manifest records is agent6's to remove. A
+    linked worktree the operator put under agent6's workdir scope, and the
+    worktree of a fork whose record is gone, keep their uncommitted work. The
+    sweep deleted any dir with a `.git` file there whose name matched no
+    session ("no session record")."""
+    from agent6.app.parallel import subordinate_workdir_root
+    from agent6.config import Config
+    from agent6.git_ops import add_worktree
+
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    foreign = subordinate_workdir_root(Config(), tmp_path, "my-experiment")
+    add_worktree(tmp_path, foreign, _git(tmp_path, "rev-parse", "HEAD"))
+    (foreign / "draft.txt").write_text("uncommitted\n", encoding="utf-8")
+    forgotten = _fork_with_worktree(tmp_path, "fork-forgot11", merged=False, record=False)
+    (forgotten / "wip.txt").write_text("in flight\n", encoding="utf-8")
+
+    assert main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    assert (foreign / "draft.txt").read_text(encoding="utf-8") == "uncommitted\n"
+    assert (forgotten / "wip.txt").read_text(encoding="utf-8") == "in flight\n"
+    listed = _git(tmp_path, "worktree", "list", "--porcelain")
+    assert str(foreign) in listed and str(forgotten) in listed
+    assert "my-experiment" not in out and "fork-forgot11's worktree" not in out
+
+
+def test_rm_removes_the_worktree_its_manifest_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`sessions rm <fork>` deletes the fork's worktree with its record (the
+    one moment the ledger still names it), and git's record of the worktree."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    worktree = _fork_with_worktree(tmp_path, "fork-gone11", merged=False)
+
+    assert main(["sessions", "rm", "fork-gone11"]) == 0
+    out = capsys.readouterr().out
+    assert not worktree.exists()
+    assert str(worktree) not in _git(tmp_path, "worktree", "list", "--porcelain")
+    assert "removed fork-gone11" in out and "worktree" in out
+
+
+def _record(repo: Path, session_id: str, worktree: Path, *, merged: bool) -> Path:
+    """A session manifest naming *worktree* (an `/undo` fork's shares its
+    source's)."""
+    base = _git(repo, "rev-parse", "HEAD")
+    layout = SessionLayout(state_dir=resolved_state_dir(repo), session_id=session_id)
+    layout.ensure()
+    data: dict[str, object] = {
+        "version": 3,
+        "session_id": session_id,
+        "mode": "run",
+        "base_sha": base,
+        "base_branch": "main",
+        "run_branch": f"agent6/{session_id}",
+        "user_task": "t",
+        "worktree": str(worktree),
+    }
+    if merged:
+        data["merged"] = {"into": "main", "sha": base, "tip": base}
+    layout.manifest_path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+    return layout.session_dir
+
+
+def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ownership is every manifest naming the path. A merged fork whose /undo
+    child (same worktree) is unmerged keeps the worktree, for both prune and
+    `rm` of the parent; a merged fork resumed after its merge (its branch
+    moved past the stamp) or still live keeps its worktree too. Keyed on the
+    merged parent alone, prune deleted the child's checkout."""
+    import os
+
+    from agent6.sessions.ipc import write_worker_pid
+
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    shared = _fork_with_worktree(tmp_path, "fork-parent11", merged=True)
+    _record(tmp_path, "fork-child011", shared, merged=False)
+    (shared / "wip.txt").write_text("child's\n", encoding="utf-8")
+    moved = _fork_with_worktree(tmp_path, "fork-moved011", merged=True)
+    (moved / "later.txt").write_text("after the merge\n", encoding="utf-8")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    after = _git(tmp_path, "commit-tree", f"{base}^{{tree}}", "-p", base, "-m", "a later leg")
+    _git(tmp_path, "update-ref", "refs/heads/agent6/fork-moved011", after)
+    live = _fork_with_worktree(tmp_path, "fork-live0011", merged=True)
+    write_worker_pid(
+        SessionLayout(
+            state_dir=resolved_state_dir(tmp_path), session_id="fork-live0011"
+        ).session_dir,
+        os.getpid(),
+    )
+
+    assert main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    assert (shared / "wip.txt").exists() and (moved / "later.txt").exists() and live.exists()
+    assert "kept fork-child011's worktree (unmerged)" in out
+    assert "kept fork-parent11's worktree (shared with fork-child011)" in out
+    assert "kept fork-moved011's worktree (unmerged)" in out
+    assert "kept fork-live0011's worktree (live)" in out
+
+    assert main(["sessions", "rm", "fork-parent11"]) == 0
+    out = capsys.readouterr().out
+    assert (shared / "wip.txt").exists()
+    assert "its worktree stays: fork-child011" in out

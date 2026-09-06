@@ -5,6 +5,7 @@ read side; `merge`/`prune` are `sessions_merge`)."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.app.fork import remove_fork_worktree, worktree_owners
 from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import (
     DIFF_SHOW_SAFETY_FLAGS,
@@ -476,7 +478,9 @@ def _rm_asks(cwd: Path, session_id: str) -> int:
 def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     """Delete run history from the state dir, plus the run's hidden chain ref
     (`refs/agent6/<id>/head`, the gc anchor -- meaningless once the record is gone,
-    and left behind it would pin the run's objects forever).
+    and left behind it would pin the run's objects forever) and, for a fork,
+    the worktree its manifest records, unless another session (an `/undo`
+    fork of it) still names that worktree.
 
     The run's visible branch and its commits are git's, and are left alone
     (`sessions prune` is the branch verb). `--asks` clears the asks made in
@@ -501,6 +505,18 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
             file=sys.stderr,
         )
         return 2
+    worktree: Path | None = None
+    with contextlib.suppress(ManifestError):
+        worktree = read_manifest(layout.session_dir).worktree
+    sharing = (
+        [
+            d.name
+            for d, _m in worktree_owners(resolved_state_dir(cwd)).get(worktree, [])
+            if d != layout.session_dir
+        ]
+        if worktree is not None
+        else []
+    )
     try:
         shutil.rmtree(layout.session_dir)
     except OSError as exc:
@@ -509,6 +525,10 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         print(f"ERROR: could not remove {layout.session_dir}: {exc}", file=sys.stderr)
         return 1
     note = ""
+    if worktree is not None and sharing:
+        note = f" (its worktree stays: {', '.join(sharing)} still work in it)"
+    elif worktree is not None and remove_fork_worktree(cwd, worktree):
+        note = " and its worktree"
     chain = chain_ref_for(layout.session_id)
     try:
         if chain_tip(cwd, chain) is not None:

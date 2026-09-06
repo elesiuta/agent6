@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent6.app.fork import sweep_fork_worktrees
 from agent6.app.merge import execute_merge
 from agent6.app.parallel import adopt_orphan_lane, sweep_fanout_clones
 from agent6.config import Config, ConfigError
@@ -322,14 +323,14 @@ def _prune_squash_merged(
     return False
 
 
-def _cmd_prune(  # noqa: PLR0912
-    *, delete_squashed: bool = False, config_path: Path | None = None
-) -> int:
+def _cmd_prune(*, delete_squashed: bool = False, config_path: Path | None = None) -> int:
     """Delete agent6/* run branches that `git branch -d` can safely remove
     (reachable-merged into HEAD, i.e. merge/ff strategies). Report squash-merged
     ones and unmerged ones (review first). Sweep fan-out clone dirs whose every
     lane branch tip already exists in this repo (content-safe by commit proof;
-    a clone holding any commit this repo lacks is kept whole).
+    a clone holding any commit this repo lacks is kept whole), and the
+    worktrees of merged forks (an unmerged fork keeps its worktree; `sessions
+    rm` removes a fork's with its record).
 
     With `--delete-squashed` also force-delete branches the manifest confirms
     were squash-merged into an existing base -- their content is safe in that
@@ -384,19 +385,8 @@ def _cmd_prune(  # noqa: PLR0912
     # last branch the refs it kept for a later pass would be unreachable by
     # this command forever.
     refs_deleted, refs_kept = _prune_chain_refs(cwd, state_dir, delete_squashed=delete_squashed)
-    clones_swept = clones_kept = 0
-    try:
-        cfg = load_effective(cwd, config_path).config
-    except ConfigError as exc:
-        print(f"[agent6] fan-out clone sweep skipped (config unreadable: {exc})", file=sys.stderr)
-    else:
-        clones_swept, clones_kept = sweep_fanout_clones(cwd, cfg)
-        if clones_kept:
-            print(
-                f"[agent6] kept {clones_kept} fan-out clone dir(s) holding commits this"
-                " repo lacks (merge or archive their lanes first)"
-            )
-    if not branches and not (refs_deleted or refs_kept or clones_swept or clones_kept):
+    clones_note, swept_any = _sweep_workdirs(cwd, state_dir, config_path)
+    if not branches and not (refs_deleted or refs_kept or swept_any):
         print("[agent6] nothing to prune: no agent6/* run branches, no chain refs.")
         return 0
     kept = merged_kept + unmerged_kept
@@ -407,16 +397,39 @@ def _cmd_prune(  # noqa: PLR0912
         if refs_deleted or refs_kept
         else ""
     )
-    clones_note = (
-        f"; fan-out clones: swept {clones_swept}, kept {clones_kept}"
-        if clones_swept or clones_kept
-        else ""
-    )
     print(
         f"\n[agent6] deleted {total_deleted}{squashed_note}; kept {kept} "
         f"({merged_kept} merged, {unmerged_kept} unmerged){refs_note}{clones_note}",
     )
     return 0
+
+
+def _sweep_workdirs(cwd: Path, state_dir: Path, config_path: Path | None) -> tuple[str, bool]:
+    """Sweep the fan-out clones and fork worktrees under this repo's
+    `[parallel].workdir` scope, printing each keep and each worktree removal.
+    Returns (the summary-line note, whether anything was swept or kept)."""
+    try:
+        cfg = load_effective(cwd, config_path).config
+    except ConfigError as exc:
+        print(f"[agent6] workdir sweep skipped (config unreadable: {exc})", file=sys.stderr)
+        return "", False
+    clones_swept, clones_kept = sweep_fanout_clones(cwd, cfg)
+    if clones_kept:
+        print(
+            f"[agent6] kept {clones_kept} fan-out clone dir(s) holding commits this"
+            " repo lacks (merge or archive their lanes first)"
+        )
+    worktrees_removed, worktrees_kept = sweep_fork_worktrees(cwd, state_dir)
+    for fork_id in worktrees_removed:
+        print(f"[agent6] removed {fork_id}'s worktree (merged)")
+    for fork_id, why in worktrees_kept:
+        print(f"[agent6] kept {fork_id}'s worktree ({why})")
+    note = (
+        f"; fan-out clones: swept {clones_swept}, kept {clones_kept}"
+        if clones_swept or clones_kept
+        else ""
+    )
+    return note, bool(clones_swept or clones_kept or worktrees_removed)
 
 
 def _prune_chain_refs(cwd: Path, state_dir: Path, *, delete_squashed: bool) -> tuple[int, int]:

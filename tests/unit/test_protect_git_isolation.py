@@ -26,7 +26,7 @@ def _said() -> tuple[Reporter, list[str]]:
     return Reporter(out=lines.append, err=lines.append), lines
 
 
-def test_a_default_degrades_with_a_warning() -> None:
+def test_a_default_degrades_with_a_warning(tmp_path: Path) -> None:
     """`protect_git` defaults to true, and a default this host cannot honour
     must still run -- loudly, never silently ineffective."""
     reporter, lines = _said()
@@ -39,12 +39,12 @@ def test_a_default_degrades_with_a_warning() -> None:
         seccomp_arch_supported=True,
         sandbox_available=True,
     )
-    warn_sandbox_gaps("hardened", env, Config(), reporter=reporter)
+    warn_sandbox_gaps("hardened", env, Config(), reporter=reporter, root=tmp_path)
     assert any("cannot protect .git" in line for line in lines)
     assert check_protect_git_support(Config(), "hardened", explicitly_set=False) is None
 
 
-def test_a_value_the_operator_wrote_down_refuses() -> None:
+def test_a_value_the_operator_wrote_down_refuses(tmp_path: Path) -> None:
     """They asked for something specific; running without it would be a lie."""
     message = check_protect_git_support(Config(), "hardened", explicitly_set=True)
     assert message is not None
@@ -52,12 +52,12 @@ def test_a_value_the_operator_wrote_down_refuses() -> None:
     assert "sandbox.protect_git = false" in message  # names the fix
 
 
-def test_strict_provides_it_either_way() -> None:
+def test_strict_provides_it_either_way(tmp_path: Path) -> None:
     for explicit in (True, False):
         assert check_protect_git_support(Config(), "strict", explicitly_set=explicit) is None
 
 
-def test_opting_out_never_refuses() -> None:
+def test_opting_out_never_refuses(tmp_path: Path) -> None:
     off = Config.model_validate({"sandbox": {"protect_git": False}})
     assert check_protect_git_support(off, "hardened", explicitly_set=True) is None
 

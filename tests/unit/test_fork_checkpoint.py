@@ -1068,3 +1068,145 @@ def test_fork_manifest_stamps_the_resolved_isolation(
     dst = SessionLayout(state_dir=state_dir, session_id="iso-fork-BBBB22", subdir="runs")
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["policy"]["isolation"] == "hardened"
+
+
+# --- a fork's own worktree ------------------------------------------------------
+
+
+def _commit_all(repo: Path, message: str) -> str:
+    sp.run(["git", "add", "-A"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
+    return sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _fork_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, str, str]:
+    """A repo whose checkout moved past the source run's turn-1 sha (a later
+    commit, an uncommitted edit, an operator file), and that source run.
+    Returns (repo, turn-1 sha, HEAD sha)."""
+    repo = tmp_path / "repo"
+    turn1 = _git_repo(repo)
+    (repo / "seed.txt").write_text("later\n", encoding="utf-8")
+    head = _commit_all(repo, "second")
+    (repo / "seed.txt").write_text("dirty\n", encoding="utf-8")
+    (repo / "notes.md").write_text("mine\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    _seed_source_run(resolved_state_dir(repo), "src-AAAA11", head_sha=turn1, turns=(1,))
+    return repo, turn1, head
+
+
+def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`fork --at-turn N` gives the fork a linked worktree detached at the
+    checkpoint sha, recorded in its manifest; a chain commit made there records
+    the fork's own edit and nothing of the source checkout, which stays as it
+    was. Seeding only the refs left the fork sharing the checkout, so its
+    first commit snapshotted the source's later content as its own work."""
+    from agent6.git_ops import chain_commit, tree_diff_paths
+
+    repo, turn1, head = _fork_fixture(tmp_path, monkeypatch)
+    state_dir = resolved_state_dir(repo)
+
+    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+
+    dst = SessionLayout(state_dir=state_dir, session_id="child-BBBB22")
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    worktree = Path(manifest["worktree"])
+    assert (worktree / ".git").is_file(), "a linked worktree of the repository"
+    assert (worktree / "seed.txt").read_text(encoding="utf-8") == "seed\n"
+    assert not (worktree / "notes.md").exists()
+    rev = ["git", "rev-parse", "HEAD"]
+    assert sp.run(rev, cwd=worktree, capture_output=True, text=True, check=True).stdout.strip() == (
+        turn1
+    )
+
+    (worktree / "fork.txt").write_text("fork\n", encoding="utf-8")
+    sha = chain_commit(
+        worktree, "fork step", ref=chain_ref_for("child-BBBB22"), fallback_parent=turn1
+    )
+    assert sha is not None
+    assert tree_diff_paths(repo, turn1, sha) == ["fork.txt"]
+
+    # The source checkout: HEAD, its uncommitted edit, and the operator's file.
+    assert sp.run(rev, cwd=repo, capture_output=True, text=True, check=True).stdout.strip() == head
+    assert (repo / "seed.txt").read_text(encoding="utf-8") == "dirty\n"
+    assert (repo / "notes.md").read_text(encoding="utf-8") == "mine\n"
+    assert not (repo / "fork.txt").exists()
+
+
+def test_resume_of_a_fork_runs_its_leg_in_the_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`agent6 resume <fork>` from the repo drives the leg with the fork's
+    worktree as its checkout (the process cwd stays the repo: its state dir
+    and config are the repo's). Run in the repo instead, the fork committed
+    the operator's checkout."""
+    import os
+
+    from agent6.app import resume as resume_mod
+    from agent6.app._leg import LegEnd, LegInputs
+
+    Path(os.environ["AGENT6_CONFIG_HOME"], "config.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        encoding="utf-8",
+    )
+    repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
+    state_dir = resolved_state_dir(repo)
+    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    manifest = json.loads(
+        SessionLayout(state_dir=state_dir, session_id="child-BBBB22").manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    worktree = Path(manifest["worktree"])
+    seen: dict[str, Any] = {}
+
+    def _fake_leg(cfg: Any, layout: Any, inputs: LegInputs, **kw: Any) -> LegEnd:
+        seen["cwd"] = kw["cwd"]
+        seen["state_dir"] = kw["state_dir"]
+        seen["process_cwd"] = Path.cwd()
+        return LegEnd(0)
+
+    def _no_missing(_cfg: object) -> None:
+        return None
+
+    def _strict(*_a: object, **_k: object) -> str:
+        return "strict"
+
+    monkeypatch.setattr(resume_mod, "run_leg", _fake_leg)
+    monkeypatch.setattr(resume_mod, "check_provider_keys", _no_missing)
+    monkeypatch.setattr(resume_mod, "select_isolation", _strict)
+    rc = resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False)
+    assert rc == 0
+    assert seen["cwd"] == worktree and seen["process_cwd"] == repo
+    assert seen["state_dir"] == state_dir
+    assert Path.cwd() == repo
+
+
+def test_resume_of_a_fork_whose_worktree_is_gone_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A pruned or deleted worktree is named, not silently replaced by the
+    operator's checkout."""
+    import shutil
+
+    from agent6.app import resume as resume_mod
+
+    repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
+    state_dir = resolved_state_dir(repo)
+    assert _cmd_fork(None, "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    manifest = json.loads(
+        SessionLayout(state_dir=state_dir, session_id="child-BBBB22").manifest_path.read_text(
+            encoding="utf-8"
+        )
+    )
+    shutil.rmtree(manifest["worktree"])
+
+    rc = resume_mod.resume_task(None, "child-BBBB22", frontend=MagicMock(), force=False)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert manifest["worktree"] in err and "agent6 fork child-BBBB22" in err
+    assert Path.cwd() == repo

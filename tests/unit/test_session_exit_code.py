@@ -136,10 +136,10 @@ def test_stranded_edits_reads_git_reality(tmp_path: Path) -> None:
     old = Path.cwd()
     os.chdir(repo)
     try:
-        assert stranded_edits(result, layout) is False  # clean tree
+        assert stranded_edits(result, layout, repo) is False  # clean tree
         (repo / "a.txt").write_text("changed", encoding="utf-8")
-        assert stranded_edits(result, layout) is True  # dirty + branch missing
+        assert stranded_edits(result, layout, repo) is True  # dirty + branch missing
         subprocess.run(["git", "-C", str(repo), "branch", "agent6/r1"], check=True)
-        assert stranded_edits(result, layout) is False  # branch exists
+        assert stranded_edits(result, layout, repo) is False  # branch exists
     finally:
         os.chdir(old)

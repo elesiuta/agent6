@@ -286,12 +286,14 @@ def build_system_prompt(
     # The hardened filesystem caveat is real only under hardened; under strict
     # (or none) stating it would misdirect the model.
     base = base.replace("__HARDENED_FS_RULE__", HARDENED_FS_RULE if isolation == "hardened" else "")
-    # The .git read-only bind exists only under strict with protect_git on
-    # (policy.py); under hardened or none the claim would be false.
-    base = base.replace(
-        "__GIT_PROTECT_RULE__",
-        GIT_PROTECT_RULE if isolation == "strict" and config.sandbox.protect_git else "",
+    # The .git read-only bind exists under strict with protect_git on
+    # (policy.py), and in a fork's linked worktree under any jail: its `.git`
+    # is a pointer file into the repository's, which the leg grants read-only.
+    # Elsewhere (hardened, none) the claim would be false.
+    git_read_only = (isolation == "strict" and config.sandbox.protect_git) or (
+        isolation != "none" and (repo.root / ".git").is_file()
     )
+    base = base.replace("__GIT_PROTECT_RULE__", GIT_PROTECT_RULE if git_read_only else "")
     # Auto-commit is the agent6-control chain; under [git].control = "model"
     # nothing commits automatically and the model owns the record. Under
     # agent6 control the WHEN is whether a gate judges each step: each

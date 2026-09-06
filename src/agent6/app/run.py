@@ -181,9 +181,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     if refusal is not None:
         reporter.refuse(refusal)
         return 2
+    cwd = Path.cwd()
     try:
         isolation = select_isolation(
             cfg,
+            cwd=cwd,
             confirm_unconfined=frontend.confirm_unconfined_autorun,
             reporter=reporter,
             explicit_leaves=explicit_leaves,
@@ -191,7 +193,6 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
     except SessionRefused as refusal:
         return refusal.rc
 
-    cwd = Path.cwd()
     try:
         git = git_preflight(
             cwd,

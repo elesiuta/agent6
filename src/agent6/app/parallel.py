@@ -134,14 +134,20 @@ class LaneRuntime:
 
 
 def subordinate_workdir_root(cfg: Config, origin: Path, group: str) -> Path:
-    """Base dir for a group of subordinate-work clones: `[parallel].workdir`
+    """Base dir for a group of subordinate working trees: `[parallel].workdir`
     (or `<cache_dir>/parallel`) / `<repo-id>` / `<group>`. Groups are fan-out
-    ids (lane clones) and `machine-<id>` (a run-state's per-state clone); one
-    location, so one prune sweep covers both. Scoped by `repo_id(origin)` like
-    the state dir: the sweep proves commit reachability against *origin*, so
-    another repo's clones must never enter its scan."""
+    ids (lane clones), `machine-<id>` (a run-state's per-state clone), and
+    fork ids (the fork's linked worktree is the group dir itself); one
+    location, so one prune sweep covers them all. Scoped by `repo_id(origin)`
+    like the state dir: the sweep proves commit reachability against
+    *origin*, so another repo's clones must never enter its scan."""
+    return workdir_base(cfg, origin) / group
+
+
+def workdir_base(cfg: Config, origin: Path) -> Path:
+    """The per-repo dir every subordinate working tree of *origin* sits in."""
     base = Path(cfg.parallel.workdir) if cfg.parallel.workdir else cache_dir() / "parallel"
-    return base / repo_id(origin) / group
+    return base / repo_id(origin)
 
 
 def adopt_orphan_lane(
@@ -182,13 +188,16 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
     """Delete fan-out clone dirs whose every lane branch tip already exists in
     *origin* (content-safe by commit proof, the prune --delete-squashed
     philosophy). Returns (swept, kept). A lane clone holding any commit the
-    origin lacks keeps its whole fan-out dir: the clone may be the only copy."""
-    base = Path(cfg.parallel.workdir) if cfg.parallel.workdir else cache_dir() / "parallel"
-    base = base / repo_id(origin)
+    origin lacks keeps its whole fan-out dir: the clone may be the only copy.
+    A fork's worktree (a group dir whose `.git` is a file) is
+    `fork.sweep_fork_worktrees`'s, not a fan-out group."""
+    base = workdir_base(cfg, origin)
     if not base.is_dir():
         return 0, 0
     swept = kept = 0
     for fanout in sorted(p for p in base.iterdir() if p.is_dir()):
+        if (fanout / ".git").is_file():
+            continue
         safe = True
         for clone in sorted(fanout.glob("lane-*")):
             if not (clone / ".git").exists():

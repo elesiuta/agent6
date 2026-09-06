@@ -398,7 +398,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
         chown_to_real_user(state_dir)
 
     if interrupted:
-        print_interrupt_end(layout=layout, budget=budget, reporter=reporter)
+        print_interrupt_end(layout=layout, cwd=cwd, budget=budget, reporter=reporter)
         return LegEnd(130)
     if result is None:
         return LegEnd(1)
@@ -428,6 +428,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
     print_session_end(
         result,
         layout=layout,
+        cwd=cwd,
         budget=budget,
         console_stream=console_stream,
         reporter=reporter,
@@ -441,4 +442,4 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
         verified=result.verified,
         reporter=reporter,
     )
-    return LegEnd(session_exit_code(result, stranded=stranded_edits(result, layout)))
+    return LegEnd(session_exit_code(result, stranded=stranded_edits(result, layout, cwd)))

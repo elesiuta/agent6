@@ -113,6 +113,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 - Mounts (`strict`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
     - every mount keeps the path it has outside
+    - a fork's leg (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `strict`, a Landlock read+exec rule under `hardened`, in both cases whatever `protect_git` says; the main checkout's `.git` is read-only only under `strict` with `protect_git`, so a fork's is the more confined of the two, and the model's prompt says so
+    - the policy builder derives that grant from the workspace shape (a `.git` pointer file and its `commondir`), so every policy consumer sees it, the hardened exposure scan included: a `hide_paths` entry inside it refuses like any other unmaskable exposure
 - Masked last, after every bind (`strict`): the config dir, the state base, `[sandbox].hide_paths`
     - a grant at or inside a private dir is refused at config load
     - `hardened` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses

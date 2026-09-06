@@ -311,7 +311,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
             return refusal.rc
         snapshot_keep = cfg.machine.snapshot_keep
         refusal = machine_network_refusal(cfg, isolation, tool_states) or check_hide_paths_support(
-            cfg, isolation
+            cfg, isolation, cwd
         )
         if refusal is not None:
             outcome = frontend.resolve_network_fix(
@@ -375,7 +375,7 @@ def run_machine(  # noqa: PLR0911, PLR0912, PLR0915
                 clone_root=clone_root if has_run_agent else None,
             )
     try:
-        warn_sandbox_gaps(isolation, env, cfg, reporter=reporter)
+        warn_sandbox_gaps(isolation, env, cfg, root=cwd, reporter=reporter)
     except JailUnavailableError as exc:
         # The hardened exposure scan builds the run's policy, which creates the
         # jail's HOME and refuses one it cannot make.

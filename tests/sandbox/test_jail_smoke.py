@@ -948,3 +948,45 @@ def test_jail_home_exists_in_the_private_tmpfs(jail_bin: Path, tmp_path: Path) -
     except JailUnavailableError:
         pytest.skip("jail unavailable")
     assert res.returncode == 0, (res.stdout, res.stderr)
+
+
+def test_jail_fork_worktree_reads_the_repository_git(jail_bin: Path, tmp_path: Path) -> None:
+    """A fork's leg runs in a linked worktree whose `.git` is a pointer into
+    the repository's; the policy builder grants that `.git` read-only from
+    the workspace shape alone, so `git` works there under strict and cannot
+    write it. A policy without the grant cannot even find the repository."""
+    from agent6.config import Config
+    from agent6.git_ops import add_worktree
+    from agent6.tools.policy import jail_policy
+
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "init"], check=True)
+    wt = tmp_path / "wt"
+    add_worktree(repo, wt, "HEAD")
+
+    def jailed(*argv: str, granted: bool) -> tuple[int, str, str]:
+        # A git command needs no network; the run's own policy would attach
+        # the session network, which this test has no run to take it from.
+        # `granted=False` is a raw policy the builder never shaped.
+        policy = (
+            jail_policy(wt, Config(), "strict", argv, timeout_s=30.0, network="none")
+            if granted
+            else JailPolicy(cwd=wt, argv=argv, timeout_s=30.0)
+        )
+        try:
+            res = run_in_jail(policy)
+        except JailUnavailableError:
+            pytest.skip("jail unavailable")
+        return res.returncode, res.stdout.strip(), res.stderr.strip()
+
+    rc, out, _err = jailed("git", "rev-parse", "--show-toplevel", granted=True)
+    assert rc == 0 and out == str(wt.resolve())
+    rc, out, _err = jailed("git", "log", "--oneline", "-1", granted=True)
+    assert rc == 0 and out.endswith("init")
+    rc, _out, err = jailed("git", "commit", "-q", "--allow-empty", "-m", "x", granted=True)
+    assert rc != 0 and "Read-only file system" in err
+    rc, _out, err = jailed("git", "rev-parse", "--show-toplevel", granted=False)
+    assert rc != 0 and "not a git repository" in err

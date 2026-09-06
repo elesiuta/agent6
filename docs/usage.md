@@ -93,7 +93,8 @@ agent6 fork <session-id> --at-turn 7 # new run from turn 7 (--steer seeds it)
 ```
 
 - state is snapshotted before each model call and checkpointed per turn
-- `fork` rolls a copy back to a turn and continues it as a new run; the original is unchanged. The rollback covers committed content; untracked files persist across the fork point
+- `fork` rolls a copy back to a turn and continues it as a new run in its own git worktree (under `[parallel].workdir`), so the original run and your checkout stay as they are; `sessions merge <fork>` lands it, `sessions prune` removes the worktree once it is merged (`sessions rm <fork>` removes it with the record)
+    - the fork's tree is the turn's committed content; it copies the source's untracked-at-start list (the exclusion list, not the files)
 
 Exit codes for `agent6 run` and `resume`, for scripts to branch on:
 

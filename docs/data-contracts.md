@@ -48,6 +48,7 @@ Read a session's manifest.json into the typed SessionManifest: the one reader an
 | `parent_session_id` | `str | None` | `None` |
 | `forked_from_turn` | `int | None` | `None` |
 | `forked_from_sha` | `str | None` | `None` |
+| `worktree` | `Path | None` | `None` |
 | `merged` | `MergeStamp | None` | `None` |
 | `parallel_id` | `str | None` | `None` |
 | `lane` | `int | None` | `None` |
@@ -94,7 +95,7 @@ Session end and resume: the SessionResult the workflow returns, the ResumeError 
 
 - **Written by:** workflows/loop
 - **Read by:** app/{_leg, fork, resume}, workflows/_loop_state
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (12 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (13 test files exercise it)
 
 ## ToolResult family
 

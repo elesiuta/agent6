@@ -25,7 +25,7 @@ from agent6.tools import policy as policy_module
 from agent6.tools.policy import JAIL_TMP_HOME, jail_policy
 
 
-def _warned(isolation: str, cfg: Config) -> list[str]:
+def _warned(isolation: str, cfg: Config, root: Path) -> list[str]:
     env = Environment(
         in_container=False,
         container_signals=(),
@@ -36,7 +36,8 @@ def _warned(isolation: str, cfg: Config) -> list[str]:
         sandbox_available=True,
     )
     lines: list[str] = []
-    warn_sandbox_gaps(isolation, env, cfg, reporter=Reporter(out=lines.append, err=lines.append))  # pyright: ignore[reportArgumentType]
+    reporter = Reporter(out=lines.append, err=lines.append)
+    warn_sandbox_gaps(isolation, env, cfg, root=root, reporter=reporter)  # pyright: ignore[reportArgumentType]
     return lines
 
 
@@ -195,20 +196,21 @@ def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
     assert config_refusal(Config(), "strict", tmp_path, explicit_leaves=explicit) is None
 
 
-def test_the_default_degrades_with_a_warning_naming_the_home() -> None:
+def test_the_default_degrades_with_a_warning_naming_the_home(tmp_path: Path) -> None:
     """hardened's start-of-run warning names the persistent HOME and its cost
     on its own, whatever `protect_git` says."""
     assert check_jail_home(Config(), "hardened", explicitly_set=False) is None
     for cfg in (Config(), Config(sandbox=SandboxConfig(protect_git=False))):
-        lines = [line for line in _warned("hardened", cfg) if str(jail_cache_home()) in line]
+        home = str(jail_cache_home())
+        lines = [line for line in _warned("hardened", cfg, tmp_path) if home in line]
         assert len(lines) == 1, lines
         assert "persists across runs" in lines[0] and "executable" in lines[0]
 
 
-def test_strict_cache_is_an_explicit_widening_that_warns() -> None:
-    lines = _warned("strict", Config(sandbox=SandboxConfig(home="cache")))
+def test_strict_cache_is_an_explicit_widening_that_warns(tmp_path: Path) -> None:
+    lines = _warned("strict", Config(sandbox=SandboxConfig(home="cache")), tmp_path)
     assert any(
         "sandbox.home = 'cache'" in line and str(jail_cache_home()) in line and "persists" in line
         for line in lines
     ), lines
-    assert not any(str(jail_cache_home()) in line for line in _warned("strict", Config()))
+    assert not any(str(jail_cache_home()) in line for line in _warned("strict", Config(), tmp_path))

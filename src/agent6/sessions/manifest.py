@@ -190,6 +190,10 @@ class SessionManifest(BaseModel):
     parent_session_id: str | None = None
     forked_from_turn: int | None = None
     forked_from_sha: str | None = None
+    # A fork's own checkout: the linked git worktree `agent6 fork` added,
+    # absolute. None for a session working in the operator's checkout; an
+    # `/undo` fork names its source's.
+    worktree: Path | None = None
     # merge stamp (null until the run branch is merged)
     merged: MergeStamp | None = None
     # parallel lineage + compare stamp (null outside a fan-out)

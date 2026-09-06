@@ -83,7 +83,7 @@ def session_exit_code(result: SessionResult, *, stranded: bool = False) -> int:
     return 1
 
 
-def stranded_edits(result: SessionResult, layout: SessionLayout) -> bool:
+def stranded_edits(result: SessionResult, layout: SessionLayout, cwd: Path) -> bool:
     """A completed run whose promised branch never came into existence while
     edits sit uncommitted in the working tree. Exit code 5 and the end
     banner's WARNING read this one predicate, so the machine surface and the
@@ -96,14 +96,14 @@ def stranded_edits(result: SessionResult, layout: SessionLayout) -> bool:
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         merged = manifest.merged is not None and merge_stamp_holds(
-            Path.cwd(), run_branch, manifest.merged.tip
+            cwd, run_branch, manifest.merged.tip
         )
-    if not run_branch or merged or branch_exists(Path.cwd(), run_branch):
+    if not run_branch or merged or branch_exists(cwd, run_branch):
         return False
     dirty = False
     with contextlib.suppress(GitError):
         exclude = read_untracked_at_start(layout.session_dir)
-        dirty = not git_status(Path.cwd(), exclude=exclude).is_clean
+        dirty = not git_status(cwd, exclude=exclude).is_clean
     return dirty
 
 
@@ -230,6 +230,7 @@ def print_session_end(
     result: SessionResult,
     *,
     layout: SessionLayout,
+    cwd: Path,
     budget: BudgetTracker,
     console_stream: bool,
     reporter: Reporter,
@@ -274,11 +275,11 @@ def print_session_end(
     _print_stale_gate(result, reporter=reporter)
     reporter.out(budget.format_summary())
     _print_run_total_across_legs(layout, reporter=reporter)
-    _print_run_branch_footer(result, layout=layout, reporter=reporter)
+    _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter)
 
 
 def _print_run_branch_footer(
-    result: SessionResult, *, layout: SessionLayout, reporter: Reporter
+    result: SessionResult, *, layout: SessionLayout, cwd: Path, reporter: Reporter
 ) -> None:
     """The where-are-my-changes footer: merged, on the run branch, uncommitted,
     or a resume hint. Every claim is checked against git reality -- merge/diff
@@ -291,9 +292,7 @@ def _print_run_branch_footer(
         manifest = read_manifest(layout.session_dir)
         run_branch = manifest.run_branch or ""
         base_branch = manifest.base_branch
-        if manifest.merged is not None and merge_stamp_holds(
-            Path.cwd(), run_branch, manifest.merged.tip
-        ):
+        if manifest.merged is not None and merge_stamp_holds(cwd, run_branch, manifest.merged.tip):
             merged_into = manifest.merged.into or base_branch
     if result.completed and manifest is not None and manifest.git_control == "model":
         # The model managed git: report where IT left the checkout; there is
@@ -301,7 +300,7 @@ def _print_run_branch_footer(
         current = ""
         head = ""
         with contextlib.suppress(GitError):
-            st = git_status(Path.cwd())
+            st = git_status(cwd)
             current = st.branch
             head = st.head_sha[:12]
         where = current or head or "the current checkout"
@@ -314,7 +313,7 @@ def _print_run_branch_footer(
         # have deleted it); don't tell the operator to merge it again.
         reporter.out(f"\nchanges merged into {merged_into}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
-    elif result.completed and run_branch and branch_exists(Path.cwd(), run_branch):
+    elif result.completed and run_branch and branch_exists(cwd, run_branch):
         reporter.out(f"\nchanges are on {run_branch}")
         reporter.out(f"  merge with:  agent6 sessions merge {layout.session_id}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
@@ -323,7 +322,7 @@ def _print_run_branch_footer(
         # run stacks on it and merge/prune defaults quietly shift.
         current = ""
         with contextlib.suppress(GitError):
-            current = git_status(Path.cwd()).branch
+            current = git_status(cwd).branch
         if current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
     elif result.completed and run_branch:
@@ -334,13 +333,13 @@ def _print_run_branch_footer(
         # tree git cannot READ gets the honest unknown, never a claim.
         try:
             exclude = read_untracked_at_start(layout.session_dir)
-            tree_clean: bool | None = git_status(Path.cwd(), exclude=exclude).is_clean
+            tree_clean: bool | None = git_status(cwd, exclude=exclude).is_clean
         except GitError as exc:
             tree_clean = None
             reporter.out(
                 f"\ncould not check the working tree (git failed: {exc}); inspect it manually."
             )
-        if tree_clean is not None and stranded_edits(result, layout):
+        if tree_clean is not None and stranded_edits(result, layout, cwd):
             reporter.out(
                 f"\nWARNING: the run finished with no commit on {run_branch},"
                 " so the branch was never created."
@@ -367,7 +366,7 @@ def _print_run_total_across_legs(layout: SessionLayout, *, reporter: Reporter) -
 
 
 def print_interrupt_end(
-    *, layout: SessionLayout, budget: BudgetTracker, reporter: Reporter
+    *, layout: SessionLayout, cwd: Path, budget: BudgetTracker, reporter: Reporter
 ) -> None:
     """After a Ctrl-C interrupt: the cost so far, the resume hint, and the
     branch-return hint. The interrupt cuts the run before `print_session_end`, so
@@ -387,7 +386,7 @@ def print_interrupt_end(
     if run_branch:
         current = ""
         with contextlib.suppress(GitError):
-            current = git_status(Path.cwd()).branch
+            current = git_status(cwd).branch
         if current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
 

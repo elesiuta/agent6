@@ -428,7 +428,7 @@ def run_one(
     if net_err is not None:
         reporter.refuse(net_err)
         return _result("error", None, None)
-    hide_err = check_hide_paths_support(cfg, isolation)
+    hide_err = check_hide_paths_support(cfg, isolation, req.cwd)
     if hide_err is not None:
         reporter.refuse(hide_err)
         return _result("error", None, None)

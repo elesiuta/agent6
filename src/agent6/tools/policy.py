@@ -153,6 +153,32 @@ def resolve_network(
     return "host" if config.sandbox.network == "host" else "session"
 
 
+def linked_worktree_git_dir(root: Path) -> Path | None:
+    """The repository git dir a linked worktree at *root* points into, or
+    None for an ordinary checkout. A fork's leg runs in a linked worktree:
+    its `.git` is a file (`gitdir: <repo>/.git/worktrees/<name>`) and that
+    entry's `commondir` names the repository's `.git`, which every git
+    command there reads. Resolved from those two files, as git does, so the
+    grant every policy consumer sees is the same one and costs no
+    subprocess."""
+    pointer = root / ".git"
+    if not pointer.is_file():
+        return None
+    try:
+        text = pointer.read_text(encoding="utf-8", errors="replace").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        admin = Path(text[len("gitdir:") :].strip())
+        if not admin.is_absolute():
+            admin = root / admin
+        common = Path((admin / "commondir").read_text(encoding="utf-8").strip())
+        if not common.is_absolute():
+            common = admin / common
+        return common.resolve()
+    except OSError:
+        return None
+
+
 def jail_policy(
     root: Path,
     config: Config,
@@ -239,6 +265,7 @@ def jail_policy(
     # mounts. Without this a `uv run` verify dies 127.
     tool_path, tool_mounts = operator_tool_paths()
     env["PATH"] = tool_path
+    git_dir = linked_worktree_git_dir(root)
     return JailPolicy(
         cwd=root,
         argv=argv,
@@ -249,6 +276,7 @@ def jail_policy(
         extra_ro_paths=(
             *(Path(p) for p in config.sandbox.extra_read_paths),
             *extra_ro_paths,
+            *((git_dir,) if git_dir is not None else ()),
         ),
         extra_rw_paths=(
             *(Path(p) for p in config.sandbox.extra_write_paths),

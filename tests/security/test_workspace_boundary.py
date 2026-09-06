@@ -296,11 +296,11 @@ def test_denied_beats_a_grant(tmp_path: Path) -> None:
         _dispatch(root, cfg, "read_file", {"path": str(granted / "keys" / "id_rsa")})
 
 
-def _hide_on_hardened(path: str, extra: dict[str, object] | None = None) -> str | None:
+def _hide_on_hardened(root: Path, path: str, extra: dict[str, object] | None = None) -> str | None:
     from agent6.app.confine import check_hide_paths_support
 
     data: dict[str, object] = {"sandbox": {"hide_paths": [path], **(extra or {})}}
-    return check_hide_paths_support(Config.model_validate(data), "hardened")
+    return check_hide_paths_support(Config.model_validate(data), "hardened", root)
 
 
 def test_hide_paths_refuses_the_launcher_grant_regions(
@@ -315,13 +315,13 @@ def test_hide_paths_refuses_the_launcher_grant_regions(
     monkeypatch.setattr(
         "agent6.tools.policy.operator_tool_paths", lambda: ("/usr/bin:/bin", (tool_dir,))
     )
-    r = _hide_on_hardened("/tmp/secret-cache")
+    r = _hide_on_hardened(tmp_path, "/tmp/secret-cache")
     assert r is not None and "/tmp" in r
-    r = _hide_on_hardened("/etc/agent6-private")
+    r = _hide_on_hardened(tmp_path, "/etc/agent6-private")
     assert r is not None and "system dir" in r
-    r = _hide_on_hardened(str(tool_dir / "sub"))
+    r = _hide_on_hardened(tmp_path, str(tool_dir / "sub"))
     assert r is not None and "tool dir" in r
-    assert _hide_on_hardened("/nonexistent-elsewhere/private") is None
+    assert _hide_on_hardened(tmp_path, "/nonexistent-elsewhere/private") is None
 
 
 def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
@@ -332,12 +332,14 @@ def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
     of it and refuses too."""
     monkeypatch.chdir(tmp_path)
     with pytest.raises(Exception, match="'\\.\\.'"):
-        _hide_on_hardened("/opt/../etc/shadow-file")
+        _hide_on_hardened(tmp_path, "/opt/../etc/shadow-file")
     link = tmp_path / "alias"
     link.symlink_to("/etc")
-    assert _hide_on_hardened(str(link / "agent6-private")) is not None
+    assert _hide_on_hardened(tmp_path, str(link / "agent6-private")) is not None
     hidden_tree = Path("/nonexistent-vault")
-    r = _hide_on_hardened(str(hidden_tree), {"extra_read_paths": [str(hidden_tree / "inner")]})
+    r = _hide_on_hardened(
+        tmp_path, str(hidden_tree), {"extra_read_paths": [str(hidden_tree / "inner")]}
+    )
     assert r is not None and "extra_read_paths" in r
 
 
@@ -363,5 +365,5 @@ def test_hide_paths_refuses_an_mcp_server_grant(
             },
         }
     )
-    r = check_hide_paths_support(cfg, "hardened")
+    r = check_hide_paths_support(cfg, "hardened", tmp_path)
     assert r is not None and "mcp.servers.srv" in r

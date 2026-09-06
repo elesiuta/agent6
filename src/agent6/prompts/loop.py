@@ -38,9 +38,10 @@ __DAG_RULES_BLOCK__
 # surface-current-task + finish-gate machinery walks it one focused task at a
 # time. Aimed at small/open models that lose track of multi-part tasks; a capable
 # model needs neither, which is why this is opt-in (measured per model).
-# Rendered into run mode's __GIT_PROTECT_RULE__ sentinel ONLY under strict
-# isolation with protect_git on: elsewhere the constraint does not exist and
-# stating it would misdirect the model.
+# Rendered into run mode's __GIT_PROTECT_RULE__ sentinel under strict
+# isolation with protect_git on, and in a fork's linked worktree under any
+# jail (the repository's `.git` is granted read-only there): elsewhere the
+# constraint does not exist and stating it would misdirect the model.
 # Rendered into run mode's __AUTO_COMMIT_RULE__ sentinel, keyed on
 # [git].control AND gate presence: under agent6 control the harness
 # auto-commits each passing verify (gateless: each editing step); under model

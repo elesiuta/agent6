@@ -1,31 +1,39 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 fork` lifecycle: clone a run (rolled back to a checkpoint) into a
-NEW run.
+"""The `agent6 fork` lifecycle: clone a run's state as of a checkpoint into a
+NEW run, and the `/undo` rewind built on the same clone.
 
 A fork copies a source run's state, as of checkpoint turn N, into a fresh run
-dir with a new id and the same repo, recording lineage (parent run + the turn).
-The source run is never mutated -- this is Pi-style "sessions as trees" done as
-clone-to-new-session, not in-place branching. `ui/cli/fork.py` adapts argv,
-calls :func:`create_fork`, then (unless `--no-run`) continues the new run from
-turn N over the resume path.
+dir with a new id and the same repo, recording lineage (parent run + the
+turn). The source run is never mutated: sessions as trees, done as
+clone-to-new-session. `ui/cli/fork.py` adapts argv, calls :func:`create_fork`,
+then (unless `--no-run`) continues the new run from turn N over the resume
+path.
 
-A fork is the repo at the checkpoint's committed HEAD plus the conversation up
-to that turn. So on a gated run (commits fire only on a green verify), an edit
-made but not committed at the forked turn is ABSENT from the fork's tree even
-though the copied transcript mentions it -- the same committed-history-only
-posture `resume` documents, and deliberate: the alternative is snapshotting
-uncommitted bytes into every checkpoint. That rollback governs TRACKED
-content only: an untracked file lives outside every sha, so one created
-after the fork point persists in the shared checkout, and a fork that edits
-it absorbs the whole file into its first commit. The DAG is not copied but REBUILT: the
-checkpoint's `graph_version` names an exact past state, and `graph.replay`
-undoes every journal-recorded mutation stamped after it, so the fork's tasks,
-statuses, and cursor match the turn its conversation came from.
+A fork of a run is the repo at the checkpoint's committed HEAD, in its own
+worktree, plus the conversation up to that turn. `create_fork` adds a linked
+git worktree detached at that sha (under `[parallel].workdir`, beside the
+lane clones) and records it in the manifest: the fork's chain grows there,
+`agent6 resume <fork>` runs the leg there, and the source run and the
+operator's checkout stay as they are. The worktree shares the repository's
+refs, so `sessions diff|commits|merge <fork>` read the fork like any run's,
+and `sessions prune` removes the worktree once the fork is merged. A plan or
+ask fork edits nothing and reads the operator's checkout, like every plan.
+On a gated run (commits fire only on a green verify), an edit made but not
+committed at the forked turn is ABSENT from the fork's tree even though the
+copied transcript mentions it: the same committed-history-only posture
+`resume` documents. The DAG is not copied but REBUILT: the checkpoint's
+`graph_version` names an exact past state, and `graph.replay` undoes every
+journal-recorded mutation stamped after it, so the fork's tasks, statuses,
+and cursor match the turn its conversation came from.
+
+`/undo` (:func:`undo_fork`) clones the state the same way but adds no
+worktree: the fork keeps the undone session's checkout.
 """
 
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import json
 import shutil
@@ -36,11 +44,21 @@ from typing import Any
 
 from agent6.app._setup import SandboxOverrides, detect_env, session_config
 from agent6.app.manifest import write_session_manifest
+from agent6.app.parallel import subordinate_workdir_root
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.resume import resumable_bucket_dirs
 from agent6.config import Config, ConfigError
 from agent6.config.layer import load_effective, resolved_state_dir
-from agent6.git_ops import GitError, chain_ref_for, create_branch_at, run_branch_for, set_ref
+from agent6.git_ops import (
+    GitError,
+    add_worktree,
+    chain_ref_for,
+    create_branch_at,
+    merge_stamp_holds,
+    remove_worktree,
+    run_branch_for,
+    set_ref,
+)
 from agent6.graph.replay import graph_at_version, journal_prefix
 from agent6.graph.storage import (
     append_jsonl,
@@ -61,14 +79,20 @@ from agent6.sessions.id import (
     unused_session_id,
     validate_explicit_session_id,
 )
+from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import (
     SessionLayout,
     read_untracked_at_start,
     write_untracked_at_start,
 )
-from agent6.sessions.manifest import ManifestError, model_git_refusal, read_manifest
-from agent6.types import session_bucket
-from agent6.viewmodel import newest_session_dir
+from agent6.sessions.manifest import (
+    ManifestError,
+    SessionManifest,
+    model_git_refusal,
+    read_manifest,
+)
+from agent6.types import ResumableMode, session_bucket
+from agent6.viewmodel import newest_session_dir, session_dirs
 from agent6.workflows._session_state import load_session_snapshot
 
 # Curator-owned DAG artifacts copied verbatim into the fork; each is a
@@ -325,9 +349,10 @@ def undo_fork(
     cwd: Path,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[str, str] | None:
-    """`/undo`: fork *session_id* at its undo target, unstarted. Returns
-    `(child_id, undone_text)` -- the text goes back in the composer to edit
-    and resend -- or None with the reason already printed."""
+    """`/undo`: fork *session_id* at its undo target, unstarted, in the
+    session's own checkout. Returns `(child_id, undone_text)`: the text goes
+    back in the composer to edit and resend. None with the reason already
+    printed. *cwd* is the repository (the state dir's anchor)."""
     state_dir = resolved_state_dir(cwd)
     target = undo_target(state_dir, session_id, reporter=reporter)
     if target is None:
@@ -337,6 +362,7 @@ def undo_fork(
         target.source_session_id,
         at_turn=target.at_turn,
         cwd=cwd,
+        worktree=False,
         reporter=reporter,
     )
     if rc != 0:
@@ -344,7 +370,44 @@ def undo_fork(
     return child, target.undone_text
 
 
-def create_fork(  # noqa: PLR0911, PLR0912
+class _ForkRefused(Exception):
+    """The fork was refused before anything was created; the reason is
+    printed and `rc` is the exit code."""
+
+    def __init__(self, rc: int) -> None:
+        super().__init__(rc)
+        self.rc = rc
+
+
+@dataclass(frozen=True, slots=True)
+class _ForkPlan:
+    """Everything a fork writes, resolved and validated first so a refusal
+    creates nothing: the source, the child's layout, the checkpoint to seed
+    from, the manifest facts carried forward, and the child's config."""
+
+    src: SessionLayout
+    # The source's own worktree (None: the operator's checkout), which a
+    # child made without one of its own keeps.
+    src_worktree: Path | None
+    dst: SessionLayout
+    checkpoint_path: Path
+    graph_version: int
+    forked_from_turn: int
+    forked_from_sha: str
+    base_sha: str
+    base_branch: str
+    user_task: str
+    mode: ResumableMode
+    preset: str
+    preset_from_flag: bool
+    cfg: Config
+    # The source's pinned verify command and its origin. A fork inherits it:
+    # derived from the current config instead, a source whose gate was
+    # inferred or adopted forked to a run the manifest called gateless.
+    gate: tuple[Sequence[str], str]
+
+
+def _plan_fork(
     config_path: Path | None,
     source_session_id: str,
     *,
@@ -354,37 +417,32 @@ def create_fork(  # noqa: PLR0911, PLR0912
     sandbox_overrides: SandboxOverrides | None = None,
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
     reporter: Reporter = STDIO_REPORTER,
-) -> tuple[str, int]:
-    """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
-
-    Materializes the fork on disk (clone the checkpoint + DAG, write the
-    manifest, cut `agent6/<child>` at the checkpoint's committed HEAD, record
-    lineage) WITHOUT starting it. Returns `(child_id, 0)` on success, else
-    `("", rc)` after printing the reason. The caller (`ui/cli/fork.py`) then
-    either reports the created id (`--no-run`) or continues it over resume.
+) -> _ForkPlan:
+    """Resolve a fork of *source_session_id* at checkpoint *at_turn*; raises
+    :class:`_ForkRefused` with the exit code after printing the reason.
 
     The child's config is built as its continuation builds it (the source's
     preset, the mode clamp, this invocation's *sandbox_overrides*), so the
     manifest stamps the policy the fork runs under. *refuse_continuation*,
     given that config and the mode, returns why the continuation would refuse
-    (`headless_approval_refusal` for `agent6 fork` without `--no-run`) or None;
-    a reason refuses BEFORE anything is created, the order `run` keeps, so no
-    never-started fork stays listed and its id stays free.
+    (`headless_approval_refusal` for `agent6 fork` without `--no-run`) or
+    None; a reason refuses BEFORE anything is created, the order `run` keeps,
+    so no never-started fork stays listed and its id stays free.
     """
     state_dir = resolved_state_dir(cwd)
     src = _resolve_source(state_dir, source_session_id, reporter=reporter)
     if src is None:
-        return "", 2
+        raise _ForkRefused(2)
 
     checkpoint_path = _select_checkpoint_path(src, at_turn, reporter=reporter)
     if checkpoint_path is None:
-        return "", 2
+        raise _ForkRefused(2)
 
     try:
         checkpoint = load_session_snapshot(checkpoint_path)
     except (OSError, ValueError) as exc:
         reporter.error(f"failed to load checkpoint {checkpoint_path}: {exc}")
-        return "", 1
+        raise _ForkRefused(1) from exc
 
     # Read the source manifest to carry base_sha / base_branch / mode forward.
     # `mode` is security-relevant: a missing/corrupt source manifest must NOT
@@ -398,17 +456,13 @@ def create_fork(  # noqa: PLR0911, PLR0912
         src_mode = sm.session_mode()
     except ManifestError as exc:
         reporter.error(f"cannot read source run manifest {src.manifest_path}: {exc}")
-        return "", 2
+        raise _ForkRefused(2) from exc
     refusal = model_git_refusal(sm, "fork")
     if refusal is not None:
         # /undo forks in-process, so this one guard covers it too: without an
         # agent6 chain there is no checkpoint to fork or rewind to.
         reporter.error(refusal)
-        return "", 2
-    src_base_sha = sm.base_sha
-    src_base_branch = sm.base_branch
-    src_user_task = sm.user_task
-    src_preset_from_flag = sm.workflow.preset_from_flag
+        raise _ForkRefused(2)
 
     forked_from_sha = checkpoint.head_sha
     if not forked_from_sha:
@@ -416,7 +470,7 @@ def create_fork(  # noqa: PLR0911, PLR0912
             "the chosen checkpoint records no head_sha, so the fork branch "
             "cannot be cut. (A checkpoint from before per-turn sha capture.)"
         )
-        return "", 1
+        raise _ForkRefused(1)
 
     try:
         # The source's preset: resume replays it (preset or manifest_preset),
@@ -430,26 +484,19 @@ def create_fork(  # noqa: PLR0911, PLR0912
         )
     except ConfigError as exc:
         reporter.error(str(exc))
-        return "", 2
+        raise _ForkRefused(2) from exc
     if refuse_continuation is not None:
         refusal = refuse_continuation(cfg, src_mode)
         if refusal is not None:
             reporter.refuse(refusal)
-            return "", 2
-
-    # Stamp the child's preset like the run/resume paths (`preset or cfg.preset`):
-    # a FLAG-selected source replays its flag name (replay_preset), a CONFIG-
-    # selected one re-derives from the CURRENT config (cfg.preset) rather than the
-    # source manifest's possibly-stale name -- the fork sibling of the parked-resume
-    # stamp fix. (bool(replay_preset) == preset_from_flag, so the flag bit stands.)
-    forked_preset = sm.workflow.replay_preset or cfg.preset
+            raise _ForkRefused(2)
 
     if new_session_id:
         try:
             validate_explicit_session_id(new_session_id)
         except SessionIdError as exc:
             reporter.error(str(exc))
-            return "", 2
+            raise _ForkRefused(2) from exc
         # Any bucket holding it makes the id ambiguous on every surface; the
         # same-bucket case would also fail the target-dir check later.
         if (held := session_id_bucket(state_dir, new_session_id)) is not None:
@@ -457,11 +504,11 @@ def create_fork(  # noqa: PLR0911, PLR0912
                 f"--session-id {new_session_id!r} already names a session under {held}/;"
                 " ids are unique across every bucket. Pick another id."
             )
-            return "", 2
+            raise _ForkRefused(2)
     child_id = new_session_id or unused_session_id(state_dir, session_bucket(src_mode))
-    rc = _materialize_fork(
-        cwd=cwd,
+    return _ForkPlan(
         src=src,
+        src_worktree=sm.worktree,
         # A fork keeps its source's mode, so its dir belongs in that mode's
         # bucket: a forked plan in runs/ would be the one session whose
         # directory disagreed with its own manifest.
@@ -472,47 +519,142 @@ def create_fork(  # noqa: PLR0911, PLR0912
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_iteration,
         forked_from_sha=forked_from_sha,
-        base_sha=src_base_sha,
-        base_branch=src_base_branch,
-        user_task=src_user_task,
+        base_sha=sm.base_sha,
+        base_branch=sm.base_branch,
+        user_task=sm.user_task,
         mode=src_mode,
-        preset=forked_preset,
-        preset_from_flag=src_preset_from_flag,
+        # The child's preset as the run/resume paths stamp it: a FLAG-selected
+        # source replays its flag name (replay_preset); a CONFIG-selected one
+        # re-derives from the CURRENT config (cfg.preset), never the source
+        # manifest's possibly-stale name.
+        preset=sm.workflow.replay_preset or cfg.preset,
+        preset_from_flag=sm.workflow.preset_from_flag,
         cfg=cfg,
         gate=(sm.workflow.verify_command, sm.workflow.verify_origin),
-        reporter=reporter,
     )
+
+
+def remove_fork_worktree(repo: Path, worktree: Path) -> bool:
+    """Delete a fork's worktree (only a linked worktree of *repo*, see
+    `git_ops.remove_worktree`) and the state dir that held its checkout lock;
+    False when *worktree* is not one."""
+    state_dir = resolved_state_dir(worktree)
+    if not remove_worktree(repo, worktree):
+        return False
+    shutil.rmtree(state_dir, ignore_errors=True)
+    return True
+
+
+def worktree_owners(state_dir: Path) -> dict[Path, list[tuple[Path, SessionManifest]]]:
+    """Every worktree a session manifest names, with the sessions naming it
+    (an `/undo` fork shares its source's). The manifests are the only record
+    of which directories are agent6's: a path no manifest names is never
+    touched, wherever it sits."""
+    owners: dict[Path, list[tuple[Path, SessionManifest]]] = {}
+    for session_dir in session_dirs(state_dir):
+        with contextlib.suppress(ManifestError):
+            manifest = read_manifest(session_dir)
+            if manifest.worktree is not None:
+                owners.setdefault(manifest.worktree, []).append((session_dir, manifest))
+    return owners
+
+
+def _still_needs_worktree(repo: Path, session_dir: Path, manifest: SessionManifest) -> str:
+    """Why *session_dir* still needs its worktree ("live", "unmerged"), or ""
+    when its work has landed: the merge stamp is the prune's own test of
+    "merged" (`merge_stamp_holds`: the branch still points where the merge
+    left it)."""
+    if worker_is_alive(session_dir):
+        return "live"
+    merged = manifest.merged is not None and merge_stamp_holds(
+        repo, manifest.run_branch or "", manifest.merged.tip
+    )
+    return "" if merged else "unmerged"
+
+
+def sweep_fork_worktrees(repo: Path, state_dir: Path) -> tuple[list[str], list[tuple[str, str]]]:
+    """Remove every fork worktree whose sessions have all landed their work
+    (merged, none live), and keep the rest. Returns `([removed ids],
+    [(kept id, why)])`; a session sharing a kept worktree is kept for the
+    session that needs it."""
+    removed: list[str] = []
+    kept: list[tuple[str, str]] = []
+    for worktree, sessions in worktree_owners(state_dir).items():
+        if not worktree.exists():
+            continue
+        needs = {d.name: why for d, m in sessions if (why := _still_needs_worktree(repo, d, m))}
+        if needs:
+            first = next(iter(needs))
+            kept.extend((d.name, needs.get(d.name, f"shared with {first}")) for d, _ in sessions)
+        elif remove_fork_worktree(repo, worktree):
+            removed.extend(d.name for d, _ in sessions)
+    return removed, kept
+
+
+def create_fork(
+    config_path: Path | None,
+    source_session_id: str,
+    *,
+    at_turn: int | None = None,
+    new_session_id: str = "",
+    cwd: Path,
+    sandbox_overrides: SandboxOverrides | None = None,
+    refuse_continuation: Callable[[Config, str], str | None] | None = None,
+    worktree: bool = True,
+    reporter: Reporter = STDIO_REPORTER,
+) -> tuple[str, int]:
+    """Create a new run cloned from *source_session_id* at checkpoint *at_turn*.
+
+    Materializes the fork on disk WITHOUT starting it: the cloned checkpoint
+    + DAG, the manifest, `agent6/<child>` cut at the checkpoint's committed
+    HEAD, the lineage record and, for a run with *worktree* set, a linked
+    worktree detached at that sha which the manifest names and `resume` runs
+    the leg in. With *worktree* off (`/undo`) the child keeps its source's
+    checkout; a plan or ask fork never edits and reads the operator's
+    checkout, so it gets none either way. Returns `(child_id, 0)` on success,
+    else `("", rc)` after printing the reason. The caller (`ui/cli/fork.py`)
+    then either reports the created id (`--no-run`) or continues it over
+    resume. *cwd* is the repository; see :func:`_plan_fork` for
+    *refuse_continuation*.
+    """
+    try:
+        plan = _plan_fork(
+            config_path,
+            source_session_id,
+            at_turn=at_turn,
+            new_session_id=new_session_id,
+            cwd=cwd,
+            sandbox_overrides=sandbox_overrides,
+            refuse_continuation=refuse_continuation,
+            reporter=reporter,
+        )
+    except _ForkRefused as refused:
+        return "", refused.rc
+    path = plan.src_worktree
+    added = worktree and plan.mode == "run"
+    if added:
+        path = subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
+        try:
+            add_worktree(cwd, path, plan.forked_from_sha)
+        except GitError as exc:
+            reporter.error(f"could not add the fork's worktree at {path}: {exc}")
+            return "", 1
+    rc = _materialize_fork(plan, cwd=cwd, worktree=path, reporter=reporter)
     if rc != 0:
+        if added and path is not None:
+            remove_fork_worktree(cwd, path)
         return "", rc
-    return child_id, 0
+    return plan.dst.session_id, 0
 
 
 def _materialize_fork(
-    *,
-    cwd: Path,
-    src: SessionLayout,
-    dst: SessionLayout,
-    checkpoint_path: Path,
-    graph_version: int,
-    forked_from_turn: int,
-    forked_from_sha: str,
-    base_sha: str,
-    base_branch: str,
-    user_task: str,
-    mode: str,
-    preset: str,
-    preset_from_flag: bool,
-    cfg: Config,
-    gate: tuple[Sequence[str], str],
-    reporter: Reporter = STDIO_REPORTER,
+    plan: _ForkPlan, *, cwd: Path, worktree: Path | None, reporter: Reporter = STDIO_REPORTER
 ) -> int:
-    """Write the fork's state on disk: clone the checkpoint + DAG, the manifest,
-    the git branch, and the lineage record. Returns 0 on success, else an error
-    code (after printing). The source run is never touched.
-
-    *gate* is the source's pinned verify command and its origin. A fork inherits
-    it: derived from the current config instead, a source whose gate was
-    inferred or adopted forked to a run the manifest called gateless."""
+    """Write the fork's state on disk: clone the checkpoint + DAG, the manifest
+    (naming *worktree*, the checkout the fork works in; None for the
+    operator's), the git refs, and the lineage record. Returns 0 on success,
+    else an error code (after printing). The source run is never touched."""
+    src, dst = plan.src, plan.dst
     if dst.session_dir.exists():
         reporter.error(f"target run dir already exists: {dst.session_dir}")
         return 2
@@ -520,44 +662,44 @@ def _materialize_fork(
 
     # Seed the new run's resume pointer + origin checkpoint from the chosen
     # checkpoint, then rebuild the DAG as it stood at that checkpoint.
-    blob = checkpoint_path.read_text(encoding="utf-8")
+    blob = plan.checkpoint_path.read_text(encoding="utf-8")
     atomic_write(dst.session_dir / "loop_state.json", blob)
     atomic_write(dst.checkpoint_path(0), blob)
-    _copy_dag(src, dst, graph_version=graph_version)
-    # Same checkout, same operator files: the fork leaves out of its commits
-    # what the source did.
+    _copy_dag(src, dst, graph_version=plan.graph_version)
+    # The same operator files as the source: the fork leaves out of its
+    # commits what the source did.
     write_untracked_at_start(dst.session_dir, read_untracked_at_start(src.session_dir))
 
-    run_branch = run_branch_for(dst.session_id) if cfg.git.branch_per_run else None
+    run_branch = run_branch_for(dst.session_id) if plan.cfg.git.branch_per_run else None
     write_session_manifest(
         dst,
         session_id=dst.session_id,
-        user_task=user_task,
-        base_sha=base_sha,
-        base_branch=base_branch,
+        user_task=plan.user_task,
+        base_sha=plan.base_sha,
+        base_branch=plan.base_branch,
         run_branch=run_branch,
-        cfg=cfg,
-        mode=mode,
-        effective_preset=preset,
-        preset_from_flag=preset_from_flag,
+        cfg=plan.cfg,
+        mode=plan.mode,
+        effective_preset=plan.preset,
+        preset_from_flag=plan.preset_from_flag,
         parent_session_id=src.session_id,
-        forked_from_turn=forked_from_turn,
-        forked_from_sha=forked_from_sha,
-        gate=gate,
-        isolation=resolve_isolation(cfg.sandbox.isolation, detect_env()),
+        forked_from_turn=plan.forked_from_turn,
+        forked_from_sha=plan.forked_from_sha,
+        gate=plan.gate,
+        isolation=resolve_isolation(plan.cfg.sandbox.isolation, detect_env()),
+        worktree=worktree,
     )
 
     # Seed the fork's chain at the historical sha WITHOUT touching the
     # operator's checkout: the hidden ref always, the visible branch per
     # [git].branch_per_run (both additive ref writes, never a checkout).
     try:
-        set_ref(cwd, chain_ref_for(dst.session_id), forked_from_sha)
+        set_ref(cwd, chain_ref_for(dst.session_id), plan.forked_from_sha)
         if run_branch is not None:
-            create_branch_at(cwd, run_branch, forked_from_sha)
+            create_branch_at(cwd, run_branch, plan.forked_from_sha)
     except GitError as exc:
-        reporter.error(f"could not cut fork refs at {forked_from_sha[:12]}: {exc}")
-        # The fork dir was just materialized; don't leave an orphan run dir +
-        # manifest (and a lineage gap) when the refs couldn't be cut.
+        reporter.error(f"could not cut fork refs at {plan.forked_from_sha[:12]}: {exc}")
+        # A fork exists only with its refs: the run dir written above goes too.
         shutil.rmtree(dst.session_dir, ignore_errors=True)
         return 1
 
@@ -567,14 +709,15 @@ def _materialize_fork(
         _lineage_entry(
             child=dst.session_id,
             parent=src.session_id,
-            turn=forked_from_turn,
-            sha=forked_from_sha,
+            turn=plan.forked_from_turn,
+            sha=plan.forked_from_sha,
             ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
         ),
     )
     at = f"(branch {run_branch} " if run_branch else f"({chain_ref_for(dst.session_id)} "
+    where = f" in {worktree}" if worktree is not None else ""
     reporter.note(
-        f"forked {src.session_id}@turn {forked_from_turn} -> {dst.session_id} "
-        f"{at}at {forked_from_sha[:12]})"
+        f"forked {src.session_id}@turn {plan.forked_from_turn} -> {dst.session_id} "
+        f"{at}at {plan.forked_from_sha[:12]}){where}"
     )
     return 0

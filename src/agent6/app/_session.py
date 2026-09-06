@@ -79,6 +79,7 @@ def tool_result_cap_chars(cfg: Config) -> int:
 def select_isolation(
     cfg: Config,
     *,
+    cwd: Path,
     confirm_unconfined: Callable[[IsolationLevel, Config], bool],
     reporter: Reporter,
     explicit_leaves: frozenset[str] = frozenset(),
@@ -90,7 +91,7 @@ def select_isolation(
     env = detect_env()
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
     try:
-        warn_sandbox_gaps(selected, env, cfg, reporter=reporter)
+        warn_sandbox_gaps(selected, env, cfg, root=cwd, reporter=reporter)
     except JailUnavailableError as exc:
         # The hardened exposure scan builds the run's policy, which creates the
         # jail's HOME and refuses one it cannot make.
@@ -106,7 +107,7 @@ def select_isolation(
         raise SessionRefused(2)
     # The shared list (`config_refusal`): a default this host cannot honour
     # degraded with a warning above; a value the operator wrote down refuses.
-    cfg_err = config_refusal(cfg, selected, Path.cwd(), explicit_leaves=explicit_leaves)
+    cfg_err = config_refusal(cfg, selected, cwd, explicit_leaves=explicit_leaves)
     if cfg_err is not None:
         reporter.refuse(cfg_err)
         raise SessionRefused(2)

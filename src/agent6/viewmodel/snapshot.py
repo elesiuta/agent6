@@ -67,6 +67,8 @@ def manifest_header(session_dir: Path, *, repo: Path | None = None) -> dict[str,
         lineage = format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
         if lineage:
             header["forked_from"] = lineage
+        if m.worktree is not None:
+            header["worktree"] = str(m.worktree)
     compare = session_compare(session_dir)
     if compare is not None:
         header["compare"] = compare.model_dump(mode="json")
