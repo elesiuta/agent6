@@ -524,6 +524,33 @@ def test_runs_rm_names_the_kept_branch(
     assert br.returncode == 0  # the branch survives
 
 
+def test_rm_names_the_sha_when_the_chain_was_the_only_anchor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A chain ref has no reflog, so with no visible branch its sha is the only
+    way back to the run's commits. The line said they were "now loose" and
+    named nothing to reach them with."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    head = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "update-ref", chain_ref_for("loose-run111"), head)
+    layout = SessionLayout(state_dir=resolved_state_dir(tmp_path), session_id="loose-run111")
+    layout.ensure()
+    layout.logs_path.write_text(
+        '{"type": "session.start", "mode": "run"}\n'
+        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        encoding="utf-8",
+    )
+
+    assert main(["sessions", "rm", "loose-run111"]) == 0
+
+    out = capsys.readouterr().out
+    assert f"git branch <name> {head[:12]}" in out, out
+
+
 def test_runs_rm_asks_clears_the_bucket(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

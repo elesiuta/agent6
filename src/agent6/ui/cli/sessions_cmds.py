@@ -554,17 +554,20 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
             stays = f"; its worktree stays: it {left} ({worktree})"
     chain = chain_ref_for(layout.session_id)
     try:
-        if chain_tip(cwd, chain) is not None:
+        if (chain_head := chain_tip(cwd, chain)) is not None:
             branch = run_branch_for(layout.session_id)
             branch_kept = branch_exists(cwd, branch)
             delete_ref(cwd, chain)
-            # With no visible branch the ref was the commits' only anchor.
+            # With no visible branch the ref was the commits' only anchor, and
+            # a chain ref has no reflog: the sha is the only way back to them,
+            # so it goes on the line that deletes it (one gc from gone).
             went.append(
                 "its chain ref"
                 + (
                     f" (branch {branch} kept; `sessions prune` reports it)"
                     if branch_kept
-                    else " (its commits are now loose)"
+                    else f" (its commits are now loose; until git gc:"
+                    f" git branch <name> {chain_head[:12]})"
                 )
             )
     except GitError:
