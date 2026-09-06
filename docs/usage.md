@@ -12,7 +12,7 @@ The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across ev
 
 - `agent6 connect` prompts locally; it executes nothing a remote returns
 - already connected: skip this step
-- `agent6 check`: every configured provider's key resolves; its one network call is the provider's model listing, refreshed past a 10-minute cache (1.5 s, never fatal)
+- `agent6 check`: every referenced provider's key resolves; keyed providers' model listings refresh past a 10-minute cache (1.5 s each, never fatal)
 - `agent6 model`: the role assignments
 
 agent6 routes three model roles independently:
@@ -41,7 +41,7 @@ agent6 edits your working tree, commits each step to a per-run chain, and certif
 
 - your branch, HEAD, and index are never touched (the chain gets an `agent6/<id>` branch by default)
 - commands prompt for approval under the default `sandbox.run_commands = "ask"`: allow one call or the whole session; a headless run refuses to start unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park the prompt for a front-end) or `approve` (grant every scope, as the detach prompt's approve-all does), a hub-spawned one parks it; with commands settled (`--auto-approve`, `--no-commands`) and no away-mode, a fetch outside `sandbox.fetch_hosts` or an MCP call parks the run at its approval until a front-end answers, and the start says so
-- the run ends when the model declares it finished or a budget ceiling stops it
+- the run ends when the model declares it finished, the operator stops it, or a ceiling (budget, iterations) stops it
 - at a terminal it then asks for the next input: type to continue the session, `/exit` to finish (still resumable)
 - without a terminal (CI, detached) the resume line prints instead
 
@@ -83,13 +83,13 @@ agent6 resume ID [--force]    # continue a stopped or parked run (--force past a
 agent6 fork ID --at-turn 7    # a new run from a checkpoint; --no-run creates it without starting
 agent6 exec ID -- <command>   # run a command inside the run's jail and network
 agent6 forward ID 8000        # reach a port inside the run's session network; --local-port N
-agent6 history search <text>  # search every session's transcripts; --regex
+agent6 history search <text>  # search every session's persisted data; --regex
 agent6 sessions rm            # delete one run's history; --asks clears saved asks
 agent6 sessions compare <ids> # ranked comparison: >=2 runs (judged), or one fan-out id (its recorded verdict; --rejudge for a fresh call)
 agent6 sessions graph         # the persisted task graph
 ```
 
-`agent6 history search <query>` greps across the transcripts of every run.
+`agent6 history search <query>` greps across every session's persisted transcripts and data.
 `agent6 ps` lists the live sessions of every repository on the machine, with the directory to cd to and the id to attach; a fan-out's live lanes fold under it (`--lanes` lists them).
 
 ## Answer a parked prompt
@@ -136,7 +136,7 @@ Exit codes for `agent6 run`, `resume` and `review --reviewers N`, for scripts to
 ```sh
 agent6 plan "refactor the config loader"      # edit-free plan; run --from <id> executes it
 agent6 plan show <session-id>                 # print the plan
-agent6 plan edit <session-id>                 # answer the plan's open questions
+agent6 plan edit <session-id>                 # open plan.md in $EDITOR (answer its open questions)
 agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
 agent6 review --base origin/main --head HEAD  # read-only diff review
 agent6 ask "how does the task-graph curator work?"
