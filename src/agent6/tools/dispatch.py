@@ -48,9 +48,7 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import session_layout
 from agent6.skills import (
     ResolvedSkills,
-    discover_skills,
-    resolve_states,
-    skill_search_dirs,
+    operator_skills,
 )
 from agent6.tools._control_tools import finish_planning, finish_session
 from agent6.tools._dag_tools import add_task, list_tasks, update_task
@@ -1070,17 +1068,12 @@ class ToolDispatcher:
         data dir. An off switch resolves to nothing.
         """
         if self._skills_cache is None:
-            if not self._config.skills.enabled:
-                self._skills_cache = ResolvedSkills(enabled=(), always=(), warnings=())
-            else:
-                dirs = skill_search_dirs(self._config.skills.extra_dirs, data_dir() / "skills")
-                found, warns = discover_skills(dirs)
-                resolved = resolve_states(found, self._config.skills.state)
-                self._skills_cache = ResolvedSkills(
-                    enabled=resolved.enabled,
-                    always=resolved.always,
-                    warnings=(*warns, *resolved.warnings),
-                )
+            self._skills_cache = operator_skills(
+                self._config.skills.enabled,
+                self._config.skills.extra_dirs,
+                self._config.skills.state,
+                data_dir() / "skills",
+            )
         return self._skills_cache
 
     def skills_available(self) -> bool:

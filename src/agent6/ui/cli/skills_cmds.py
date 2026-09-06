@@ -462,6 +462,14 @@ def _cmd_skills_list(config_path: Path | None = None) -> int:
         print("no skills installed. Install one with `agent6 skills install <url>`.")
         return 0
 
+    if cfg is not None and not cfg.skills.enabled:
+        # The listing is the operator's view of what a run has, and with the
+        # master switch off a run has none of it: the index is empty, use_skill
+        # is not offered, and `/name` is not a command. Its sibling `mcp list`
+        # says the same about its own switch.
+        print(sgr("skills are DISABLED (agent6 config set skills.enabled true)", "1"))
+        print("installed, but no run loads any of them:\n")
+
     states = [state.get(s.name, "enabled") for s in skills]
     counts = Counter(states)
     detail = [f"{counts[k]} {k}" for k in ("disabled", "always") if counts[k]]

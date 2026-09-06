@@ -31,7 +31,7 @@ from agent6.models.validate import (
     warning_message,
 )
 from agent6.paths import data_dir
-from agent6.skills import discover_skills, resolve_states, skill_search_dirs
+from agent6.skills import operator_skills
 from agent6.types import ResumableMode, session_kind
 from agent6.ui.btw import asks_dir, direct_launch, make_btw_runner
 from agent6.ui.cli._ask import (
@@ -75,8 +75,9 @@ from agent6.viewmodel import session_policy
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     """Resolve `--skill` names to a task-prompt prefix. Returns (prefix, error)."""
-    found, _warns = discover_skills(skill_search_dirs(cfg.skills.extra_dirs, data_dir() / "skills"))
-    resolved = resolve_states(found, cfg.skills.state)
+    resolved = operator_skills(
+        cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, data_dir() / "skills"
+    )
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
     blocks: list[str] = []
     for n in names:

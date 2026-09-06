@@ -179,6 +179,26 @@ def resolve_states(skills: Sequence[Skill], state: Mapping[str, str]) -> Resolve
     return ResolvedSkills(enabled=enabled, always=always, warnings=tuple(warnings))
 
 
+def operator_skills(
+    enabled: bool, extra_dirs: Sequence[str], state: Mapping[str, str], installed_dir: Path
+) -> ResolvedSkills:
+    """The skills a run has, from `[skills]`: discovery over `extra_dirs` then
+    the installed dir, with the operator's per-skill states applied.
+
+    THE one owner of the master switch, which is what `--skill` and the pause
+    menu missed when each resolved the same three calls for itself: off means
+    no skills anywhere, not "off for the model only"."""
+    if not enabled:
+        return ResolvedSkills(enabled=(), always=(), warnings=())
+    found, warns = discover_skills(skill_search_dirs(extra_dirs, installed_dir))
+    resolved = resolve_states(found, state)
+    return ResolvedSkills(
+        enabled=resolved.enabled,
+        always=resolved.always,
+        warnings=(*warns, *resolved.warnings),
+    )
+
+
 def skill_steer_payload(name: str, text: str, args: str) -> str:
     """The instruction a `/<skill> [args]` steer injects: the skill applied
     for the rest of the run, its full text inline, the arguments named."""

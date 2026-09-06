@@ -43,7 +43,7 @@ from agent6.paths import data_dir
 from agent6.sessions.ipc import request_compact
 from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
-from agent6.skills import discover_skills, resolve_states, skill_search_dirs
+from agent6.skills import operator_skills
 from agent6.tools.background import SHELLS_DIR, roster_from_dir
 from agent6.ui.cli._common import plural
 from agent6.ui.cli._menu_input import menu_capable, menu_input
@@ -93,12 +93,9 @@ def skill_menu_table(config_path: Path | None = None) -> dict[str, tuple[str, st
     """
     try:
         cfg = load_effective(Path.cwd(), config_path).config
-        if not cfg.skills.enabled:
-            return {}
-        found, _warns = discover_skills(
-            skill_search_dirs(cfg.skills.extra_dirs, data_dir() / "skills")
+        resolved = operator_skills(
+            cfg.skills.enabled, cfg.skills.extra_dirs, cfg.skills.state, data_dir() / "skills"
         )
-        resolved = resolve_states(found, cfg.skills.state)
     except Exception as exc:  # the pause prompt must survive any config error
         print(f"[agent6] skill commands unavailable: {exc}")
         return {}

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from agent6.config.write import set_config_value
 from agent6.errors import OperatorError
 from agent6.ui.cli.skills_cmds import (
     _cmd_skills_disable,  # pyright: ignore[reportPrivateUsage]
@@ -310,6 +311,28 @@ class TestSkillsTaskPrefix:
         _, err2 = _skills_task_prefix(cfg, ("ghost",))
         assert "ghost" in err2
         assert "tidy" in err2
+
+    def test_the_master_switch_covers_the_skill_flag_and_the_listing(
+        self, env: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """`[skills].enabled` is the master switch: off means no skills
+        anywhere. `--skill` resolved discovery for itself and injected the text
+        regardless, and `skills list` printed the installed set with nothing
+        saying no run would load any of it."""
+        from agent6.config.layer import load_effective
+        from agent6.ui.cli.run import _skills_task_prefix  # pyright: ignore[reportPrivateUsage]
+
+        src = _write_skill_file(env / "src" / "SKILL.md", "tidy")
+        assert _cmd_skills_install(str(src), force=False) == 0
+        assert set_config_value(Path.cwd(), "skills.enabled", "false") is None
+        cfg = load_effective(Path.cwd()).config
+
+        prefix, err = _skills_task_prefix(cfg, ("tidy",))
+
+        assert prefix == ""
+        assert "unknown or disabled skill 'tidy'" in err
+        assert _cmd_skills_list() == 0
+        assert "skills are DISABLED" in capsys.readouterr().out
 
 
 class TestAtomicMultiInstall:
