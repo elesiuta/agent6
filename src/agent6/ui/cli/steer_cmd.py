@@ -45,6 +45,7 @@ def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
         # (--now included) can break that wait; only the answer can.
         print(
             f"note: the run is waiting ({summary.reason}); the steer stays"
-            f" queued until that is answered: agent6 attach {layout.session_id}"
+            f" queued until that is answered: agent6 answer {layout.session_id}"
+            f" (or agent6 attach {layout.session_id})"
         )
     return 0

@@ -69,6 +69,7 @@ The verify command is the success gate.
 ```sh
 agent6 attach                 # follow the conversation live; --raw, --tui, --json
 agent6 steer ID "focus on X"  # steer a live run at its next step boundary (--now interrupts the in-flight call)
+agent6 answer ID "yes"        # answer a live run's ask_user question (bare: print the question)
 agent6 sessions show          # status, iteration, elapsed, cost, where the changes are; --json to script
 agent6 sessions diff          # the git diff the run produced
 agent6 sessions commits       # the run's per-step commits
@@ -89,6 +90,7 @@ agent6 sessions graph         # the persisted task graph
 
 A run parked on an approval or a question (`AGENT6_DETACHED_AWAY=wait`, a hub-spawned run, a fan-out lane) takes its answer from a file in its session directory, which is what every front-end writes and what a script can write.
 
+- `agent6 answer <id>` prints the open question and its options; `agent6 answer <id> TEXT...` answers it (one TEXT per question, in order) without a terminal
 - `agent6 sessions dir <id>` prints the session directory; the prompt's `id` is in its `logs.jsonl` (`approval.prompt`, `question.prompt`)
 - an approval: `<session dir>/approvals/<id>.answer` holding `yes`, `no`, `session` or `session-deny`; anything else denies, and the two `session` answers stand only for a prompt whose event says `standing: true`
 - a question: `<session dir>/questions/<id>.answer` holding a JSON list of answers, one per question in the prompt's order (a bare string is one answer)

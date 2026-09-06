@@ -231,7 +231,8 @@ def build_questioner(
             # Detached 'wait', nothing attached: block until a front-end answers.
             tty_message(
                 f"[agent6] waiting: a question awaits a front-end; answer it with:"
-                f" agent6 attach {session_dir.name}\n"
+                f" agent6 attach {session_dir.name}"
+                f" (or, with no terminal: agent6 answer {session_dir.name} TEXT)\n"
             )
             reply = await_frontend_reply(
                 session_dir,

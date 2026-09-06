@@ -349,6 +349,12 @@ def _dispatch_steer(args: argparse.Namespace) -> int:
     return _cmd_steer(args.target, args.text, now=args.now)
 
 
+def _dispatch_answer(args: argparse.Namespace) -> int:
+    from agent6.ui.cli.answer_cmd import _cmd_answer  # noqa: PLC0415
+
+    return _cmd_answer(args.target, tuple(args.answers))
+
+
 def _resolve_target(target: str) -> SessionLayout | None:
     """The named session, or the newest when the operator omitted one -- the
     same resolution `attach` uses, so the verbs agree about "the session"."""
@@ -829,6 +835,7 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "ask": _dispatch_ask,
     "attach": _dispatch_attach,
     "steer": _dispatch_steer,
+    "answer": _dispatch_answer,
     "exec": _dispatch_exec,
     "forward": _dispatch_forward,
     "sessions": _dispatch_sessions,

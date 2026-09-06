@@ -19,6 +19,7 @@ from agent6.ui.cli._run_args import _add_fork_parser, _add_resume_parser, _add_r
 from agent6.ui.cli._sessions_args import _add_sessions_parser
 from agent6.ui.cli._skills_args import _add_skills_parser
 from agent6.ui.cli._watch_args import (
+    _add_answer_parser,
     _add_attach_parser,
     _add_net_parsers,
     _add_steer_parser,
@@ -194,6 +195,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     _add_attach_parser(sub)
     _add_steer_parser(sub)
+    _add_answer_parser(sub)
     _add_net_parsers(sub)
 
     _add_sessions_parser(sub)

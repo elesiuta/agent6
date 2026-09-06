@@ -137,6 +137,26 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     )
 
 
+def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    answer_p = _sub(
+        sub,
+        "answer",
+        help=(
+            "Answer a live run's ask_user question without a terminal: the same"
+            " answer file the TUI, web and attach write. With no TEXT it prints"
+            " the open question and its options; one TEXT per question, in order."
+        ),
+    )
+    answer_target = answer_p.add_argument("target", help="Session id (exact or unique prefix).")
+    answer_target.completer = _complete_session_ids  # type: ignore[attr-defined]
+    answer_p.add_argument(
+        "answers",
+        nargs="*",
+        metavar="TEXT",
+        help="One answer per question, in the order asked; an option's text, or free text.",
+    )
+
+
 def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """`exec` and `forward`: reach into a live run's session network.
 
