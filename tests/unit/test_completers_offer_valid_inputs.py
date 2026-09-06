@@ -175,3 +175,51 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
     )
     write_worker_pid(ended, os.getpid())
     assert completers._complete_live_session_ids("") == []  # pyright: ignore[reportPrivateUsage]
+
+
+def test_model_provider_completion_reads_the_typed_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_cmd_model` threads `--config FILE` into every provider lookup, so a
+    provider only that file declares is settable; completion read the default
+    global and repo config instead and offered nothing."""
+    import argparse
+
+    from agent6.ui.cli.model import _connected_providers  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.chdir(tmp_path)
+    custom = tmp_path / "custom.toml"
+    custom.write_text(
+        '[providers.myprovider]\napi_format = "openai"\nbase_url = "https://example.invalid/v1"\n',
+        encoding="utf-8",
+    )
+    assert "myprovider" in _connected_providers(custom)
+    offered = completers._complete_model_provider(  # pyright: ignore[reportPrivateUsage]
+        "my", argparse.Namespace(role="worker", config=custom)
+    )
+    assert offered == ["myprovider"]
+
+
+def test_model_completion_reads_the_typed_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`agent6 --config F model worker <provider> <TAB>` offers F's catalog;
+    the completer dropped `parsed_args.config` and answered for the default
+    layers, a config the command was not going to run under."""
+    import argparse
+
+    from agent6.ui.cli import model as model_mod
+
+    seen: list[Path | None] = []
+
+    def _catalog(config_path: Path | None, provider: str) -> list[str]:
+        seen.append(config_path)
+        return ["from-typed-config"] if config_path is not None else ["from-default-config"]
+
+    monkeypatch.setattr(model_mod, "_models_for", _catalog)
+    custom = tmp_path / "custom.toml"
+    custom.write_text('[models.worker]\nprovider = "anthropic"\n', encoding="utf-8")
+    offered = completers._complete_models(  # pyright: ignore[reportPrivateUsage]
+        "from-", parsed_args=argparse.Namespace(provider="anthropic", config=custom)
+    )
+    assert offered == ["from-typed-config"], seen

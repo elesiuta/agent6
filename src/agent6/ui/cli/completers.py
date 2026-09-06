@@ -58,12 +58,13 @@ def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
 
 
 @_never_raises
-def _complete_providers(prefix: str, **_kw: object) -> list[str]:
-    """argcomplete: connected provider names + known presets."""
+def _complete_providers(prefix: str, **kw: object) -> list[str]:
+    """argcomplete: connected provider names + known presets, under the
+    `--config` already typed."""
     from agent6.config.write import PROVIDER_DEFAULTS  # noqa: PLC0415
     from agent6.ui.cli.model import _connected_providers  # noqa: PLC0415
 
-    names = set(_connected_providers(None)) | set(PROVIDER_DEFAULTS)
+    names = set(_connected_providers(_explicit_config(kw))) | set(PROVIDER_DEFAULTS)
     return sorted(n for n in names if n.startswith(prefix))
 
 
@@ -91,16 +92,15 @@ def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
 
 
 @_never_raises
-def _complete_models(
-    prefix: str, parsed_args: argparse.Namespace | None = None, **_kw: object
-) -> list[str]:
-    """argcomplete: live + configured model ids for the already-typed provider."""
-    provider = getattr(parsed_args, "provider", "") or ""
+def _complete_models(prefix: str, **kw: object) -> list[str]:
+    """argcomplete: live + configured model ids for the already-typed provider,
+    under the `--config` already typed."""
+    provider = getattr(kw.get("parsed_args"), "provider", "") or ""
     if not provider:
         return []
     from agent6.ui.cli.model import _models_for  # noqa: PLC0415
 
-    return [m for m in _models_for(None, provider) if m.startswith(prefix)]
+    return [m for m in _models_for(_explicit_config(kw), provider) if m.startswith(prefix)]
 
 
 def _all_parallel_model_names(config_path: Path | None = None) -> list[str]:
@@ -116,7 +116,7 @@ def _all_parallel_model_names(config_path: Path | None = None) -> list[str]:
         return []
     from agent6.ui.cli.model import _models_for  # noqa: PLC0415
 
-    return sorted(set(_models_for(None, worker.provider)))
+    return sorted(set(_models_for(config_path, worker.provider)))
 
 
 @_never_raises
@@ -252,7 +252,7 @@ def _complete_model_provider(
     role = getattr(parsed_args, "role", None)
     if role not in ("planner", "worker", "reviewer", "all"):
         return []
-    return _complete_providers(prefix)
+    return _complete_providers(prefix, parsed_args=parsed_args)
 
 
 @_never_raises
