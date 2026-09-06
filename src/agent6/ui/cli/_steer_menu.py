@@ -45,6 +45,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.skills import discover_skills, resolve_states, skill_search_dirs
 from agent6.tools.background import SHELLS_DIR, roster_from_dir
+from agent6.ui.cli._common import plural
 from agent6.ui.cli._menu_input import menu_capable, menu_input
 from agent6.viewmodel import (
     fold_session,
@@ -181,7 +182,8 @@ def _print_status(session_dir: Path) -> None:
         ctx += f" · pins {len(s.pins)}"
     preset = _read_preset(session_dir)
     prof = f" · preset {preset}" if preset else ""
-    print(f"[agent6] {label} · tasks {tasks} · {len(s.tool_calls)} tools · cost {cost}{ctx}{prof}")
+    calls = plural(len(s.tool_calls), "tool")
+    print(f"[agent6] {label} · tasks {tasks} · {calls} · cost {cost}{ctx}{prof}")
     print(f"         model {model} · task: {task_snippet(s.user_task, max_chars=80)}")
 
 

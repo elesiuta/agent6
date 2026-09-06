@@ -89,7 +89,7 @@ def test_pause_menu_slash_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert out == "focus on tests"
     printed = capsys.readouterr().out
     assert "/detach" in printed  # help listed the commands
-    assert "running" in printed and "1 tools" in printed  # status line
+    assert "running" in printed and "1 tool " in printed  # status line, singular at 1
     assert "fix the bars" in printed  # the task graph
 
     assert pause_menu(tmp_path, input_fn=_feed(["/stop"])) == "abort"
