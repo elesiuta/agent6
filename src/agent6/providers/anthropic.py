@@ -713,13 +713,19 @@ class AnthropicProvider:
         }
         call.record(status=200, response=synthesised)
         if self.budget is not None:
-            if not (saw_input_usage and saw_output_usage):
-                raise ProviderError(
-                    "Anthropic stream omitted usage.input_tokens/output_tokens; "
-                    "budgeted runs require provider usage accounting",
-                    status_code=422,
-                )
-            _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
+            try:
+                if not (saw_input_usage and saw_output_usage):
+                    raise ProviderError(
+                        "Anthropic stream omitted usage.input_tokens/output_tokens; "
+                        "budgeted runs require provider usage accounting",
+                        status_code=422,
+                    )
+                _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
+            except ProviderError:
+                # Billed for what it generated, like every cut stream above;
+                # a completion the guards accept is metered by meter_completion.
+                _record_billed()
+                raise
         parsed = _parse_response(synthesised)
         meter_completion(self.budget, self.model, parsed, "Anthropic")
         return parsed

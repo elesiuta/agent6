@@ -161,3 +161,175 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     # per_model is where a spurious zero-count record would show: a stream that
     # reported nothing must not seed a model entry at all.
     assert snap.per_model == {}
+
+
+def _pricing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENT6_CACHE_HOME", str(tmp_path))
+    (tmp_path / "models").mkdir(exist_ok=True)
+    pricing = {"claude-sonnet-4-5": [3.0, 15.0], "gpt-4o": [3.0, 15.0]}
+    (tmp_path / "models" / "x.json").write_text(
+        json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
+    )
+
+
+def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gateway with usage tracking off completes the message with zero input
+    tokens; the guard refused it retryably WITHOUT recording the 800 output
+    tokens it had billed, so every retry re-sent the input and `max_usd`
+    never moved."""
+    from agent6.providers.types import ProviderError
+
+    _pricing(tmp_path, monkeypatch)
+    lines = _sse(
+        "message_start",
+        {
+            "message": {
+                "usage": {
+                    "input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                }
+            }
+        },
+    )
+    lines += _sse(
+        "content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}
+    )
+    lines += _sse(
+        "content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "hi"}}
+    )
+    lines += _sse("content_block_stop", {"index": 0})
+    lines += _sse(
+        "message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 800}}
+    )
+    lines += _sse("message_stop", {})
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    with (
+        mock.patch(
+            "agent6.providers._stream.http_stream",
+            return_value=FakeStreamResponse(status_code=200, lines=lines),
+        ),
+        pytest.raises(ProviderError, match="no usage input tokens"),
+    ):
+        provider.call(
+            system="s",
+            messages=[{"role": "user", "content": "hi"}],
+            text_delta_callback=lambda _s: None,
+        )
+    assert budget.snapshot().output_total == 800
+    assert budget.estimate_usd()[0] == pytest.approx(800 * 15.0 / 1e6)
+
+
+def test_openai_records_a_completed_stream_its_meter_guard_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The OpenAI twin: a [DONE] stream whose usage trailer says prompt_tokens
+    0 was refused with its 900 completion tokens unrecorded."""
+    from agent6.providers.types import ProviderError
+
+    _pricing(tmp_path, monkeypatch)
+    lines = [
+        "data: " + json.dumps({"choices": [{"index": 0, "delta": {"content": "hello"}}]}),
+        "",
+        "data: " + json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}),
+        "",
+        "data: "
+        + json.dumps({"choices": [], "usage": {"prompt_tokens": 0, "completion_tokens": 900}}),
+        "",
+        "data: [DONE]",
+        "",
+    ]
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
+    with (
+        mock.patch(
+            "agent6.providers._stream.http_stream",
+            return_value=FakeStreamResponse(status_code=200, lines=lines),
+        ),
+        pytest.raises(ProviderError, match="no usage input tokens"),
+    ):
+        provider.call(
+            system="s",
+            messages=[{"role": "user", "content": "hi"}],
+            text_delta_callback=lambda _s: None,
+        )
+    assert budget.snapshot().output_total == 900
+
+
+def test_anthropic_meters_a_completed_stream_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refusal-path record ran before the guards for every completed
+    message, so an accepted completion was booked twice: once there, once by
+    meter_completion. `max_usd` tripped at half the spend."""
+    _pricing(tmp_path, monkeypatch)
+    lines = _sse(
+        "message_start",
+        {
+            "message": {
+                "usage": {
+                    "input_tokens": 1_000,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                }
+            }
+        },
+    )
+    lines += _sse(
+        "content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}
+    )
+    lines += _sse(
+        "content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "hi"}}
+    )
+    lines += _sse("content_block_stop", {"index": 0})
+    lines += _sse(
+        "message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 20}}
+    )
+    lines += _sse("message_stop", {})
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
+    with mock.patch(
+        "agent6.providers._stream.http_stream",
+        return_value=FakeStreamResponse(status_code=200, lines=lines),
+    ):
+        provider.call(
+            system="s",
+            messages=[{"role": "user", "content": "hi"}],
+            text_delta_callback=lambda _s: None,
+        )
+    snap = budget.snapshot()
+    assert (snap.input_total, snap.output_total) == (1_000, 20)
+
+
+def test_openai_meters_a_completed_stream_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The OpenAI twin of the double booking."""
+    _pricing(tmp_path, monkeypatch)
+    lines = [
+        "data: " + json.dumps({"choices": [{"index": 0, "delta": {"content": "hello"}}]}),
+        "",
+        "data: " + json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}),
+        "",
+        "data: "
+        + json.dumps({"choices": [], "usage": {"prompt_tokens": 1_000, "completion_tokens": 20}}),
+        "",
+        "data: [DONE]",
+        "",
+    ]
+    budget = BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_percent=-1)
+    provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
+    with mock.patch(
+        "agent6.providers._stream.http_stream",
+        return_value=FakeStreamResponse(status_code=200, lines=lines),
+    ):
+        provider.call(
+            system="s",
+            messages=[{"role": "user", "content": "hi"}],
+            text_delta_callback=lambda _s: None,
+        )
+    snap = budget.snapshot()
+    assert (snap.input_total, snap.output_total) == (1_000, 20)

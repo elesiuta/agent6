@@ -696,6 +696,9 @@ class ChatGPTProvider:
         )
         if self.budget is not None:
             if int(usage.get("input_tokens") or 0) <= 0:
+                # Billed for what it generated, and the plan window moved: on
+                # the ledger before the refusal.
+                _record_billed()
                 raise ProviderError(
                     "ChatGPT stream reported no usage input tokens;"
                     " budgeted runs require provider usage accounting"

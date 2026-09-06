@@ -754,7 +754,13 @@ class OpenAIProvider:
             )
         call.record(status=200, response=synthesised)
         if self.budget is not None:
-            _require_metered_usage(usage, source="OpenAI stream")
+            try:
+                _require_metered_usage(usage, source="OpenAI stream")
+            except ProviderError:
+                # Billed for what it generated, like every cut stream above;
+                # a completion the guard accepts is metered by parse_response.
+                _record_billed()
+                raise
         parsed = parse_response(synthesised, tool_names=tool_names, tool_schemas=tool_schemas)
         meter_completion(self.budget, self.model, parsed, "OpenAI")
         return parsed

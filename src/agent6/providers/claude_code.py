@@ -921,11 +921,6 @@ class ClaudeCodeProvider:
     ) -> None:
         if self.budget is None:
             return
-        if inp + cache_read + cache_creation <= 0:
-            raise ProviderError(
-                "claude reported no usage input tokens for this round; budgeted runs require"
-                " provider usage accounting"
-            )
         if s.plan is None:
             # Fatal: a retry replays the history into the same absence, one
             # billed round per attempt.
@@ -934,6 +929,8 @@ class ClaudeCodeProvider:
                 " this provider by plan window only",
                 fatal=True,
             )
+        # On the ledger before any refusal: the round was generated and the
+        # plan window moved, whatever the input side reported.
         self.budget.record(
             model=s.resolved_model or self.model,
             input_tokens=inp,
@@ -943,6 +940,11 @@ class ClaudeCodeProvider:
             cost_usd=0.0,
             plan_usage=s.plan,
         )
+        if inp + cache_read + cache_creation <= 0:
+            raise ProviderError(
+                "claude reported no usage input tokens for this round; budgeted runs require"
+                " provider usage accounting"
+            )
 
     def _block(self, s: _Session, block: Mapping[str, Any]) -> dict[str, Any]:
         """One assistant block in Anthropic shape: bare tool names, the email
