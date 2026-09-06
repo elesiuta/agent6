@@ -262,10 +262,17 @@ def _drain_stderr(pipe: IO[bytes], keep: list[bytes]) -> None:
 
 def _stderr_tail(keep: list[bytes], limit: int = 400) -> str:
     """The last of what the server (or the launcher) said, for a failure
-    message. Best-effort: a diagnostic must never raise over the failure it
-    is describing."""
+    message: at most *limit* chars, cut at a line start, and marked when
+    anything was dropped. Best-effort: a diagnostic must never raise over
+    the failure it is describing."""
     text = b"".join(keep)[-_STDERR_KEEP_BYTES:].decode(errors="replace").strip()
-    return text[-limit:].strip() if text else ""
+    if len(text) <= limit:
+        return text
+    tail = text[-limit:]
+    nl = tail.find("\n")
+    if 0 <= nl < len(tail) - 1:
+        tail = tail[nl + 1 :]
+    return f"…[agent6: {len(text) - len(tail)} earlier chars cut]\n{tail.strip()}"
 
 
 def _result_of(response: dict[str, Any], *, name: str, method: str) -> Any:

@@ -330,6 +330,18 @@ def test_the_started_line_counts_one_tool_as_one_tool() -> None:
     assert any(line.startswith("[mcp] started 'one' (1 tool, network: ") for line in logs), logs
 
 
+def test_a_stderr_tail_is_cut_at_a_line_and_says_what_was_dropped() -> None:
+    from agent6.tools.mcp_client import _stderr_tail  # pyright: ignore[reportPrivateUsage]
+
+    assert _stderr_tail([b"short\n"]) == "short"
+    kept = [b"first line\n" + b"x" * 390 + b"\nlast line\n"]
+    assert _stderr_tail(kept) == "\u2026[agent6: 402 earlier chars cut]\nlast line"
+    # One line longer than the limit keeps its end, still marked.
+    assert (
+        _stderr_tail([b"y" * 500], limit=10) == "\u2026[agent6: 490 earlier chars cut]\n" + "y" * 10
+    )
+
+
 def test_manager_close_is_idempotent() -> None:
     mgr = MCPManager.start(
         [
