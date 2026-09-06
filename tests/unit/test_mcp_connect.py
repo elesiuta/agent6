@@ -65,6 +65,26 @@ def test_a_server_that_answers_is_written_with_its_tools_shown(
     assert entry.enabled is True
 
 
+def test_the_enable_hint_names_the_config_the_entry_went_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Following the hint after `--repo` must enable MCP for this repository,
+    not for every repository on the machine."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AGENT6_CONFIG_HOME", str(tmp_path / "cfg"))
+
+    rc = cmd_mcp_connect(
+        "browser", command=_server_argv(), url="", token_env="", pass_env=[], to_repo=True
+    )
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "written to the repo config" in out
+    assert "agent6 config set --repo mcp.enabled true" in out
+    assert cmd_mcp_list() == 0
+    assert "DISABLED (agent6 config set --repo mcp.enabled true)" in capsys.readouterr().out
+
+
 def test_a_binary_missing_on_the_host_is_named_without_a_sandbox_hint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -209,7 +229,9 @@ def test_the_listing_says_how_each_server_is_reached(
     assert "spawn   x -y" in out
     assert "connect https://h/mcp" in out
     assert "token from $T" in out
-    assert "DISABLED" in out, "mcp.enabled is off by default and that is worth saying"
+    assert "DISABLED (agent6 config set mcp.enabled true)" in out, (
+        "mcp.enabled is off by default and that is worth saying; the servers are global"
+    )
 
 
 def test_the_listing_of_nothing_says_how_to_add_one(

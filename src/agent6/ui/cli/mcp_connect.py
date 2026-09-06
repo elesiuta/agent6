@@ -198,7 +198,7 @@ def cmd_mcp_connect(
     # The master switch is separate and off by default, so say so rather than
     # flipping a security-relevant default on the operator's behalf.
     print(f"\nwritten to {'the repo' if to_repo else 'the global'} config.")
-    print("enable MCP for runs with:  agent6 config set mcp.enabled true")
+    print(f"enable MCP for runs with:  {_enable_command(to_repo)}")
     return 0
 
 
@@ -229,15 +229,27 @@ def _prove(cfg: Config, name: str, entry: MCPServerEntry, isolation: IsolationLe
     return None
 
 
+def _enable_command(to_repo: bool) -> str:
+    return f"agent6 config set {'--repo ' if to_repo else ''}mcp.enabled true"
+
+
 def cmd_mcp_list(config_path: Path | None = None) -> int:
     """The configured servers and how each is reached. Reads config only: it
     never starts anything, so it answers instantly and says nothing about
     whether a server currently works (`agent6 check mcp` does that)."""
-    cfg = load_effective(Path.cwd(), config_path).config
+    effective = load_effective(Path.cwd(), config_path)
+    cfg = effective.config
     if not cfg.mcp.servers:
         print("no MCP servers configured. Add one with `agent6 mcp connect <name> ...`.")
         return 0
-    state = "enabled" if cfg.mcp.enabled else "DISABLED (agent6 config set mcp.enabled true)"
+    # The switch goes where the servers are: a repo-only setup is enabled
+    # for this repository, never for every repository on the machine.
+    layers = {
+        layer
+        for leaf, layer in effective.sources.items()
+        if leaf.startswith("mcp.servers.") and layer != "default"
+    }
+    state = "enabled" if cfg.mcp.enabled else f"DISABLED ({_enable_command(layers == {'repo'})})"
     print(f"MCP is {state}\n")
     for name, srv in sorted(cfg.mcp.servers.items()):
         how = f"connect {srv.url}" if srv.url else f"spawn   {shlex.join(srv.command)}"
