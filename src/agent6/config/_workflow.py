@@ -284,6 +284,12 @@ class ContextConfig(BaseModel):
                 f" drop_at_chars ({drop}): tier-2"
                 " summarise must escalate above tier-1 elision."
             )
+        if summarise is not None and summarise <= self.keep_recent_chars:
+            raise ValueError(
+                f"context.summarise_at_chars ({summarise}) must be greater than"
+                f" keep_recent_chars ({self.keep_recent_chars}): the verbatim tail"
+                " alone would re-trigger tier 2 after every restart."
+            )
         return self
 
 

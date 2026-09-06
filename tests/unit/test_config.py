@@ -611,6 +611,14 @@ def test_compaction_summarise_must_exceed_drop(tmp_path: Path) -> None:
     assert "must be greater than" in str(exc.value)
 
 
+def test_compaction_summarise_must_exceed_the_verbatim_tail(tmp_path: Path) -> None:
+    """A tier-2 threshold at or under keep_recent_chars re-triggers after every
+    restart (the tail alone crosses it): the loader rejects it."""
+    body = _VALID_TOML + "\n[context]\ndrop_at_chars = 20000\nsummarise_at_chars = 40000\n"
+    with pytest.raises(ConfigError, match="keep_recent_chars"):
+        load_config(_write(tmp_path, body))
+
+
 def test_auto_stash_pop_requires_auto_stash(tmp_path: Path) -> None:
     # The same dependent-knob rule as auto_merge/auto_prune: a pop with nothing
     # ever stashed is inert, so reject it with a pointer instead of loading it.
