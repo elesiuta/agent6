@@ -8,6 +8,10 @@ async function renderConfig(gen) {
   card.appendChild(el('h2', null, 'Config'));
   const filter = el('input', 'filter'); filter.placeholder = 'filter keys…'; filter.type = 'search';
   card.appendChild(filter);
+  const addBtn = el('button', null, 'Add provider…');
+  addBtn.style.marginLeft = '8px';
+  addBtn.onclick = () => addProvider();
+  card.appendChild(addBtn);
   const tbl = el('table', 'cfg');
   const head = el('tr'); ['key','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
   const keys = Object.keys(data).sort();
@@ -40,6 +44,65 @@ function descriptionNode(text) {
     frag.appendChild(i % 2 ? el('code', null, part) : document.createTextNode(part));
   });
   return frag;
+}
+
+// The TUI's add-provider form: a whole [providers.<name>] block in one write
+// (base_url and auth default from the format and deployment when left blank;
+// the key comes from secrets.toml by provider name). Typing a known name
+// prefills its format and base_url, as `agent6 connect` would.
+async function addProvider() {
+  let choices = { api_format: [], deployment: [], defaults: {} };
+  try { choices = await getJSON('/api/config/provider_choices'); } catch (e) { toast(e.message, true); return; }
+  const back = el('div', 'overlay');
+  const opener = document.activeElement;
+  const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-label', 'add provider');
+  const title = el('h2', null, 'Add provider'); title.style.textTransform = 'none';
+  box.appendChild(title);
+  box.appendChild(el('div', 'sub muted', 'A [providers.<name>] block. base_url and auth default from the format and deployment when left blank.'));
+  const labelled = (text, field) => { const l = el('label', 'sub muted', text); l.style.display = 'block'; l.style.marginTop = '8px'; box.appendChild(l); box.appendChild(field); return field; };
+  const name = labelled('name', el('input', 'field')); name.placeholder = 'e.g. openrouter, my-azure';
+  const select = (values) => { const s = el('select', 'field'); for (const v of values) { const o = el('option', null, v); o.value = v; s.appendChild(o); } return s; };
+  const format = labelled('api_format', select(choices.api_format || []));
+  const deployment = labelled('deployment', select(choices.deployment || []));
+  const baseUrl = labelled('base_url', el('input', 'field')); baseUrl.placeholder = 'blank = default for the format/deployment';
+  const keyEnv = labelled('api_key_env', el('input', 'field')); keyEnv.placeholder = 'blank = secrets.toml by provider name';
+  let autofilled = '';
+  name.oninput = () => {
+    const preset = (choices.defaults || {})[name.value.trim()];
+    if (!preset) return;
+    format.value = preset.api_format;
+    if (baseUrl.value === '' || baseUrl.value === autofilled) { autofilled = preset.base_url || ''; baseUrl.value = autofilled; }
+  };
+  const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
+  const repoCb = el('input'); repoCb.type = 'checkbox';
+  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
+  box.appendChild(repoRow);
+  const row = el('div', 'form-row');
+  const add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
+  row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
+  back.appendChild(box); document.body.appendChild(back);
+  const close = () => {
+    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
+    if (opener && opener.isConnected) opener.focus();
+  };
+  activeOverlayClose = close;
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  cancel.onclick = close;
+  back.onclick = (e) => { if (e.target === back) close(); };
+  name.focus();
+  add.onclick = async () => {
+    add.disabled = true;
+    try {
+      const d = await postJSON('/api/config/provider', {
+        name: name.value, api_format: format.value, deployment: deployment.value,
+        base_url: baseUrl.value, api_key_env: keyEnv.value, repo: repoCb.checked,
+      });
+      toast(d.message || 'added'); close(); renderConfig();
+    } catch (e) { toast(e.message, true); add.disabled = false; }
+  };
 }
 
 // A proper editor overlay (not a browser prompt): choices and booleans get a

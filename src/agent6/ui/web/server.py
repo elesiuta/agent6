@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent6 import __version__
 from agent6.config import is_loopback_host
+from agent6.config.write import PROVIDER_DEFAULTS, provider_choices
 from agent6.machine import MachineError
 from agent6.sessions.ipc import (
     register_frontend,
@@ -123,6 +124,15 @@ class MachinePokeBody(_Body):
     # A JSON `data` payload wins over a `message` string; neither = a bare wake.
     message: str = ""
     data: Any = None
+
+
+class ProviderBody(_Body):
+    name: str
+    api_format: str
+    deployment: str = ""
+    base_url: str = ""
+    api_key_env: str = ""
+    repo: bool = False
 
 
 class ConfigSetBody(_Body):
@@ -388,6 +398,19 @@ class _Handler(BaseHTTPRequestHandler):
             )
             self._ok_or_err(ok, {"message": msg}, msg)
             return
+        if path == "/api/config/provider":
+            pb = ProviderBody.model_validate(self._read_body())
+            ok, msg = actions.add_provider(
+                self.cwd,
+                pb.name,
+                api_format=pb.api_format,
+                deployment=pb.deployment,
+                base_url=pb.base_url,
+                api_key_env=pb.api_key_env,
+                repo=pb.repo,
+            )
+            self._ok_or_err(ok, {"message": msg}, msg)
+            return
         if path == "/api/config":
             body = ConfigSetBody.model_validate(self._read_body())
             if body.unset:
@@ -535,8 +558,14 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/hub":
             self._send_json(model.hub_payload(self.cwd, self.config_path))
             return
-        if path == "/api/config":
-            self._send_json(model.config_payload(self.cwd, self.config_path))
+        if path in ("/api/config", "/api/config/provider_choices"):
+            # The add-provider form's fixed choices and name presets come from
+            # the schema the TUI form reads.
+            self._send_json(
+                model.config_payload(self.cwd, self.config_path)
+                if path == "/api/config"
+                else {**provider_choices(), "defaults": PROVIDER_DEFAULTS}
+            )
             return
         if path.startswith("/api/config/suggest/"):
             key = path.removeprefix("/api/config/suggest/")

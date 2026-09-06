@@ -257,6 +257,8 @@ depends_on = [
   # checkout, instead of spawning a doomed detached run
     "agent6.config",
   "agent6.config.layer",
+  "agent6.config.write",
+  "agent6.errors",
   "agent6.machine",
   # config-editor value suggestions: the one owner every editor and TAB
   # completion read

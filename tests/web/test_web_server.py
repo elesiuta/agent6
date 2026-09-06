@@ -1739,3 +1739,27 @@ def test_fork_creates_an_unstarted_run_from_the_latest_checkpoint(
     assert calls == [("run-f", tmp_path)]
     status, data = _post(port, "/api/session/run-nope/fork", {})
     assert status == 404
+
+
+def test_the_config_page_adds_a_provider_block(server: tuple[WebServer, int]) -> None:
+    """The TUI's config page has an add-provider form; the web could only
+    edit leaves that already existed, so a `[providers.<name>]` block could not
+    be created from a browser. One POST writes the whole block through the
+    same writer, and the choices endpoint serves the form its fixed values."""
+    _srv, port = server
+    status, body, _ = _get(port, "/api/config/provider_choices")
+    assert status == 200
+    choices = json.loads(body)
+    assert "openai" in choices["api_format"]
+    assert choices["defaults"]["openrouter"]["api_format"] == "openai"
+    status, data = _post(
+        port,
+        "/api/config/provider",
+        {"name": "openrouter", "api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
+    )
+    assert status == 200 and data["ok"] is True, data
+    status, body, _ = _get(port, "/api/config")
+    assert status == 200
+    assert json.loads(body)["providers.openrouter.api_format"]["value"] == "openai"
+    status, data = _post(port, "/api/config/provider", {"name": "", "api_format": "openai"})
+    assert status == 422
