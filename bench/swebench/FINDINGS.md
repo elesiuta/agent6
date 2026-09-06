@@ -1180,13 +1180,15 @@ board's mean-of-5 (about 36 plan points at this rate).
 
 ### The layer notice: a null on its own firing set (2026-08-31)
 
-Arm (branch pilot/layer-notice, wheel from its tip): every run end
-(finish_session, the settled and silent ends) is handed back once when
-a changed non-test module has an in-repo importer the task names and
-the diff leaves untouched; the notice lists the importers; importers
-come from parsed import statements (a package `__init__` counts only
-when imported as itself, a bare `__init__.py` names nothing). Same
-prompt v2, fixed staging harness, single attempt, conc 4.
+Arm, built and benched, not shipped: every run end (finish_session, the
+settled and silent ends) is handed back ONCE when a changed non-test
+module has an in-repo importer that the task names and the diff leaves
+untouched; the notice lists those importers, at most 8. Importers come
+from import statements parsed under the workspace, relative imports
+resolved, never from tool bookkeeping: a package `__init__` counts only
+when imported as itself, and a bare `__init__.py` names nothing. The
+fired-once flag persists in the run snapshot. Same prompt v2, fixed
+staging harness, single attempt, conc 4.
 
 Smokes on exstruct-113: smoke 1 ended `verify_settled` before the
 finish-only hook (the end gate then gained the notice); smoke 2 fired at
