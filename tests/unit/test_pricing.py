@@ -223,3 +223,19 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     assert assumed.estimate_usd()[0] == pytest.approx(0.2)  # Anthropic's 0.1x of $2
     assert "cache rates assumed" in assumed.format_summary()
     assert "cache rates assumed" not in listed.format_summary()
+
+
+def test_a_route_with_its_own_card_never_prices_from_another(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A provider whose cached listing lacks the model fell through to the
+    first listing by file name that had it, so the ceiling and the receipt
+    read another provider's rate instead of "$?". The cross-listing answer
+    is for a route with no cached card at all (the direct-Anthropic alias)."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    _write_pricing(tmp_path, "aaa-gateway", {"other/model": [0.1, 0.2]})
+    _write_pricing(tmp_path, "openrouter", {"x/model": [0.3, 0.6]})
+    assert lookup_price("x/model", "aaa-gateway") is None
+    assert lookup_price("x/model", "openrouter") == Price(0.3, 0.6)
+    assert lookup_price("x/model", "no-card") == Price(0.3, 0.6)
+    assert lookup_price("x/model") == Price(0.3, 0.6)

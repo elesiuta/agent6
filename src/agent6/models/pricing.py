@@ -145,13 +145,13 @@ def lookup_price(model: str, provider: str = "") -> Price | None:
 
     *provider* names the config entry the call went through: two providers
     can list one model id at different prices, and the route's own listing
-    is the price that bills. Without one, the first listing that has the
-    id (by file name) answers."""
+    is the price that bills, so a model it does not list is unpriced. With
+    no provider named, or a route with no cached listing at all (the
+    direct-Anthropic alias), the first listing that has the id answers, by
+    file name."""
     tables = _load_pricing(_cache_state())
     if provider and provider in tables:
-        hit = _price_in(tables[provider], model)
-        if hit is not None:
-            return hit
+        return _price_in(tables[provider], model)
     for name in sorted(tables):
         hit = _price_in(tables[name], model)
         if hit is not None:

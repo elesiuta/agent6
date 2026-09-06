@@ -8,6 +8,8 @@ prices, so the $ cap ran unpriced on a cold cache."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from agent6.app import _setup
@@ -262,3 +264,40 @@ def test_machine_pins_carry_their_provider_into_the_notes(
     err = capsys.readouterr().err
     assert "'gpt-5.6-sol' draws on a subscription plan" in err
     assert "gpt-5.6-sol' ha" not in err.replace("draws on", "")  # not in the fallback note
+
+
+def test_budget_preflight_prices_a_route_from_its_own_card(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The preflight priced with no provider while the budget priced with the
+    route's: a model only another provider's card listed passed the preflight
+    and then ran unmetered."""
+    import json
+
+    from agent6.app.preflight import budget_preflight
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    cards = tmp_path / "agent6" / "models"
+    cards.mkdir(parents=True)
+    for name, pricing in (
+        ("gateway", {"other/model": [0.1, 0.2]}),
+        ("openrouter", {"x/model": [0.3, 0.6]}),
+    ):
+        (cards / f"{name}.json").write_text(
+            json.dumps({"models": list(pricing), "pricing": pricing}), encoding="utf-8"
+        )
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "gateway": {
+                    "api_format": "openai",
+                    "auth_style": "none",
+                    "base_url": "https://gw.example/v1",
+                }
+            },
+            "models": {"worker": {"provider": "gateway", "model": "x/model"}},
+            "budget": {"max_tokens_fallback": 0},
+        }
+    )
+    err = budget_preflight(cfg)
+    assert err is not None and "x/model" in err

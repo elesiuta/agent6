@@ -81,7 +81,7 @@ def budget_preflight(
     # percent ledger: they are never "unpriced fallback" spend, and their own
     # zero-refusal mirrors the siblings below.
     plan_models = sorted({m for prov, m in routes if plan_metered(cfg.providers.get(prov))})
-    models = {m for prov, m in routes if not plan_metered(cfg.providers.get(prov))}
+    metered = {(prov, m) for prov, m in routes if not plan_metered(cfg.providers.get(prov))}
     if cfg.budget.max_percent == 0.0 and plan_models:
         return (
             "[budget].max_percent is 0 (plan-metered calls refused), but "
@@ -89,8 +89,8 @@ def budget_preflight(
             f"{'s' if len(plan_models) == 1 else ''} through a subscription plan."
             " Raise max_percent or reroute those roles."
         )
-    unpriced = sorted(m for m in models if lookup_price(m) is None)
-    priced = sorted(m for m in models if lookup_price(m) is not None)
+    unpriced = sorted({m for prov, m in metered if lookup_price(m, prov) is None})
+    priced = sorted({m for prov, m in metered if lookup_price(m, prov) is not None})
     if cfg.budget.max_tokens_fallback == 0 and unpriced:
         return (
             "[budget].max_tokens_fallback is 0 (unmetered calls refused), but "
