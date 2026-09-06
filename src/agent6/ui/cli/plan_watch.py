@@ -99,7 +99,10 @@ def _cmd_plan_edit(session_id: str) -> int:
     except OSError as exc:
         error(f"failed to spawn editor {editor!r}: {exc}")
         return 1
-    return result.returncode
+    if result.returncode != 0:
+        error(f"editor {editor!r} exited {result.returncode}")
+        return 1
+    return 0
 
 
 def _most_recent_plan_session_id(plans_dir: Path) -> str | None:

@@ -272,3 +272,18 @@ def test_plan_takes_tui_like_run(monkeypatch: pytest.MonkeyPatch) -> None:
     assert main(["plan", "--tui", "lay out the work"]) == 0
     assert seen["task"] == "lay out the work"
     assert seen["mode"] == "plan" and seen["tui"] is True
+
+
+def test_plan_edit_reports_an_editor_that_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An editor exiting non-zero (a crash, a refused lock) came back through
+    `plan edit` as its bare code, with no word about it."""
+    monkeypatch.chdir(tmp_path)
+    _seed_plan(tmp_path, "happy-tree-ijkl", "original\n")
+    script = tmp_path / "failing_editor.sh"
+    script.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setenv("EDITOR", str(script))
+    assert main(["plan", "edit", "happy-tree-ijkl"]) == 1
+    assert "exited 3" in capsys.readouterr().err
