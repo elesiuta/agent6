@@ -851,8 +851,9 @@ class ToolDispatcher:
             raise OperatorCommandUnexecutable(
                 f"verify_command {list(argv)} could not be executed in the sandbox: "
                 f"{res.stderr}. The jail PATH is /usr/bin:/bin plus the standard bin "
-                "dirs that exist (/usr/local/bin, ~/.local/bin, ~/.cargo/bin, "
-                "/opt/homebrew/bin, /snap/bin), each mounted read-only; the command is on "
+                "dirs that exist (/usr/local/bin, /usr/local/sbin, ~/.local/bin, "
+                "~/.cargo/bin, /opt/homebrew/bin, /snap/bin), each mounted read-only; "
+                "the command is on "
                 "none of them. Install the tool into one of those on the host, use a "
                 "path inside the workspace (e.g. .venv/bin/pytest), or grant its real "
                 "directory via sandbox.extra_read_paths."

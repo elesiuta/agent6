@@ -28,7 +28,6 @@ READONLY_REVIEW_TOOLS = frozenset(
         "outline",
         "find_definition",
         "find_references",
-        "agent6_docs",
     }
 )
 

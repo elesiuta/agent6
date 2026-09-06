@@ -61,9 +61,11 @@ class ListDirInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "list_dir"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "List immediate entries in a directory (non-recursive). `path` is "
-        "repo-root-relative; defaults to '.'. Hidden entries (starting with "
-        "'.') are included. Returns names with a trailing '/' for directories. "
-        "For a recursive view, use `run_command` (e.g. `rg --files`, `find`)."
+        "repo-root-relative; defaults to '.'. Dot-prefixed entries are listed;"
+        " `hidden` counts entries the workspace boundary withholds. Returns"
+        " names with a trailing '/' for directories, at most 1,000 (`truncated`"
+        " says so). For a recursive view, use `run_command` (e.g. `rg --files`,"
+        " `find`)."
     )
 
     path: str = Field(default=".")
@@ -78,6 +80,8 @@ class ApplyEditInput(_ToolInput):
         " existing file whole: for both, empty old_string, the full content in"
         " new_string, the only edit in the array. An omitted kind follows the"
         ' pair: an empty old_string means "create", any other means "replace".'
+        " A miss that matches exactly one region up to a uniform indent shift"
+        " is healed and reported as `replace~indent`."
         " preview=true returns the would-be diff without touching disk."
     )
 
@@ -181,7 +185,8 @@ class EditPair(BaseModel):
 class RunVerifyInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "run_verify_command"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Run the user-declared verify command in the sandbox. No arguments."
+        "Run this run's verify command in the sandbox: the operator's, or one"
+        " inferred from the repo. No arguments; the result names the argv that ran."
     )
 
 
@@ -197,9 +202,10 @@ class RunCommandInput(_ToolInput):
         " and keeps running: poll with read_background, stop with"
         " stop_background, or continue working; output printed so far comes"
         " with the hand-back. background=true returns the handle at once."
-        " Jailed commands in one run share the run's private network, so a"
-        " server started here answers later commands. All background commands"
-        " die when the run ends."
+        " Commands in one run share a network, so a server started here answers"
+        " later commands; under strict isolation that network is the run's own,"
+        " elsewhere it is the host's. All background commands die when the run"
+        " ends."
     )
 
     argv: tuple[str, ...] = Field(min_length=1)
@@ -221,8 +227,9 @@ class ReadSessionInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "read_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read another session's transcript summary by id; with no id, list the"
-        " sessions. `query` keeps the parts that match it, `max_chars` bounds"
-        " the summary. Read-only."
+        " sessions. `query` keeps the sessions whose task or journal contains"
+        " it (40 newest); `max_chars` bounds the transcript, which keeps its"
+        " tail. Read-only."
     )
 
     id: str = ""
@@ -235,8 +242,10 @@ class ReadBackgroundInput(_ToolInput):
     TOOL_DESCRIPTION: ClassVar[str] = (
         "Read a background command's output. `id` from run_command's"
         " hand-back; `tail_lines` bounds the tail; `wait_s` waits for exit up"
-        " to that many seconds (0 = look now). Returns the output tail,"
-        " running state, and returncode when finished."
+        " to that many seconds (0 = look now; omitted = the run's check-in"
+        " interval, 900 s by default). Returns the output tail, running state,"
+        " and returncode when finished. With no `id`, returns this run's"
+        " background roster."
     )
 
     id: str = ""
@@ -370,12 +379,13 @@ class DagAddTaskInput(_ToolInput):
 class DagUpdateTaskInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "update_task"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Update a task: status (in_progress moves focus; passed once the verify"
-        " confirms it, or once you have checked it yourself in a gateless"
-        " run), note, or depends_on (task ULIDs that must pass"
-        " first). Fields omitted stay unchanged. An end is final: a passed task"
-        " takes only obsolete, and a skipped or obsolete one stays retired --"
-        " add_task if the work is needed after all."
+        "Update a task: status (in_progress marks the task being worked, which"
+        " the harness sets on the focus task; passed once the verify confirms"
+        " it, or once you have checked it yourself in a gateless run), or"
+        " depends_on (task ULIDs that must be settled first); a note rides"
+        " along with a status change. Fields omitted stay unchanged. An end is"
+        " final: a passed task takes only obsolete, and a skipped or obsolete"
+        " one stays retired -- add_task if the work is needed after all."
     )
 
     id: str = Field(min_length=26, max_length=26)
@@ -387,7 +397,8 @@ class DagUpdateTaskInput(_ToolInput):
 class DagListTasksInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "list_tasks"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "List the task graph: ids, titles, statuses, and dependencies."
+        "List the task graph: ids, titles, statuses, parents, acceptance and"
+        " dependencies. `status` keeps only the tasks in that status."
     )
 
     # The same status enum update_task uses, so a typo is a schema rejection
@@ -458,8 +469,10 @@ class AskUserInput(_ToolInput):
         "Ask the operator and wait. Use for decisions the repo and task cannot"
         " settle, or when the task says to check with the operator; a question"
         " written as plain text is never seen. `questions` is an array of"
-        " {question, options?}; give 2-4 options for a choice (free text is"
-        " always allowed); batch related questions into one call. Returns"
+        " {question, options?}; give 2-4 options for a choice (the CLI, TUI and"
+        " web also take typed text; an editor over ACP answers only with an"
+        " option, and skips a question that offers none); batch related"
+        " questions into one call. Returns"
         " {answers: [...]} aligned to questions. Headless runs with nobody"
         " watching return empty answers."
     )
@@ -546,8 +559,7 @@ class ModeTools:
     exactly `base + extras`; the dispatcher refuses names outside `permitted`
     as its backstop, so exposure and enforcement cannot drift apart.
     `permitted` is `names` plus agent6_docs, which is exposed only in ask
-    (elsewhere it is tool-list noise) but safe to execute anywhere -- a
-    read-only doc fetch the in-loop review seat uses in every mode."""
+    (elsewhere it is tool-list noise) but safe to execute anywhere."""
 
     base: tuple[type[_ToolInput], ...]
     extras: tuple[type[_ToolInput], ...]
