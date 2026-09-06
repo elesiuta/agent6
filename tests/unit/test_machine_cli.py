@@ -113,31 +113,33 @@ def test_status_reports_waiting_state_and_spend(
     # A parked instance reads "waiting" (the word run --exit-on-wait/web use), not
     # the engine's raw "incomplete".
     assert "status: waiting" in out
-    assert "next wake:" in out
+    # A timed wait wakes on its own; the poke is offered as the way to wake it NOW.
+    assert "waiting in 'poll': wakes at " in out
+    assert "a poke wakes it now: agent6 machine poke waiter_delayed" in out
     assert "spend: $0.0000" in out
 
 
 def test_status_hints_poke_for_a_live_foreground_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # A foreground `machine run` blocked in a wait writes no pending-wait record
-    # (that is --exit-on-wait's parked form), but a live worker in a wait state is
-    # "waiting", not "running", and the readout says how to poke it.
+    """A foreground `machine run` blocked in a wait persists the wait record
+    BEFORE it sleeps (the same wait.json --exit-on-wait leaves), so a live
+    worker in a wait carries one. The readout gated the poke line on the
+    record's absence, so a blocking wait never printed it."""
     monkeypatch.chdir(tmp_path)
     f = _write_machine(tmp_path)
     assert main(["machine", "run", str(f), "--exit-on-wait"]) == 0
     capsys.readouterr()  # drop run output
     root = resolved_state_dir(tmp_path) / "machines" / "waiter_delayed"
-    # Model the foreground shape: live worker (this pytest pid), no pending
-    # record. The run cleared its own pid on exit, so the live worker is
-    # re-stamped explicitly.
-    MachineJournal(root).clear_pending_wait()
+    assert MachineJournal(root).read_pending_wait() is not None
+    # The run cleared its own pid on exit; re-stamp a live worker (this pytest).
     write_worker_pid(root, os.getpid())
     code = main(["machine", "status", "waiter_delayed"])
     assert code == 0
     out = capsys.readouterr().out
     assert "status: waiting" in out
-    assert "waiting in 'poll': agent6 machine poke waiter_delayed" in out
+    assert "waiting in 'poll': wakes at " in out
+    assert "a poke wakes it now: agent6 machine poke waiter_delayed" in out
 
 
 def test_status_shows_a_pending_poke_until_it_is_acked(

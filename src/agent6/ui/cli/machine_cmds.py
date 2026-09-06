@@ -300,7 +300,7 @@ def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | 
         return None, str(exc)
 
 
-def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
+def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912, PLR0915
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
@@ -364,17 +364,23 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
         f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok)"
     )
     state_spec = spec.states.get(result.state)
-    if alive and pending is None and state_spec is not None and state_spec.kind == "wait":
-        # A foreground run blocked in a wait writes no pending-wait record (that
-        # is --exit-on-wait's parked form), but it is just as pokeable; say so.
-        print(f"  waiting in {result.state!r}: agent6 machine poke {machine_id} [--message TEXT]")
+    # Every wait a poke wakes: a parked one (the persisted record, which a
+    # foreground wait writes before it sleeps too) and a live worker in a
+    # wait state. The signal is consumed at the next check, or the next run.
+    in_wait = alive and state_spec is not None and state_spec.kind == "wait"
+    waiting_in = pending.state if pending is not None else (result.state if in_wait else "")
+    if waiting_in:
+        poke = f"agent6 machine poke {machine_id} [--message TEXT]"
+        if pending is not None and pending.wake_epoch is not None:
+            # A timed wait wakes on its own; the poke is the way to wake it now.
+            print(
+                f"  waiting in {waiting_in!r}: wakes at {pending.wake_at};"
+                f" a poke wakes it now: {poke}"
+            )
+        else:
+            print(f"  waiting in {waiting_in!r} for a poke: {poke}")
     if pending_note:
         print(f"  pending wait: unreadable ({pending_note})")
-    if pending is not None:
-        if pending.wake_epoch is not None:
-            print(f"  next wake: {pending.wake_at} (waiting in {pending.state!r})")
-        else:
-            print(f"  waiting for a signal poke (in {pending.state!r})")
     poked, poke_payload = journal.read_pending_poke()
     if poked:
         print("  poke pending: " + ("bare" if poke_payload is None else repr(poke_payload)))
