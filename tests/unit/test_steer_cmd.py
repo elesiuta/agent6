@@ -32,6 +32,7 @@ def test_steer_queues_for_a_live_run(
     assert main(["steer", "tiny-run", "land your best patch now"]) == 0
     out = capsys.readouterr().out
     assert "steer queued for tiny-run-AAAA11" in out
+    assert "interrupted to take it" in out  # mid-stream pickup is the contract
     # The one shared channel: request marker + answer, exactly what the
     # composers write and the loop consumes.
     assert steer_request_pending(d)

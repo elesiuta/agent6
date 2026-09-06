@@ -32,5 +32,8 @@ def _cmd_steer(target: str, text: str) -> int:
         )
         return 2
     submit_steer(layout.session_dir, text)
-    print(f"steer queued for {layout.session_id}; picked up at the next iteration boundary.")
+    print(
+        f"steer queued for {layout.session_id}: a streaming model call is"
+        " interrupted to take it; otherwise it lands at the next step boundary."
+    )
     return 0
