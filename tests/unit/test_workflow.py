@@ -2986,12 +2986,16 @@ def test_summarise_and_restart_applies_dag_checkoff() -> None:
         '```checkoff\n{"completed_ids": ["01DONE", "01HALLUCINATED"], '
         '"new_tasks": ["fix the budget rounding bug"]}\n```'
     )
-    wf = _wf(summariser_provider=summariser, curator=fake)
+    logged: list[str] = []
+    wf = _wf(summariser_provider=summariser, curator=fake, logger=logged.append)
     messages = _long_history(6)
     _restart_via_wire(wf, messages)
 
     assert fake.passed == ["01DONE"]  # valid completed id passed; hallucinated id ignored
     assert fake.added == [("01ROOT", "fix the budget rounding bug")]  # queued under the root
+    # The log reports what LANDED: the cap on new tasks and a refused status
+    # both make the summariser's request bigger than the change.
+    assert any("check-off -- passed 1, queued 1" in line for line in logged), logged
     restart_text = messages[1]["content"][0]["text"]
     assert "providers audit" in restart_text
     assert "checkoff" not in restart_text  # bookkeeping block stripped from the restart

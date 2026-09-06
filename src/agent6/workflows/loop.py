@@ -4119,13 +4119,13 @@ class Workflow:
         completed = [cid for cid in completed if cid in valid_ids]  # ignore hallucinated ids
         if not completed and not new_tasks:
             return
-        changed = False
+        passed = queued = 0
         try:
             for cid in completed:
                 self.curator.update_status(
                     UpdateStatusIntent(id=cid, new_status="passed", note="compaction check-off")
                 )
-                changed = True
+                passed += 1
             if new_tasks:
                 root_id = self._first_root_id()
                 for title in new_tasks[:8]:  # cap: a runaway summary can't flood the DAG
@@ -4135,13 +4135,14 @@ class Workflow:
                             draft=TaskNodeDraft(title=title, created_by="planner"),
                         )
                     )
-                    changed = True
+                    queued += 1
         except Exception as exc:  # a curator write error must not break the run
             self._log(f"LOOP: compaction check-off partial ({exc})")
-        if changed:
-            self._log(
-                f"LOOP: compaction check-off -- passed {len(completed)}, queued {len(new_tasks)}"
-            )
+        if passed or queued:
+            # What LANDED, not what the summariser asked for: the cap above and
+            # a refused status (a container with open children) both make the
+            # request bigger than the change.
+            self._log(f"LOOP: compaction check-off -- passed {passed}, queued {queued}")
             self._emit_graph_snapshot()
 
     def _first_root_id(self) -> str | None:
