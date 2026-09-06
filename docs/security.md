@@ -132,8 +132,8 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - `XDG_CONFIG_HOME` and `XDG_STATE_HOME` relocate those two dirs, `XDG_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
 - `/dev` (`strict`): `null`, `zero`, `urandom`, `random`, `full`, a private `shm`; no `/dev/tty`
     - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute); each must be a char/block device on the host or the launch refuses, and on `hardened` the same grant is a Landlock read+write rule on the node
-    - creating one is denied at both levels: seccomp `EPERM`s the `mknod` pair by device type (below), and `strict` also has the user namespace (no `CAP_MKNOD` in the initial one) and `MS_NODEV` on the `/dev` binds
-    - Landlock does not handle `MakeChar` / `MakeBlock`, so it restricts neither; under `hardened` with `--allow-root` the seccomp rule is the only layer
+    - creating one is denied at both levels: Landlock handles `MakeChar` / `MakeBlock` and grants them nowhere, seccomp `EPERM`s the `mknod` pair by device type (below), and `strict` also has the user namespace (no `CAP_MKNOD` in the initial one) and `MS_NODEV` on the `/dev` binds
+    - under `hardened` with `--allow-root` only Landlock and seccomp stand
 - `/proc` (`strict`): fresh and private, empty if that fails
     - the launcher runs with an empty environment; it is PID 1 there, so the command can read `/proc/1/environ`
 - seccomp: a 36-syscall deny-list returning `EPERM`, covering process inspection (`ptrace`, `pidfd_getfd`, `process_vm_readv`/`writev`, `kcmp`), `io_uring_setup`, `userfaultfd`, the whole mount family (`mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`), `setns`, `unshare`, `kexec`, `bpf`, `perf_event_open`, the keyring calls (`keyctl`, `add_key`, `request_key`), module loading, `reboot`, swap, and the clock-setting family

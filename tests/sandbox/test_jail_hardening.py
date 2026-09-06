@@ -16,8 +16,9 @@ def test_a_jailed_command_cannot_create_a_device_node(tmp_path: Path, level: str
     """Under `sudo agent6` on a profile with no user namespace the child holds
     real CAP_MKNOD and no MS_NODEV bind: a block device for the host disk,
     created in its own workspace, reads and writes raw sectors past every path
-    Denied by the seccomp rule, which refuses mknod/mknodat by device type;
-    Landlock does not handle MakeChar/MakeBlock, so it restricts neither."""
+    Denied by the seccomp rule, which refuses mknod/mknodat by device type,
+    and by Landlock, which handles MakeChar/MakeBlock and grants them nowhere;
+    this pin cannot tell the two apart (seccomp alone passes it)."""
     from agent6.config import Config
     from agent6.sandbox.jail import run_in_jail
     from agent6.tools.dispatch import jail_policy
