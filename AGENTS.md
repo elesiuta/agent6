@@ -115,6 +115,8 @@ The shortest version that still carries the point wins.
 - Prose that names code is a claim to verify: every symbol, default, flag, and behaviour it states must match the source, and when prose and code disagree, decide which side is wrong (sometimes the fix is the code).
   Prose someone acts on (a tool description, help text, an error, a refusal) is an interface: it states exactly what is accepted and returned, naming the resolved fact over the mechanism when it can ("default: detected zsh", not "default: detect from $SHELL").
 - One idea per sentence, one topic per paragraph; short bullets over prose when listing facts.
+- A sentence only someone in the conversation can read is noise, and noise crowds out signal: who ruled it, which round it was, whose budget it came from.
+  Committed prose states repo facts; the fact survives, the provenance does not.
 - Comments and docs state the current state only: a constraint, an invariant, a measured number, a link to a decision.
   Never narrate the next line, never keep the incident a change fixed (commits own that).
   "Now", "no longer", "previously", "used to" in a comment is a story about a change: cut it.
@@ -161,7 +163,7 @@ The shortest version that still carries the point wins.
 - Run the five-gate in its own systemd unit (`systemd-run --user --collect` with RuntimeMaxSec/MemoryMax caps, the login PATH) and read its `EXIT=` line.
   A contended machine produces false timing reds; certify on a quiet one, and leave the tree untouched while a gate runs.
 - Sandbox tests need unprivileged userns: on Ubuntu 24.04-class machines `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` (CI does the same; the jail-test gate names this when blocked).
-- Bench workspaces live on disk (e.g. `~/agent6-bench`), never `/tmp`: tmpfs is RAM-backed and an OOM there kills the session scope.
+- Bench workspaces live on a real disk, never `/tmp`: tmpfs is RAM-backed and an OOM there kills the session scope.
 - Any in-container or leg config gets ONE live single-instance smoke before a fleet launch; any mechanism with two enforcement sites gets a live smoke even after unit-green (unit fixtures can pass vacuously).
 - Benchmarks: unmodified official scorers, dev/eval split registered before tuning, report split + n verbatim, replicate small effects before shipping them.
 
@@ -171,8 +173,8 @@ The shortest version that still carries the point wins.
 - One concern per commit; individual commits are worth keeping.
   Squash only iterative churn: a fix-up to unpushed work folds into its origin commit, never appended.
 - Everything committed is public the moment it is written: no emails, absolute home paths, hostnames, or real names outside the author field; no session shorthand.
-  A message reads identically to someone with no access to the conversation, so session structure (rounds, batches) and decision provenance (who asked, what was ruled) never appear.
-  Hygiene is prevention, never a pre-push sweep.
+  Every committed byte reads identically to someone with no access to the conversation, in a message and in a file alike, so session structure (rounds, batches) and decision provenance (who asked, what was ruled, whose quota paid) never appear.
+  Hygiene is prevention, never a pre-push sweep; a sweep greps the author name (`pyproject.toml`'s `authors`) outside the author field, home paths, hostnames, and machine-local scratch dirs.
 - Never push; the operator signs and pushes from another machine.
   Never reference commit hashes (signing changes them) or branch names (transient) in messages or docs.
 - Never rewrite pushed history; rewrite unpushed commits only when asked, and never force-push.
