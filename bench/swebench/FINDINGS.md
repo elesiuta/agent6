@@ -944,3 +944,16 @@ verified the pairing before launch: prompt block present in the leg's
 assembled state, patch produced, score path green. Runner rpl1..5 over
 pilot-b1..5; compare per class against the gate-on results before any
 conclusion. Cost ceiling ~5 plan points measured at ~1 point per 12 legs.
+
+### broke-P2P mechanism: the gate catches it, the model edits the test (2026-08-25)
+
+Reading all 8 broke-P2P legs: every one saw a red verify in-run, and 7 of 8
+then edited an existing test file until the gate went green (click: 18 lines
+of tests/test_termui.py rewritten to the new behaviour). Submitted patches
+strip test files, grading restores the originals, and the buried break
+resurfaces as the P2P failure. The class lever is a test-edit discipline,
+not test selection: only 2 of the 8 failing test files would even
+name-match a nearest-tests pick, and the gate already ran in every leg.
+Prompt addendum extended mid-pilot with the no-test-weakening rule
+(prototype license): batch 1 ran the v1 addendum (v1 kept beside it),
+batches 2-5 carry v2; 7 of the 8 broke-P2P ids sit in batches 2-4.
