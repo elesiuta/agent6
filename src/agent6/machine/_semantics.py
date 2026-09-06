@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import tomllib
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -117,10 +118,28 @@ def _format_validation_error(err: ValidationError) -> list[str]:
 # --------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class _Env:
+    """The resolved declarations the state rules read: each variable's type,
+    owner subtable and declared value, plus the record schemas."""
+
+    var_types: dict[str, TypeRef]
+    var_owner: dict[str, str]
+    var_values: dict[str, Any]
+    schemas: dict[str, dict[str, TypeRef]]
+
+
+def _resolve_env(spec: MachineSpec) -> tuple[_Env, list[str]]:
+    schema_names = frozenset(spec.schemas)
+    schemas, problems = _resolve_schemas(spec, schema_names)
+    var_types, var_owner, var_values, var_problems = _resolve_vars(spec, schema_names, schemas)
+    problems.extend(var_problems)
+    return _Env(var_types, var_owner, var_values, schemas), problems
+
+
 def validate_semantics(spec: MachineSpec) -> list[str]:
     """Run every cross-cutting rule the pydantic shape cannot express."""
     problems: list[str] = []
-    schema_names = frozenset(spec.schemas)
 
     for sname in spec.schemas:
         if not IDENT_RE.match(sname):
@@ -133,11 +152,8 @@ def validate_semantics(spec: MachineSpec) -> list[str]:
                 f"schema name {sname!r} is a built-in type, so nothing could reference it"
             )
 
-    schemas, schema_problems = _resolve_schemas(spec, schema_names)
-    problems.extend(schema_problems)
-
-    var_types, var_owner, var_values, var_problems = _resolve_vars(spec, schema_names, schemas)
-    problems.extend(var_problems)
+    env, env_problems = _resolve_env(spec)
+    problems.extend(env_problems)
 
     if spec.initial not in spec.states:
         problems.append(f"initial state {spec.initial!r} is not a declared state")
@@ -145,9 +161,7 @@ def validate_semantics(spec: MachineSpec) -> list[str]:
     for name, state in spec.states.items():
         if not IDENT_RE.match(name):
             problems.append(f"state name {name!r} is not a valid identifier (^[a-z][a-z0-9_]*$)")
-        problems.extend(
-            _validate_state(name, state, var_types, var_owner, var_values, schemas, schema_names)
-        )
+        problems.extend(_validate_state(name, state, env))
 
     problems.extend(_validate_graph(spec))
     return problems
@@ -250,15 +264,13 @@ def fixture_problems(spec: MachineSpec, fixture: dict[str, Any]) -> list[str]:
     var and every value must satisfy its type -- the same checks the declared
     defaults get. Unchecked, a typo'd key was silently ignored and a string
     `"false"` replaced a bool and routed branches as truthy."""
-    schema_names = frozenset(spec.schemas)
-    schemas, _ = _resolve_schemas(spec, schema_names)
-    var_types, _owner, _values, _ = _resolve_vars(spec, schema_names, schemas)
+    env, _ = _resolve_env(spec)
     problems: list[str] = []
     for name, value in fixture.items():
-        if name not in var_types:
+        if name not in env.var_types:
             problems.append(f"blackboard fixture: {name!r} is not a declared variable")
             continue
-        problems.extend(_check_value(value, var_types[name], schemas, f"fixture {name!r}"))
+        problems.extend(_check_value(value, env.var_types[name], env.schemas, f"fixture {name!r}"))
     return problems
 
 
@@ -402,24 +414,21 @@ def _check_field_value(
 
 
 def _resolve_ref_type(
-    ref: Reference,
-    var_types: dict[str, TypeRef],
-    schemas: dict[str, dict[str, TypeRef]],
-    result_type: TypeRef | None,
+    ref: Reference, env: _Env, result_type: TypeRef | None
 ) -> tuple[TypeRef | None, str | None]:
     if ref.root == "result":
         if result_type is None:
             return None, f"`result` is not navigable here ({ref.dotted!r})"
         current: TypeRef = result_type
     else:
-        looked_up = var_types.get(ref.root)
+        looked_up = env.var_types.get(ref.root)
         if looked_up is None:
             return None, f"unknown variable {ref.root!r}"
         current = looked_up
     for key in ref.path:
         if not isinstance(current, RecordT):
             return None, f"cannot navigate into {type_str(current)} at {ref.dotted!r}"
-        fields = schemas.get(current.name, {})
+        fields = env.schemas.get(current.name, {})
         if key not in fields:
             return None, f"record {current.name!r} has no field {key!r} (in {ref.dotted!r})"
         current = fields[key]
@@ -428,9 +437,8 @@ def _resolve_ref_type(
 
 def _validate_template(
     text: str,
+    env: _Env,
     *,
-    var_types: dict[str, TypeRef],
-    schemas: dict[str, dict[str, TypeRef]],
     result_type: TypeRef | None,
     allow_splice: bool,
     where: str,
@@ -443,7 +451,7 @@ def _validate_template(
     for part in template.parts:
         if not isinstance(part, Interp):
             continue
-        ref_type, error = _resolve_ref_type(part.ref, var_types, schemas, result_type)
+        ref_type, error = _resolve_ref_type(part.ref, env, result_type)
         if error is not None:
             problems.append(f"{where}: {error}")
             continue
@@ -487,36 +495,27 @@ def _check_interp_filter(
 # --------------------------------------------------------------------------
 
 
-def _validate_state(
-    name: str,
-    state: StateSpec,
-    var_types: dict[str, TypeRef],
-    var_owner: dict[str, str],
-    var_values: dict[str, Any],
-    schemas: dict[str, dict[str, TypeRef]],
-    schema_names: frozenset[str],
-) -> list[str]:
+def _validate_state(name: str, state: StateSpec, env: _Env) -> list[str]:
     # `notify` is on every kind (§4.3): validate its message template up front.
     problems: list[str] = []
     if state.notify is not None:
         problems.extend(
             _validate_template(
                 state.notify.message,
-                var_types=var_types,
-                schemas=schemas,
+                env,
                 result_type=None,
                 allow_splice=False,
                 where=f"state {name!r} notify",
             )
         )
     if isinstance(state, AgentState):
-        problems.extend(_validate_agent(name, state, var_types, var_owner, schemas, schema_names))
+        problems.extend(_validate_agent(name, state, env))
     elif isinstance(state, ToolState):
-        problems.extend(_validate_tool(name, state, var_types, var_owner, schemas, schema_names))
+        problems.extend(_validate_tool(name, state, env))
     elif isinstance(state, WaitState):
-        problems.extend(_validate_wait(name, state, var_types, var_owner, var_values, schemas))
+        problems.extend(_validate_wait(name, state, env))
     elif isinstance(state, BranchState):
-        problems.extend(_validate_branch(name, state, var_types, schemas))
+        problems.extend(_validate_branch(name, state, env))
     return problems  # TerminalState: shape is fully checked by pydantic
 
 
@@ -532,16 +531,9 @@ def _validate_on(name: str, on: dict[str, str], expected: frozenset[str]) -> lis
     return problems
 
 
-def _validate_agent(
-    name: str,
-    state: AgentState,
-    var_types: dict[str, TypeRef],
-    var_owner: dict[str, str],
-    schemas: dict[str, dict[str, TypeRef]],
-    schema_names: frozenset[str],
-) -> list[str]:
+def _validate_agent(name: str, state: AgentState, env: _Env) -> list[str]:
     problems = _validate_on(name, state.on, AGENT_LABELS)
-    if state.output_schema not in schema_names:
+    if state.output_schema not in env.schemas:
         problems.append(
             f"state {name!r}: output_schema {state.output_schema!r} is not a declared schema"
         )
@@ -551,8 +543,7 @@ def _validate_agent(
     problems.extend(
         _validate_template(
             state.prompt,
-            var_types=var_types,
-            schemas=schemas,
+            env,
             result_type=None,
             allow_splice=False,
             where=f"state {name!r} prompt",
@@ -564,10 +555,8 @@ def _validate_agent(
         _validate_capture(
             name,
             state.capture,
+            env,
             owner="agent",
-            var_types=var_types,
-            var_owner=var_owner,
-            schemas=schemas,
             result_type=result_type,
             whole_type=result_type,
         )
@@ -575,18 +564,11 @@ def _validate_agent(
     return problems
 
 
-def _validate_tool(
-    name: str,
-    state: ToolState,
-    var_types: dict[str, TypeRef],
-    var_owner: dict[str, str],
-    schemas: dict[str, dict[str, TypeRef]],
-    schema_names: frozenset[str],
-) -> list[str]:
+def _validate_tool(name: str, state: ToolState, env: _Env) -> list[str]:
     problems = _validate_on(name, state.on, TOOL_LABELS)
     result_type: TypeRef | None = None
     if state.output_schema is not None:
-        if state.output_schema not in schema_names:
+        if state.output_schema not in env.schemas:
             problems.append(
                 f"state {name!r}: output_schema {state.output_schema!r} is not a declared schema"
             )
@@ -596,8 +578,7 @@ def _validate_tool(
         problems.extend(
             _validate_template(
                 element,
-                var_types=var_types,
-                schemas=schemas,
+                env,
                 result_type=None,
                 allow_splice=True,
                 where=f"state {name!r} command[{index}]",
@@ -617,10 +598,8 @@ def _validate_tool(
             _validate_capture(
                 name,
                 state.capture,
+                env,
                 owner="code",
-                var_types=var_types,
-                var_owner=var_owner,
-                schemas=schemas,
                 result_type=result_type,
                 whole_type=JsonT(),
             )
@@ -631,19 +610,17 @@ def _validate_tool(
 def _validate_capture(
     name: str,
     capture: Capture,
+    env: _Env,
     *,
     owner: str,
-    var_types: dict[str, TypeRef],
-    var_owner: dict[str, str],
-    schemas: dict[str, dict[str, TypeRef]],
     result_type: TypeRef | None,
     whole_type: TypeRef | None,
 ) -> list[str]:
     problems: list[str] = []
     whole_target = capture.stdout_json if owner == "code" else capture.finish_json
     if whole_target is not None:
-        problems.extend(_check_capture_target(name, whole_target, owner, var_owner))
-        target_type = var_types.get(whole_target)
+        problems.extend(_check_capture_target(name, whole_target, owner, env.var_owner))
+        target_type = env.var_types.get(whole_target)
         if target_type is not None and whole_type is not None and target_type != whole_type:
             problems.append(
                 f"state {name!r}: capture target {whole_target!r} has type"
@@ -652,16 +629,9 @@ def _validate_capture(
             )
     if capture.set is not None:
         for target, template in capture.set.items():
-            problems.extend(_check_capture_target(name, target, owner, var_owner))
+            problems.extend(_check_capture_target(name, target, owner, env.var_owner))
             problems.extend(
-                _validate_set_assignment(
-                    name,
-                    target,
-                    template,
-                    var_types=var_types,
-                    schemas=schemas,
-                    result_type=result_type,
-                )
+                _validate_set_assignment(name, target, template, env, result_type=result_type)
             )
     return problems
 
@@ -684,27 +654,21 @@ def _check_capture_target(
 
 
 def _validate_set_assignment(
-    name: str,
-    target: str,
-    template: str,
-    *,
-    var_types: dict[str, TypeRef],
-    schemas: dict[str, dict[str, TypeRef]],
-    result_type: TypeRef | None,
+    name: str, target: str, template: str, env: _Env, *, result_type: TypeRef | None
 ) -> list[str]:
     where = f"state {name!r} capture.set.{target}"
     try:
         parsed = parse_template(template)
     except TemplateError as exc:
         return [f"{where}: {exc}"]
-    target_type = var_types.get(target)
+    target_type = env.var_types.get(target)
     # A lone, filter-less interpolation captures the referenced *value* with
     # its native type (the only way a non-string value reaches the
     # blackboard); its type must match the target variable.
     if parsed.is_lone_ref:
         interp = parsed.parts[0]
         assert isinstance(interp, Interp)
-        source_type, error = _resolve_ref_type(interp.ref, var_types, schemas, result_type)
+        source_type, error = _resolve_ref_type(interp.ref, env, result_type)
         if error is not None:
             return [f"{where}: {error}"]
         if target_type is not None and source_type is not None and source_type != target_type:
@@ -716,12 +680,7 @@ def _validate_set_assignment(
         return []
     # Otherwise the assignment renders to a string, so the target must be str.
     problems = _validate_template(
-        template,
-        var_types=var_types,
-        schemas=schemas,
-        result_type=result_type,
-        allow_splice=False,
-        where=where,
+        template, env, result_type=result_type, allow_splice=False, where=where
     )
     if target_type is not None and target_type != ScalarT("str"):
         problems.append(
@@ -732,14 +691,7 @@ def _validate_set_assignment(
     return problems
 
 
-def _validate_wait(
-    name: str,
-    state: WaitState,
-    var_types: dict[str, TypeRef],
-    var_owner: dict[str, str],
-    var_values: dict[str, Any],
-    schemas: dict[str, dict[str, TypeRef]],
-) -> list[str]:
+def _validate_wait(name: str, state: WaitState, env: _Env) -> list[str]:
     timings = [
         timing
         for timing, value in (
@@ -769,8 +721,7 @@ def _validate_wait(
         problems.extend(
             _validate_template(
                 value,
-                var_types=var_types,
-                schemas=schemas,
+                env,
                 result_type=None,
                 allow_splice=False,
                 where=f"state {name!r} {timing}",
@@ -780,24 +731,9 @@ def _validate_wait(
     # `every_secs`, a busy-looping `every_secs <= 0`, or a non-ISO `until`, rather
     # than letting them surface only when the wait is first reached at run.
     if state.every_secs is not None:
-        problems.extend(
-            _timing_problems(
-                name,
-                "every_secs",
-                state.every_secs,
-                var_types,
-                var_owner,
-                var_values,
-                schemas,
-                kind="int",
-            )
-        )
+        problems.extend(_timing_problems(name, "every_secs", state.every_secs, env, kind="int"))
     if state.until is not None:
-        problems.extend(
-            _timing_problems(
-                name, "until", state.until, var_types, var_owner, var_values, schemas, kind="iso"
-            )
-        )
+        problems.extend(_timing_problems(name, "until", state.until, env, kind="iso"))
     return problems
 
 
@@ -840,15 +776,7 @@ def _timing_literal_problems(
 
 
 def _timing_problems(
-    name: str,
-    key: str,
-    text: str,
-    var_types: dict[str, TypeRef],
-    var_owner: dict[str, str],
-    var_values: dict[str, Any],
-    schemas: dict[str, dict[str, TypeRef]],
-    *,
-    kind: Literal["int", "iso"],
+    name: str, key: str, text: str, env: _Env, *, kind: Literal["int", "iso"]
 ) -> list[str]:
     """Value-validate a wait timing template: `every_secs` (kind="int") or `until`
     (kind="iso"). A literal is range/format-checked; a lone variable reference is
@@ -869,7 +797,7 @@ def _timing_problems(
     interp = template.parts[0]
     assert isinstance(interp, Interp)
     ref = interp.ref
-    ref_type, error = _resolve_ref_type(ref, var_types, schemas, None)
+    ref_type, error = _resolve_ref_type(ref, env, None)
     if error is None:
         assert ref_type is not None
         expected = ScalarT("int") if kind == "int" else ScalarT("str")
@@ -878,8 +806,8 @@ def _timing_problems(
             problems.append(
                 f"state {name!r}: `{key}` must reference {noun} variable, not {type_str(ref_type)}"
             )
-        elif var_owner.get(ref.root) == "operator":
-            value = _static_ref_value(ref, var_values)
+        elif env.var_owner.get(ref.root) == "operator":
+            value = _static_ref_value(ref, env.var_values)
             if kind == "int":
                 if isinstance(value, int) and not isinstance(value, bool) and value < 1:
                     problems.append(
@@ -897,19 +825,14 @@ def _timing_problems(
     return problems
 
 
-def _validate_branch(
-    name: str,
-    state: BranchState,
-    var_types: dict[str, TypeRef],
-    schemas: dict[str, dict[str, TypeRef]],
-) -> list[str]:
+def _validate_branch(name: str, state: BranchState, env: _Env) -> list[str]:
     problems: list[str] = []
     last_index = len(state.when) - 1
     for index, clause in enumerate(state.when):
         if clause.else_ is not None and index != last_index:
             problems.append(f"state {name!r}: an `else` clause must be the final `when` clause")
         if clause.if_ is not None:
-            problems.extend(_validate_predicate(name, clause.if_, var_types, schemas))
+            problems.extend(_validate_predicate(name, clause.if_, env))
     if state.when[last_index].else_ is None:
         problems.append(
             f"state {name!r}: branch is not total (no final `else`);"
@@ -918,19 +841,14 @@ def _validate_branch(
     return problems
 
 
-def _validate_predicate(
-    name: str,
-    source: str,
-    var_types: dict[str, TypeRef],
-    schemas: dict[str, dict[str, TypeRef]],
-) -> list[str]:
+def _validate_predicate(name: str, source: str, env: _Env) -> list[str]:
     try:
         predicate = parse_predicate(source)
     except PredicateError as exc:
         return [f"state {name!r}: predicate {source!r}: {exc}"]
     problems: list[str] = []
     for ref in predicate.references:
-        _, error = _resolve_ref_type(ref, var_types, schemas, None)
+        _, error = _resolve_ref_type(ref, env, None)
         if error is not None:
             # The file is TOML, so an author naturally writes `flag == true`; but
             # predicates are Python-parsed, so `true` reads as an undeclared name.
@@ -944,17 +862,11 @@ def _validate_predicate(
     # Type-check `len()` arguments at load (mirrors the template `| len` filter):
     # `len(n)` on an int/float/bool is a guaranteed runtime PredicateError, and
     # the spec promises type mismatches are load-time errors, not run surprises.
-    problems.extend(_predicate_len_problems(name, source, predicate.tree.body, var_types, schemas))
+    problems.extend(_predicate_len_problems(name, source, predicate.tree.body, env))
     return problems
 
 
-def _predicate_len_problems(
-    name: str,
-    source: str,
-    body: ast.expr,
-    var_types: dict[str, TypeRef],
-    schemas: dict[str, dict[str, TypeRef]],
-) -> list[str]:
+def _predicate_len_problems(name: str, source: str, body: ast.expr, env: _Env) -> list[str]:
     problems: list[str] = []
     for node in ast.walk(body):
         if not (
@@ -967,7 +879,7 @@ def _predicate_len_problems(
         arg = node.args[0]
         ref = as_reference(arg) if isinstance(arg, (ast.Name, ast.Attribute)) else None
         if ref is not None:
-            ftype, error = _resolve_ref_type(ref, var_types, schemas, None)
+            ftype, error = _resolve_ref_type(ref, env, None)
             if error is None and isinstance(ftype, ScalarT) and ftype.name != "str":
                 problems.append(
                     f"state {name!r}: predicate {source!r}: `len()` does not apply to"
