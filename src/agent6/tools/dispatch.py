@@ -80,9 +80,11 @@ from agent6.tools.policy import jail_policy, resolve_network, workspace_for
 from agent6.tools.results import (
     AnswersResult,
     BackgroundResult,
+    EditResult,
     ExecResult,
     FetchResult,
     MetricResult,
+    PatchResult,
     RawResult,
     ReadFileResult,
     SessionsResult,
@@ -203,7 +205,14 @@ def _output_tails(name: str, result: ToolResult) -> dict[str, Any]:
     """Capped output excerpts an execution/read tool's result carries into its
     tool.result event, else {}. Commands get stdout/stderr tails; read_file
     gets a head preview + the true line count, so logs.jsonl shows what was
-    read without opening the transcripts."""
+    read without opening the transcripts; an edit or patch names the paths it
+    wrote, so a resume can tell the run's own untracked files from the
+    operator's."""
+    if isinstance(result, EditResult):
+        return {"paths": [result.path]}
+    if isinstance(result, PatchResult):
+        written = [p for p, _ in result.files] or [result.path]
+        return {"paths": [p for p in written if p not in result.deleted]}
     if isinstance(result, ExecResult | MetricResult) and name in _EXEC_OUTPUT_TOOLS:
         return {
             "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],

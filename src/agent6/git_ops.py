@@ -1039,6 +1039,16 @@ def chain_dirty_paths(
     return tree_diff_paths(path, base_tree, worktree_tree(path, base, exclude))[:limit]
 
 
+def tree_paths(path: Path, ref: str) -> frozenset[str]:
+    """Every path in *ref*'s tree, spelled as `status -z` spells it (NUL-separated,
+    never C-quoted); empty for a ref that does not exist (an unborn chain);
+    GitError for a ref that is not a tree."""
+    if _run(path, "rev-parse", "--verify", "--quiet", ref, check=False).returncode != 0:
+        return frozenset()
+    out = _run(path, "ls-tree", "-r", "--name-only", "-z", ref).stdout
+    return frozenset(name for name in out.split("\0") if name)
+
+
 def tree_diff_paths(path: Path, old_tree: str, new_tree: str) -> list[str]:
     """Paths whose content differs between two tree shas."""
     out = _run(path, "diff-tree", "-r", "--name-only", old_tree, new_tree).stdout

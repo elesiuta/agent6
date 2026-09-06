@@ -21,6 +21,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
+from agent6.git_ops import GitError, chain_commit, chain_ref_for
 from agent6.sessions.layout import SessionLayout
 from agent6.sessions.lock import (
     acquire_repo_writer,
@@ -541,3 +542,92 @@ def test_a_reused_ask_dir_drops_the_previous_legs_markers_and_keeps_this_legs(
     )
     assert rc == 0
     assert seen == [(False, True)]
+
+
+def test_resume_treats_a_file_that_arrived_between_legs_as_the_operators(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The untracked set was recorded once, at the run's first leg, so a log or
+    note the operator wrote between legs was untracked at the resume's start
+    yet absent from the set, and the resumed leg's first checkpoint committed
+    it. At resume, every file untracked now that no tool call of the run
+    wrote joins the set; the run's own uncommitted file stays its own."""
+    from agent6.app import _leg as leg_mod
+    from agent6.app import resume as resume_mod
+    from agent6.app._leg import LegEnd, LegInputs
+    from agent6.secrets import save_secret
+    from agent6.sessions.layout import read_untracked_at_start
+    from agent6.workflows._session_state import SessionSnapshot
+
+    save_secret("anthropic", "x")  # the provider preflight runs before the leg
+    state = resolved_state_dir(repo)
+    layout = SessionLayout(state_dir=state, session_id="run-U")
+    layout.ensure()
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": "run-U",
+                "mode": "run",
+                "base_sha": "",
+                "base_branch": "main",
+                "run_branch": "agent6/run-U",
+                "user_task": "t",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    layout.logs_path.write_text(
+        '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
+        '{"type": "tool.result", "name": "apply_edit", "ok": true, "paths": ["mine.txt"]}\n'
+        '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
+        encoding="utf-8",
+    )
+    snapshot = SessionSnapshot(
+        system="s",
+        messages=[],
+        tool_calls=0,
+        next_iteration=1,
+        root_task_id=None,
+        original_task="t",
+        verify_command=(),
+    )
+    (layout.session_dir / "loop_state.json").write_text(
+        snapshot.model_dump_json(), encoding="utf-8"
+    )
+    (repo / "mine.txt").write_text("the run's, uncommitted\n", encoding="utf-8")
+    # A file a command of the run created and a checkpoint recorded: chain
+    # commits never touch the index, so it reads untracked for the whole run.
+    (repo / "built.txt").write_text("a build output\n", encoding="utf-8")
+    (repo / "réponse.txt").write_text("git quotes this name in ls-tree\n", encoding="utf-8")
+    assert chain_commit(repo, "iter 1", ref=chain_ref_for("run-U"), fallback_parent=None)
+    (repo / "note.md").write_text("the operator's\n", encoding="utf-8")
+    seen: list[frozenset[str]] = []
+
+    def _leg(cfg: object, layout: object, inputs: LegInputs, **_k: object) -> LegEnd:
+        seen.append(inputs.untracked_at_start)
+        return LegEnd(rc=0)
+
+    monkeypatch.setattr(resume_mod, "run_leg", _leg)
+    monkeypatch.setattr(leg_mod, "run_leg", _leg)
+    rc = resume_mod.resume_task(None, "run-U", frontend=MagicMock(), force=False)
+    assert rc == 0
+    assert seen == [frozenset({"note.md"})]
+    assert read_untracked_at_start(layout.session_dir) == frozenset({"note.md"})
+    # The check decides what the run may commit: a git failure refuses the
+    # resume instead of quietly committing the operator's file as run work.
+    layout.logs_path.write_text(
+        layout.logs_path.read_text(encoding="utf-8")
+        + '{"type": "loop.resume.start"}\n'
+        + '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
+        encoding="utf-8",
+    )
+
+    def _broken(_cwd: Path) -> frozenset[str]:
+        raise GitError("git status failed: index.lock exists")
+
+    monkeypatch.setattr(resume_mod, "untracked_paths", _broken)
+    seen.clear()
+    rc = resume_mod.resume_task(None, "run-U", frontend=MagicMock(), force=False)
+    assert rc == 2 and seen == []

@@ -56,6 +56,8 @@ from agent6.git_ops import (
     chain_tip,
     is_ancestor,
     merge_stamp_holds,
+    tree_paths,
+    untracked_paths,
     verify_git_identity,
 )
 from agent6.providers import (
@@ -72,6 +74,7 @@ from agent6.sessions.ipc import (
 from agent6.sessions.layout import (
     bucket_dir,
     read_untracked_at_start,
+    write_untracked_at_start,
 )
 from agent6.sessions.lock import (
     SINGLE_WRITER_BUSY,
@@ -106,6 +109,26 @@ def resumable_bucket_dirs(state_dir: Path) -> list[Path]:
         for kind in SESSION_KINDS.values()
         if kind.resumable
     ]
+
+
+def _paths_the_run_wrote(logs_path: Path) -> frozenset[str]:
+    """Every path a `tool.result` of the run names as written (an edit, a
+    patch), over every leg; a torn line reads as none."""
+    paths: set[str] = set()
+    try:
+        with logs_path.open(encoding="utf-8", errors="replace") as lines:
+            for line in lines:
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(event, dict) and event.get("type") == "tool.result":
+                    named = event.get("paths", ())
+                    if isinstance(named, list):
+                        paths.update(str(p) for p in named)
+    except OSError:
+        return frozenset()
+    return frozenset(paths)
 
 
 def covering_stamp(repo: Path, manifest: SessionManifest) -> MergeStamp | None:
@@ -628,6 +651,30 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
 
             return undo_fork(config_path, session_id, cwd=repo, reporter=reporter)
 
+        untracked_at_start = read_untracked_at_start(layout.session_dir)
+        if writes_code:
+            # A file untracked now that the run never checkpointed and no tool
+            # call of it wrote arrived between legs (the operator's log or
+            # note): it joins the set the run never commits. The run's own
+            # files stay its own: chain commits never touch the index, so
+            # every file the run created reads untracked for the whole run,
+            # and the chain's tree names them; an edit not yet checkpointed
+            # is named by its tool.result. A file a command wrote after the
+            # previous leg's last checkpoint is the gap. The check decides
+            # what the run may commit, so a git failure here refuses.
+            try:
+                arrived = (
+                    untracked_paths(cwd)
+                    - untracked_at_start
+                    - tree_paths(cwd, chain_ref_for(session_id))
+                    - _paths_the_run_wrote(layout.logs_path)
+                )
+                if arrived:
+                    untracked_at_start = untracked_at_start | arrived
+                    write_untracked_at_start(layout.session_dir, untracked_at_start)
+            except (GitError, OSError) as exc:
+                reporter.error(f"cannot tell the run's files from the operator's: {exc}")
+                return 2
         # The worker's pid, written once the preflight passed: a resume that
         # refused never had a live worker, and a hub's spawn reads this pid as
         # the child owning the run (`spawn_and_confirm`). `sessions show`
@@ -639,7 +686,6 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         # This leg's models and policy, so `agent6 exec` joins the jail the
         # agent is in and every policy surface describes the leg that is live.
         stamp_leg(layout.session_dir, cfg, mode, isolation)
-        untracked_at_start = read_untracked_at_start(layout.session_dir)
         if writes_code:
             # What the tree holds that the chain does not: the previous leg's
             # uncommitted tail after a crash, and any edit of the operator's

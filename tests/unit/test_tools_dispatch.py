@@ -2337,3 +2337,29 @@ def test_a_preview_over_a_crlf_file_counts_the_bytes_the_apply_writes(tmp_path: 
     d.dispatch("apply_edit", {"path": "w.txt", "edits": [edit]})
     assert seen["bytes_before"] == len(b"one\r\ntwo\r\n")
     assert seen["bytes_after"] == len((tmp_path / "w.txt").read_bytes()) == len(b"one\r\nTWO\r\n")
+
+
+def test_an_edit_or_patch_result_names_the_paths_it_wrote(tmp_path: Path) -> None:
+    """The journal's tool.call carries a clipped args preview (a patch's text
+    cut at 200 chars), so nothing named the files a run wrote; a resume needs
+    them to tell the run's own untracked files from the operator's."""
+    import json
+
+    from agent6.events import EventSink
+
+    cfg = _config(tmp_path)
+    logs = tmp_path / "logs.jsonl"
+    d = ToolDispatcher(root=tmp_path, config=cfg, events=EventSink(logs))
+    d.dispatch(
+        "apply_edit",
+        {"path": "a.txt", "edits": [{"kind": "create", "old_string": "", "new_string": "a\n"}]},
+    )
+    patch = "diff --git a/b.txt b/b.txt\n--- /dev/null\n+++ b/b.txt\n@@ -0,0 +1 @@\n+b\n"
+    d.dispatch("apply_patch", {"patch": patch})
+    events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
+    results = [e for e in events if e["type"] == "tool.result"]
+    assert [e.get("paths") for e in results] == [["a.txt"], ["b.txt"]]
+    gone = "diff --git a/b.txt b/b.txt\n--- a/b.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-b\n"
+    d.dispatch("apply_patch", {"patch": gone})
+    last = json.loads(logs.read_text(encoding="utf-8").splitlines()[-1])
+    assert last["type"] == "tool.result" and last.get("paths") == []  # a deletion wrote nothing
