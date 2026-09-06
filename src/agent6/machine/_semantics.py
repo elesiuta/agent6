@@ -57,7 +57,6 @@ from agent6.machine.predicate import (
 )
 from agent6.machine.template import (
     Interp,
-    Template,
     TemplateError,
     parse_template,
 )
@@ -456,38 +455,25 @@ def _validate_template(
             problems.append(f"{where}: {error}")
             continue
         assert ref_type is not None
-        problems.extend(
-            _check_interp_filter(part, ref_type, template, allow_splice=allow_splice, where=where)
+        if part.filt == "json":
+            continue
+        if part.filt == "len":
+            if isinstance(ref_type, ScalarT) and ref_type.name != "str":
+                problems.append(
+                    f"{where}: `| len` does not apply to {type_str(ref_type)} ({part.ref.dotted!r})"
+                )
+            continue
+        # Bare reference (no filter): must be a scalar, unless it is a lone
+        # list reference spliced into argv (§4.4).
+        if isinstance(ref_type, ScalarT):
+            continue
+        if allow_splice and isinstance(ref_type, ListT) and template.is_lone_ref:
+            continue
+        problems.append(
+            f"{where}: bare reference to {type_str(ref_type)} ({part.ref.dotted!r});"
+            " apply `| json` or, for a list in argv, splice it as a standalone element"
         )
     return problems
-
-
-def _check_interp_filter(
-    part: Interp,
-    ref_type: TypeRef,
-    template: Template,
-    *,
-    allow_splice: bool,
-    where: str,
-) -> list[str]:
-    if part.filt == "json":
-        return []
-    if part.filt == "len":
-        if isinstance(ref_type, ScalarT) and ref_type.name != "str":
-            return [
-                f"{where}: `| len` does not apply to {type_str(ref_type)} ({part.ref.dotted!r})"
-            ]
-        return []
-    # Bare reference (no filter): must be a scalar, unless it is a lone
-    # list reference spliced into argv (§4.4).
-    if isinstance(ref_type, ScalarT):
-        return []
-    if allow_splice and isinstance(ref_type, ListT) and template.is_lone_ref:
-        return []
-    return [
-        f"{where}: bare reference to {type_str(ref_type)} ({part.ref.dotted!r});"
-        " apply `| json` or, for a list in argv, splice it as a standalone element"
-    ]
 
 
 # --------------------------------------------------------------------------
