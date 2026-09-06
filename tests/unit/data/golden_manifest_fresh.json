@@ -40,7 +40,6 @@
   "worktree": null,
   "worktree_git_dir": null,
   "merged": null,
-  "parallel_id": null,
-  "lane": null,
+  "parallel": null,
   "compare": null
 }

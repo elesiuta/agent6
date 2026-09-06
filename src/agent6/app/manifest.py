@@ -23,6 +23,7 @@ from agent6.sessions.manifest import (
     ManifestError,
     ModelBrief,
     ModelsBrief,
+    ParallelLineage,
     PolicyStamp,
     SessionManifest,
     WorkflowStamp,
@@ -152,24 +153,25 @@ def write_session_manifest(
         forked_from_sha=forked_from_sha,
         worktree=worktree,
         worktree_git_dir=worktree_git_dir,
-        parallel_id=(lineage[0] if lineage else None),
-        lane=(lineage[1] if lineage else None),
+        parallel=lineage,
     )
     write_manifest(layout.manifest_path, m)
 
 
-def _parallel_lineage() -> tuple[str, int] | None:
+def _parallel_lineage() -> ParallelLineage | None:
     """The fan-out lineage the spawner stamped into this lane's environment
-    (`AGENT6_PARALLEL_LINEAGE=<fanout>:<lane>`), or None for an ordinary run.
+    (`AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`), or None for an
+    ordinary run.
 
     Read here, in the manifest's one writer, so the lane is self-describing
     from birth: the grouping survives a coordinator death instead of waiting
     on a post-import stamp only a live coordinator could write."""
     raw = os.environ.get("AGENT6_PARALLEL_LINEAGE", "")
-    fanout, sep, lane = raw.rpartition(":")
-    if not sep or not fanout or not lane.isdigit():
+    coordinator, _, rest = raw.partition(":")
+    group, sep, lane = rest.rpartition(":")
+    if not sep or not coordinator or not group or not lane.isdigit():
         return None
-    return fanout, int(lane)
+    return ParallelLineage(group=group, lane=int(lane), coordinator=coordinator)
 
 
 def stamp_parked(session_dir: Path, *, task: str, reason: str) -> None:

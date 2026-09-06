@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from agent6.sessions.manifest import MANIFEST_VERSION, ManifestError, read_manifest
+from agent6.sessions.manifest import MANIFEST_VERSION, ManifestError, ParallelLineage, read_manifest
 
 _DATA = Path(__file__).parent / "data"
 
@@ -75,7 +75,7 @@ def test_unknown_keys_are_dropped_never_folded(tmp_path: Path) -> None:
 
 
 def test_legacy_compare_group_is_ignored(tmp_path: Path) -> None:
-    # The pre-dedup stamp carried a `group` key (same fact as parallel_id); it is
+    # The pre-dedup stamp carried a `group` key (the lineage's fact); it is
     # dropped on read (extra="ignore"), the rest of the stamp survives.
     _write(
         tmp_path,
@@ -168,7 +168,7 @@ def test_write_manifest_bytes_fresh(tmp_path: Path) -> None:
 
 def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
     # Byte pin of a fully-stamped fan-out lane: fork lineage + merge stamp +
-    # parallel_id/lane + compare, so every optional nested stamp's serialized
+    # parallel lineage + compare, so every optional nested stamp's serialized
     # shape is frozen, not just the fresh subset.
     from agent6.app.manifest import write_manifest
     from agent6.sessions.manifest import (
@@ -200,8 +200,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: Path) -> None:
             ts="2026-07-16T01:00:00.000000+00:00",
             tip="4" * 40,
         ),
-        parallel_id="p-abc",
-        lane=1,
+        parallel=ParallelLineage(group="p-abc", lane=1, coordinator="p-abc"),
         compare=CompareStamp(
             rank=1,
             of=3,

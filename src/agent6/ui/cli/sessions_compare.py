@@ -118,8 +118,8 @@ def _fanout_lanes(cwd: Path, parallel_id: str) -> tuple[str, ...]:
         for d in runs.iterdir():
             with contextlib.suppress(ManifestError):
                 m = read_manifest(d)
-                if m.parallel_id == parallel_id:
-                    lanes.append((m.lane or 0, d.name))
+                if m.parallel is not None and m.parallel.group == parallel_id:
+                    lanes.append((m.parallel.lane, d.name))
     return tuple(name for _, name in sorted(lanes))
 
 
@@ -222,7 +222,7 @@ def _cmd_compare(
     # listings comes from the auto-compare stamp, which this command never
     # rewrites); when re-judging one fan-out's own lanes, disclose the clash
     # rather than let the two surfaces silently disagree.
-    groups = {manifest.parallel_id for _, manifest in resolved}
+    groups = {manifest.parallel.group if manifest.parallel else None for _, manifest in resolved}
     if outcome.ranking and len(groups) == 1 and None not in groups:
         stamped = next(
             (

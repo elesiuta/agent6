@@ -59,7 +59,7 @@ def _setup_run(
     """Cut agent6/<session_id> off base_sha with *commits*, write manifest.json +
     logs.jsonl (the run-branch + run-state fixture `sessions compare` reads), and
     return the checkout to where it was. *manifest_extra* merges extra manifest
-    fields (e.g. a fan-out lane's parallel_id + compare stamp)."""
+    fields (e.g. a fan-out lane's lineage + compare stamp)."""
     branch = f"agent6/{session_id}"
     current = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     _git(repo, "checkout", "-q", base_sha)
@@ -136,7 +136,7 @@ def test_compare_of_a_fanout_id_compares_its_lanes(
             base_sha=base,
             commits=[(f"{lane}.txt", "x\n", f"add {lane}")],
             cost=cost,
-            manifest_extra={"parallel_id": "fan", "lane": lane},
+            manifest_extra={"parallel": {"group": "fan", "lane": lane, "coordinator": "fan"}},
         )
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     assert main(["sessions", "compare", "fan"]) == 0
@@ -478,8 +478,7 @@ def test_compare_total_line_accounts_the_judge_calls_own_spend(
 
 def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
     return {
-        "parallel_id": "fan",
-        "lane": rank,
+        "parallel": {"group": "fan", "lane": rank, "coordinator": "fan"},
         "compare": {"rank": rank, "of": 2, "winner": winner, "ranked_by": "judge"},
     }
 
@@ -876,7 +875,7 @@ def test_a_fanout_with_no_recorded_verdict_is_judged(
             sid,
             base_sha=base,
             commits=[(f"{name}.txt", f"{name}\n", f"add {name}")],
-            manifest_extra={"parallel_id": "fan", "lane": 1},
+            manifest_extra={"parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}},
         )
     _write_reviewer_config(repo)
     judge = _FakeProvider(['{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b wins"}'])

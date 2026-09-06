@@ -42,8 +42,11 @@
     "ts": "2026-07-16T01:00:00.000000+00:00",
     "tip": "4444444444444444444444444444444444444444"
   },
-  "parallel_id": "p-abc",
-  "lane": 1,
+  "parallel": {
+    "group": "p-abc",
+    "lane": 1,
+    "coordinator": "p-abc"
+  },
   "compare": {
     "rank": 1,
     "of": 3,

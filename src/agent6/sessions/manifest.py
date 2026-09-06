@@ -140,9 +140,22 @@ class MergeStamp(BaseModel):
         return f"already on {self.into}, no merge commit"
 
 
+class ParallelLineage(BaseModel):
+    """A fan-out lane's place: the group it was dispatched in, its number in
+    that group, and the session that dispatched it (the coordinator every
+    listing nests the lane under). `run --parallel` names its group after
+    the coordinator; a `/parallel` group is `<coordinator>-p<n>`."""
+
+    model_config = _MODEL_CONFIG
+
+    group: str = ""
+    lane: int = 0
+    coordinator: str = ""
+
+
 class CompareStamp(BaseModel):
-    """A fan-out lane's auto-compare placement. The fan-out id itself lives in
-    the top-level `parallel_id`, not here."""
+    """A fan-out lane's auto-compare placement. The lane's lineage lives in
+    the top-level `parallel`, not here."""
 
     model_config = _MODEL_CONFIG
 
@@ -218,9 +231,8 @@ class SessionManifest(BaseModel):
     worktree_git_dir: Path | None = None
     # merge stamp (null until the run branch is merged)
     merged: MergeStamp | None = None
-    # parallel lineage + compare stamp (null outside a fan-out)
-    parallel_id: str | None = None
-    lane: int | None = None
+    # a fan-out lane's lineage and its compare stamp (null outside a fan-out)
+    parallel: ParallelLineage | None = None
     compare: CompareStamp | None = None
 
     def session_mode(self) -> ResumableMode:

@@ -1003,8 +1003,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
                 "base_sha": base_sha,
                 "base_branch": "main",
                 "run_branch": "agent6/fan-l1",
-                "parallel_id": "fan",
-                "lane": 1,
+                "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"},
             }
         ),
         encoding="utf-8",

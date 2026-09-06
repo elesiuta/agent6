@@ -35,6 +35,7 @@ from agent6.directive import DirectiveError
 from agent6.git_ops import branch_exists, commit_all, create_branch
 from agent6.memory import decisions_text, record_decision
 from agent6.paths import state_dir
+from agent6.sessions.manifest import ParallelLineage
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli.parallel import lane_runtime
 from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask, clone_workspace
@@ -64,6 +65,7 @@ def _write_fake_run(
     cost: float,
     parallel_id: str | None = None,
     lane: int | None = None,
+    coordinator: str | None = None,
 ) -> None:
     session_dir.mkdir(parents=True)
     # A real lane's manifest records its lineage from birth (the spawn env);
@@ -77,11 +79,13 @@ def _write_fake_run(
     }
     fanout, sep, lane_s = session_dir.name.rpartition("-l")
     if parallel_id is not None:
-        manifest["parallel_id"] = parallel_id
-        manifest["lane"] = lane
+        group, number = parallel_id, lane
     elif sep and fanout and lane_s.isdigit():
-        manifest["parallel_id"] = fanout
-        manifest["lane"] = int(lane_s)
+        group, number = fanout, int(lane_s)
+    else:
+        group, number = None, None
+    if group is not None:
+        manifest["parallel"] = {"group": group, "lane": number, "coordinator": coordinator or group}
     (session_dir / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": task},
@@ -435,6 +439,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
     parallel.bridge_spawner(
         spec, "--allow-root pwn", cfg=cfg, origin=origin, max_usd=2.0,
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
+        coordinator="co",
     )  # fmt: skip
 
     argv = captured[-1]
@@ -461,6 +466,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
     parallel.bridge_spawner(
         spec, "task", cfg=cfg, origin=origin, max_usd=None,
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
+        coordinator="co",
     )  # fmt: skip
 
     lane_state = state_dir(spec.workdir)
@@ -485,6 +491,7 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None, auto_approve=True,
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
+        coordinator="co",
     )  # fmt: skip
 
     argv = captured[-1]
@@ -506,6 +513,7 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
     parallel.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None,
         fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
+        coordinator="co",
     )  # fmt: skip
 
     assert "--auto-approve" not in captured[-1]
@@ -538,6 +546,7 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
         origin=origin,
         origin_state=tmp_path / "ostate",
         group="p1",
+        coordinator="co",
         runtime=runtime,
         auto_approve=True,
     )
@@ -688,14 +697,13 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
     assert imported.is_dir() and not imported.is_symlink()
     # Lineage was stamped post-import.
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["parallel_id"] == "fan"
-    assert manifest["lane"] == 1
+    assert manifest["parallel"] == {"group": "fan", "lane": 1, "coordinator": "fan"}
     assert (
         json.loads(
             (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text(
                 encoding="utf-8"
             )
-        )["lane"]
+        )["parallel"]["lane"]
         == 2
     )
 
@@ -816,7 +824,7 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
         "judge_cost_partial": False,
     }  # fmt: skip
     # The lineage stamp is untouched by the compare stamp (shared rewrite merges).
-    assert m1["parallel_id"] == "fan" and m1["lane"] == 1
+    assert m1["parallel"] == {"group": "fan", "lane": 1, "coordinator": "fan"}
 
 
 def test_compare_stamp_records_judge_rationale_truncated(
@@ -1279,6 +1287,7 @@ def test_run_lane_to_completion_imports_and_stamps(
         origin=origin,
         origin_state=origin_state,
         group="p1",
+        coordinator="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1295,8 +1304,7 @@ def test_run_lane_to_completion_imports_and_stamps(
     assert imported.is_dir() and not imported.is_symlink()  # replaced by the real dir
     assert res.session_dir == imported
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["parallel_id"] == "p1"
-    assert manifest["lane"] == 1
+    assert manifest["parallel"] == {"group": "p1", "lane": 1, "coordinator": "p1"}
 
 
 def test_run_lane_to_completion_failed_spawn_imports_nothing(
@@ -1318,6 +1326,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
         origin=origin,
         origin_state=origin_state,
         group="p1",
+        coordinator="co",
         runtime=runtime,
         spawner=spawner,
     )
@@ -1352,6 +1361,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
         origin=origin,
         origin_state=origin_state,
         group="pf",
+        coordinator="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1387,6 +1397,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
         origin=origin,
         origin_state=origin_state,
         group="ps",
+        coordinator="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1448,6 +1459,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
         origin=origin,
         origin_state=origin_state,
         group="p9",
+        coordinator="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1473,6 +1485,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
         origin=origin,
         origin_state=origin_state,
         group="p8",
+        coordinator="co",
         runtime=runtime,
         spawner=spawner2,
         poll_interval_s=0.01,
@@ -1629,6 +1642,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
         origin=origin,
         origin_state=tmp_path / "ostate",
         group="p1",
+        coordinator="co",
         runtime=runtime,
         spawner=fake_spawner,
         poll_interval_s=0.01,
@@ -1844,12 +1858,12 @@ def test_lane_is_self_describing_from_birth(
     spec = LaneSpec(lane=2, session_id="fan-l2", workdir=tmp_path / "work" / "lane-2", model=None)
     parallel.bridge_spawner(
         spec, "do it", cfg=Config(), origin=origin, max_usd=None,
-        fanout_id="fan", runtime=replace(runtime, spawn=fake_spawn),
+        fanout_id="fan", coordinator="co", runtime=replace(runtime, spawn=fake_spawn),
     )  # fmt: skip
-    assert captured[-1]["AGENT6_PARALLEL_LINEAGE"] == "fan:2"
+    assert captured[-1]["AGENT6_PARALLEL_LINEAGE"] == "co:fan:2"
 
     # The writer records it from the env, exactly as the spawned lane would.
-    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "fan:2")
+    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:2")
     layout = SessionLayout(state_dir=tmp_path / "state", session_id="fan-l2")
     layout.ensure()
     write_session_manifest(
@@ -1862,8 +1876,7 @@ def test_lane_is_self_describing_from_birth(
         cfg=Config(),
     )
     m = read_manifest(layout.session_dir)
-    assert m.parallel_id == "fan"
-    assert m.lane == 2
+    assert m.parallel == ParallelLineage(group="fan", lane=2, coordinator="co")
 
     # An ordinary run records no lineage.
     monkeypatch.delenv("AGENT6_PARALLEL_LINEAGE")
@@ -1878,7 +1891,7 @@ def test_lane_is_self_describing_from_birth(
         run_branch=None,
         cfg=Config(),
     )
-    assert read_manifest(layout2.session_dir).parallel_id is None
+    assert read_manifest(layout2.session_dir).parallel is None
 
 
 def test_sweep_keeps_a_clone_holding_unmerged_commits(

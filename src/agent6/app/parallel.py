@@ -168,13 +168,13 @@ def adopt_orphan_lane(
     is restored)."""
     if (
         not manifest.run_branch
-        or manifest.parallel_id is None
-        or manifest.lane is None
+        or manifest.parallel is None
         or branch_exists(origin, manifest.run_branch)
         or not layout.session_dir.is_symlink()
     ):
         return None
-    clone = subordinate_workdir_root(cfg, origin, manifest.parallel_id) / f"lane-{manifest.lane}"
+    lineage = manifest.parallel
+    clone = subordinate_workdir_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
     if not (clone / ".git").exists() or not branch_exists(clone, manifest.run_branch):
         return None
     real = layout.session_dir.resolve()
@@ -314,6 +314,7 @@ def bridge_spawner(
     auto_approve: bool = False,
     at: str | None = None,
     fanout_id: str,
+    coordinator: str,
     runtime: LaneRuntime,
 ) -> LaneResult:
     """Clone the origin, spawn a detached `agent6 run` in the clone, and return a
@@ -376,9 +377,9 @@ def bridge_spawner(
         "AGENT6_DETACHED_AWAY": "wait",
         "AGENT6_SUBRUN": "1",
         # The lane is self-describing from birth: its own manifest records the
-        # fan-out lineage, so a coordinator death cannot orphan the grouping
-        # (the old post-import stamp existed only while the coordinator lived).
-        "AGENT6_PARALLEL_LINEAGE": f"{fanout_id}:{spec.lane}",
+        # fan-out lineage (the coordinator every listing nests it under, the
+        # group, the lane), so a coordinator death cannot orphan the grouping.
+        "AGENT6_PARALLEL_LINEAGE": f"{coordinator}:{fanout_id}:{spec.lane}",
     }
     session_dir, err = runtime.spawn(
         argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
@@ -404,6 +405,7 @@ def run_lane_to_completion(
     origin: Path,
     origin_state: Path,
     group: str,
+    coordinator: str,
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
@@ -443,6 +445,7 @@ def run_lane_to_completion(
             auto_approve=auto_approve,
             at=at,
             fanout_id=group,
+            coordinator=coordinator,
             runtime=runtime,
         )
     res = spawner(spec, task)
@@ -592,6 +595,7 @@ def build_lane_spawner(
                 origin=origin,
                 origin_state=origin_state,
                 group=group_id,
+                coordinator=coordinator_session_id,
                 runtime=runtime,
                 max_usd=max_usd,
                 auto_approve=auto_approve,
@@ -930,6 +934,7 @@ def run_parallel(
             max_usd=max_usd,
             auto_approve=auto_approve,
             fanout_id=fanout_id,
+            coordinator=fanout_id,
             runtime=runtime,
         )
     try:
