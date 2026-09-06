@@ -1666,12 +1666,14 @@ class Workflow:
         )
         unjudged_changed = unjudged and (turn.edited or self._worktree_dirty())
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
-        if (
-            self.mode != "run"
-            or not self.commit_per_step
-            or not (verified_commit or unjudged_changed)
-        ):
+        if self.mode != "run" or not (verified_commit or unjudged_changed):
             return None
+        if not self.commit_per_step:
+            # `commit_per_step` governs the COMMIT. The metric is measurement:
+            # the prompt promises a [harness metric] block after every verified
+            # edit, and with the sampling behind this gate the model was pushed
+            # to optimise a number it was never shown.
+            return self._sample_metric(state, turn, sha="")
         commit_subject = self._checkpoint_subject(
             turn, fallback="checkpoint" if unjudged_changed else "verify passed"
         )
@@ -1732,22 +1734,30 @@ class Workflow:
                     iterations=turn.iteration,
                     tool_calls=state.tool_calls,
                 )
-        if not turn.metric_after_verify_pass:
-            # The auto path raises OperatorCommandUnexecutable just like a
-            # manual run_metric_command would; abort the same way the
-            # per-tool handler does (it is a distinct exception, NOT a
-            # ToolError, so _auto_metric_feedback does not swallow it).
-            try:
-                turn.metric_feedback = self._auto_metric_feedback(
-                    state.metric_history,
-                    iteration=turn.iteration,
-                    sha=sha,
-                )
-            except OperatorCommandUnexecutable as exc:
-                return self._unexecutable_abort(
-                    exc, iteration=turn.iteration, tool_calls=state.tool_calls
-                )
-            turn.metric_plateau_finish = self.metric_plateau_summary(state.metric_history)
+        return self._sample_metric(state, turn, sha=sha)
+
+    def _sample_metric(
+        self, state: LoopState, turn: TurnState, *, sha: str
+    ) -> SessionResult | None:
+        """Run the configured metric over the step just taken and hand the
+        model the reading, unless it ran the metric itself this turn."""
+        if turn.metric_after_verify_pass:
+            return None
+        # The auto path raises OperatorCommandUnexecutable just like a
+        # manual run_metric_command would; abort the same way the
+        # per-tool handler does (it is a distinct exception, NOT a
+        # ToolError, so _auto_metric_feedback does not swallow it).
+        try:
+            turn.metric_feedback = self._auto_metric_feedback(
+                state.metric_history,
+                iteration=turn.iteration,
+                sha=sha,
+            )
+        except OperatorCommandUnexecutable as exc:
+            return self._unexecutable_abort(
+                exc, iteration=turn.iteration, tool_calls=state.tool_calls
+            )
+        turn.metric_plateau_finish = self.metric_plateau_summary(state.metric_history)
         return None
 
     def _report_auto_commit_failure(

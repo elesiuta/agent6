@@ -691,7 +691,10 @@ def test_call_with_retry_passes_through_none_temperature() -> None:
 # --- automatic metric feedback ------------------------------------------
 
 
-def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
+@pytest.mark.parametrize("commit_per_step", [True, False])
+def test_drive_loop_auto_runs_metric_after_verify_pass(
+    tmp_path: Path, commit_per_step: bool
+) -> None:
     """Metric-configured runs should not rely on the worker remembering to
     call run_metric_command. After a green verify, the harness runs it and
     injects a compact history block into the next worker turn.
@@ -756,6 +759,9 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(tmp_path: Path) -> None:
         provider=provider,
         dispatcher=dispatcher,
         max_iterations=3,
+        # `[git].commit_per_step` governs the COMMIT; the measurement the
+        # prompt promises after every verified edit is not the commit's.
+        commit_per_step=commit_per_step,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
