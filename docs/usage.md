@@ -156,11 +156,11 @@ agent6 ask "how does the task-graph curator work?"
 - `--parallel 3` (or `model-a,model-b`): isolated fan-out lanes, auto-compared into a ranked report
   - also from the TUI and web composers, or mid-run via the `/parallel [spec] <task>` steer directive ([configuration](config.md#parallel))
 - `--standing "hunt and fix bugs"`: a never-finishing fallback task the run re-enters when the queue drains
+  - new work outranks it; it never passes, and only the operator retires it; budget, stop, and the iteration cap still end the run
 - `--pin "<text>"`: an instruction restated every turn, so it survives compaction (`/pin` does the same mid-run)
 - `--from <id>`: seed the run from another session (its task, outcome, diff and, for a plan, its text); a plan id with no task runs that plan
 - `--decompose`: break the task into a task graph up front (`prompt.decompose`); `--skill NAME` puts a skill in the prompt (`[skills]`)
 - `--session-id ID`: name the new session yourself (default: a generated id)
-  - new work outranks it; it never passes (retire as skipped or obsolete); budget, stop, and the iteration cap still end the run
 - `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: everything the model receives on the first call (system prompt, tool definitions, the first user message)
 
 ## Other commands

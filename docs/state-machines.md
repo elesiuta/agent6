@@ -610,7 +610,7 @@ Sizing for long-running machines:
 | `agent6 machine poke <id> [--data <json>\|--message <text>]` | signal a waiting instance to wake on its next check; an optional payload reaches the next `tool` at `$AGENT6_MACHINE_DATA_DIR/poke.json` (journaled, replay-safe). |
 | `agent6 machine stop <id>`                | park at the next transition boundary: a durable marker, not a kill; wakes a sleeping `wait`, leaving it armed; no `MachineEnd` journaled (resumes with `machine run`); ended/not-running refused; also on the web machine page and the TUI machine screen (`x`) |
 | `agent6 machine replay <id>`              | deterministic replay from the journal (no world I/O); backtesting. |
-| `agent6 config set/get/fix --machine-file FILE` | read and write the machine's own `[config]` overlay through the config surfaces, with the same refusals as hand-editing it. |
+| `agent6 config show/get/set/unset/add/remove/fix --machine-file FILE` | read and write the machine's own `[config]` overlay through the config surfaces, with the same refusals as hand-editing it. |
 
 `machine check` is the human-editability payoff: precise, fail-loud diagnostics (``state 'act': branch is not total (no final `else`)``), and a warning when a `tool` state's binary is not on the jail's PATH.
 

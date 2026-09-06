@@ -19,6 +19,7 @@ The same UI on a phone (single column, bottom nav):
 agent6 web              # serve the hub on http://127.0.0.1:7658
 agent6 web <session-id> # open a session on load
 agent6 web <machine>    # open a machine instance on load
+agent6 web <draft>      # open a `machine create` draft on load (read-only)
 ```
 
 `--host` / `--port` override the [`[web]`](config.md#web) config for one invocation.
@@ -26,7 +27,7 @@ Stop it with Ctrl-C.
 
 ## Pages
 
-Every page docks its text entry at the bottom, like a chat: type, Enter sends, Ctrl+Enter sends now (the `/now` directive, which aborts the call in flight), Shift+Enter inserts a newline.
+Every page docks its text entry at the bottom, like a chat: type, Enter sends, Shift+Enter inserts a newline.
 
 - **Sessions page**: every session (mode, status, last activity, cost)
     - the docked composer starts new work: run / plan / ask, under a chosen preset
@@ -35,17 +36,20 @@ Every page docks its text entry at the bottom, like a chat: type, Enter sends, C
     - the docked composer creates a new one
 - **Session view** (live over SSE): the conversation is the page, the same folded transcript the CLI and TUI render, with the in-progress turn streaming underneath
     - a detail toggle cycles collapsed / expanded / hidden; any clipped item expands on click
-    - the run's context (status, task graph, budget, tool calls, background shells, latest commit diff, event log) lives in a resizable details drawer
+    - the run's context (overview, plan.md, task graph, budget, tool calls, background shells, latest commit diff, event log) lives in a resizable details drawer
+        - the plan.md card carries a planning run's deliverable, and shows only once there is one
     - the docked composer steers a live run or resumes an ended one; `/` completes the steer directives, Ctrl-R (composer focused) searches the session's past messages
+        - Ctrl+Enter prefixes a live run's steer with `/now`, aborting the call in flight; text already starting with `/` goes as typed
     - the Latest commit widget selects any per-step commit (cumulative toggle); the Budget and Task graph widgets then show that step's state; a model-controlled run has no chain and says so
     - stop now / stop after step, compact, merge, delete history, run a finished plan (`run --from`, spawned detached), approve `run_command` and MCP-tool prompts, and answer `ask_user` questions inline
       ("Allow session" appears only where it would grant something beyond the one call it is clicked on)
 - **Machine view**: the state overview, the path taken, the current agent state's conversation
     - approve and answer the current state's prompts inline (same controls as a run)
     - the docked entry submits as **Steer** (into the current agent state) or **Message** (a `poke` payload a waiting machine's next tool reads)
+    - **Stop** parks the instance at its next transition, as `agent6 machine stop` does; `machine run` resumes it
     - `machine.notify`/end: ephemeral banners and OS notifications
 - **Config page**: every setting with value and source, filterable; click a row to set it
-    - enum settings offer their choices; `models.*` autocompletes providers and model ids (the TUI/CLI completion)
+    - enum settings offer their choices, `models.<role>.provider` the configured providers; `models.<role>.model` autocompletes that provider's model ids (the TUI/CLI completion)
     - secrets never shown
 
 Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
@@ -60,7 +64,7 @@ The layout reflows.
 
 - desktop: the nav rail collapses to icons; the run view is a fixed pane, drawer and conversation scrolling internally
 - phone: fixed top bar (theme toggle), bottom tab nav, composer docked above it, the page as the only scroller
-- phone run view: one widget at a time (conversation by default); the top-bar menu switches to status, task graph, budget, tool calls, latest commit, or event log
+- phone run view: one widget at a time; the top-bar menu switches between Conversation (the default), Overview, plan.md, Task graph, Budget, Tool calls, Background shells, Latest commit and Event log
 
 ## Notifications and installing (PWA)
 
@@ -85,6 +89,9 @@ curl -sN localhost:7658/api/session/<id>/events      # SSE: a snapshot per chang
 ```
 
 - `curl /api/session/<id>`: exactly what `agent6 attach <id> --json` prints; `?step=<sha>` folds only up to that commit
+- reads: `/api/meta`, `/api/hub`, `/api/config`, `/api/config/suggest/<key>`, `/api/session/<id>` with `/conversation`, `/restate`, `/diff` and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` (a `machine create` draft) with `/conversation`, `/diff` and `/events`
+    - a `/diff` takes `?sha=<sha>` and `&cumulative=1` for the chain up to that step
+- the page and its PWA assets: `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
 - writes: small JSON `POST`s (`/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,resume,run_plan,stop_step,compact,rm}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/machine/{create,run}`)
 - every write drives the typed spawn / answer-file contracts, never arbitrary execution
 - a machine's `approve`/`answer`/`steer` land in the current agent state's per-state dir; `poke` drops a signal (optional `message`/`data`) on the instance
