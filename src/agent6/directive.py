@@ -181,33 +181,32 @@ def spec_fragment(text: str) -> str | None:
     return token.rsplit(",", 1)[-1]
 
 
+# The steer directives a front-end acts on itself, so none can start a leg:
+# `/compact`, `/btw` and `/now` need a live run (a composer or the pause menu
+# takes them, and a resume composer does not offer them); `/restate` and
+# `/shells` act in the composer that typed them, live or not. The loop parses
+# none of these, so a leg started on one would hand the token to the model.
+LIVE_RUN_COMMANDS: frozenset[str] = frozenset({"/compact", "/btw", "/now"})
+_FRONT_END_COMMANDS: frozenset[str] = LIVE_RUN_COMMANDS | {"/restate", "/shells"}
+_FRONT_END_TOKEN = re.compile(
+    r"\A\s*(" + "|".join(map(re.escape, sorted(_FRONT_END_COMMANDS))) + r")(?=\s|\Z)"
+)
+
+
 def steer_problem(text: str) -> str | None:
     """Why *text* cannot START a leg as its steer: a malformed directive (a
-    bare `/pin`, a `/parallel` with no task) or a live-run command (`/compact`,
-    `/btw`, `/restate`: a composer or the pause menu acts on those; the loop
-    would hand the bare token to the model as an instruction). None for
-    ordinary text and a well-formed directive. A leg spent on a directive the
-    loop can only decline reads as a silent finish and flips a passed run to
-    failed."""
-    live_only = "acts on a live run (from a composer or the pause menu); it cannot start a leg"
-    if parse_compact(text) is not None:
-        return f"/compact {live_only}"
-    if parse_btw(text) is not None:
-        return f"/btw {live_only}"
-    if _RESTATE_TOKEN.match(text):
-        return f"/restate {live_only}"
-    if _SHELLS_TOKEN.match(text):
-        return f"/shells {live_only}"
+    bare `/pin`, a `/parallel` with no task) or one of `_FRONT_END_COMMANDS`.
+    None for ordinary text and a well-formed directive. A leg spent on a
+    directive the loop can only decline reads as a silent finish and flips a
+    passed run to failed."""
+    if (m := _FRONT_END_TOKEN.match(text)) is not None:
+        return f"{m.group(1)} acts in a composer or the pause menu; it cannot start a leg"
     try:
         parse_pin(text)
         parse_directive(text)
     except DirectiveError as exc:
         return str(exc)
     return None
-
-
-_RESTATE_TOKEN = re.compile(r"\A\s*/restate(?=\s|\Z)")
-_SHELLS_TOKEN = re.compile(r"\A\s*/shells(?=\s|\Z)")
 
 
 def parse_directive(text: str) -> list[Segment] | None:

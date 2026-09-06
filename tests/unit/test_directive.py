@@ -263,8 +263,18 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
         steer_problem("/pin") or ""
     )
     assert steer_problem("/parallel 2") is not None
-    for live_only in ("/compact", "/compact keep the auth work", "/btw why?", "/restate"):
-        assert "acts on a live run" in (steer_problem(live_only) or ""), live_only
+    # /now included: the composers parse it and the loop never does, so a leg
+    # started on it handed "OPERATOR STEERING ... /now hurry up" to the model.
+    for live_only in (
+        "/compact",
+        "/compact keep the auth work",
+        "/btw why?",
+        "/restate",
+        "/shells",
+        "/now hurry up",
+        "/now",
+    ):
+        assert "cannot start a leg" in (steer_problem(live_only) or ""), live_only
     assert steer_problem("/pin keep the API stable") is None
     assert steer_problem("/parallel 2 try the other design") is None
     assert steer_problem("focus on the parser") is None

@@ -20,7 +20,7 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Select, Static, TextArea
 
-from agent6.directive import STEER_COMMANDS
+from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS
 from agent6.ui.tui.menubar import (
     Menu,
     MenuItem,
@@ -52,15 +52,15 @@ def composer_labels(mode: ComposerMode, *, continue_as: str = "") -> tuple[str, 
 def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, str]]:
     """The steer directives matching the composer's first word while it is
     still being typed (`/…`, no whitespace yet): (command, help) rows, empty
-    for ordinary text. /compact acts only on a live session, so a resume
-    composer does not offer it; a draft offers only /parallel (the fan-out
-    is the one directive a start understands)."""
+    for ordinary text. A resume composer withholds `LIVE_RUN_COMMANDS`; a
+    draft offers only /parallel (the fan-out is the one directive a start
+    understands)."""
     if not text.startswith("/") or any(ch.isspace() for ch in text):
         return []
     if mode == "start":
         offered = {c: h for c, h in STEER_COMMANDS.items() if c == "/parallel"}
     elif mode == "resume":
-        offered = {c: h for c, h in STEER_COMMANDS.items() if c not in ("/compact", "/btw", "/now")}
+        offered = {c: h for c, h in STEER_COMMANDS.items() if c not in LIVE_RUN_COMMANDS}
     else:
         offered = STEER_COMMANDS
     return [(c, h) for c, h in offered.items() if c.startswith(text)]

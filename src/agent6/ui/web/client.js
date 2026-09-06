@@ -664,8 +664,8 @@ function highlightCmd(text) {
 
 // The steer directives a session composer can complete, with one-line help:
 // a verbatim mirror of agent6.directive.STEER_COMMANDS (drift-pinned by
-// tests/web/test_steer_completion.py). /compact only acts on a live session,
-// so the resume composer offers /pin and /parallel alone.
+// tests/web/test_steer_completion.py). The resume composer withholds
+// agent6.directive.LIVE_RUN_COMMANDS (pinned there too).
 const STEER_COMMANDS = [
   ['/pin', 'pin an instruction that survives compaction: /pin <text>'],
   ['/compact', 'compact the context now; /compact <focus> steers the summary'],

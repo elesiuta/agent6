@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from importlib import resources
 
-from agent6.directive import STEER_COMMANDS
+from agent6.directive import LIVE_RUN_COMMANDS, STEER_COMMANDS
 
 CLIENT_JS = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
 
@@ -19,5 +19,10 @@ def test_client_mirrors_the_steer_commands_verbatim() -> None:
 
 
 def test_compact_is_gated_on_live() -> None:
-    assert "liveNow() || (c !== '/compact' && c !== '/btw' && c !== '/now')" in CLIENT_JS
+    """The resume composer withholds exactly `LIVE_RUN_COMMANDS`: the JS spells
+    the set by hand, so it is pinned against the one owner."""
+    gate = next(line for line in CLIENT_JS.splitlines() if "liveNow() ||" in line)
+    assert gate.count("c !== '") == len(LIVE_RUN_COMMANDS)
+    for cmd in LIVE_RUN_COMMANDS:
+        assert f"c !== '{cmd}'" in gate, cmd
     assert "() => finished === false" in CLIENT_JS  # the composer's live truth feeds the gate
