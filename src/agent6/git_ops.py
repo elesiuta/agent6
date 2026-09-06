@@ -1078,9 +1078,28 @@ def chain_commit(
         env_extra=_identity_env(identity),
     ).stdout.strip()
     _run(path, "update-ref", ref, sha)
-    if also_branch:
-        _run(path, "update-ref", f"refs/heads/{also_branch}", sha)
+    _advance_run_branch(path, also_branch, sha, expected=parent)
     return sha
+
+
+def _advance_run_branch(path: Path, branch: str | None, sha: str, *, expected: str | None) -> None:
+    """Move the run's visible branch to *sha*, but only from *expected* (the
+    chain tip this commit was built on).
+
+    Compare-and-swap, like `plumb_merge`'s: a bare `update-ref` rewound
+    anything else that had moved the branch -- the operator committing on the
+    run branch the end banner leaves them sitting on, whose commit then
+    survived only in the reflog. A branch that moved keeps its own tip; the
+    chain ref is the run's record either way."""
+    if not branch:
+        return
+    ref = f"refs/heads/{branch}"
+    current = chain_tip(path, ref)
+    if current is None:
+        _run(path, "update-ref", ref, sha)  # the run's first commit creates it
+        return
+    if expected is not None and current == expected:
+        _run(path, "update-ref", ref, sha, expected)
 
 
 def chain_merge(
@@ -1129,8 +1148,7 @@ def chain_merge(
             env_extra=_identity_env(identity),
         ).stdout.strip()
     _run(path, "update-ref", ref, sha)
-    if also_branch:
-        _run(path, "update-ref", f"refs/heads/{also_branch}", sha)
+    _advance_run_branch(path, also_branch, sha, expected=ours)
     sync_worktree(path, ours, sha)
     return sha
 

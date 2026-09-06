@@ -1586,3 +1586,49 @@ def test_plumb_merge_survives_a_recorded_but_missing_worktree(tmp_path: Path) ->
     res = plumb_merge(repo, "side", "refs/agent6/r1", strategy="merge", message="Merge")
     assert not res.conflicted
     assert _rev(repo, "side") == res.merged_sha
+
+
+def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: Path) -> None:
+    """The end banner leaves the operator on the run branch, so they can commit
+    on it. A bare `update-ref` moved the branch to the chain's new tip and
+    their commit survived only in the reflog; a compare-and-swap leaves the
+    branch where they put it, and the chain ref keeps the run's record."""
+    from agent6.git_ops import chain_commit, chain_tip
+
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "a.txt").write_text("one\n", encoding="utf-8")
+    first = chain_commit(
+        tmp_path,
+        "agent6 iter 1",
+        ref="refs/agent6/t2",
+        fallback_parent=head0,
+        also_branch="agent6/t2",
+    )
+    assert first is not None and _rev(tmp_path, "refs/heads/agent6/t2") == first
+
+    # The operator commits on the run branch themselves (plumbing, so the
+    # chain's own worktree state is not the subject of this test).
+    theirs = subprocess.run(
+        ["git", "-C", str(tmp_path), "commit-tree", f"{first}^{{tree}}", "-p", first, "-m", "mine"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-ref", "refs/heads/agent6/t2", theirs], check=True
+    )
+
+    (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
+    second = chain_commit(
+        tmp_path,
+        "agent6 iter 2",
+        ref="refs/agent6/t2",
+        fallback_parent=head0,
+        also_branch="agent6/t2",
+    )
+
+    assert second is not None
+    assert chain_tip(tmp_path, "refs/agent6/t2") == second  # the chain still advances
+    # By full ref name: `agent6/t2` alone resolves to the CHAIN ref first.
+    assert _rev(tmp_path, "refs/heads/agent6/t2") == theirs, "the operator's commit was rewound"

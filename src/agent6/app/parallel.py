@@ -45,7 +45,7 @@ from agent6.app.finalize import EXIT_VERIFY_FAILED
 from agent6.app.manifest import write_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.config import Config
-from agent6.config.layer import materialize
+from agent6.config.layer import materialize, resolved_state_dir
 from agent6.directive import parse_spec
 from agent6.git_ops import (
     GitError,
@@ -63,7 +63,7 @@ from agent6.memory import merge_decisions
 from agent6.models.validate import refusal_message, validate_spec_models, warning_message
 from agent6.paths import cache_dir, repo_id, state_dir
 from agent6.sessions.ipc import request_stop, steer_answer_is_abort, worker_is_alive
-from agent6.sessions.layout import LOGS_NAME, SessionLayout, bucket_dir
+from agent6.sessions.layout import LOGS_NAME, SessionLayout, bucket_dir, session_layout
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.viewmodel import produced_result, summarize_session_dir
 from agent6.viewmodel.format import format_cost, status_label
@@ -185,6 +185,25 @@ def adopt_orphan_lane(
     return f"imported orphaned lane branch {manifest.run_branch} from {clone}"
 
 
+def _recorded_merged(origin: Path, clone: Path, tip: str) -> bool:
+    """Whether some session's manifest records *tip* as merged into a branch
+    that still holds it. The evidence `--delete-squashed` requires, read here
+    so a squash-merged lane's clone (whose commits are unreachable by design)
+    is still sweepable."""
+    state_dir = resolved_state_dir(origin)
+    for branch in list_run_branches(clone):
+        layout = session_layout(state_dir, branch.removeprefix("agent6/"))
+        if layout is None:
+            continue
+        try:
+            merged = read_manifest(layout.session_dir).merged
+        except ManifestError:
+            continue
+        if merged is not None and merged.tip == tip and branch_exists(origin, merged.into):
+            return True
+    return False
+
+
 def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
     """Delete fan-out clone dirs whose every lane branch tip already exists in
     *origin* (content-safe by commit proof, the prune --delete-squashed
@@ -216,8 +235,15 @@ def sweep_fanout_clones(origin: Path, cfg: Config) -> tuple[int, int]:
             # Reachability, not existence: a tip the origin holds only as a
             # loose object (its branch deleted, as the prune's own message
             # tells the operator to do) is one `git gc` from gone, and the
-            # clone is the last ref that reaches it.
-            if any(tip is not None and not commit_is_reachable(origin, tip) for tip in tips):
+            # clone is the last ref that reaches it. A tip a run's own manifest
+            # records as merged is proven a second way: a squash leaves the
+            # content in the base and the commits unreachable by design.
+            if any(
+                tip is not None
+                and not commit_is_reachable(origin, tip)
+                and not _recorded_merged(origin, clone, tip)
+                for tip in tips
+            ):
                 safe = False
                 break
         if safe:
