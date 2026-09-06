@@ -802,6 +802,34 @@ def test_a_signal_wake_acks_its_poke_after_the_step(tmp_path: Path) -> None:
     assert journal.take_signal() == (False, None)
 
 
+def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: Path) -> None:
+    """The record goes the way the poke's claim goes: dropped only once the
+    transition it produced is in the journal. Cleared before the append, a
+    death in that window re-armed the wait from the state and started a
+    24-hour sleep again from zero."""
+
+    journal, f = _load(tmp_path, WAITER)
+    spec = load_machine(f)
+    armed: list[PendingWait | None] = []
+    appended = journal.append
+
+    def _die_on_the_step(event: object) -> None:
+        if isinstance(event, StepEvent):
+            armed.append(journal.read_pending_wait())
+            raise KeyboardInterrupt("died between the wake and its StepEvent")
+        appended(event)  # pyright: ignore[reportArgumentType]
+
+    journal.append = _die_on_the_step  # type: ignore[method-assign]
+    with pytest.raises(KeyboardInterrupt):
+        drive(spec, journal, FakeWorld({}, wakes=[WaitWake("tick")]), live=True)
+    journal.append = appended  # type: ignore[method-assign]
+
+    # The record the crashed run armed is still there for the restart, so the
+    # wait resumes on the SAME instant instead of arming a fresh one.
+    assert armed and armed[0] is not None
+    assert journal.read_pending_wait() == armed[0]
+
+
 def test_notify_journals_event_and_fires_hook(tmp_path: Path) -> None:
     from agent6.machine.journal import MachineNotify
 

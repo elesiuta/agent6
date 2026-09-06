@@ -579,9 +579,10 @@ def _block_on_wait(
     The deadline persists BEFORE the sleep -- the same `PendingWait` the
     `--exit-on-wait` path keeps -- so a supervisor death mid-sleep resumes the
     original instant instead of re-running the full interval from a fresh
-    `now()`. Cleared once the wake is consumed: a stale wait.json would
-    suppress this state's notify on re-entry, reuse a stale wake_epoch under a
-    later `--exit-on-wait`, and pin machine_is_parked in the web UI.
+    `now()`. The driver clears it once the transition it produced is in the
+    journal: a stale wait.json would suppress this state's notify on re-entry,
+    reuse a stale wake_epoch under a later `--exit-on-wait`, and pin
+    machine_is_parked in the web UI.
     """
     pending = journal.read_pending_wait()
     if pending is None or pending.state != state_name:
@@ -591,7 +592,6 @@ def _block_on_wait(
     woke = world.sleep_until(pending.wake_epoch)
     if woke.woke_by == "stop":
         return None
-    journal.clear_pending_wait()
     return (
         woke.woke_by,
         state.on[woke.woke_by],
@@ -611,9 +611,9 @@ def _fire_persisted_wait(
     On first reaching the wait, the absolute wake instant is computed once and
     persisted so re-invocations compare against the same instant. Returns the
     `(label, goto, fact)` triple when the wait fires (a signal arrived or the
-    instant has passed), clearing the persisted record; returns `None` when
-    the wait is not yet ready, leaving the record persisted for the caller to
-    yield on.
+    instant has passed); returns `None` when the wait is not yet ready, leaving
+    the record persisted for the caller to yield on. The record is the
+    caller's to clear, once the transition it produced is in the journal.
     """
     pending = journal.read_pending_wait()
     if pending is None or pending.state != state_name:
@@ -622,14 +622,12 @@ def _fire_persisted_wait(
         journal.write_pending_wait(pending)
     signaled, payload = journal.take_signal()
     if signaled:
-        journal.clear_pending_wait()
         return (
             "signal",
             state.on["signal"],
             WaitFact(wake_epoch=pending.wake_epoch, woke_by="signal", payload=payload),
         )
     if pending.wake_epoch is not None and world.now() >= pending.wake_epoch:
-        journal.clear_pending_wait()
         return "tick", state.on["tick"], WaitFact(wake_epoch=pending.wake_epoch, woke_by="tick")
     return None
 
@@ -1081,10 +1079,14 @@ def _run_live_loop(eng: _EngineState) -> MachineResult:  # noqa: PLR0911, PLR091
                 fact=fact,
             )
         )
-        # The poke's claim is dropped only now that its wake is durable; a
-        # death anywhere earlier re-delivers it on restart.
-        if isinstance(fact, WaitFact) and fact.woke_by == "signal":
-            journal.ack_signal()
+        # The wake record and the poke's claim are dropped only now that the
+        # transition they produced is durable; a death anywhere earlier
+        # re-delivers the poke and re-reads the SAME wake instant, rather than
+        # arming a fresh interval from a new now().
+        if isinstance(fact, WaitFact):
+            journal.clear_pending_wait()
+            if fact.woke_by == "signal":
+                journal.ack_signal()
         blackboard = next_blackboard
         if isinstance(fact, AgentFact):
             spent_usd += fact.usd
