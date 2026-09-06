@@ -724,11 +724,16 @@ def test_invalid_arguments_read_as_one_line(tmp_path: Path) -> None:
     with pytest.raises(ToolError) as caught:
         d.dispatch(
             "apply_edit",
-            {"path": "f.py", "edits": [{"old_string": "", "new_string": "y\n"}]},
+            {"path": "f.py", "edits": [{"kind": "replace", "old_string": "", "new_string": "y\n"}]},
         )
-    assert str(caught.value).startswith(
-        "invalid arguments: edits.0: old_string must be non-empty for kind='replace' (to add"
+    message = str(caught.value)
+    assert message.startswith(
+        "invalid arguments: edits.0: old_string must be non-empty for kind='replace'"
     )
+    # The caller wanted to write a file; the refusal names the kind that does
+    # it. Without `create`, a model ping-pongs between replace and overwrite
+    # until the tool-error streak stops the run (seen live in `machine create`).
+    assert "kind='create'" in message
     assert "\n" not in str(caught.value)
     with pytest.raises(ToolError, match=r"^invalid arguments: edits: Field required$"):
         d.dispatch("apply_edit", {"path": "f.py"})
@@ -2111,3 +2116,30 @@ def test_apply_patch_reports_heals_on_the_wire(tmp_path: Path) -> None:
     ).to_wire()
     assert out["healed"] == ["a.py ~indent"]
     assert (tmp_path / "a.py").read_text(encoding="utf-8") == "def f():\n    a = 10\n"
+
+
+def test_an_omitted_edit_kind_follows_the_pair_it_was_sent_with(tmp_path: Path) -> None:
+    """Small models send a bare {old_string, new_string}. An empty old_string
+    can only mean "write this whole file", and defaulting it to `replace`
+    refused the natural write-a-new-file call forever: a live `machine create`
+    spent three attempts on it and stopped on the tool-error streak.
+
+    It resolves to `create`, never `overwrite`, so a model that thinks a file
+    is new still cannot clobber one that exists.
+    """
+    cfg = _config(tmp_path)
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+
+    d.dispatch("apply_edit", {"path": "new.py", "edits": [{"new_string": "x = 1\n"}]})
+    assert (tmp_path / "new.py").read_text(encoding="utf-8") == "x = 1\n"
+
+    # ... and the same call over an existing file refuses rather than clobbering
+    with pytest.raises(ToolError, match="already exists"):
+        d.dispatch("apply_edit", {"path": "new.py", "edits": [{"new_string": "y = 2\n"}]})
+    assert (tmp_path / "new.py").read_text(encoding="utf-8") == "x = 1\n"
+
+    # a non-empty old_string still means a replace
+    d.dispatch(
+        "apply_edit", {"path": "new.py", "edits": [{"old_string": "x = 1", "new_string": "z = 3"}]}
+    )
+    assert (tmp_path / "new.py").read_text(encoding="utf-8") == "z = 3\n"

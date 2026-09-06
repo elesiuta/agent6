@@ -132,14 +132,25 @@ WHOLE_FILE_KINDS = frozenset({"create", "overwrite"})
 class EditPair(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    # Default to "replace": small models routinely omit the discriminator and
-    # send a bare {old_string, new_string}, which pydantic otherwise rejects
-    # with "Field required: kind". Replace
-    # is the overwhelming-majority case; `create` must still be set explicitly
-    # and `_check_shape` enforces its empty-old_string contract.
-    kind: str = Field(default="replace", pattern="^(replace|create|overwrite)$")
+    # Omitting the discriminator is the common small-model shape, so it is
+    # resolved from the pair itself rather than rejected: an empty old_string
+    # can only mean "write this whole file", and a non-empty one can only mean
+    # a replace. An omitted kind resolves to `create`, never `overwrite`, so a
+    # model that thinks a file is new still cannot clobber one that exists.
+    # Left as "replace", the natural write-a-new-file call was refused forever:
+    # a live `machine create` spent three attempts ping-ponging between the
+    # two refusals and stopped on the tool-error streak.
+    kind: str = Field(default="", pattern="^(|replace|create|overwrite)$")
     old_string: str = ""
     new_string: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_kind(cls, data: Any) -> Any:
+        """Fill an omitted `kind` from the pair's shape (see the field)."""
+        if isinstance(data, dict) and not data.get("kind"):
+            data = {**data, "kind": "replace" if data.get("old_string") else "create"}
+        return data
 
     @model_validator(mode="after")
     def _check_shape(self) -> EditPair:
@@ -148,14 +159,18 @@ class EditPair(BaseModel):
         # model gets a clear error instead of a silent corruption.
         if self.kind == "replace" and self.old_string == "":
             raise ValueError(
-                "old_string must be non-empty for kind='replace' (to add at the end of a"
-                " file, use its last line as old_string; kind='overwrite' rewrites the file"
-                " whole)"
+                "old_string must be non-empty for kind='replace'. For a file that does not"
+                " exist yet use kind='create'; to rewrite one whole, kind='overwrite'; to"
+                " add at the end of one, use its last line as old_string"
             )
         # A whole-file kind ignores old_string; reject a non-empty value to
         # catch the common LLM mistake of pasting context into the wrong field.
         if self.kind in WHOLE_FILE_KINDS and self.old_string != "":
-            raise ValueError(f"old_string must be empty for kind={self.kind!r}")
+            raise ValueError(
+                f"old_string must be empty for kind={self.kind!r}, which writes the whole"
+                " file from new_string (kind='create' for a new file, 'overwrite' for an"
+                " existing one)"
+            )
         return self
 
 

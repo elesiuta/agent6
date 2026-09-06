@@ -49,8 +49,9 @@ def build_authoring_prompt(
     parts += [
         "## Where to write it",
         "",
-        "This workspace is yours: write the machine file and its scripts here with"
-        " `apply_edit`, one file at a time, and read them back when you need to."
+        "This workspace is yours and starts empty: write the machine file and its"
+        ' scripts here with `apply_edit`, `kind="create"` for each new file,'
+        " and read them back when you need to."
         " Write exactly ONE `<machine-name>.asm.toml` at the workspace root, plus"
         " every `scripts/...` file its `tool` states reference (and, for any script"
         " with a seam, its `scripts/<name>_test.py` companion). Call `finish_session`"
