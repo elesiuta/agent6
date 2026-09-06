@@ -223,14 +223,20 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .prompt-box .cmd .tok-str { color: var(--warn); }
 .prompt-box .cmd .tok-flag { color: var(--accent); }
 .prompt-box .cmd .tok-op { font-weight: 700; }
-.toast {
+/* One stack, so a second message never lands on top of the first. */
+#toasts {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
-  bottom: calc(120px + env(safe-area-inset-bottom)); max-width: 90vw; /* clears the docked composer */
+  bottom: calc(120px + env(safe-area-inset-bottom)); /* clears the docked composer */
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  max-width: 90vw; pointer-events: none;
+}
+.toast {
   background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
-  padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
+  padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4); pointer-events: auto;
   white-space: pre-line; /* CLI-captured messages (merge, prune) are line-shaped */
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
+.toast .t-x { background: none; border: none; color: inherit; cursor: pointer; margin-left: 10px; }
 .notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-bottom: 10px; }
 .notif-banner.warn { border-color: var(--warn); }
 .notif-banner.error { border-color: var(--err); }

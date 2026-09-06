@@ -56,3 +56,17 @@ def test_the_web_approval_box_offers_every_answer() -> None:
     body = js[start : js.index("for (const q of", start)]
     for answer in ("'yes'", "'no'", "'session'", "'session-deny'"):
         assert f"send({answer})" in body, answer
+
+
+def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
+    """Every message was one 4-second toast at one fixed position: two
+    overlapped, and a captured CLI refusal (several lines) was gone before it
+    could be read."""
+    from agent6.ui.web.page import CLIENT_JS as js
+    from agent6.ui.web.page import PAGE_HTML
+
+    start = js.index("function toast(")
+    body = js[start : js.index("\nfunction ", start + 1)]
+    assert "setTimeout" in body, "a confirmation still clears itself"
+    assert "if (bad)" in body and "t.remove()" in body, "a failure has no dismiss"
+    assert "#toasts" in PAGE_HTML, "the stack has no container style"

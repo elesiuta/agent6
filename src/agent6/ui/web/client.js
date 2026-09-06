@@ -72,7 +72,17 @@ async function postJSON(url, body) {
   if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText);
   return data;
 }
-function toast(msg, bad) { const t = el('div', 'toast' + (bad ? ' bad' : ''), msg); document.body.appendChild(t); setTimeout(() => t.remove(), 4000); }
+// Messages stack in one column. A failure carries a reason worth reading (a
+// captured CLI refusal runs several lines), so it holds until dismissed; a
+// confirmation clears itself.
+function toast(msg, bad) {
+  let host = document.getElementById('toasts');
+  if (!host) { host = el('div'); host.id = 'toasts'; document.body.appendChild(host); }
+  const t = el('div', 'toast' + (bad ? ' bad' : ''), msg);
+  if (bad) { const x = el('button', 't-x', '\u00d7'); x.onclick = () => t.remove(); t.appendChild(x); }
+  else { setTimeout(() => t.remove(), 4000); }
+  host.appendChild(t);
+}
 // Mirrors viewmodel/format.py format_cost precision (cents >= $1, else 4dp); keep in sync.
 // partial: the figure is a known lower bound (unpriced spend) -> '~' prefix,
 // and ~$0.0000 is information where a clean $0 stays terse (format_cost's rule).
