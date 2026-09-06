@@ -211,16 +211,41 @@ BASE=$(git rev-parse HEAD)
 
 # Pass the (long, special-char-laden) issue text as a single argv via Python so
 # no shell quoting can corrupt it.
+# AGENT6_SB_DEADLINE_STEER=<secs>: the deadline-steer arm. That many seconds
+# before the wall, `agent6 steer` tells the run to land its best patch now:
+# an empty patch scores 0 with certainty, a partial one might score. Unset
+# (every other arm) the driver behaves as before.
 AGENT6_SB_TIMEOUT="$TIMEOUT_S" "$CONDA_PY" - <<'PYEOF'
-import os, subprocess
+import os, subprocess, threading
 problem = open("/mnt/problem.txt", encoding="utf-8").read()
+timeout = float(os.environ.get("AGENT6_SB_TIMEOUT", "1500"))
+lead = float(os.environ.get("AGENT6_SB_DEADLINE_STEER", "0"))
+argv = ["agent6", "--config", "/root/agent6.toml", "run"]
+if lead:
+    argv += ["--session-id", "bench-leg"]  # a fixed id the steer can address
+argv.append(problem)
+proc = subprocess.Popen(argv, cwd="/testbed")
+timer = None
+if lead:
+    def _steer() -> None:
+        subprocess.run(
+            ["agent6", "steer", "bench-leg",
+             "Deadline: finish now. Land your best fix with what you already"
+             " know and call finish_session; skip any verification that will"
+             " not fit."],
+            cwd="/testbed", timeout=60, check=False,
+        )
+    timer = threading.Timer(max(timeout - lead, 1.0), _steer)
+    timer.start()
 try:
-    subprocess.run(
-        ["agent6", "--config", "/root/agent6.toml", "run", problem],
-        cwd="/testbed", timeout=float(os.environ.get("AGENT6_SB_TIMEOUT", "1500")),
-    )
+    proc.wait(timeout=timeout)
 except subprocess.TimeoutExpired:
     print("[in_container] agent6 run timed out")
+    proc.kill()
+    proc.wait()
+finally:
+    if timer is not None:
+        timer.cancel()
 PYEOF
 
 # The model's patch = changes to files TRACKED at the base commit. `git add -u`
