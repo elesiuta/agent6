@@ -328,6 +328,48 @@ def test_stop_step_that_cannot_write_the_marker_is_refused(
     assert not (runs / "stop.request").exists()
 
 
+def test_session_payload_names_the_ref_holding_the_commits(
+    server: tuple[WebServer, int], tmp_path: Path
+) -> None:
+    """The Merge button gated on `run_branch`, so a `branch_per_run = false`
+    run read "no branch to merge" while `sessions merge` landed it. The
+    payload carries `commits_ref`: the branch while it exists, else the chain
+    ref while it has a tip."""
+    import subprocess as sp
+
+    from agent6.git_ops import chain_ref_for
+
+    _srv, port = server
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    (tmp_path / "seed.txt").write_text("seed\n", encoding="utf-8")
+    sp.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    sp.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
+        cwd=tmp_path,
+        check=True,
+    )
+    _make_run(tmp_path, "run-chain", [{"type": "session.start", "mode": "run"}])
+    runs = state_dir(tmp_path) / "sessions" / "runs" / "run-chain"
+    (runs / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "run-chain",
+                "mode": "run",
+                "run_branch": None,
+                "base_branch": "main",
+            }
+        ),
+        encoding="utf-8",
+    )
+    status, body, _ = _get(port, "/api/session/run-chain")
+    assert status == 200 and "commits_ref" not in json.loads(body)  # nothing committed yet
+    chain = chain_ref_for("run-chain")
+    sp.run(["git", "update-ref", chain, "HEAD"], cwd=tmp_path, check=True)
+    status, body, _ = _get(port, "/api/session/run-chain")
+    assert status == 200 and json.loads(body)["commits_ref"] == chain
+
+
 def test_run_conversation_endpoint(server: tuple[WebServer, int], tmp_path: Path) -> None:
     _srv, port = server
     _make_run(

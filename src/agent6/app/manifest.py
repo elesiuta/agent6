@@ -34,6 +34,18 @@ from agent6.task_text import operator_task_text
 from agent6.types import session_kind
 
 
+def _policy_stamp(cfg: Config, isolation: str) -> PolicyStamp:
+    """The policy a leg runs under. `isolation` is what the run RESOLVED to,
+    not the knob: `auto` degrades, and a surface printing "auto" told the
+    operator nothing about whether the run was actually confined."""
+    return PolicyStamp(
+        run_commands=cfg.sandbox.run_commands,
+        isolation=isolation or str(cfg.sandbox.isolation),
+        network=str(cfg.sandbox.network),
+        commit_per_step=cfg.git.commit_per_step,
+    )
+
+
 def _model_brief(rm: Any) -> ModelBrief | None:
     """A `ModelBrief` for a resolved role, or None when unset."""
     if rm is None:
@@ -143,14 +155,7 @@ def write_session_manifest(
             verify_command=tuple(verify_command),
             verify_origin=verify_origin,
         ),
-        policy=PolicyStamp(
-            run_commands=cfg.sandbox.run_commands,
-            # What the run RESOLVED to, not the knob: `auto` degrades, and a
-            # surface printing "auto" told the operator nothing about whether
-            # the run was actually confined.
-            isolation=isolation or str(cfg.sandbox.isolation),
-            network=str(cfg.sandbox.network),
-        ),
+        policy=_policy_stamp(cfg, isolation),
         parent_session_id=parent_session_id,
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
@@ -204,11 +209,7 @@ def stamp_leg(session_dir: Path, cfg: Config, mode: str, isolation: str) -> None
                     driver=_model_brief(cfg.models.resolve(session_kind(mode).role)),
                     reviewer=_model_brief(cfg.models.resolve("reviewer")),
                 ),
-                "policy": PolicyStamp(
-                    run_commands=cfg.sandbox.run_commands,
-                    isolation=isolation or str(cfg.sandbox.isolation),
-                    network=str(cfg.sandbox.network),
-                ),
+                "policy": _policy_stamp(cfg, isolation),
             }
         ),
     )

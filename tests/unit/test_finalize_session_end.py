@@ -329,7 +329,8 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
         ],
     )
     layout.manifest_path.write_text(
-        json.dumps({"run_branch": "agent6/miss", "base_branch": "main"}), encoding="utf-8"
+        json.dumps({"mode": "run", "run_branch": "agent6/miss", "base_branch": "main"}),
+        encoding="utf-8",
     )
     result = SessionResult(
         completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
@@ -349,47 +350,147 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
     assert "uncommitted in the working tree" in out
 
 
-def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _seeded_repo(tmp_path: Path) -> Path:
+    import subprocess as sp
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    sp.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+    sp.run(["git", "add", "-A"], cwd=repo, check=True)
+    sp.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+    return repo
+
+
+def _end_footer(
+    tmp_path: Path,
+    repo: Path,
+    session_id: str,
+    manifest: dict[str, object],
+    capsys: pytest.CaptureFixture[str],
+) -> str:
     layout = _layout(
         tmp_path,
-        "r3",
+        session_id,
         [
-            {"type": "session.start", "session_id": "r3", "user_task": "t"},
+            {"type": "session.start", "session_id": session_id, "user_task": "t"},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    layout.manifest_path.write_text(
-        json.dumps({"run_branch": "agent6/r3", "base_branch": "main"}), encoding="utf-8"
-    )
-
-    # The checkout is still on the run branch (branch_per_run never switches back).
-    def _on_run_branch(_p: Path) -> GitStatus:
-        return GitStatus(
-            branch="agent6/r3", head_sha="x", is_clean=True, untracked_count=0, modified_count=0
-        )
-
-    monkeypatch.setattr(_finalize, "git_status", _on_run_branch)
-
-    # Being ON the branch means it exists; the footer only names it once its
-    # commits actually landed.
-    def _branch_present(_p: Path, _n: str) -> bool:
-        return True
-
-    monkeypatch.setattr(_finalize, "branch_exists", _branch_present)
+    layout.manifest_path.write_text(json.dumps({"mode": "run", **manifest}), encoding="utf-8")
     result = SessionResult(
         completed=True, reason="finish_session", summary="done", iterations=1, tool_calls=1
     )
     print_session_end(
         result,
         layout=layout,
-        cwd=tmp_path,
+        cwd=repo,
         budget=BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_percent=-1),
         console_stream=False,
         reporter=STDIO_REPORTER,
     )
-    out = capsys.readouterr().out
+    return capsys.readouterr().out
+
+
+def test_end_banner_of_a_branchless_run_names_its_chain_ref(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every footer arm was gated on a run branch, so a `branch_per_run =
+    false` run got no where-are-my-changes footer at all, merged or not,
+    while `sessions merge` and `sessions diff` work on its chain ref. The
+    footer names the chain ref the way it names a branch; a branchless run
+    whose commit never landed gets the same WARNING a branchful one does."""
+    import subprocess as sp
+
+    from agent6.git_ops import chain_ref_for
+
+    repo = _seeded_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    (repo / "work.txt").write_text("agent work\n", encoding="utf-8")
+    chain = chain_ref_for("nobranch")
+    sp.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
+    manifest: dict[str, object] = {
+        "session_id": "nobranch",
+        "run_branch": None,
+        "base_branch": "main",
+    }
+    out = _end_footer(tmp_path, repo, "nobranch", manifest, capsys)
+    assert f"changes are on {chain}" in out
+    assert "agent6 sessions merge nobranch" in out and "agent6 sessions diff nobranch" in out
+    assert "WARNING" not in out
+    # No chain either: the commit never landed, and the footer says so.
+    sp.run(["git", "update-ref", "-d", chain], cwd=repo, check=True)
+    out = _end_footer(tmp_path, repo, "nobranch2", {**manifest, "session_id": "nobranch2"}, capsys)
+    assert "WARNING: the run finished with no commit" in out
+    assert "uncommitted in the working tree" in out
+
+
+def test_end_banner_of_a_merged_branchless_run_says_merged(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The merged arm was gated on a run branch too, so a merged branchless
+    run printed no footer at all."""
+    import subprocess as sp
+
+    from agent6.git_ops import chain_ref_for
+
+    repo = _seeded_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    chain = chain_ref_for("nbmerged")
+    sp.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
+    tip = sp.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout
+    manifest: dict[str, object] = {
+        "session_id": "nbmerged",
+        "run_branch": None,
+        "base_branch": "main",
+        "merged": {"into": "main", "tip": tip.strip(), "sha": tip.strip()},
+    }
+    out = _end_footer(tmp_path, repo, "nbmerged", manifest, capsys)
+    assert "changes merged into main" in out
+    assert "sessions merge" not in out
+
+
+def test_end_banner_of_a_run_that_never_commits_by_design_is_no_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`commit_per_step = false` leaves every edit in the working tree by
+    design, and the footer read it as a failed commit ("see the run log")
+    over a branch that was never going to exist."""
+    repo = _seeded_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    (repo / "work.txt").write_text("agent work\n", encoding="utf-8")
+    manifest: dict[str, object] = {
+        "session_id": "nocommit",
+        "run_branch": "agent6/nocommit",
+        "base_branch": "main",
+        "policy": {"commit_per_step": False},
+    }
+    out = _end_footer(tmp_path, repo, "nocommit", manifest, capsys)
+    assert "WARNING" not in out and "commit failed" not in out
+    assert "commit_per_step" in out and "working tree" in out
+
+
+def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The checkout is still on the run branch (the chain never switches
+    back): the footer names the branch and how to leave it."""
+    import subprocess as sp
+
+    repo = _seeded_repo(tmp_path)
+    sp.run(["git", "switch", "-q", "-c", "agent6/r3"], cwd=repo, check=True)
+    monkeypatch.chdir(repo)
+    manifest: dict[str, object] = {
+        "session_id": "r3",
+        "run_branch": "agent6/r3",
+        "base_branch": "main",
+    }
+    out = _end_footer(tmp_path, repo, "r3", manifest, capsys)
+    assert "changes are on agent6/r3" in out
     assert "you are on agent6/r3" in out
     assert "git switch main" in out
 

@@ -129,7 +129,7 @@ Exit codes for `agent6 run` and `resume`, for scripts to branch on:
 | `2` | operator error (bad flag or config) |
 | `3` | budget exhausted |
 | `4` | finished over a red or never-run verify gate |
-| `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing stays `0`) |
+| `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_step = false`, stays `0`) |
 | `130` | interrupted |
 
 ## Plan, review, and ask

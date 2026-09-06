@@ -223,6 +223,43 @@ def test_manifest_branches_claims_merged_only_while_the_stamp_holds(tmp_path: Pa
     assert manifest_branches(d)["merged_into"] == "main"
 
 
+def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: Path) -> None:
+    """`commits_ref` is the ref a merge or diff reads: the run branch while it
+    exists, else the chain ref while it has a tip, else absent (the run
+    recorded nothing). The web Merge button gated on `run_branch`, so a
+    `branch_per_run = false` run read "no branch to merge" while
+    `sessions merge` landed it."""
+    import subprocess
+
+    from agent6.git_ops import chain_ref_for
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    (repo / "a.txt").write_text("x", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "a.txt"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"],
+        check=True,
+    )
+    d = tmp_path / "s"
+    d.mkdir()
+    (d / "manifest.json").write_text(
+        json.dumps({"session_id": "x", "run_branch": None, "base_branch": "main"}), encoding="utf-8"
+    )
+    assert "commits_ref" not in manifest_branches(d, repo=repo)
+    chain = chain_ref_for("x")
+    subprocess.run(["git", "-C", str(repo), "update-ref", chain, "HEAD"], check=True)
+    assert manifest_branches(d, repo=repo)["commits_ref"] == chain
+    (d / "manifest.json").write_text(
+        json.dumps({"session_id": "x", "run_branch": "agent6/x", "base_branch": "main"}),
+        encoding="utf-8",
+    )
+    assert manifest_branches(d, repo=repo)["commits_ref"] == chain  # the branch does not exist
+    subprocess.run(["git", "-C", str(repo), "branch", "agent6/x"], check=True)
+    assert manifest_branches(d, repo=repo)["commits_ref"] == "agent6/x"
+
+
 def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: Path) -> None:
     """The manifest names the run branch at run start; git creates it at the
     first commit. A run stopped before one (or parked before starting) had a

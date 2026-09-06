@@ -377,16 +377,17 @@ function paintRun(cards, s) {
     cards._rm_btn.disabled = !isDead;
     cards._rm_btn.title = isDead ? "delete this session's history" : 'the session is still live; stop or let it finish first';
   }
-  // Merge needs a finished run with an unmerged branch: a live run (the server
-  // refuses one), an ask / branch_per_run=false run (no branch), or an already-
-  // merged branch can't be merged.
+  // Merge needs a finished run with unmerged commits: a live run (the server
+  // refuses one), a run that recorded none (an ask, or no commit landed), or
+  // already-merged work can't be merged. commits_ref is the run branch while
+  // it exists, else the chain ref a branch_per_run=false run commits to.
   cards._run_branch = s.run_branch || '';
   if (cards._merge_btn) {
-    cards._merge_btn.disabled = !notLive(s) || !s.run_branch || !!s.merged_into;
+    cards._merge_btn.disabled = !notLive(s) || !s.commits_ref || !!s.merged_into;
     cards._merge_btn.title = !notLive(s) ? 'the session is still live; stop or let it finish first'
       : s.merged_into ? 'already merged into ' + s.merged_into
-      : s.run_branch ? 'merge ' + s.run_branch + (s.base_branch ? ' into ' + s.base_branch : '')
-      : 'this session has no branch to merge';
+      : s.commits_ref ? 'merge ' + s.commits_ref + (s.base_branch ? ' into ' + s.base_branch : '')
+      : 'this session recorded no commits to merge';
   }
   if (cards._composer) cards._composer.setState(s);
   // header

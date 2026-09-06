@@ -41,6 +41,7 @@ from agent6.sessions.manifest import ManifestError, SessionManifest, read_manife
 from agent6.verify_infer import line_to_argv
 from agent6.viewmodel import scan_session_log, summarize_session_dir, tail_events, worker_models
 from agent6.viewmodel.format import format_usd
+from agent6.viewmodel.snapshot import commits_ref
 from agent6.workflows.loop import SessionResult
 
 # Distinct exit code for a budget-exhausted run so automation can tell "raise
@@ -53,10 +54,11 @@ _EXIT_BUDGET_EXHAUSTED = 3
 # the same condition returns a finish to the model first. Public: the parallel
 # fan-out exits with it when gates ran and no lane passed.
 EXIT_VERIFY_FAILED = 4
-# The agent finished and the gate (if any) was green, but the promised run
-# branch never came into existence and the edits sit uncommitted
-# (`stranded_edits`): the deliverable a script would collect on 0 is not
-# there. A run that changed nothing stays 0.
+# The agent finished and the gate (if any) was green, but no commit landed
+# (neither the run branch nor the chain ref holds one) and the edits sit
+# uncommitted (`stranded_edits`): the deliverable a script would collect on 0
+# is not there. A run that changed nothing, or one configured never to commit,
+# stays 0.
 EXIT_NO_COMMIT_LANDED = 5
 
 
@@ -69,9 +71,9 @@ def session_exit_code(result: SessionResult, *, stranded: bool = False) -> int:
 
     4 covers red AND unverified: the tree is not green, and that is what 4
     means -- exiting 0 on "no verify ran" would let a worker pass by never
-    running the gate. 5 is the same principle for the deliverable: the
-    promised branch never materialized and the edits sit uncommitted, so 0
-    would tell a script the work landed. A red gate outranks 5 (the gate is
+    running the gate. 5 is the same principle for the deliverable: no commit
+    landed and the edits sit uncommitted, so 0 would tell a script the work
+    landed. A red gate outranks 5 (the gate is
     the primary signal; the footer still says both). WHOSE failure it is
     shows in the word and the reason, not here; a script reading 0 would
     take it as passing."""
@@ -85,21 +87,27 @@ def session_exit_code(result: SessionResult, *, stranded: bool = False) -> int:
 
 
 def stranded_edits(result: SessionResult, layout: SessionLayout, cwd: Path) -> bool:
-    """A completed run whose promised branch never came into existence while
-    edits sit uncommitted in the working tree. Exit code 5 and the end
-    banner's WARNING read this one predicate, so the machine surface and the
-    human surface cannot disagree."""
+    """A completed run whose commit never landed while edits sit uncommitted
+    in the working tree: neither its run branch nor its chain ref holds a
+    commit (`commits_ref`). A run with no chain to commit to (a plan, an ask,
+    `[git].control = "model"`) or one configured never to commit
+    (`commit_per_step = false`) leaves the tree as it is by design. Exit code
+    5 and the end banner's WARNING read this one predicate, so the machine
+    surface and the human surface cannot disagree."""
     if not result.completed:
         return False
-    run_branch = ""
-    merged = False
-    with contextlib.suppress(ManifestError):
+    try:
         manifest = read_manifest(layout.session_dir)
-        run_branch = manifest.run_branch or ""
-        merged = manifest.merged is not None and merge_stamp_holds(
-            cwd, manifest.session_id, run_branch, manifest.merged.tip
-        )
-    if not run_branch or merged or branch_exists(cwd, run_branch):
+    except ManifestError:
+        return False
+    if manifest.mode != "run" or manifest.git_control == "model":
+        return False
+    if not manifest.policy.commit_per_step:
+        return False
+    merged = manifest.merged is not None and merge_stamp_holds(
+        cwd, manifest.session_id, manifest.run_branch or "", manifest.merged.tip
+    )
+    if merged or commits_ref(manifest, cwd):
         return False
     dirty = False
     with contextlib.suppress(GitError):
@@ -294,9 +302,11 @@ def print_session_end(
 def _print_run_branch_footer(
     result: SessionResult, *, layout: SessionLayout, cwd: Path, reporter: Reporter
 ) -> None:
-    """The where-are-my-changes footer: merged, on the run branch, uncommitted,
-    or a resume hint. Every claim is checked against git reality -- merge/diff
-    are only offered for a branch that actually exists."""
+    """The where-are-my-changes footer: model-controlled git, merged, on the
+    ref holding the commits (`commits_ref`: the run branch, else the chain
+    ref), nothing committed by design (`commit_per_step = false`), no commit
+    at all, or a resume hint. Every claim is checked against git reality:
+    merge and diff are offered only for a ref that holds commits."""
     run_branch = ""
     base_branch = ""
     merged_into = ""
@@ -323,13 +333,15 @@ def _print_run_branch_footer(
             f'\ngit was model-controlled ([git].control = "model"); its work is on {where}'
         )
         reporter.out("  inspect it with plain git (log/diff); sessions merge does not apply")
-    elif result.completed and run_branch and merged_into:
+    elif result.completed and merged_into:
         # auto_merge already merged this branch into the base (and auto_prune may
         # have deleted it); don't tell the operator to merge it again.
         reporter.out(f"\nchanges merged into {merged_into}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
-    elif result.completed and run_branch and branch_exists(cwd, run_branch):
-        reporter.out(f"\nchanges are on {run_branch}")
+    elif result.completed and manifest is not None and (where := commits_ref(manifest, cwd)):
+        # The run branch, or the chain ref a branchless run commits to: merge
+        # and diff read either.
+        reporter.out(f"\nchanges are on {where}")
         reporter.out(f"  merge with:  agent6 sessions merge {layout.session_id}")
         reporter.out(f"  inspect:     agent6 sessions diff {layout.session_id}")
         # The chain never switches branches, but an operator who checked the
@@ -338,36 +350,51 @@ def _print_run_branch_footer(
         current = ""
         with contextlib.suppress(GitError):
             current = git_status(cwd).branch
-        if current == run_branch and base_branch and base_branch != run_branch:
+        if run_branch and current == run_branch and base_branch and base_branch != run_branch:
             reporter.out(f"  you are on {run_branch}; return with: git switch {base_branch}")
-    elif result.completed and run_branch:
-        # branch_per_run promised agent6/<id> but no commit ever reached it (an
-        # update-ref failure the loop's best-effort commit absorbed, or nothing
-        # to commit). Stranded edits are a real failure (and exit code 5, via
-        # the same predicate); a clean tree means the run recorded nothing. A
-        # tree git cannot READ gets the honest unknown, never a claim.
-        try:
-            exclude = read_untracked_at_start(layout.session_dir)
-            tree_clean: bool | None = git_status(cwd, exclude=exclude).is_clean
-        except GitError as exc:
-            tree_clean = None
-            reporter.out(
-                f"\ncould not check the working tree (git failed: {exc}); inspect it manually."
-            )
-        if tree_clean is not None and stranded_edits(result, layout, cwd):
-            reporter.out(
-                f"\nWARNING: the run finished with no commit on {run_branch},"
-                " so the branch was never created."
-            )
-            reporter.out(
-                "  Edits are left uncommitted in the working tree (the commit failed;"
-                " see the run log)."
-            )
-            reporter.out(f"  retry after fixing the cause:  agent6 resume {layout.session_id}")
-        elif tree_clean is True:
-            reporter.out("\nno changes were committed")
+    elif result.completed and manifest is not None and not manifest.policy.commit_per_step:
+        reporter.out(
+            "\nnothing was committed ([git].commit_per_step = false): the run's edits are in"
+            " the working tree"
+        )
+    elif result.completed:
+        _print_no_commit_footer(
+            result, layout=layout, cwd=cwd, run_branch=run_branch, reporter=reporter
+        )
     elif not result.completed:
         reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
+
+
+def _print_no_commit_footer(
+    result: SessionResult,
+    *,
+    layout: SessionLayout,
+    cwd: Path,
+    run_branch: str,
+    reporter: Reporter,
+) -> None:
+    """No commit ever reached the promised branch, or the chain of a
+    branchless run (an update-ref failure the loop's best-effort commit
+    absorbed, or nothing to commit). Stranded edits are a real failure (and
+    exit code 5, via the same predicate); a clean tree means the run recorded
+    nothing. A tree git cannot READ gets the honest unknown, never a claim."""
+    try:
+        exclude = read_untracked_at_start(layout.session_dir)
+        tree_clean: bool | None = git_status(cwd, exclude=exclude).is_clean
+    except GitError as exc:
+        tree_clean = None
+        reporter.out(
+            f"\ncould not check the working tree (git failed: {exc}); inspect it manually."
+        )
+    if tree_clean is not None and stranded_edits(result, layout, cwd):
+        where = f" on {run_branch}, so the branch was never created" if run_branch else ""
+        reporter.out(f"\nWARNING: the run finished with no commit{where}.")
+        reporter.out(
+            "  Edits are left uncommitted in the working tree (the commit failed; see the run log)."
+        )
+        reporter.out(f"  retry after fixing the cause:  agent6 resume {layout.session_id}")
+    elif tree_clean is True:
+        reporter.out("\nno changes were committed")
 
 
 def _print_run_total_across_legs(layout: SessionLayout, *, reporter: Reporter) -> None:

@@ -23,7 +23,6 @@ from agent6.git_ops import (
     chain_tip,
     delete_ref,
     git_hardening_flags,
-    is_ancestor,
     list_run_commits,
     run_branch_for,
     run_branch_tips,
@@ -71,6 +70,7 @@ from agent6.viewmodel.format import (
     winner_id,
 )
 from agent6.viewmodel.listing import ListingRow, nested_rows, row_json
+from agent6.viewmodel.snapshot import commits_ref
 
 
 def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
@@ -267,23 +267,14 @@ class _CommitsRef:
 
 
 def _commits_ref(cwd: Path, manifest: SessionManifest) -> _CommitsRef:
-    """The one owner of the ref fallback: the visible run branch while it still
-    covers the run's chain, else the chain ref itself (the chain is created
-    lazily by the first commit, so a missing ref means the run recorded
-    nothing).
-
-    The chain is the record and the branch is a view of it: a commit of the
-    operator's on the run branch takes it off the chain, and the run's later
-    commits then land on the chain alone, so the branch would show a frozen
-    prefix of the run."""
-    chain = chain_ref_for(manifest.session_id)
-    chain_head = chain_tip(cwd, chain)
-    if manifest.run_branch and (
-        chain_head is None or is_ancestor(cwd, chain_head, manifest.run_branch)
-    ):
+    """`commits_ref` (an existing run branch while it covers the chain, else
+    the chain ref), else the manifest's branch NAME while no chain exists (the
+    verbs read its absence themselves: pruned, never cut, or a lane's branch
+    still in its clone), else the reason the run has no commits."""
+    if ref := commits_ref(manifest, cwd):
+        return _CommitsRef(head_ref=ref, reason="")
+    if manifest.run_branch and chain_tip(cwd, chain_ref_for(manifest.session_id)) is None:
         return _CommitsRef(head_ref=manifest.run_branch, reason="")
-    if chain_head is not None:
-        return _CommitsRef(head_ref=chain, reason="")
     if manifest.parked_task:
         # A parked run never started, so `base..HEAD` is whatever the run that
         # HELD the checkout committed -- the one it was parked behind.

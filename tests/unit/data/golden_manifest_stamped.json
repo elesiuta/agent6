@@ -27,7 +27,8 @@
   "policy": {
     "run_commands": "",
     "isolation": "",
-    "network": ""
+    "network": "",
+    "commit_per_step": true
   },
   "parked_task": "",
   "parked_reason": "",

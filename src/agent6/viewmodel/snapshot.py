@@ -10,7 +10,7 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
-from agent6.git_ops import branch_exists, merge_stamp_holds
+from agent6.git_ops import branch_exists, chain_ref_for, chain_tip, is_ancestor, merge_stamp_holds
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME
@@ -38,13 +38,32 @@ def existing_run_branch(manifest: SessionManifest, repo: Path | None) -> str:
     return name
 
 
+def commits_ref(manifest: SessionManifest, repo: Path) -> str:
+    """The ref holding the run's commits, what merge, diff and the footer
+    read: the run branch while it exists and still covers the chain, else the
+    chain ref while it has a tip, else "" (the run recorded nothing; the chain
+    is created by its first commit).
+
+    The chain is the record and the branch is a view of it: a commit of the
+    operator's on the run branch takes it off the chain, and the run's later
+    commits then land on the chain alone, so the branch would show a frozen
+    prefix of the run."""
+    chain = chain_ref_for(manifest.session_id)
+    head = chain_tip(repo, chain)
+    branch = existing_run_branch(manifest, repo)
+    if branch and (head is None or is_ancestor(repo, head, branch)):
+        return branch
+    return chain if head is not None else ""
+
+
 def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[str, str]:
     """Branch facts from the run's manifest (run_branch / base_branch /
-    merged_into, and `branch_line`, their one wording) for the run header.
+    merged_into, and `branch_line`, their one wording) plus `commits_ref`,
+    the ref a merge or diff reads, for the run header.
     The event fold does not carry them, and an operator needs to SEE where a
     run's work lives and where Merge lands (consecutive spawns chain branches
-    invisibly otherwise). Empty for a run with no manifest (or branch_per_run
-    off). With *repo*, `run_branch` is the branch only while it exists
+    invisibly otherwise). Empty for a run with no manifest. With *repo*,
+    `run_branch` is the branch only while it exists
     (`existing_run_branch`) and `merged_into` is claimed only while the merge
     stamp still describes the branch (a resumed run commits past its stamp;
     the footer and `sessions show` apply the same check)."""
@@ -58,6 +77,8 @@ def manifest_branches(session_dir: Path, *, repo: Path | None = None) -> dict[st
         out["run_branch"] = run_branch
     if manifest.base_branch:
         out["base_branch"] = manifest.base_branch
+    if repo is not None and (ref := commits_ref(manifest, repo)):
+        out["commits_ref"] = ref
     stamp = manifest.merged
     merged_into = ""
     if stamp and stamp.into:

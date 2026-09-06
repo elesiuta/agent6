@@ -456,6 +456,7 @@ def test_a_leg_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> N
         {
             "models": {"worker": {"provider": "anthropic", "model": "new-model"}},
             "sandbox": {"run_commands": "ask"},
+            "git": {"commit_per_step": False},
         }
     )
 
@@ -464,4 +465,5 @@ def test_a_leg_restamps_the_models_and_policy_it_runs_under(tmp_path: Path) -> N
     m = read_manifest(tmp_path)
     assert m.policy.isolation == "strict"
     assert m.policy.run_commands == "ask"
+    assert m.policy.commit_per_step is False
     assert m.models.driver is not None and m.models.driver.model == "new-model"

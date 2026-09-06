@@ -68,6 +68,10 @@ class PolicyStamp(BaseModel):
     run_commands: str = ""
     isolation: str = ""
     network: str = ""
+    # [git].commit_per_step for the live leg (`stamp_leg` re-stamps it): False
+    # means nothing commits by design, so a dirty tree at the end is the
+    # deliverable, never a stranded commit.
+    commit_per_step: bool = True
 
 
 class WorkflowStamp(BaseModel):
