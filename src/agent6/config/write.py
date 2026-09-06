@@ -207,7 +207,7 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
     return f"{key}: {' / '.join(seen)}"
 
 
-def unknown_key_error(key: str) -> str:
+def unknown_key_error(key: str, repo_root: Path) -> str:
     """A human message for a key the schema forbids, with a did-you-mean.
 
     The pool is usually the SCHEMA defaults: this runs after the unknown key
@@ -215,7 +215,7 @@ def unknown_key_error(key: str) -> str:
     branch (which would add real provider tables) only survives when a higher
     layer masks the write."""
     try:
-        pool = leaf_keys(load_effective(Path.cwd(), None))
+        pool = leaf_keys(load_effective(repo_root, None))
     except ConfigError:
         pool = sorted(flatten_leaves(Config().model_dump(mode="python")))
     close = difflib.get_close_matches(key, pool, n=2)
@@ -240,7 +240,7 @@ def _section_leaves(doc: dict[str, Any], key: str) -> dict[str, Any]:
 
 
 def written_value_error(
-    key: str, value: object, *, section: dict[str, Any] | None = None
+    key: str, value: object, *, repo_root: Path, section: dict[str, Any] | None = None
 ) -> str | None:
     """Validate the just-written `key = value` against the Config model on its
     own (a minimal dict, defaults for the rest), independent of the layer merge.
@@ -263,7 +263,9 @@ def written_value_error(
         # (_apply_preset), so the Config schema forbids the table itself; a
         # leaf under a preset is a Config leaf and validates as one, since
         # the merged re-validation sees it only once that preset is selected.
-        return written_value_error(".".join(parts[2:]), value) if len(parts) > 2 else None
+        if len(parts) > 2:
+            return written_value_error(".".join(parts[2:]), value, repo_root=repo_root)
+        return None
     if parts[0] == "providers" and len(parts) == 3:
         return provider_field_error(key, parts[2], value)
     nested: dict[str, object] = {}
@@ -277,7 +279,7 @@ def written_value_error(
         Config.model_validate(nested)
     except ValidationError as exc:
         for err in exc.errors():
-            message = _error_about(err, key, value)
+            message = _error_about(err, key, value, repo_root)
             if message is not None:
                 return message
     except ConfigError as exc:
@@ -285,7 +287,7 @@ def written_value_error(
     return None
 
 
-def _error_about(err: ErrorDetails, key: str, value: object) -> str | None:
+def _error_about(err: ErrorDetails, key: str, value: object, repo_root: Path) -> str | None:
     """One validation error as a message about *key*, or None when it is about
     something else in the config."""
     loc = ".".join(str(x) for x in err["loc"])
@@ -293,7 +295,7 @@ def _error_about(err: ErrorDetails, key: str, value: object) -> str | None:
         # An unknown top-level section errors at the SECTION (a parent loc),
         # not the leaf; both deserve the same friendly message, not
         # pydantic-speak or the merged-layer dump.
-        return unknown_key_error(key)
+        return unknown_key_error(key, repo_root)
     if err["type"] == "value_error" and "." not in loc and key.startswith(loc + "."):
         # A rule spanning two keys of one section is a model_validator, and
         # pydantic reports those at the SECTION. Only a TOP-LEVEL one: the
@@ -354,7 +356,7 @@ def revalidate_write(
         return keep_or_rollback(target, prior, str(exc), held=held)
     for wkey, wvalue in written:
         section = _section_leaves(doc, wkey)
-        value_err = written_value_error(wkey, wvalue, section=section)
+        value_err = written_value_error(wkey, wvalue, repo_root=repo_root, section=section)
         if value_err is None:
             continue
         # The section context is the file as it now stands, so a rule spanning
@@ -363,7 +365,7 @@ def revalidate_write(
         # fault. The value on its own settles whose fault it is: bad alone, it
         # is this edit's; fine alone, the merged check below decides, and its
         # "broken before this edit" rule keeps the write.
-        if written_value_error(wkey, wvalue) is not None:
+        if written_value_error(wkey, wvalue, repo_root=repo_root) is not None:
             return keep_or_rollback(target, prior, value_err, held=held)
     err = merged_config_error(repo_root)
     if err is None:

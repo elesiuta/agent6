@@ -262,26 +262,26 @@ def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: Path)
     assert gpath.read_text(encoding="utf-8") == before  # the masked bad base_url rolled back
 
 
-def test_written_value_error_catches_an_invalid_container_element() -> None:
+def test_written_value_error_catches_an_invalid_container_element(tmp_path: Path) -> None:
     """A container's per-element error sits UNDER the key
     (`sandbox.fetch_hosts.0`), not at it: an error anywhere inside the written
     value is the written value's own, else a masked bad list lands and explodes
     only once the mask is gone."""
     from agent6.config.write import written_value_error
 
-    assert written_value_error("sandbox.fetch_hosts", [5]) is not None
-    assert written_value_error("providers.x.token_command", [1]) is not None
-    assert written_value_error("sandbox.fetch_hosts", ["ok.example"]) is None
-    assert written_value_error("providers.x.token_command", ["gcloud"]) is None
+    assert written_value_error("sandbox.fetch_hosts", [5], repo_root=tmp_path) is not None
+    assert written_value_error("providers.x.token_command", [1], repo_root=tmp_path) is not None
+    assert written_value_error("sandbox.fetch_hosts", ["ok.example"], repo_root=tmp_path) is None
+    assert written_value_error("providers.x.token_command", ["gcloud"], repo_root=tmp_path) is None
 
 
-def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one() -> None:
+def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one(tmp_path: Path) -> None:
     """`config set workflow.verify_command "python -m pytest"` answered with
     pydantic's "Input should be a valid tuple", which names neither the array
     form nor `config add`."""
     from agent6.config.write import written_value_error
 
-    err = written_value_error("workflow.verify_command", "python -m pytest")
+    err = written_value_error("workflow.verify_command", "python -m pytest", repo_root=tmp_path)
     assert err is not None
     assert "expected a list" in err
     assert "config add workflow.verify_command" in err
@@ -371,7 +371,7 @@ def test_a_write_that_breaks_the_toml_is_rolled_back(
     assert (gdir / "agent6" / "config.toml").read_text(encoding="utf-8") == before
 
 
-def test_written_value_error_catches_a_section_wide_rule() -> None:
+def test_written_value_error_catches_a_section_wide_rule(tmp_path: Path) -> None:
     """A rule spanning two keys is a model_validator, and pydantic reports it at
     the SECTION -- a PARENT of the written key. Accepting a parent loc only for
     extra_forbidden let every such rule through: `config set
@@ -389,9 +389,14 @@ def test_written_value_error_catches_a_section_wide_rule() -> None:
         ("git.auto_stash_pop", True),  # needs auto_stash
         ("web.host", "0.0.0.0"),  # non-loopback needs the opt-in
     ):
-        assert written_value_error(key, value) is not None, f"{key} slipped through"
+        assert written_value_error(key, value, repo_root=tmp_path) is not None, (
+            f"{key} slipped through"
+        )
     # A provider filled in over several sets still validates field by field.
-    assert written_value_error("providers.x.base_url", "https://api.example") is None
+    assert (
+        written_value_error("providers.x.base_url", "https://api.example", repo_root=tmp_path)
+        is None
+    )
 
 
 def test_set_config_table_rejects_a_masked_invalid_leaf(repo: Path) -> None:
@@ -960,3 +965,21 @@ def test_provider_members_are_derived_from_the_union() -> None:
     declared = get_args(get_args(ProviderEntry)[0])
     assert set(PROVIDER_MEMBERS) == set(declared)
     assert len(PROVIDER_MEMBERS) == len(declared) >= 2
+
+
+def test_the_unknown_key_hint_reads_the_repo_root_not_the_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The did-you-mean pool comes from the root the write chain holds, not
+    the process cwd: a TUI or web write names a repo the cwd knows nothing
+    about."""
+    from agent6.config.write import unknown_key_error
+
+    repo, elsewhere = tmp_path / "repo", tmp_path / "elsewhere"
+    repo.mkdir()
+    elsewhere.mkdir()
+    rcfg = repo_config_path(repo)
+    rcfg.parent.mkdir(parents=True, exist_ok=True)
+    rcfg.write_text('[mcp.servers.notes]\ncommand = ["notes-mcp"]\n', encoding="utf-8")
+    monkeypatch.chdir(elsewhere)
+    assert "'mcp.servers.notes.command'" in unknown_key_error("mcp.servers.notes.comand", repo)

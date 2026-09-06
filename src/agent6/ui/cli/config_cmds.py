@@ -438,9 +438,9 @@ def _schema_says_not_a_list(key: str) -> bool:
         return False
     leaf = effective_leaf(eff, key)
     # List leaves surface as list or tuple depending on the field's type. A
-    # None effective value is an UNSET optional field (e.g. the list-valued
-    # providers.*.token_command, default None); it doesn't prove the leaf is a
-    # scalar, so fall through and let revalidation reject a genuine scalar.
+    # None effective value is an unset leaf (an optional scalar, or a preset
+    # leaf no layer sets); it doesn't prove the leaf is a scalar, so fall
+    # through and let revalidation reject a genuine scalar.
     return leaf is not None and leaf[0] is not None and not isinstance(leaf[0], (list, tuple))
 
 

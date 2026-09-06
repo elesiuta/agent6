@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
 
-from agent6.config._base import MODEL_CONFIG
+from agent6.config._base import MODEL_CONFIG, Argv
 from agent6.config._sandbox import is_cleartext_url, is_loopback_url
 
 ApiFormat = Literal["anthropic", "openai", "chatgpt", "claude_code"]
@@ -153,8 +153,8 @@ class _ProviderBase(BaseModel):
             "a key `agent6 connect` stored, or an unauthenticated local endpoint."
         ),
     )
-    token_command: list[str] | None = Field(
-        default=None,
+    token_command: Argv = Field(
+        default=(),
         description=(
             "A command (argv) that prints a short-lived bearer token to stdout, re-run when "
             "`token_command_ttl_s` expires and once after a `401` or `403`. Wins over "
@@ -226,13 +226,6 @@ class _ProviderBase(BaseModel):
     def _check_base_url(cls, v: str) -> str:
         if v:
             validate_base_url(v)
-        return v
-
-    @field_validator("token_command")
-    @classmethod
-    def _check_token_command(cls, v: list[str] | None) -> list[str] | None:
-        if v is not None and (not v or any(not arg.strip() for arg in v)):
-            raise ValueError("token_command must be a non-empty argv of non-empty strings")
         return v
 
     @field_validator("extra_body")

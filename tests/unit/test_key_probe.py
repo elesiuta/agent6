@@ -108,7 +108,7 @@ def test_probe_unsupported_deployment_skips_network(monkeypatch: pytest.MonkeyPa
         api_format="anthropic",
         deployment="vertex",
         base_url="https://example.com",
-        token_command=["true"],
+        token_command=("true",),
     )
     r = probe_provider_key(entry, "tok")
     assert r.status == "unsupported"

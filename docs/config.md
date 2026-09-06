@@ -57,7 +57,7 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `base_url` | per (format, deployment) | The endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `vertex` and `azure`. Its host is the only network destination the agent dials for this provider. |
 | `auth_style` | per (format, deployment) | How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local endpoint). `agent6 connect` sets it. |
 | `api_key_env` | none | The environment variable holding the API key; it wins over `secrets.toml`. Unset for a key `agent6 connect` stored, or an unauthenticated local endpoint. |
-| `token_command` | none | A command (argv) that prints a short-lived bearer token to stdout, re-run when `token_command_ttl_s` expires and once after a `401` or `403`. Wins over `api_key_env`. |
+| `token_command` | `[]` | A command (argv) that prints a short-lived bearer token to stdout, re-run when `token_command_ttl_s` expires and once after a `401` or `403`. Wins over `api_key_env`. |
 | `token_command_ttl_s` | `300.0` | Seconds a `token_command` token is reused before the command runs again. |
 | `extra_headers` | `{}` | Extra HTTP headers on every request to this provider. Never a secret: the config file is not `0600`. |
 | `extra_body` | `{}` | Provider-specific JSON merged last into every request body, so tuning keys (`max_tokens`, `temperature`) win; the structural keys agent6 owns (messages, model, stream, tools, tool choice, response shape) are filtered out. Values must be JSON-shaped (a TOML date or time is refused). OpenRouter's routing options go here. |

@@ -745,7 +745,7 @@ def test_token_command_parses(tmp_path: Path) -> None:
     )
     cfg = load_config(_write(tmp_path, body))
     entry = cfg.providers["gw"]
-    assert entry.token_command == ["mint-token", "--json"]  # type: ignore[union-attr]
+    assert entry.token_command == ("mint-token", "--json")  # type: ignore[union-attr]
     assert entry.token_command_ttl_s == 60.0  # type: ignore[union-attr]
 
 
@@ -757,8 +757,14 @@ def test_token_command_ttl_defaults_to_300(tmp_path: Path) -> None:
     assert cfg.providers["gw"].token_command_ttl_s == 300.0  # type: ignore[union-attr]
 
 
-def test_token_command_rejects_empty_list(tmp_path: Path) -> None:
+def test_token_command_empty_reads_as_unset_and_a_blank_element_refuses(tmp_path: Path) -> None:
+    """`token_command` is an `Argv` leaf like every other command argv: an
+    empty list means unset (the read sites test truthiness), and an empty
+    ELEMENT is always a typo."""
     body = _with_openai_provider('[providers.gw]\napi_format = "openai"\ntoken_command = []')
+    entry = load_config(_write(tmp_path, body)).providers["gw"]
+    assert entry.token_command == ()  # type: ignore[union-attr]
+    body = _with_openai_provider('[providers.gw]\napi_format = "openai"\ntoken_command = [""]')
     with pytest.raises(ConfigError, match="token_command"):
         load_config(_write(tmp_path, body))
 
