@@ -11,11 +11,12 @@ from __future__ import annotations
 import io
 import json
 import os
+import select
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -509,6 +510,32 @@ def test_failures_map_to_provider_errors(tmp_path: Path) -> None:
     with pytest.raises(ProviderError, match="exited 3: boom") as exc:
         _provider(binary).call(system="s", messages=USER0, tools=None)
     assert not exc.value.fatal
+
+
+def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stderr drain is a thread. On a loaded box it can still be scheduled
+    out when stdout closes and the exit status lands, and the error then read
+    `no stderr` for a message the child had already written. The exit path
+    waits for the drain to reach EOF first."""
+    import agent6.providers.claude_code as module
+
+    binary, _ = _install(
+        tmp_path, {"die_in_round": 1, "die_message": "boom late", "turns": [[_round(text="x")]]}
+    )
+    real = module._drain_stderr  # pyright: ignore[reportPrivateUsage]
+
+    def lagging(pipe: IO[bytes], keep: list[bytes]) -> None:
+        # Scheduled out AFTER the child has written: wait for its stderr to
+        # become readable, then sleep well inside the exit path's join cap.
+        select.select([pipe], [], [], 5.0)
+        time.sleep(0.2)
+        real(pipe, keep)
+
+    monkeypatch.setattr(module, "_drain_stderr", lagging)
+    with pytest.raises(ProviderError, match="exited 3: boom late"):
+        _provider(binary).call(system="s", messages=USER0, tools=None)
 
     _rescenario(
         tmp_path,

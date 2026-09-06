@@ -186,6 +186,9 @@ class _Session:
     system: str
     tools: list[ToolDefinition]
     lines: queue.Queue[dict[str, Any] | None]
+    # Fills `stderr_tail`; joined before an exit is reported, so the tail holds
+    # what the child wrote before dying.
+    stderr_drain: threading.Thread
     # A line read past a round's end, returned by the next read.
     pushback: list[dict[str, Any] | None] = field(default_factory=list)
     # Ends the child once: on close(), or at interpreter exit for a caller
@@ -554,19 +557,24 @@ class ClaudeCodeProvider:
         except OSError as exc:
             shutil.rmtree(private_dir, ignore_errors=True)
             raise ProviderError(f"cannot start {self.binary!r}: {exc}") from exc
+        assert proc.stderr is not None
+        tail: list[bytes] = []
+        drain = threading.Thread(
+            target=_drain_stderr, args=(proc.stderr, tail), name="agent6-claude-stderr", daemon=True
+        )
         s = _Session(
-            proc=proc, private_dir=private_dir, system=system, tools=tools, lines=queue.Queue()
+            proc=proc,
+            private_dir=private_dir,
+            system=system,
+            tools=tools,
+            lines=queue.Queue(),
+            stderr_drain=drain,
+            stderr_tail=tail,
         )
         threading.Thread(
             target=_read_stdout, args=(s,), name="agent6-claude-stdout", daemon=True
         ).start()
-        assert proc.stderr is not None
-        threading.Thread(
-            target=_drain_stderr,
-            args=(proc.stderr, s.stderr_tail),
-            name="agent6-claude-stderr",
-            daemon=True,
-        ).start()
+        drain.start()
         try:
             _write(
                 s,
@@ -737,6 +745,9 @@ class ClaudeCodeProvider:
                     rc: int | None = s.proc.wait(timeout=_KILL_GRACE_S)
                 except subprocess.TimeoutExpired:
                     rc = None
+                # The drain reaches EOF once the child is gone; a tail read
+                # before it gets there misses the child's last words.
+                s.stderr_drain.join(timeout=_KILL_GRACE_S)
                 tail = self._scrub(s, _stderr_tail(s)) or "no stderr"
                 raise ProviderError(f"claude exited {rc}: {tail}")
             if line.get("type") == "_agent6_error":
