@@ -7,7 +7,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import shlex
 import subprocess
 import sys
 import time
@@ -27,6 +26,7 @@ from agent6.sessions.layout import LOGS_NAME
 from agent6.tools.schema import UserQuestion
 from agent6.ui.cli._common import (
     _plans_dir,
+    editor_argv,
     error,
     print_nothing_yet,
     resolve_or_newest_layout,
@@ -91,16 +91,16 @@ def _cmd_plan_edit(session_id: str) -> int:
     if resolved is None:
         return 2
     plan = _plans_dir(Path.cwd()) / resolved / "plan.md"
-    editor = os.environ.get("EDITOR", "vi")
-    # $EDITOR may be a command with flags ("code --wait"); split it.
-    argv = shlex.split(editor) or ["vi"]
+    argv = editor_argv()
+    if argv is None:
+        return 1
     try:
         result = subprocess.run([*argv, str(plan)], check=False)
     except OSError as exc:
-        error(f"failed to spawn editor {editor!r}: {exc}")
+        error(f"failed to spawn editor {argv[0]!r}: {exc}")
         return 1
     if result.returncode != 0:
-        error(f"editor {editor!r} exited {result.returncode}")
+        error(f"editor {argv[0]!r} exited {result.returncode}")
         return 1
     return 0
 

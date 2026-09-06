@@ -10,7 +10,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import shlex
 import signal
 import subprocess
 import sys
@@ -34,6 +33,7 @@ from agent6.sessions.ipc import (
     take_steer_answer,
     write_steer_answer,
 )
+from agent6.ui.cli._common import editor_argv
 from agent6.ui.cli._console_view import ConsoleView
 from agent6.ui.cli._menu_input import menu_capable, read_line_until
 from agent6.ui.cli._steer_menu import BtwRunner, pause_line, pause_menu
@@ -104,43 +104,54 @@ def _select_revised_prompt(
         if choice in {"q", "quit", "abort"}:
             return None
         if choice in {"e", "edit"}:
-            # $EDITOR may be a command with flags ("code --wait"); split it,
-            # and a missing binary is a choose-again, not a run-killing crash.
-            editor = os.environ.get("EDITOR", "vi")
-            editor_argv = shlex.split(editor) or ["vi"]
-            with tempfile.NamedTemporaryFile(
-                "w",
-                encoding="utf-8",
-                prefix="agent6-revised-task-",
-                suffix=".md",
-                delete=False,
-            ) as tmp:
-                tmp_path = Path(tmp.name)
-                tmp.write(revised.rstrip() + "\n")
-            try:
-                try:
-                    result = subprocess.run([*editor_argv, str(tmp_path)], check=False)
-                except OSError as exc:
-                    print(
-                        f"[agent6] cannot run $EDITOR ({editor!r}): {exc}; choose again.",
-                        file=sys.stderr,
-                    )
-                    continue
-                if result.returncode != 0:
-                    print(
-                        f"[agent6] editor exited {result.returncode}; choose again.",
-                        file=sys.stderr,
-                    )
-                    continue
-                edited = tmp_path.read_text(encoding="utf-8").strip()
-            finally:
-                with contextlib.suppress(OSError):
-                    tmp_path.unlink()
-            if edited:
+            edited = _edit_in_editor(revised)
+            if edited is not None:
                 return edited
-            print("[agent6] edited prompt was empty; choose again.", file=sys.stderr)
             continue
         print("[agent6] choose accept, original, edit, or quit.", file=sys.stderr)
+
+
+def _edit_in_editor(revised: str) -> str | None:
+    """*revised* after one $EDITOR round trip, or None with the reason on
+    stderr for every operator-fixable failure (a choose-again, never a
+    run-killing crash): an unparsable or missing editor, a non-zero exit, a
+    non-UTF-8 or empty save."""
+    argv = editor_argv()
+    if argv is None:
+        print("[agent6] choose again.", file=sys.stderr)
+        return None
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        prefix="agent6-revised-task-",
+        suffix=".md",
+        delete=False,
+    ) as tmp:
+        tmp_path = Path(tmp.name)
+        tmp.write(revised.rstrip() + "\n")
+    try:
+        try:
+            result = subprocess.run([*argv, str(tmp_path)], check=False)
+        except OSError as exc:
+            print(
+                f"[agent6] cannot run $EDITOR ({argv[0]!r}): {exc}; choose again.", file=sys.stderr
+            )
+            return None
+        if result.returncode != 0:
+            print(f"[agent6] editor exited {result.returncode}; choose again.", file=sys.stderr)
+            return None
+        try:
+            edited = tmp_path.read_text(encoding="utf-8").strip()
+        except UnicodeDecodeError as exc:
+            print(f"[agent6] edited prompt is not UTF-8: {exc}; choose again.", file=sys.stderr)
+            return None
+    finally:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+    if edited:
+        return edited
+    print("[agent6] edited prompt was empty; choose again.", file=sys.stderr)
+    return None
 
 
 # The controlling terminal, by path: a TUI redirects the std streams to its

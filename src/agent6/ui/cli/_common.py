@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -138,6 +140,17 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
             " background commands. What `/btw` asks its side question with."
         ),
     )
+
+
+def editor_argv() -> list[str] | None:
+    """$EDITOR as argv (default: vi), or None after printing the refusal when its
+    quoting is unbalanced."""
+    editor = os.environ.get("EDITOR", "vi")
+    try:
+        return shlex.split(editor) or ["vi"]
+    except ValueError as exc:
+        error(f"$EDITOR {editor!r} is not a valid command: {exc}")
+        return None
 
 
 def sgr(text: str, code: str) -> str:

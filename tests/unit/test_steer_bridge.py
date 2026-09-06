@@ -424,3 +424,39 @@ def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
         steer.clear()
     finally:
         steer.restore()
+
+
+def test_edit_survives_an_unparsable_editor(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An $EDITOR with unbalanced quoting is a choose-again, like a missing
+    binary: shlex.split's ValueError escaped every guard up to the leg's
+    `except Exception`, ending the run as crashed."""
+    import io
+    import sys
+
+    from agent6.ui.cli._steer import _select_revised_prompt  # pyright: ignore[reportPrivateUsage]
+
+    monkeypatch.setenv("EDITOR", 'code --wait "')
+    monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
+    assert _select_revised_prompt("orig", "revised", ()) == "revised"
+    assert "$EDITOR" in capsys.readouterr().err
+
+
+def test_edit_survives_a_non_utf8_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An editor that writes back non-UTF-8 bytes is a choose-again; the
+    UnicodeDecodeError from reading the file back ended the run."""
+    import io
+    import sys
+
+    from agent6.ui.cli._steer import _select_revised_prompt  # pyright: ignore[reportPrivateUsage]
+
+    script = tmp_path / "fake_editor.sh"
+    script.write_text("#!/bin/sh\nprintf '\\377\\376x' > \"$1\"\n", encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setenv("EDITOR", str(script))
+    monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
+    assert _select_revised_prompt("orig", "revised", ()) == "revised"
+    assert "not UTF-8" in capsys.readouterr().err

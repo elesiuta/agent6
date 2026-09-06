@@ -301,3 +301,17 @@ def test_plan_edit_reports_an_editor_that_failed(
     monkeypatch.setenv("EDITOR", str(script))
     assert main(["plan", "edit", "happy-tree-ijkl"]) == 1
     assert "exited 3" in capsys.readouterr().err
+
+
+def test_plan_edit_refuses_a_malformed_editor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An $EDITOR shlex cannot tokenize (an unbalanced quote from a shell
+    profile) crashed `plan edit` as an unexpected ValueError that told the
+    operator to file a bug, instead of naming their own setting."""
+    monkeypatch.chdir(tmp_path)
+    _seed_plan(tmp_path, "happy-tree-mnop", "original\n")
+    monkeypatch.setenv("EDITOR", "'oops")
+    rc = main(["plan", "edit", "happy-tree-mnop"])
+    assert rc == 1
+    assert "$EDITOR" in capsys.readouterr().err
