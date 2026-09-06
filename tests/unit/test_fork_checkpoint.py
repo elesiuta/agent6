@@ -1047,3 +1047,24 @@ def test_an_auto_minted_fork_id_skips_a_taken_directory(
 
     assert (taken / "marker.txt").read_text(encoding="utf-8") == "do not clobber\n"
     assert (state_dir / "sessions" / "runs" / "freed-two-BBBBBB" / "manifest.json").is_file()
+
+
+def test_fork_manifest_stamps_the_resolved_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork's policy stamp is the level it would run at on this host, like
+    a run's, never the `auto` knob (which tells `exec` and the pages nothing)."""
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state_dir = resolved_state_dir(repo)
+    _seed_source_run(state_dir, "iso-src-AAAA11", head_sha=head, turns=(1, 2))
+
+    def _hardened(_knob: str, _env: object) -> str:
+        return "hardened"
+
+    monkeypatch.setattr("agent6.app.fork.resolve_isolation", _hardened)
+    assert _cmd_fork(None, "iso-src", new_session_id="iso-fork-BBBB22", no_run=True) == 0
+    dst = SessionLayout(state_dir=state_dir, session_id="iso-fork-BBBB22", subdir="runs")
+    manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["policy"]["isolation"] == "hardened"

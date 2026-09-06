@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent6.app._setup import SandboxOverrides, session_config
+from agent6.app._setup import SandboxOverrides, detect_env, session_config
 from agent6.app.manifest import write_session_manifest
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.app.resume import resumable_bucket_dirs
@@ -53,6 +53,7 @@ from agent6.graph.storage import (
     write_node,
 )
 from agent6.portable import atomic_write
+from agent6.sandbox.detect import resolve_isolation
 from agent6.sessions.id import (
     SessionIdError,
     resolve_session,
@@ -543,6 +544,7 @@ def _materialize_fork(
         forked_from_turn=forked_from_turn,
         forked_from_sha=forked_from_sha,
         gate=gate,
+        isolation=resolve_isolation(cfg.sandbox.isolation, detect_env()),
     )
 
     # Seed the fork's chain at the historical sha WITHOUT touching the
