@@ -74,17 +74,25 @@ def spawn_machine_create(
 def spawn_machine_run(
     cwd: Path, machine_file: str, config_path: Path | None = None
 ) -> tuple[bool, str]:
-    """Spawn `agent6 machine run <file>` detached. `machine_file` must be one of
-    the authored files the hub listed (validated against list_machine_files so the
-    browser cannot point it at an arbitrary path).
+    """Spawn `agent6 machine run <file>` detached. `machine_file` is one of the
+    authored files the hub listed, by its path or its listed name (validated
+    against list_machine_files so the browser cannot point it at an arbitrary
+    path).
 
     Started = the child wrote its own pid as the instance worker.pid (it does so
     right after taking the machine lock), so a refusal (lock held, network
     refusal, bad bundle: nonzero exit before that) surfaces its stderr in the
     toast instead of a false "started"."""
-    allowed = {mf["path"] for mf in model.list_machine_files(cwd)}
-    if machine_file not in allowed:
-        return False, f"unknown machine file {machine_file!r}"
+    listed = model.list_machine_files(cwd)
+    by_name = {mf["name"]: mf["path"] for mf in listed}
+    paths = {mf["path"] for mf in listed}
+    if machine_file in by_name and machine_file not in paths:
+        machine_file = by_name[machine_file]
+    if machine_file not in paths:
+        return False, (
+            f"unknown machine file {machine_file!r}: give a listed path or name"
+            f" ({', '.join(sorted(by_name)) or 'none listed'})"
+        )
     try:
         spec = load_machine(Path(machine_file))
     except MachineError as exc:

@@ -419,3 +419,23 @@ def test_run_plan_spawns_from_plan_and_refuses_non_plans(
 
     payload, err = actions.run_plan(tmp_path, "runny-one-AAAAAA")
     assert payload is None and "not a plan" in err
+
+
+def test_spawn_machine_run_takes_the_listed_name_or_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hub lists a file by path and name; both name it. An unknown value
+    is refused with the accepted forms."""
+    mf = tmp_path / "tiny.asm.toml"
+    mf.write_text(TINY, encoding="utf-8")
+    spawned: list[list[str]] = []
+
+    def _record(argv: list[str], *_a: object, **_k: object) -> str:
+        spawned.append(argv)
+        return ""
+
+    monkeypatch.setattr(actions, "spawn_and_confirm", _record)
+    assert actions.spawn_machine_run(tmp_path, "tiny.asm.toml") == (True, "started")
+    assert spawned[-1][-1] == str(mf)
+    ok, msg = actions.spawn_machine_run(tmp_path, "/elsewhere/tiny.asm.toml")
+    assert ok is False and "listed path or name" in msg and "tiny.asm.toml" in msg
