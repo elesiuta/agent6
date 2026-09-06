@@ -197,6 +197,10 @@ def test_plan_metered_routes_skip_the_fallback_note(
     assert err is not None and "max_percent is 0" in err
 
 
+def _signed_in(binary: str, *, timeout_s: float = 20.0) -> str | None:
+    return None
+
+
 def test_claude_code_routes_are_plan_metered(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -224,6 +228,8 @@ def test_claude_code_routes_are_plan_metered(
     called: list[bool] = []
     monkeypatch.setattr(_setup, "refresh_pricing_catalog", lambda: called.append(True))
     monkeypatch.setattr(_setup, "load_secrets", dict)
+    # The sign-in probe is the next test's subject; here the binary need not exist.
+    monkeypatch.setattr(_setup, "login_status", _signed_in)
     assert _setup.check_provider_keys(cfg) is None
     assert called == []
 
