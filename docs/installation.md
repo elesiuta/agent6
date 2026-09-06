@@ -60,7 +60,7 @@ agent6 check                # sandbox, config, keys, MCP, verify, boundaries
 ## Requirements
 
 - Python 3.12 or newer
-- One provider: Anthropic, any OpenAI-compatible endpoint (a local one needs no key), or a ChatGPT subscription
+- One provider: Anthropic, any OpenAI-compatible endpoint (a local one needs no key), a ChatGPT subscription, or a Claude Code login (`agent6 connect claude`)
 - Linux on x86_64 or aarch64 for the sandbox
 - Unprivileged user namespaces for `strict` isolation
 - A Rust toolchain to build from source (the PyPI wheels bundle `agent6-jail`)
