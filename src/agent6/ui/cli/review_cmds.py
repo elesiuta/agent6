@@ -109,14 +109,18 @@ def _run_review_panel(
     purpose: a script must be able to tell "reviewed clean" from "nothing
     reviewed"."""
     persona_tuple = tuple(p.strip() for p in personas.split(",") if p.strip())
-    seats = build_review_seats(
-        cfg,
-        transcript_sink=transcript_sink,
-        budget=budget,
-        n=reviewers,
-        personas=persona_tuple,
-        model_override=model_override,
-    )
+    try:
+        seats = build_review_seats(
+            cfg,
+            transcript_sink=transcript_sink,
+            budget=budget,
+            n=reviewers,
+            personas=persona_tuple,
+            model_override=model_override,
+        )
+    except ProviderError as exc:
+        error(f"provider init failed: {exc}")
+        return 2
     label = base or "working tree vs HEAD"
     ctx = ReviewContext(task=f"code review: {label}", agents_md=agents_md, diff=diff)
     # explore-tier seats need a read-only tool surface over the repo.

@@ -24,6 +24,7 @@ from agent6.config import (
     ConfigError,
     MCPServerEntry,
     ProviderEntry,
+    parse_seat_spec,
     plan_metered,
 )
 from agent6.config.layer import EffectiveConfig, load_effective
@@ -39,7 +40,6 @@ from agent6.tools.mcp_client import MCPManager, MCPServerSpec
 from agent6.tools.mcp_http import HttpTransport
 from agent6.tools.policy import jail_policy
 from agent6.types import IsolationLevel, JailPolicy, NetworkMode, session_kind
-from agent6.workflows.review import parse_seat_spec
 
 
 def detect_env() -> Environment:

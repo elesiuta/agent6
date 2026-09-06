@@ -20,7 +20,7 @@ from agent6.app.providers import (
 )
 from agent6.app.reporter import STDIO_REPORTER, Reporter
 from agent6.budget import BudgetTracker
-from agent6.config import Config, plan_metered
+from agent6.config import Config, parse_seat_spec, plan_metered
 from agent6.events import EventSink
 from agent6.git_ops import (
     CommitIdentity,
@@ -42,7 +42,6 @@ from agent6.sessions.manifest import ManifestError, read_manifest
 from agent6.tools.schema import UserQuestion
 from agent6.verify_infer import VERIFY_INFER_SYSTEM_PROMPT, infer_verify_command, read_agents_md
 from agent6.viewmodel.listing import session_dirs
-from agent6.workflows.review import parse_seat_spec
 
 
 class SessionRefused(Exception):

@@ -17,6 +17,7 @@ from agent6.config import (
     EffortLevel,
     RoleModel,
     RoleName,
+    parse_seat_spec,
 )
 from agent6.events import EventSink
 from agent6.models import registry as models_registry
@@ -35,7 +36,7 @@ from agent6.providers import (
     TranscriptSink,
 )
 from agent6.secrets import resolve_api_key
-from agent6.workflows.review import ReviewSeat, parse_seat_spec
+from agent6.workflows.review import ReviewSeat
 
 
 def resolve_compaction_thresholds(
@@ -453,15 +454,13 @@ def build_review_seats(
     model_override: str = "",
     events: EventSink | None = None,
 ) -> list[ReviewSeat]:
-    """Build the review-panel seats.
-
-    Explicit form (`cfg.review.seats` set): one seat per
-    `"persona@provider/model"` string -> distinct models per seat. A seat with
-    no `@provider/model` (bare persona) routes via `[models.reviewer]`.
-
-    Simple form (no `review.seats`): `n` seats all on the `reviewer` model,
-    differing only by adversarial persona (`personas` cycled, else a built-in
-    set).
+    """Build the review-panel seats, one per roster entry. An entry is
+    `persona[@provider/model]`: with a provider and model the seat is pinned
+    to them (`--model X` overrides the model and keeps the provider), and a
+    bare persona routes via `[models.reviewer]`. `cfg.review.seats` names
+    the roster outright; otherwise `n` seats cycle *personas* (the
+    `--personas` flag, else a built-in set), so both surfaces speak one
+    grammar.
 
     With *events*, each seat is instrumented: only InstrumentedProvider emits
     `budget.update`, so bare seat providers spent real money no surface ever
@@ -481,78 +480,54 @@ def build_review_seats(
         )
 
     if cfg.review.seats:
-        seats: list[ReviewSeat] = []
-        for spec in cfg.review.seats:
-            persona, provider_name, model = parse_seat_spec(spec)
-            if provider_name and model:
-                entry = cfg.providers.get(provider_name)
-                if entry is None:
-                    raise ProviderError(
-                        f"review.seats: {spec!r} names provider {provider_name!r} but"
-                        f" [providers.{provider_name}] is missing"
-                    )
-                # `--model X` (model_override) overrides the seat's pinned model;
-                # provider routing is preserved -- that's the point of the flag.
-                seat_model = model_override or model
-                provider = _provider_from_entry(
-                    provider_name,
-                    entry,
-                    seat_model,
-                    None,
-                    # Stamp the seat like build_role_provider does: an unstamped
-                    # sink records seat="", which the conversation fold reads as
-                    # the driving seat and renders as worker turns.
-                    transcript_sink=transcript_sink.for_seat(f"review:{persona}"),
-                    budget=budget,
-                )
-                label = f"{provider_name}/{seat_model}"
-                provider = _instrumented(provider, persona or "general", seat_model, provider_name)
-            else:  # bare persona -> reviewer route
-                rm = cfg.models.resolve("reviewer")
-                provider = build_role_provider(
-                    cfg,
-                    "reviewer",
-                    transcript_sink=transcript_sink,
-                    budget=budget,
-                    model_override=model_override,
-                    seat=f"review:{persona}",
-                )
-                label = model_override or (rm.model if rm is not None else "reviewer")
-                provider = _instrumented(
-                    provider, persona or "general", label, rm.provider if rm is not None else ""
-                )
-            seats.append(
-                ReviewSeat(
-                    persona=persona or "general",
-                    model=label,
-                    provider=provider,
-                    tier=cfg.review.tier,
-                )
-            )
-        return seats
-
+        specs = list(cfg.review.seats)
+    else:
+        pool = list(personas) if personas else list(_DEFAULT_PERSONAS)
+        specs = [pool[i % len(pool)] for i in range(max(1, n))]
     rm = cfg.models.resolve("reviewer")
-    model = model_override or (rm.model if rm is not None else "reviewer")
-    pool = list(personas) if personas else list(_DEFAULT_PERSONAS)
-    seats = []
-    for i in range(max(1, n)):
-        provider = build_role_provider(
-            cfg,
-            "reviewer",
-            transcript_sink=transcript_sink,
-            budget=budget,
-            model_override=model_override,
-            seat=f"review:{pool[i % len(pool)]}",
-        )
-        seats.append(
-            ReviewSeat(
-                persona=pool[i % len(pool)],
-                model=model,
-                provider=_instrumented(
-                    provider, pool[i % len(pool)], model, rm.provider if rm is not None else ""
-                ),
-                tier=cfg.review.tier,
+    seats: list[ReviewSeat] = []
+    for spec in specs:
+        try:
+            persona, provider_name, model = parse_seat_spec(spec)
+        except ValueError as exc:
+            raise ProviderError(f"review seat: {exc}") from exc
+        persona = persona or "general"
+        if provider_name and model:
+            entry = cfg.providers.get(provider_name)
+            if entry is None:
+                raise ProviderError(
+                    f"review seat {spec!r} names provider {provider_name!r} but"
+                    f" [providers.{provider_name}] is missing"
+                )
+            seat_model = model_override or model
+            provider = _provider_from_entry(
+                provider_name,
+                entry,
+                seat_model,
+                None,
+                # Stamp the seat like build_role_provider does: an unstamped
+                # sink records seat="", which the conversation fold reads as
+                # the driving seat and renders as worker turns.
+                transcript_sink=transcript_sink.for_seat(f"review:{persona}"),
+                budget=budget,
             )
+            label = f"{provider_name}/{seat_model}"
+            provider = _instrumented(provider, persona, seat_model, provider_name)
+        else:
+            provider = build_role_provider(
+                cfg,
+                "reviewer",
+                transcript_sink=transcript_sink,
+                budget=budget,
+                model_override=model_override,
+                seat=f"review:{persona}",
+            )
+            label = model_override or (rm.model if rm is not None else "reviewer")
+            provider = _instrumented(
+                provider, persona, label, rm.provider if rm is not None else ""
+            )
+        seats.append(
+            ReviewSeat(persona=persona, model=label, provider=provider, tier=cfg.review.tier)
         )
     return seats
 

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -195,7 +196,7 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
 
 
 def test_parse_seat_spec_forms() -> None:
-    from agent6.workflows._review import parse_seat_spec
+    from agent6.config import parse_seat_spec
 
     assert parse_seat_spec("security@openrouter/moonshotai/kimi-k2") == (
         "security",
@@ -537,3 +538,87 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
     simple_cfg = _cfg_with_seats(())
     (seat,) = prov_mod.build_review_seats(simple_cfg, n=1, events=cast(Any, MagicMock()), **kw)
     assert isinstance(seat.provider, InstrumentedProvider)
+
+
+def test_a_persona_flag_pins_a_model_like_a_configured_seat(monkeypatch: Any) -> None:
+    """`--personas security@chatgpt/gpt-5-codex` on the CLI cycled a persona
+    NAMED that onto the reviewer model, so the seat line claimed a spec the
+    panel never honoured. The roster grammar is one, whichever surface names
+    the seat."""
+    from agent6.app import providers as prov_mod
+
+    monkeypatch.setattr(prov_mod, "_provider_from_entry", _stub_seat_provider)
+    monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
+    seats = prov_mod.build_review_seats(
+        _cfg_with_seats(()),
+        transcript_sink=cast(Any, MagicMock()),
+        budget=cast(Any, None),
+        n=2,
+        personas=("security@anthropic/claude-opus-4-8", "tests"),
+    )
+    assert [(s.persona, s.model) for s in seats] == [
+        ("security", "anthropic/claude-opus-4-8"),
+        ("tests", "reviewer-default"),
+    ]
+
+
+def test_a_persona_flag_with_a_half_spec_refuses_like_the_config_does(monkeypatch: Any) -> None:
+    """`--personas security@openrouter` (no model) routed to the reviewer
+    model in silence, the very degrade the config validator refuses for the
+    same string; the grammar has one owner and both surfaces refuse."""
+    from agent6.app import providers as prov_mod
+
+    monkeypatch.setattr(prov_mod, "build_role_provider", _stub_seat_provider)
+    with pytest.raises(ProviderError, match="both provider and model required"):
+        prov_mod.build_review_seats(
+            _cfg_with_seats(()),
+            transcript_sink=cast(Any, MagicMock()),
+            budget=cast(Any, None),
+            n=1,
+            personas=("security@openrouter",),
+        )
+
+
+def test_a_half_spec_on_the_cli_is_an_operator_error_not_a_crash_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`agent6 review --personas security@openrouter` let the seat refusal out
+    of the panel runner into the last-resort handler: a crash log and "report
+    it" for a typo. The runner reports it the way the single review does."""
+    import subprocess
+
+    from agent6.ui.cli import main
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FAKE_KEY", "x")
+    for argv in (
+        ["init", "-q"],
+        ["config", "user.email", "t@t"],
+        ["config", "user.name", "t"],
+        ["add", "-A"],
+        ["commit", "-q", "--allow-empty", "-m", "init"],
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *argv], check=True)
+    (tmp_path / "agent6.toml").write_text(
+        '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "FAKE_KEY"\n'
+        '[models.reviewer]\nprovider = "anthropic"\nmodel = "reviewer-default"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "f.txt").write_text("changed\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "f.txt"], check=True)
+
+    rc = main(
+        [
+            "--config",
+            "agent6.toml",
+            "review",
+            "--reviewers",
+            "1",
+            "--personas",
+            "security@openrouter",
+        ]
+    )
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "both provider and model required" in err
+    assert "unexpected" not in err and "traceback" not in err

@@ -107,8 +107,9 @@ def _add_review_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "--personas",
         default="",
         help=(
-            "Comma-separated adversarial stances for the panel seats, cycled across"
-            " --reviewers (e.g. 'security,correctness,tests'). Default: a built-in set;"
-            " ignored when [review].seats is configured."
+            "Comma-separated panel seats, cycled across --reviewers: a stance"
+            " ('security,correctness,tests'), or a stance pinned to a model"
+            " ('security@openrouter/model-id', the [review].seats grammar)."
+            " Default: a built-in set; ignored when [review].seats is configured."
         ),
     )

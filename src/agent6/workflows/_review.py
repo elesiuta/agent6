@@ -71,21 +71,6 @@ class ReviewSeat:
     tier: ReviewTier = "diff"
 
 
-def parse_seat_spec(spec: str) -> tuple[str, str, str]:
-    """Parse a `review_seats` entry into `(persona, provider, model)`.
-
-    `"security@openrouter/moonshotai/kimi-k2"` -> ``("security", "openrouter",
-    "moonshotai/kimi-k2")`; `"security"` (no `@`) -> `("security", "", "")``
-    (route via the reviewer role); `"@anthropic/claude-opus-4-8"` ->
-    `("", "anthropic", "claude-opus-4-8")`. The model may itself contain `/`
-    (only the first `/` after `@` splits provider from model)."""
-    persona, sep, route = spec.partition("@")
-    if not sep:
-        return (spec.strip(), "", "")
-    provider, _, model = route.partition("/")
-    return (persona.strip(), provider.strip(), model.strip())
-
-
 def _build_user_message(ctx: ReviewContext) -> str:
     parts: list[str] = [f"TASK:\n{ctx.task.strip()[:4000]}"]
     if ctx.agents_md.strip():
@@ -338,7 +323,6 @@ __all__ = [
     "ReviewDispatch",
     "ReviewSeat",
     "explore_review",
-    "parse_seat_spec",
     "run_panel",
     "structured_review",
 ]

@@ -13,6 +13,27 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from agent6.config._base import MODEL_CONFIG, Argv, StrTuple
 
+
+def parse_seat_spec(spec: str) -> tuple[str, str, str]:
+    """A review seat, `persona[@provider/model]`, as `(persona, provider,
+    model)`: `"security@openrouter/moonshotai/kimi-k2"` ->
+    `("security", "openrouter", "moonshotai/kimi-k2")` (the model may itself
+    contain `/`; only the first `/` after `@` splits provider from model),
+    `"security"` -> `("security", "", "")` (routed via the reviewer role),
+    `"@anthropic/claude-opus-4-8"` -> `("", "anthropic", "claude-opus-4-8")`.
+    An `@` form must name BOTH a provider and a model, so a typo cannot
+    degrade to the reviewer route in silence; it raises ValueError."""
+    persona, sep, route = spec.partition("@")
+    if not sep:
+        return (spec.strip(), "", "")
+    provider, slash, model = route.partition("/")
+    if not (provider.strip() and slash and model.strip()):
+        raise ValueError(
+            f"{spec!r} must be 'persona@provider/model' (both provider and model required)"
+        )
+    return (persona.strip(), provider.strip(), model.strip())
+
+
 # The review-seat depth (`[review].tier`); ReviewSeat.tier mirrors this, so the
 # vocabulary has one owner.
 ReviewTier = Literal["diff", "explore"]
@@ -496,20 +517,16 @@ class ReviewConfig(BaseModel):
         for spec in self.seats:
             if not spec.strip():
                 raise ValueError("review.seats entries must be non-empty")
-            _persona, sep, route = spec.partition("@")
-            if sep:
-                provider, slash, model = route.partition("/")
-                if not (provider.strip() and slash and model.strip()):
-                    raise ValueError(
-                        f"review.seats: {spec!r} must be"
-                        " 'persona@provider/model' (both provider and model required)"
-                    )
+            try:
+                parse_seat_spec(spec)
+            except ValueError as exc:
+                raise ValueError(f"review.seats: {exc}") from exc
         return self
 
     @model_validator(mode="after")
     def _check_review_quorum(self) -> ReviewConfig:
         if self.decision == "quorum" and self.quorum > 1:
-            models = {(s.partition("@")[2].strip() if "@" in s else "") for s in self.seats}
+            models = {f"{p}/{m}" if p else "" for _, p, m in map(parse_seat_spec, self.seats)}
             if len(models) < self.quorum:
                 raise ValueError(
                     f"review.decision='quorum' with quorum={self.quorum}"

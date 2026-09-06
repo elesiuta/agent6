@@ -41,6 +41,7 @@ from agent6.config._workflow import (
     ReviewConfig,
     ReviewTier,
     WorkflowConfig,
+    parse_seat_spec,
 )
 from agent6.config.model import (
     Agent6Section,
@@ -89,6 +90,7 @@ __all__ = [
     "is_loopback_url",
     "load_config",
     "mcp_server_name_refusal",
+    "parse_seat_spec",
     "plan_metered",
     "validate_base_url",
     "validate_config",
