@@ -192,16 +192,16 @@ end_ns=$(date +%s%N)
 wall_s=$(awk -v s="$start_ns" -v e="$end_ns" 'BEGIN{printf "%.1f", (e-s)/1e9}')
 
 combined="$LOGDIR/agent6.stdout $LOGDIR/agent6.stderr"
-cost=$(cat $combined 2>/dev/null | grep -oE 'cost~\$[0-9.]+' | tail -1 | tr -d '$' | sed 's/cost~//')
+cost=$(cat $combined 2>/dev/null | grep -oE 'cost~\$[0-9.]+' | tail -1 | tr -d '$' | sed 's/cost~//' || true)
 [ -z "$cost" ] && cost=0
-in_tok=$(cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+' | tail -1 | sed 's/TOTAL: in=//')
+in_tok=$(cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+' | tail -1 | sed 's/TOTAL: in=//' || true)
 [ -z "$in_tok" ] && in_tok=0
-out_tok=$(cat $combined 2>/dev/null | grep -oE 'out=[0-9]+/' | tail -1 | tr -d '/' | sed 's/out=//')
+out_tok=$(cat $combined 2>/dev/null | grep -oE 'TOTAL: in=[0-9]+ out=[0-9]+' | tail -1 | sed 's/.*out=//' || true)
 [ -z "$out_tok" ] && out_tok=0
 
 # branch_per_run puts the work on the agent6 run branch; HEAD stays at
 # the baseline. Score the branch the summary names, or HEAD if none.
-run_ref=$(cat $combined 2>/dev/null | grep -oE 'changes are on agent6/[A-Za-z0-9_-]+' | tail -1 | sed 's/^changes are on //')
+run_ref=$(cat $combined 2>/dev/null | grep -oE 'changes are on agent6/[A-Za-z0-9_-]+' | tail -1 | sed 's/^changes are on //' || true)
 
 bash "$REPO/bench/perf/score.sh" "$WORKDIR" "$LABEL" \
   "$wall_s" "$cost" "$in_tok" "$out_tok" "$ag_exit" "$start_cycles" "${run_ref:-HEAD}" \

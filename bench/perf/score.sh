@@ -81,7 +81,8 @@ for sha in $commits; do
   set -e
   echo "=== commit $sha ===" >> "$score_out"
   echo "$per_out" >> "$score_out"
-  c=$(echo "$per_out" | grep -oE 'CYCLES:[[:space:]]+[0-9]+' | awk '{print $2}' | sort -n | head -1)
+  # A commit whose tests error prints no CYCLES line: skipped, never fatal.
+  c=$(echo "$per_out" | grep -oE 'CYCLES:[[:space:]]+[0-9]+' | awk '{print $2}' | sort -n | head -1 || true)
   if [ -n "$c" ]; then
     if [ -z "$best_cycles" ] || [ "$c" -lt "$best_cycles" ]; then
       best_cycles="$c"
