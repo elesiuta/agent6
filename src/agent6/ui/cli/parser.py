@@ -37,7 +37,7 @@ from agent6.ui.cli.completers import _complete_session_ids
 # test pins each verb set to the parser's real subcommands.
 _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "plan": ("run", frozenset({"run", "show", "edit"})),
-    "ask": ("query", frozenset({"query", "list"})),
+    "ask": ("query", frozenset({"query"})),
     "history": ("search", frozenset({"search"})),
     "skills": ("list", frozenset({"install", "update", "list", "enable", "disable", "remove"})),
     "memory": ("list", frozenset({"add", "list", "show", "rm", "decisions"})),

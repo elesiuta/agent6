@@ -150,8 +150,3 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     )
     _add_budget_flags(ask_query)
     _add_sandbox_flags(ask_query)
-    _sub(
-        ask_sub,
-        "list",
-        help="List saved asks under the per-repo state dir (asks subdir, newest first) and exit.",
-    )

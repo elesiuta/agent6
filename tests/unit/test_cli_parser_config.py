@@ -69,6 +69,15 @@ def test_a_bare_sessions_is_list_with_its_flags() -> None:
     assert args.sessions_command == "list" and args.list_json is True
 
 
+def test_ask_has_one_verb() -> None:
+    """`ask list` was a poorer `sessions list`: one listing, one verb."""
+    from agent6.ui.cli.parser import _DEFAULT_VERBS  # pyright: ignore[reportPrivateUsage]
+
+    assert _DEFAULT_VERBS["ask"] == ("query", frozenset({"query"}))
+    args = build_parser().parse_args(_inject_default_verb(["ask", "list"]))
+    assert args.ask_command == "query" and args.task == "list"
+
+
 def test_a_bare_history_names_the_query_it_needs(capsys: pytest.CaptureFixture[str]) -> None:
     """The bare form reported against `agent6 history search`, a command form
     the operator did not type; it now answers like a bare `plan` or `ask`."""

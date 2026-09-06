@@ -19,24 +19,11 @@ from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
 from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._steer import repl_prompt_sigint
-from agent6.viewmodel import newest_session_dir, session_dirs, summarize_session_dir, task_snippet
+from agent6.viewmodel import newest_session_dir
 from agent6.workflows.loop import (
     SessionResult,
     Workflow,
 )
-
-
-def cmd_ask_list() -> int:
-    """`agent6 ask list`: the saved asks under the per-repo state dir, newest
-    first, each with its question (the shared listing summary and snippet)."""
-    dirs = session_dirs(resolved_state_dir(Path.cwd()), buckets=("asks",))
-    if not dirs:
-        print("No asks yet.")
-        return 0
-    for d in dirs:
-        s = summarize_session_dir(d)
-        print(f"{d.name}  {task_snippet(s.task, max_chars=90)}")
-    return 0
 
 
 def summarize_session_log(logs_path: Path) -> str:

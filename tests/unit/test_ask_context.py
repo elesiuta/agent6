@@ -5,14 +5,12 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from agent6.config.layer import resolved_state_dir
-from agent6.sessions.ipc import register_frontend
 from agent6.ui.cli._ask import (
     build_ask_session_digest as _build_ask_session_digest,
 )
@@ -144,30 +142,6 @@ def test_ask_transcript_snippet_skips_digest_tags() -> None:
     assert task_snippet(with_answer_heading_in_file) == "what does this note say?"
 
 
-def test_ask_list_uses_log_activity_not_frontend_dir_touch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    from agent6.ui.cli._ask import cmd_ask_list
-
-    monkeypatch.chdir(tmp_path)
-    asks = resolved_state_dir(tmp_path) / "sessions" / "asks"
-    for name, question in (("older-ask", "old question"), ("newer-ask", "new question")):
-        d = asks / name
-        d.mkdir(parents=True)
-        (d / "logs.jsonl").write_text('{"type":"session.start"}\n', encoding="utf-8")
-        (d / "transcript.md").write_text(
-            f"# agent6 ask\n\n## Question\n\n{question}\n\n## Answer\n\n",
-            encoding="utf-8",
-        )
-    os.utime(asks / "older-ask" / "logs.jsonl", (100, 100))
-    os.utime(asks / "newer-ask" / "logs.jsonl", (1000, 1000))
-    register_frontend(asks / "older-ask", 12345)
-
-    assert cmd_ask_list() == 0
-    lines = capsys.readouterr().out.splitlines()
-    assert lines[0].startswith("newer-ask")
-
-
 def test_ask_repl_multi_turn_carries_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -223,7 +197,7 @@ def test_ask_repl_multi_turn_carries_context(
 def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: Path) -> None:
     """REPL transcripts head their sections `## Q1` / `## A1` (not
     `## Question`); the shared snippet skips those headers too, so the hubs
-    and `ask list` show the question, not "## Q1"."""
+    show the question, not "## Q1"."""
     from agent6.sessions.layout import SessionLayout
     from agent6.ui.cli._ask import save_ask_repl_transcript
     from agent6.viewmodel import task_snippet

@@ -287,15 +287,9 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
     from agent6.app._setup import BudgetOverrides, SandboxOverrides  # noqa: PLC0415
-    from agent6.ui.cli._ask import (  # noqa: PLC0415
-        build_ask_session_digest,
-        cmd_ask_list,
-        seed_files,
-    )
+    from agent6.ui.cli._ask import build_ask_session_digest, seed_files  # noqa: PLC0415
     from agent6.ui.cli.run import _cmd_run  # noqa: PLC0415
 
-    if args.ask_command == "list":
-        return cmd_ask_list()
     # REPL when -i is given, or no question + an interactive stdin.
     repl = args.interactive or (not args.task and sys.stdin.isatty())
     if not args.task and not repl:
