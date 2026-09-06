@@ -18,7 +18,7 @@ from agent6.git_ops import DIFF_SHOW_SAFETY_FLAGS, branch_tip_sha, git_hardening
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError, resolve_session
 from agent6.sessions.layout import SessionLayout, bucket_dir
-from agent6.sessions.manifest import ManifestError, SessionManifest, read_manifest
+from agent6.sessions.manifest import NO_MERGE_COMMIT, ManifestError, SessionManifest, read_manifest
 from agent6.ui.cli._common import error, warn
 from agent6.ui.cli._steer import repl_prompt_sigint
 from agent6.viewmodel import newest_session_dir
@@ -109,12 +109,20 @@ def _diff_via_merge_stamp(
     stamp. The label names which it was, since the model may go read the
     branch."""
     merged = manifest.merged
-    merged_sha = merged.sha if merged else ""
-    if not (run_branch and merged_sha):
+    if merged is None or not run_branch or not merged.sha:
         return None
     gone = branch_tip_sha(cwd, run_branch) is None
     why = "run branch pruned" if gone else "base unreachable"
-    is_ff = merged is not None and merged_sha == merged.tip
+    if merged.sha == NO_MERGE_COMMIT:
+        # A merge that added nothing names no commit: the run's work is what
+        # its stamped tip holds over the base. A record with no tip names
+        # nothing to diff (an empty end would read as the base's own HEAD).
+        if not merged.tip:
+            return None
+        label = f"{base_sha[:12]}..{merged.tip[:12]} ({why}; merged without a commit)"
+        return label, *_git_diff_text(cwd, f"{base_sha}..{merged.tip}")
+    merged_sha = merged.sha
+    is_ff = merged_sha == merged.tip
     if is_ff:
         # Fast-forwarded: the stamped commit IS the run's tip, so its ^.. diff
         # is the last commit only. The full run is base..merged, both in the
