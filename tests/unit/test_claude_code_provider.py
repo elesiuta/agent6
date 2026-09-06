@@ -1101,10 +1101,11 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
             "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
         }
     )
-    assert tool_result_cap_bytes(cc) == CLAUDE_CODE_RESULT_CAP_BYTES < TOOL_RESULT_CAP_BYTES
-    assert tool_result_cap_bytes(Config()) == TOOL_RESULT_CAP_BYTES
+    cap = tool_result_cap_bytes(cc, "worker")
+    assert cap == CLAUDE_CODE_RESULT_CAP_BYTES < TOOL_RESULT_CAP_BYTES
+    assert tool_result_cap_bytes(Config(), "worker") == TOOL_RESULT_CAP_BYTES
     assert CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
-    wide = cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=tool_result_cap_bytes(cc))
+    wide = cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=cap)
     gate = ExecResult(
         returncode=1,
         stdout="\U0001f600" * (2 * VERIFY_TAIL_CHARS),
@@ -1131,3 +1132,27 @@ def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
         raise RuntimeError("operator state unreadable")
 
     claude_code._Watch(boom, boom).tick()  # pyright: ignore[reportPrivateUsage]
+
+
+def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
+    """A plan session is driven by the planner role; the cap read the worker's
+    provider, so a plan on Claude Code beside an HTTP worker kept the loose
+    generic cap over Claude Code's 50,000-byte threshold."""
+    from agent6.app._session import tool_result_cap_bytes
+    from agent6.config import Config
+    from agent6.workflows._compaction import CLAUDE_CODE_RESULT_CAP_BYTES, TOOL_RESULT_CAP_BYTES
+
+    cfg = Config.model_validate(
+        {
+            "providers": {
+                "claude": {"api_format": "claude_code"},
+                "anthropic": {"api_format": "anthropic"},
+            },
+            "models": {
+                "worker": {"provider": "anthropic", "model": "m"},
+                "planner": {"provider": "claude", "model": "claude-sonnet-5"},
+            },
+        }
+    )
+    assert tool_result_cap_bytes(cfg, "planner") == CLAUDE_CODE_RESULT_CAP_BYTES
+    assert tool_result_cap_bytes(cfg, "worker") == TOOL_RESULT_CAP_BYTES

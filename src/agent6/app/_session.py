@@ -64,12 +64,12 @@ def resolve_isolation_or_refuse(
         raise SessionRefused(2) from exc
 
 
-def tool_result_cap_bytes(cfg: Config) -> int:
+def tool_result_cap_bytes(cfg: Config, role: RoleName) -> int:
     """The size bound, in bytes of UTF-8, for one tool result entering the
-    worker's conversation: the loop's default, or the tighter bound of a
-    worker provider that hands the model less (Claude Code persists a result
-    above its threshold and serves a preview)."""
-    rm = cfg.models.resolve("worker")
+    conversation of the provider driving *role*: the loop's default, or the
+    tighter bound of a provider that hands the model less (Claude Code
+    persists a result above its threshold and serves a preview)."""
+    rm = cfg.models.resolve(role)
     entry = cfg.providers.get(rm.provider) if rm is not None else None
     if isinstance(entry, ClaudeCodeProviderEntry):
         return CLAUDE_CODE_RESULT_CAP_BYTES

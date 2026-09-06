@@ -234,13 +234,14 @@ def parse_gist_lines(text: str, paths: Sequence[str]) -> dict[str, str]:
 # files whole. Anything over it is wrapped by cap_tool_result in a well-formed
 # JSON truncation notice: a raw mid-JSON slice reads as a malformed result,
 # and a weak model re-calls `read_file` to "see the rest" until the loop-guard
-# latches. Bytes, because the bound that displaces this default for a Claude
-# Code worker (its 50,000-byte persistence threshold) is measured in bytes.
+# latches. Bytes, because the bound that displaces this default when a Claude
+# Code provider drives the session (its 50,000-byte persistence threshold) is
+# measured in bytes.
 TOOL_RESULT_CAP_BYTES = 60_000
 
-# A Claude Code worker's turn carries the capped result and the turn's
-# trailing notices in one tool_result, and the whole stays under the
-# provider's persist threshold with the notices at their largest: a verify
+# A Claude Code turn carries the capped result and the turn's trailing
+# notices in one tool_result, and the whole stays under the provider's
+# persist threshold with the notices at their largest: a verify
 # tail of VERIFY_TAIL_CHARS four-byte characters, a review critique of
 # REVIEW_NOTICE_BYTES, and the nudges and framing around them.
 CLAUDE_CODE_NOTICE_ROOM_BYTES = 4 * VERIFY_TAIL_CHARS + REVIEW_NOTICE_BYTES + 4_000

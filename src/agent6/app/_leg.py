@@ -284,7 +284,7 @@ def run_leg(  # noqa: PLR0911, PLR0912, PLR0915 - one leg body, one return per e
             chain_fallback_parent=inputs.base_sha or None,
             untracked_at_start=inputs.untracked_at_start,
             commit_per_step=cfg.git.commit_per_step,
-            tool_result_cap_bytes=tool_result_cap_bytes(cfg),
+            tool_result_cap_bytes=tool_result_cap_bytes(cfg, role),
             max_iterations=cfg.workflow.max_iterations,
             provider=session.provider,
             dispatcher=dispatcher,

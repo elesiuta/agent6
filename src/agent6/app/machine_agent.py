@@ -450,7 +450,7 @@ def run_one(
             cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
         ),
         max_iterations=cfg.workflow.max_iterations,
-        tool_result_cap_bytes=tool_result_cap_bytes(cfg),
+        tool_result_cap_bytes=tool_result_cap_bytes(cfg, "worker"),
         provider=provider,
         summariser_provider=summariser_provider,
         dispatcher=dispatcher,
