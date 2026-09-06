@@ -81,3 +81,11 @@ def test_the_machine_page_offers_stop() -> None:
     body = js[start : js.index("function paintMachine(", start)]
     assert "'/stop'" in body or "+ '/stop'" in body
     assert "cards._stop_btn" in js
+
+
+def test_the_in_flight_mark_needs_a_live_run() -> None:
+    """A killed worker leaves a `role.call` with no `role.result`, so
+    `in_flight` stays true forever: the Overview card printed the working
+    ellipsis beside the word "stale"."""
+    body = _paint_run_body()
+    assert "r.in_flight && s.live" in body, "the in-flight mark must read liveness too"

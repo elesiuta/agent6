@@ -413,8 +413,11 @@ function paintRun(cards, s) {
   // The same one-line fold the CLI banner and the TUI composer read.
   if (s.policy) cards.head.appendChild(el('div', 'sub muted', esc(s.policy)));
   if (s.last_role) {
+    // The in-flight mark means a call is in flight. A killed worker leaves a
+    // role.call with no role.result, so it stayed on forever beside "stale".
     const r = s.last_role;
-    cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${r.in_flight ? ' …' : ''}`));
+    const inFlight = r.in_flight && s.live;
+    cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`));
   }
 
   const stepState = (cards._diffPick && cards._diffPick.sha && cards._stepState) ? cards._stepState : null;
