@@ -19,10 +19,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agent6.app.parallel import build_coordinator_spawner
 from agent6.config import Config
 from agent6.providers import ProviderResponse
 from agent6.tools.results import RawResult
-from agent6.ui.cli.parallel import build_coordinator_spawner
+from agent6.ui.cli.parallel import lane_runtime
 from agent6.workflows.loop import Workflow
 from agent6.workflows.subrun import LaneResult, LaneSpec, LaneTask
 
@@ -703,9 +704,23 @@ def test_coordinator_spawner_gate_under_subrun(
     cfg = Config()
     monkeypatch.delenv("AGENT6_SUBRUN", raising=False)
     # A write run outside a lane gets a real dispatcher.
-    assert callable(build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="run", session_id="r"))
+    assert callable(
+        build_coordinator_spawner(
+            cfg, tmp_path, tmp_path, mode="run", session_id="r", runtime=lane_runtime()
+        )
+    )
     # plan/ask make no commits to clone -> no dispatcher.
-    assert build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="plan", session_id="r") is None
+    assert (
+        build_coordinator_spawner(
+            cfg, tmp_path, tmp_path, mode="plan", session_id="r", runtime=lane_runtime()
+        )
+        is None
+    )
     # Inside a subordinate lane -> no dispatcher (depth 1).
     monkeypatch.setenv("AGENT6_SUBRUN", "1")
-    assert build_coordinator_spawner(cfg, tmp_path, tmp_path, mode="run", session_id="r") is None
+    assert (
+        build_coordinator_spawner(
+            cfg, tmp_path, tmp_path, mode="run", session_id="r", runtime=lane_runtime()
+        )
+        is None
+    )

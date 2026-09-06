@@ -645,7 +645,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     monkeypatch.setattr(parallel.time, "sleep", fake_sleep)
     monkeypatch.setattr(parallel, "worker_is_alive", fake_worker_is_alive)
 
-    assert parallel._await_lanes([res], runtime=runtime) is False  # pyright: ignore[reportPrivateUsage]
+    assert parallel._await_lanes([res]) is False  # pyright: ignore[reportPrivateUsage]
     assert "waiting on a question (answer via agent6 attach" in capsys.readouterr().err
 
 
@@ -1537,7 +1537,7 @@ def test_await_lane_returns_when_should_stop_fires(tmp_path: Path, runtime: Lane
 
     assert (
         parallel._await_lane(  # pyright: ignore[reportPrivateUsage]
-            res, runtime=runtime, poll_interval_s=0.01, should_stop=stop_after_two
+            res, poll_interval_s=0.01, should_stop=stop_after_two
         )
         is False
     )

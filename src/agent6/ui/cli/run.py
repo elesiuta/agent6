@@ -16,6 +16,7 @@ from agent6.app._setup import (
     load_session_config,
 )
 from agent6.app.frontend import FrontendCapabilities, SessionFrontend
+from agent6.app.parallel import build_coordinator_spawner
 from agent6.app.preflight import (
     require_git_repo,
 )
@@ -64,10 +65,7 @@ from agent6.ui.cli._steer import (
 from agent6.ui.cli._task_refs import (
     expand_task_file_refs,
 )
-from agent6.ui.cli.parallel import (
-    build_coordinator_spawner,
-    dispatch_parallel,
-)
+from agent6.ui.cli.parallel import dispatch_parallel, lane_runtime
 from agent6.ui.spawn import agent6_exe, spawn_detached_resume
 from agent6.ui.steer import SteerState
 from agent6.viewmodel import session_policy
@@ -197,6 +195,7 @@ def session_frontend(config_path: Path | None = None) -> SessionFrontend:
                     state_dir,
                     mode=mode,
                     session_id=session_id,
+                    runtime=lane_runtime(),
                     max_usd=max_usd,
                     auto_approve=auto_approve,
                 )

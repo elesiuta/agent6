@@ -23,9 +23,6 @@ from agent6.app.parallel import (
     build_lane_specs,
     run_parallel,
 )
-from agent6.app.parallel import (
-    build_coordinator_spawner as app_build_coordinator_spawner,
-)
 from agent6.app.preflight import budget_preflight
 from agent6.config import Config
 from agent6.config.layer import resolved_state_dir
@@ -35,7 +32,6 @@ from agent6.models.validate import refusal_message, validate_spec_models, warnin
 from agent6.sessions.id import friendly_token
 from agent6.ui.cli._compare import _judging_status, _reviewer_provider
 from agent6.ui.spawn import agent6_exe, spawn_and_locate
-from agent6.workflows.subrun import GroupLaneSpawner
 
 
 def lane_runtime() -> LaneRuntime:
@@ -61,33 +57,6 @@ def lane_runtime() -> LaneRuntime:
         spawn=spawn,
         build_provider=_reviewer_provider,
         judging_status=_judging_status,
-    )
-
-
-def build_coordinator_spawner(
-    cfg: Config,
-    origin: Path,
-    origin_state: Path,
-    *,
-    mode: str,
-    session_id: str,
-    max_usd: float | None = None,
-    auto_approve: bool = False,
-) -> GroupLaneSpawner | None:
-    """The `/parallel` group dispatcher to wire into a run's loop, or None when
-    dispatch is unavailable (non-write mode, or a run already inside a lane).
-    Injects the CLI's `LaneRuntime` into the headless pipeline. run.py / resume.py
-    call this to build the loop's `lane_spawner`, passing the coordinator run's
-    own effective `--auto-approve` (same as `max_usd`)."""
-    return app_build_coordinator_spawner(
-        cfg,
-        origin,
-        origin_state,
-        mode=mode,
-        session_id=session_id,
-        runtime=lane_runtime(),
-        max_usd=max_usd,
-        auto_approve=auto_approve,
     )
 
 

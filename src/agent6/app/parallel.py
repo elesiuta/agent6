@@ -409,7 +409,6 @@ def _lane_terminal(session_dir: Path, status: str, worker_is_alive: Callable[[Pa
 def _await_lane(
     res: LaneResult,
     *,
-    runtime: LaneRuntime,
     poll_interval_s: float = _POLL_INTERVAL_S,
     should_stop: Callable[[], bool] | None = None,
 ) -> bool:
@@ -506,9 +505,7 @@ def run_lane_to_completion(
     # a hub can see it and answer its approvals/asks while it runs, not just at
     # import. Dropped just before import so import_run can place the real dir.
     _symlink_lane(origin_state, res)
-    if not _await_lane(
-        res, runtime=runtime, poll_interval_s=poll_interval_s, should_stop=should_stop
-    ):
+    if not _await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
         request_stop(res.session_dir)
         if not _drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
             # Still running: keep the clone + live symlink (they hold the only
@@ -736,7 +733,6 @@ def _symlink_lane(origin_state: Path, res: LaneResult) -> None:
 def _await_lanes(
     started: list[LaneResult],
     *,
-    runtime: LaneRuntime,
     already_interrupted: bool = False,
     reporter: Reporter = STDIO_REPORTER,
 ) -> bool:
@@ -912,7 +908,6 @@ def _import_lanes(
     base_sha: str,
     fanout_id: str,
     task: str,
-    runtime: LaneRuntime,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[list[CandidateBrief], list[tuple[LaneResult, str]], list[LaneSpec]]:
     """Import each finished lane's branch + run dir into the origin, stamp its
@@ -1111,13 +1106,12 @@ def run_parallel(
                 _print_lane_status(spec, "started", 0.0, reporter=reporter)
             else:
                 reporter.note(f"lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}")
-        interrupted = _await_lanes([r for r in results if r.ok], runtime=runtime, reporter=reporter)
+        interrupted = _await_lanes([r for r in results if r.ok], reporter=reporter)
     except KeyboardInterrupt:
         # Ctrl+C mid-spawn (before the await): route the already-started lanes
         # into the same stop-grace path, then import-what-exists + report below.
         interrupted = _await_lanes(
             [r for r in results if r.ok],
-            runtime=runtime,
             already_interrupted=True,
             reporter=reporter,
         )
@@ -1130,7 +1124,6 @@ def run_parallel(
         base_sha=base_sha,
         fanout_id=fanout_id,
         task=task,
-        runtime=runtime,
         reporter=reporter,
     )
     _cleanup(
