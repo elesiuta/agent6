@@ -210,7 +210,12 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
     assert len(booked) == 1
     assert booked[0].seq == 1 and booked[0].state == "hunt"
     assert abs(booked[0].usd - 0.059) < 1e-9
-    assert (tmp_path / "states" / "crashed-0001-hunt").is_dir()  # retired
+    # Retired under a unique name: the seq does not advance across a crashed
+    # attempt, so a fixed `crashed-<seq>-<state>` collided on the second crash
+    # (ENOTEMPTY) after the booking had already been appended twice.
+    retired = list((tmp_path / "states").glob("crashed-*-0001-hunt"))
+    assert len(retired) == 1 and retired[0].is_dir()
+    assert not (tmp_path / "states" / "0001-hunt").exists()
 
     # Idempotent: no orphan left, nothing more books.
     book_crashed_attempt(journal, tmp_path)
@@ -220,6 +225,17 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: Path) -> None:
     spend, _ = machine_spend(journal.read(), tmp_path, alive=False)
     assert abs(spend.usd - 0.159) < 1e-9
     assert spend.input_tokens == 170 and spend.output_tokens == 80
+
+    # A SECOND crash in the same state: the seq has not advanced, so the retired
+    # name must not collide with the first. It used to (ENOTEMPTY), after the
+    # duplicate booking had already landed, and every later resume raised.
+    _state_log(tmp_path, 1, "hunt", 0.02)
+    book_crashed_attempt(journal, tmp_path)
+
+    booked = [e for e in journal.read() if isinstance(e, AttemptSpend)]
+    assert len(booked) == 2
+    assert abs(sum(e.usd for e in booked) - 0.079) < 1e-9, "the first attempt was booked twice"
+    assert len(list((tmp_path / "states").glob("crashed-*-0001-hunt"))) == 2
 
 
 def test_booked_attempt_spend_counts_against_max_usd(tmp_path: Path) -> None:

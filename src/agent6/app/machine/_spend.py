@@ -104,12 +104,21 @@ def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
         return
     if any(isinstance(e, StepEvent) and e.seq == seq for e in journal.read()):
         return
-    spend = read_budget_totals(newest)
     state = newest.parent.name.split("-", 1)[-1]
+    # Retire the log dir FIRST, under a name no later attempt can collide with:
+    # the seq does not advance across a crashed attempt, so a second crash in
+    # the same state reused `crashed-<seq>-<state>` and the rename died
+    # ENOTEMPTY -- after appending a second booking for the same attempt. A
+    # crash between the rename and the append now loses one booking, which is
+    # the behaviour this function was added to improve on, never a duplicate.
+    ts = datetime.now(UTC).isoformat(timespec="microseconds")
+    retired = newest.parent.with_name(f"crashed-{ts.replace(':', '')}-{newest.parent.name}")
+    newest.parent.rename(retired)
+    spend = read_budget_totals(retired / newest.name)
     if spend.usd or spend.input_tokens or spend.output_tokens:
         journal.append(
             AttemptSpend(
-                ts=datetime.now(UTC).isoformat(timespec="microseconds"),
+                ts=ts,
                 seq=seq,
                 state=state,
                 usd=spend.usd,
@@ -118,7 +127,6 @@ def book_crashed_attempt(journal: MachineJournal, root: Path) -> None:
                 output_tokens=spend.output_tokens,
             )
         )
-    newest.parent.rename(newest.parent.with_name(f"crashed-{newest.parent.name}"))
 
 
 def _state_dir_seq(dir_name: str) -> int | None:
