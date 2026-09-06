@@ -53,8 +53,9 @@ def _run(tmp_path: Path, name: str, events: list[dict[str, object]]) -> Path:
     return d
 
 
-def test_the_page_carries_no_cost_formatter() -> None:
+def test_the_page_carries_no_cost_formatter_and_no_glyph_map() -> None:
     assert "fmtUsd" not in PAGE_HTML and "toFixed(4)" not in PAGE_HTML
+    assert "★" not in PAGE_HTML and "▸" not in PAGE_HTML
 
 
 def test_the_budget_line_is_rendered_once() -> None:
@@ -82,6 +83,8 @@ def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: Path) -> No
     clean = _run(tmp_path, "clean", [{"type": "session.start", "mode": "run", "user_task": "y"}])
     assert summary_row(summarize_session_dir(spent))["cost"] == "$0.16"
     assert summary_row(summarize_session_dir(clean))["cost"] == ""
+    assert summary_row(summarize_session_dir(clean), winner=True)["id_cell"] == "clean ★"
+    assert summary_row(summarize_session_dir(clean))["id_cell"] == "clean"
     assert session_snapshot(spent)["budget"]["usd_text"] == "$0.16 / $1.00"
 
     (spent / "manifest.json").write_text(
@@ -116,4 +119,6 @@ def test_machine_transitions_and_spend_arrive_rendered(
     )
     assert first["state"] == "route" and first["goto"] == "done"
     assert snap["spend"]["text"] == "$0.0000"
+    marks = {st["name"]: st["mark"] for st in snap["states"]}
+    assert marks["done"] == "▸" and marks["route"] == "·"
     assert os.environ["AGENT6_STATE_HOME"]  # the run wrote under the isolated state home

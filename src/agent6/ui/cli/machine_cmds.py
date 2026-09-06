@@ -72,7 +72,6 @@ from agent6.viewmodel.format import (
     format_transition,
     format_usd,
     format_when,
-    machine_state_mark,
 )
 from agent6.viewmodel.machine_state import wait_line
 
@@ -462,7 +461,7 @@ def _render_overview(ms: MachineState) -> str:
     (`machine_state_mark`): the at-a-glance overview, rendered from the shared fold."""
     lines = [f"machine: {ms.machine} (v{ms.version})  initial={ms.initial}", "states:"]
     for s in ms.states:
-        mark = machine_state_mark(is_current=s.is_current, is_visited=s.is_visited)
+        mark = s.mark
         lines.append(f"  {mark} {s.name:<22} [{s.kind}]")
     return "\n".join(lines)
 

@@ -308,9 +308,10 @@ function listCard(title, entries, empty, paint) {
 function sessionsCard(sessions) {
   const card = listCard('Sessions', sessions, 'no sessions yet', (r, it, g) => {
     it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
-    g.appendChild(el('div', 'title', (r.winner ? '★ ' : '') + (r.task || '(no task)')));
+    g.appendChild(el('div', 'title', r.task || '(no task)'));
     const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
-    g.appendChild(el('div', 'sub', `${esc(r.session_id)} · ${when(r.mtime)}${cost}`));
+    // id_cell carries the winner mark the CLI and TUI id cells carry.
+    g.appendChild(el('div', 'sub', `${esc(r.id_cell || r.session_id)} · ${when(r.mtime)}${cost}`));
     it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   });
   const prune = el('button', 'danger'); prune.textContent = 'Prune merged runs'; prune.style.marginTop = '10px';

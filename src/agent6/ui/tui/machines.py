@@ -85,7 +85,6 @@ from agent6.viewmodel.events import tool_result_ok
 from agent6.viewmodel.format import (
     format_usd,
     format_when,
-    machine_state_mark,
     status_label,
 )
 
@@ -355,7 +354,7 @@ class MachineWatchScreen(ScreenChrome, Screen[None]):
         )
         table = self.query_one("#mw-states", DataTable)
         for s in ms.states:
-            mark = machine_state_mark(is_current=s.is_current, is_visited=s.is_visited)
+            mark = s.mark
             table.update_cell(s.name, "mark", mark)
 
         # Mark ended BEFORE rendering the log so a terminal instance's final

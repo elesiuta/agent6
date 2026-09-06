@@ -158,8 +158,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   const tree = el('div', 'tree');
   for (const st of m.states || []) {
     const line = el('div', 'node' + (st.is_current ? ' cursor' : ''));
-    const glyph = st.is_current ? '▸' : (st.is_visited ? '·' : ' ');
-    line.textContent = `${glyph} ${st.name}  (${st.kind})`;
+    line.textContent = `${st.mark} ${st.name}  (${st.kind})`; // machine_state_mark, server-side
     tree.appendChild(line);
   }
   structBody.appendChild(tree);

@@ -21,7 +21,13 @@ from agent6.sessions.layout import HUB_BUCKETS, LOGS_NAME, MANIFEST_NAME, bucket
 from agent6.sessions.manifest import CompareStamp, ManifestError, SessionManifest, read_manifest
 from agent6.task_text import operator_task_text
 from agent6.viewmodel.events import event_epoch
-from agent6.viewmodel.format import format_age, format_cost_cell, listing_status_label, status_level
+from agent6.viewmodel.format import (
+    format_age,
+    format_cost_cell,
+    listing_status_label,
+    status_level,
+    winner_id,
+)
 
 
 def session_mtime(session_dir: Path) -> float:
@@ -197,6 +203,7 @@ def summary_row(
         "cost_usd": s.cost_usd,
         "usd_partial": s.usd_partial,
         "cost": format_cost_cell(s.cost_usd, partial=s.usd_partial),
+        "id_cell": winner_id(s.session_id, winner=winner),
         "unmerged": s.unmerged,
         "verify_ok": s.verify_ok,
         "winner": winner,

@@ -4,8 +4,9 @@
 
 The single source of truth for how run/task state reads to a human, so the same
 state never renders differently across surfaces (per-front-end glyph maps
-drift). The web SPA can't import Python, so it mirrors these exact
-characters in ui/web/client.js; keep them in sync.
+drift). The web client reads the rendered fields the view models carry (a
+task's glyph, a state's mark, a transition's line, a cost cell); it keeps no
+copy of these.
 """
 
 from __future__ import annotations
@@ -81,15 +82,14 @@ def format_age(seconds: float) -> str:
 
 def machine_state_mark(*, is_current: bool, is_visited: bool) -> str:
     """The mark before a machine state in the overview: the current state,
-    a visited one, or none. Text glyphs (the task-status set's), mirrored by
-    the web SPA."""
+    a visited one, or none. Text glyphs (the task-status set's)."""
     return "▸" if is_current else ("·" if is_visited else " ")
 
 
 def format_transition(seq: int, state: str, label: str, goto: str, detail: str = "") -> str:
     """One journaled machine transition as every surface prints it:
     `[seq] state --label--> goto`, the failure evidence appended when there is
-    any. The web SPA mirrors the shape."""
+    any."""
     line = f"[{seq}] {state} --{label}--> {goto}"
     return f"{line} -- {detail}" if detail else line
 
@@ -120,8 +120,7 @@ def budget_usd_text(
 
 
 # The fan-out winner marker, shown on listing rows (a lane the auto-compare
-# ranked first). Text glyph so every terminal font renders it; the web SPA
-# mirrors it in page.py.
+# ranked first). Text glyph so every terminal font renders it.
 WINNER_GLYPH = "★"
 
 

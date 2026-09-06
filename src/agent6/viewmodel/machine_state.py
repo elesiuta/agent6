@@ -38,7 +38,7 @@ from agent6.machine.journal import (
 from agent6.machine.model import MachineSpec
 from agent6.sessions.ipc import worker_is_alive
 from agent6.sessions.layout import LOGS_NAME, machines_root
-from agent6.viewmodel.format import format_transition
+from agent6.viewmodel.format import format_transition, machine_state_mark
 from agent6.viewmodel.state import fold_session
 from agent6.viewmodel.tail import tail_events
 
@@ -55,6 +55,12 @@ class MachineStateView:
     kind: str
     is_current: bool
     is_visited: bool
+    mark: str = ""  # the mark before the name, as every surface draws it
+
+    def __post_init__(self) -> None:
+        if not self.mark:
+            mark = machine_state_mark(is_current=self.is_current, is_visited=self.is_visited)
+            object.__setattr__(self, "mark", mark)
 
 
 @dataclass(frozen=True, slots=True)

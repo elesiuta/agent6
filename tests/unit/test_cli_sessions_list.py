@@ -82,6 +82,7 @@ def test_runs_list_json_carries_the_row_facts(
         "verify_ok",
         "cost_usd",
         "cost",
+        "id_cell",
         "usd_partial",
         "mtime",
         "winner",
