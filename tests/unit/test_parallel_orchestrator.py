@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import Generator, Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -1466,6 +1467,46 @@ def test_build_lane_spawner_over_cap_refused(
     assert called == []  # nothing cloned or spawned
 
 
+def test_run_lane_to_completion_imports_under_the_group_lock(
+    origin: Path,
+    tmp_path: Path,
+    runtime: LaneRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The group's *import_lock* is held ACROSS import_run: two lane threads
+    fetching into one origin race on refs/objects."""
+    origin_state = state_dir(origin)
+    lock = threading.Lock()
+    held: list[bool] = []
+    real_import_run = parallel.import_run
+
+    def observe(
+        origin: Path, lane_repo: Path, branch: str, lane_session_dir: Path, origin_state: Path
+    ) -> Path:
+        held.append(lock.locked())
+        return real_import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
+
+    monkeypatch.setattr(parallel, "import_run", observe)
+    spec = LaneSpec(
+        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+    )
+    res = parallel.run_lane_to_completion(
+        spec,
+        "do it",
+        cfg=Config(),
+        origin=origin,
+        origin_state=origin_state,
+        group="p1",
+        coordinator="co",
+        runtime=runtime,
+        spawner=_FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1"),
+        import_lock=lock,
+        poll_interval_s=0.01,
+    )
+    assert res.ok, res.error
+    assert held == [True]
+
+
 def test_run_lane_to_completion_cleans_up_imported_clone(
     origin: Path, tmp_path: Path, runtime: LaneRuntime
 ) -> None:
@@ -1474,8 +1515,8 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     repo clone + state dir + lane config per lane, forever. Its clones sit at
     `<base>/<repo>/<coordinator>/<group>/lane-N`: every emptied level up to and
     including the per-repo dir goes, the base above it stays. Only the imported
-    (ok=True) lane is cleaned; a failed import keeps its clone (it may hold the
-    only copy of the branch)."""
+    (ok=True) lane is cleaned; a failed import keeps its clone and its live
+    symlink (the clone may hold the only copy of the branch)."""
     from agent6.paths import state_dir
 
     origin_state = state_dir(origin)
@@ -1525,6 +1566,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     )
     assert not res2.ok
     assert spec2.workdir.exists()  # unimported lane retains its workspace
+    assert (origin_state / "sessions" / "runs" / "co-p8-l1").is_symlink()  # and its live view
 
 
 def test_build_lane_spawner_builds_specs_and_preserves_order(

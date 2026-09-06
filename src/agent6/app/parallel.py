@@ -493,25 +493,17 @@ def run_lane_to_completion(
                 + ("was asked to stop and" if asked else "could not be asked to stop and")
                 + " keeps running detached; not imported",
             )
-    lock = import_lock if import_lock is not None else contextlib.nullcontext()
-    link = lane_link(origin_state, res.spec.session_id)
-    had_link = link.is_symlink()
-    with contextlib.suppress(FileNotFoundError):
-        link.unlink()
     try:
-        with lock:
-            dest = import_run(origin, spec.workdir, res.branch, res.session_dir, origin_state)
+        dest = _import_lane(res, origin, origin_state, import_lock)
     except SubrunError as exc:
-        if had_link:
-            symlink_lane(origin_state, res)  # restore the live view; nothing moved
         return LaneResult(
-            spec=spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
+            spec=res.spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
         )
     carry_back(
-        state_dir(spec.workdir),
+        state_dir(res.spec.workdir),
         origin_state,
         dest,
-        lane=spec.lane,
+        lane=res.spec.lane,
         reporter=reporter,
     )
     # The module contract ("clones + lane state are torn down after import")
@@ -520,7 +512,9 @@ def run_lane_to_completion(
     # unimported lane's clone may hold the only copy of its branch. Thread-pool
     # safe: each lane removes only its own dirs, and the group-dir rmdir inside
     # _cleanup succeeds only for whichever lane empties it last.
-    _cleanup([spec], workdir_root=spec.workdir.parent, base=workdir_base(cfg, origin), cfg=cfg)
+    _cleanup(
+        [res.spec], workdir_root=res.spec.workdir.parent, base=workdir_base(cfg, origin), cfg=cfg
+    )
     summary = summarize_session_dir(dest)
     if not produced_result(summary.status):
         # The branch is imported (nothing lost), but only a deliberate end may
@@ -787,6 +781,25 @@ def carry_back(
         reporter.note(f"lane {lane}: memory {', '.join(parts)}")
 
 
+def _import_lane(
+    res: LaneResult, origin: Path, origin_state: Path, lock: threading.Lock | None
+) -> Path:
+    """Land a finished lane's run dir in the origin under *lock* when a group
+    shares one: the live symlink drops so the real dir can take its place, and
+    comes back when the import refuses (nothing moved). Raises SubrunError."""
+    link = lane_link(origin_state, res.spec.session_id)
+    had_link = link.is_symlink()
+    with contextlib.suppress(FileNotFoundError):
+        link.unlink()
+    try:
+        with lock if lock is not None else contextlib.nullcontext():
+            return import_run(origin, res.spec.workdir, res.branch, res.session_dir, origin_state)
+    except SubrunError:
+        if had_link:
+            symlink_lane(origin_state, res)
+        raise
+
+
 def _import_lanes(
     results: list[LaneResult],
     *,
@@ -813,7 +826,6 @@ def _import_lanes(
         if not res.ok:
             failed.append((res, res.error))
             continue
-        link = lane_link(origin_state, res.spec.session_id)
         if worker_is_alive(res.session_dir):
             failed.append(
                 (
@@ -824,14 +836,9 @@ def _import_lanes(
                 )
             )
             continue
-        had_link = link.is_symlink()
-        with contextlib.suppress(FileNotFoundError):
-            link.unlink()  # drop the live symlink so import can place the real dir
         try:
-            dest = import_run(origin, res.spec.workdir, res.branch, res.session_dir, origin_state)
+            dest = _import_lane(res, origin, origin_state, None)
         except SubrunError as exc:
-            if had_link:
-                symlink_lane(origin_state, res)  # restore the live view; nothing moved
             failed.append((res, str(exc)))
             continue
         imported.append(res.spec)
