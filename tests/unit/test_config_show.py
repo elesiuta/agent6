@@ -251,3 +251,26 @@ def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(tmp_path: 
     explicit = _effort_config(tmp_path, '[sandbox]\nisolation = "none"\n')
     view = build_config_view(explicit, resolved=resolved_config_values(explicit.config))
     assert not {s.key: s for s in view.settings}["sandbox.isolation"].is_adaptive
+
+
+def test_the_resolved_values_leave_the_sandbox_leaves_auto_without_a_jail_binary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The `auto` sandbox leaves resolve through the jail binary's probe, which
+    raises JailBinaryError when there is no binary to ask; the config view
+    crashed with it. The view keeps the two leaves at `auto` (a run here
+    refuses, naming the binary)."""
+    from typing import NoReturn
+
+    from agent6.app import confine
+    from agent6.sandbox.jail import JailBinaryError
+
+    def no_binary() -> NoReturn:
+        raise JailBinaryError("agent6-jail binary not found")
+
+    monkeypatch.setattr(confine, "detect_env", no_binary)
+    cfg = Config()
+    assert (cfg.sandbox.isolation, cfg.sandbox.network) == ("auto", "auto")
+    resolved = confine.resolved_config_values(cfg)
+    assert "sandbox.isolation" not in resolved and "sandbox.network" not in resolved
+    assert resolved == resolved_adaptive_values(cfg)

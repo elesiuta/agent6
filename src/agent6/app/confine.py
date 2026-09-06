@@ -21,7 +21,7 @@ from agent6.config import Config, MCPServerEntry
 from agent6.models.registry import resolved_adaptive_values
 from agent6.paths import hidden_paths, is_root, jail_cache_home, private_dirs
 from agent6.sandbox.detect import Environment, degrade_reason, resolve_isolation
-from agent6.sandbox.jail import JailUnavailableError, tool_mount_notes
+from agent6.sandbox.jail import JailBinaryError, JailUnavailableError, tool_mount_notes
 from agent6.tools.policy import (
     jail_home_refusal,
     jail_policy,
@@ -484,10 +484,15 @@ def resolved_config_values(cfg: Config) -> dict[str, object]:
     """Every config leaf whose effective value differs from its raw one, for a
     config view: the adaptive model settings (`resolved_adaptive_values`) and
     the two `auto` sandbox knobs as this host resolves them, so a surface
-    prints `auto` beside the level and network a run here would get."""
+    prints `auto` beside the level and network a run here would get. With no
+    jail binary to probe, the two stay `auto` (a run here refuses, naming
+    the binary)."""
     out = resolved_adaptive_values(cfg)
     if cfg.sandbox.isolation == "auto" or cfg.sandbox.network == "auto":
-        selected = resolve_isolation(cfg.sandbox.isolation, detect_env())
+        try:
+            selected = resolve_isolation(cfg.sandbox.isolation, detect_env())
+        except JailBinaryError:
+            return out
         if cfg.sandbox.isolation == "auto":
             out["sandbox.isolation"] = selected
         if cfg.sandbox.network == "auto":
