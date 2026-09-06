@@ -12,6 +12,8 @@ import re
 
 from agent6.config import Config
 from agent6.models.cache import cached_context_window
+from agent6.providers.openai import is_openai_direct_host, sent_reasoning_effort
+from agent6.types import RoleName
 
 __all__ = [
     "BUNDLED_CONTEXT_WINDOWS",
@@ -20,6 +22,7 @@ __all__ = [
     "context_window",
     "decompose_default",
     "resolved_adaptive_values",
+    "role_effort",
 ]
 
 # Context windows in TOKENS for tested-or-popular models. Bundled because a
@@ -140,25 +143,58 @@ def decompose_default(model_id: str) -> bool:
     return family.startswith(DECOMPOSE_WIN_MODEL_FAMILIES)
 
 
+def role_effort(cfg: Config, role: RoleName) -> str | None:
+    """The reasoning effort *role*'s calls carry, or None when agent6 sends no
+    effort at all and the provider's own default decides (a non-reasoning
+    OpenAI-compatible model, ChatGPT, the Claude Code binary).
+
+    Reads the configured `[models.<role>].effort` when set, else the default
+    each wire applies: openai-compatible reasoning models `low`
+    (`sent_reasoning_effort`), Anthropic no thinking, which is `off`.
+    """
+    rm = cfg.models.resolve(role)
+    if rm is None:
+        return None
+    entry = cfg.providers.get(rm.provider)
+    if entry is None:
+        return None
+    match entry.api_format:
+        case "anthropic":
+            return rm.effort or "off"
+        case "chatgpt" | "claude_code":
+            return rm.effort
+        case _:
+            return sent_reasoning_effort(
+                rm.model,
+                rm.effort,
+                direct_openai=is_openai_direct_host(entry.base_url, entry.deployment),
+            )
+
+
 def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
     """Config settings whose effective value is resolved at runtime, so a UI
     (`config show`, the TUI/web config page) can display the real number rather
-    than the unset/adaptive placeholder: the adaptive compaction thresholds,
-    sized from the worker model's context window, and the auto decompose
-    decision. Empty when no worker model is configured."""
+    than the unset/adaptive placeholder: the adaptive compaction thresholds
+    sized from the worker model's context window, the auto decompose decision,
+    and each role's unset effort. Empty when nothing resolves."""
+    out: dict[str, object] = {}
+    for role in ("worker", "reviewer", "planner"):
+        role_model = cfg.models.resolve(role)
+        if role_model is None or role_model.effort is not None:
+            continue
+        if (effort := role_effort(cfg, role)) is not None:
+            out[f"models.{role}.effort"] = effort
     rm = cfg.models.resolve("worker")
     if rm is None:
-        return {}
+        return out
     drop, summarise = compaction_thresholds(
         rm.provider,
         rm.model,
         drop_override=cfg.context.drop_at_chars,
         summarise_override=cfg.context.summarise_at_chars,
     )
-    out: dict[str, object] = {
-        "context.drop_at_chars": drop,
-        "context.summarise_at_chars": summarise,
-    }
+    out["context.drop_at_chars"] = drop
+    out["context.summarise_at_chars"] = summarise
     if cfg.prompt.decompose == "auto":
         out["prompt.decompose"] = "on" if decompose_default(rm.model) else "off"
     return out

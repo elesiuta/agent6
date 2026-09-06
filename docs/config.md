@@ -185,7 +185,7 @@ Cross-vendor mixes are fine.
 | `provider` | *(required)* | A `[providers.<name>]` entry, by name. |
 | `model` | *(required)* | Model id as that provider names it (`agent6 model` lists them). |
 | `temperature` | `0.0` | Sampling temperature pinned on every call, `0.0` to `2.0`. `0.0` keeps tool use stable; unset leaves the provider's default. |
-| `effort` | none | Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers where the model offers them; Anthropic collapses them to its highest). Unset: the provider's default. |
+| `effort` | none | Reasoning effort: `off`, `low`, `medium`, `high`, `xhigh`, or `max` (the top tiers where the model offers them; Anthropic collapses them to its highest). Unset: what the wire applies, which `agent6 config show` prints resolved (`low` on openai-compatible reasoning models, no thinking on Anthropic). |
 
 ## `[sandbox]`
 

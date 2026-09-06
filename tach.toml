@@ -429,7 +429,9 @@ depends_on = ["agent6.config", "agent6.paths", "agent6.providers", "agent6.secre
 # prompting defaults); composes the live listing cache for windows the
 # bundled table omits.
 path = "agent6.models.registry"
-depends_on = ["agent6.config", "agent6.models.cache"]
+# agent6.providers: the openai wire owns what an unset effort resolves to, so
+# `config show` reads the rule rather than restating it.
+depends_on = ["agent6.config", "agent6.models.cache", "agent6.providers", "agent6.types"]
 
 [[modules]]
 # Pre-spawn model validation + did-you-mean (configured roles + `/parallel`

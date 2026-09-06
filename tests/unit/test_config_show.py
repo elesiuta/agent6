@@ -11,6 +11,7 @@ import pytest
 
 from agent6.config import Config
 from agent6.config.layer import EffectiveConfig, load_effective
+from agent6.models.registry import resolved_adaptive_values
 from agent6.viewmodel.config_view import render_key_detail, render_show
 
 
@@ -142,3 +143,80 @@ def test_key_detail_takes_several_keys_in_the_order_asked() -> None:
         render_key_detail(eff, ["budget.max_usd", "nope"])
     as_json = json.loads(render_key_detail(eff, ["sandbox.network"], as_json=True))
     assert list(as_json) == ["sandbox.network"]
+
+
+def _effort_config(tmp_path: Path, body: str) -> EffectiveConfig:
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(body, encoding="utf-8")
+    return load_effective(tmp_path, cfg)
+
+
+def test_an_unset_effort_shows_what_the_openai_wire_actually_sends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`(unset)` claimed nothing was chosen while openai-compatible reasoning
+    models were getting `low` on every call."""
+    monkeypatch.delenv("AGENT6_REASONING_EFFORT", raising=False)
+    eff = _effort_config(
+        tmp_path,
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nprovider = "openrouter"\nmodel = "moonshotai/kimi-k2.6"\n',
+    )
+
+    resolved = resolved_adaptive_values(eff.config)
+
+    assert resolved["models.worker.effort"] == "low"
+    assert "low" in render_show(eff, resolved=resolved)
+
+
+def test_a_model_that_takes_no_reasoning_knob_keeps_the_unset_row(tmp_path: Path) -> None:
+    """Only a resolution the wire really applies replaces `(unset)`."""
+    eff = _effort_config(
+        tmp_path,
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nprovider = "openrouter"\nmodel = "qwen/qwen3-coder"\n',
+    )
+
+    assert "models.worker.effort" not in resolved_adaptive_values(eff.config)
+
+
+def test_an_unset_anthropic_effort_resolves_to_off(tmp_path: Path) -> None:
+    """Anthropic sends no thinking at all when the role leaves effort unset."""
+    eff = _effort_config(
+        tmp_path,
+        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-opus-5"\n',
+    )
+
+    assert resolved_adaptive_values(eff.config)["models.worker.effort"] == "off"
+
+
+def test_a_configured_effort_is_not_marked_resolved(tmp_path: Path) -> None:
+    """The row shows the operator's own value, with its layer, not a default."""
+    eff = _effort_config(
+        tmp_path,
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nprovider = "openrouter"\nmodel = "moonshotai/kimi-k2.6"\n'
+        'effort = "high"\n',
+    )
+
+    assert "models.worker.effort" not in resolved_adaptive_values(eff.config)
+
+
+def test_the_env_override_is_the_value_shown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AGENT6_REASONING_EFFORT sits below the config and above the built-in
+    default; `config show` reads the same resolver the request does."""
+    monkeypatch.setenv("AGENT6_REASONING_EFFORT", "medium")
+    eff = _effort_config(
+        tmp_path,
+        '[providers.openrouter]\napi_format = "openai"\n'
+        'base_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nprovider = "openrouter"\nmodel = "moonshotai/kimi-k2.6"\n',
+    )
+
+    assert resolved_adaptive_values(eff.config)["models.worker.effort"] == "medium"

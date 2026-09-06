@@ -154,6 +154,35 @@ def _is_openai_direct_reasoning_model(model: str) -> bool:
     )
 
 
+_EFFORT_LEVELS = ("off", "low", "medium", "high", "xhigh", "max")
+
+
+def is_openai_direct_host(base_url: str, deployment: str) -> bool:
+    """True when requests go to api.openai.com itself, whose o-series/gpt-5
+    models take parameters no other openai-compatible host does."""
+    return deployment == "direct" and urlsplit(base_url).hostname == "api.openai.com"
+
+
+def sent_reasoning_effort(
+    model: str, configured: str | None, *, direct_openai: bool = False
+) -> str | None:
+    """The reasoning effort a request for *model* carries, or None when it
+    carries no reasoning knob at all (a model outside the reasoning families).
+
+    One owner for the rule `config show` prints and `complete` sends.
+    Precedence: *configured* (the role's `effort`, or a per-call override) >
+    `AGENT6_REASONING_EFFORT` > `low`.
+    """
+    if not (
+        _is_reasoning_model(model) or (direct_openai and _is_openai_direct_reasoning_model(model))
+    ):
+        return None
+    if configured is not None:
+        return configured.strip().lower()
+    env_override = os.environ.get("AGENT6_REASONING_EFFORT", "").strip().lower()
+    return env_override if env_override in _EFFORT_LEVELS else "low"
+
+
 @dataclass(frozen=True, slots=True)
 class OpenAIProvider:
     """Stateless OpenAI Chat Completions-compatible provider.
@@ -315,9 +344,7 @@ class OpenAIProvider:
         # require `max_tokens` and accept arbitrary temperature, so gate the
         # rename on host + model. OpenRouter masked this by normalising
         # `max_tokens` -> `max_completion_tokens` itself.
-        is_openai_direct = (
-            self.deployment == "direct" and urlsplit(self.base_url).hostname == "api.openai.com"
-        )
+        is_openai_direct = is_openai_direct_host(self.base_url, self.deployment)
         is_openai_direct_reasoning = is_openai_direct and _is_openai_direct_reasoning_model(
             self.model
         )
@@ -341,20 +368,12 @@ class OpenAIProvider:
         # so gate on both, else the configured effort is dropped for exactly the
         # models whose only control is the top-level one. Suppression is never
         # automatic (measured: bench/perf/README.md).
-        if _is_reasoning_model(self.model) or is_openai_direct_reasoning:
-            # Precedence: per-call argument > provider default (from config
-            # `thinking`) > AGENT6_REASONING_EFFORT env > "low".
-            effective_reasoning = (
-                reasoning_effort if reasoning_effort is not None else self.reasoning_effort
-            )
-            if effective_reasoning is None:
-                env_override = os.environ.get("AGENT6_REASONING_EFFORT", "").strip().lower()
-                effective_reasoning = (
-                    env_override
-                    if env_override in ("off", "low", "medium", "high", "xhigh", "max")
-                    else "low"
-                )
-            effort = effective_reasoning.strip().lower()
+        effort = sent_reasoning_effort(
+            self.model,
+            reasoning_effort if reasoning_effort is not None else self.reasoning_effort,
+            direct_openai=is_openai_direct,
+        )
+        if effort is not None:
             if is_openai_direct_reasoning:
                 # api.openai.com Chat Completions o-series/gpt-5 take a TOP-LEVEL
                 # `reasoning_effort` (low/medium/high), NOT the nested
