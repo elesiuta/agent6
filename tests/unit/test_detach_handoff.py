@@ -6,6 +6,7 @@ the invocation's flags, then say so)."""
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -17,6 +18,7 @@ from agent6.app._leg import detach_to_background
 from agent6.app.frontend import FrontendCapabilities, SessionFrontend
 from agent6.app.reporter import Reporter
 from agent6.config import Config
+from agent6.sessions.ipc import read_worker_pid, write_worker_pid
 from agent6.sessions.layout import SessionLayout
 from agent6.ui.acp.frontend import acp_frontend
 
@@ -134,3 +136,34 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: Path) 
     (repo / "a.py").write_text("x = 2\n# the operator's note\n", encoding="utf-8")
 
     assert chain_dirty_paths(repo, ref, base, 5) == ["a.py"]
+
+
+def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: Path) -> None:
+    """`sessions` reads a run with no worker pid as "stale (crashed or killed)".
+    Clearing it before the spawn put every detaching run in that state for the
+    second the background `resume` takes to claim it."""
+    calls: list[tuple[str, Any]] = []
+    layout = SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
+    layout.ensure()
+    cfg = Config.model_validate({"sandbox": {"run_commands": "yes"}})
+    write_worker_pid(layout.session_dir, os.getpid())
+
+    detach_to_background(
+        frontend=_frontend(calls),
+        cfg=cfg,
+        layout=layout,
+        cwd=tmp_path,
+        flags=[],
+        reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
+    )
+    assert read_worker_pid(layout.session_dir) == os.getpid()  # the child overwrites it
+
+    detach_to_background(
+        frontend=_frontend(calls, spawn_err="agent6 exe not found"),
+        cfg=cfg,
+        layout=layout,
+        cwd=tmp_path,
+        flags=[],
+        reporter=Reporter(out=lambda _s: None, err=lambda _s: None),
+    )
+    assert read_worker_pid(layout.session_dir) is None  # nothing took over: really dead

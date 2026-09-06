@@ -505,7 +505,11 @@ def run_task(  # noqa: PLR0911, PLR0912, PLR0915
         # run on the session until the server restarts.
         try:
             frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-            clear_worker_pid(layout.session_dir)
+            if not detach_requested:
+                # A detach keeps it: this process owns the run until the
+                # background `resume` claims it, and `detach_to_background`
+                # clears the pid if that spawn fails.
+                clear_worker_pid(layout.session_dir)
             if stashed:
                 if detach_requested:
                     # The run is NOT over: popping the stash now would feed the

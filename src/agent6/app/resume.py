@@ -698,9 +698,12 @@ def resume_task(  # noqa: PLR0911, PLR0912, PLR0915
         return end.rc
     finally:
         # Single owner of worker.pid for every resume exit path, refusals and
-        # Ctrl-C during verify inference included.
+        # Ctrl-C during verify inference included. A detach is the exception:
+        # this process owns the run until the background `resume` claims it, and
+        # `detach_to_background` clears the pid if that spawn fails.
         frontend.close_console_view()  # stop the heartbeat thread, clear any spinner line
-        clear_worker_pid(layout.session_dir)
+        if not detach_requested:
+            clear_worker_pid(layout.session_dir)
         release_single_writer(repo_lock_fd)
         release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:

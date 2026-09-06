@@ -55,6 +55,7 @@ from agent6.sessions.ipc import (
     clear_compact_request,
     clear_session_netns_pid,
     clear_stop_request,
+    clear_worker_pid,
     read_compact_request,
     session_allow_set,
     stop_request_pending,
@@ -143,6 +144,10 @@ def detach_to_background(
         frontend.prompt_detach_away_mode(layout.session_dir, approval_scopes(cfg))
     err = frontend.spawn_detached_resume(cwd, layout.session_id, flags)
     if err:
+        # The handoff failed, so this process really was the last worker: the
+        # pid it kept through the spawn (so the run never read "crashed or
+        # killed" mid-handoff) goes now.
+        clear_worker_pid(layout.session_dir)
         reporter.note(err)
         return
     reporter.out(f"\n[agent6] detached: {layout.session_id} continues in the background.")
