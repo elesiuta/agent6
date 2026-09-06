@@ -393,10 +393,15 @@ def test_a_tree_the_model_already_certified_is_not_judged_twice() -> None:
     wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
     dispatcher.run_verify.assert_not_called()
 
-    turn = _turn(finishing=True, edited=True)
-    turn.verify_just_failed = True  # the model ran the gate itself this turn
-    wf._turn_harness_verify(state, turn)  # pyright: ignore[reportPrivateUsage]
-    dispatcher.run_verify.assert_not_called()
+    # And a RED verdict the run already holds for this tree is not re-run
+    # (the finish reports the red it knows), where a green-only skip re-judged
+    # it and fed the no-progress streak the one red a second time.
+    wf2, dispatcher2 = _harness_wf("finish")
+    state2 = LoopState(original_task="t", tool_calls=0)
+    state2.verify.note_edit()
+    state2.verify.note_fail("sig")  # the model's own red verify, tree untouched since
+    wf2._turn_harness_verify(state2, _turn(finishing=True))  # pyright: ignore[reportPrivateUsage]
+    dispatcher2.run_verify.assert_not_called()
 
 
 def test_step_mode_judges_every_editing_turn_and_finish_mode_does_not() -> None:

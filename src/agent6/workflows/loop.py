@@ -1570,16 +1570,14 @@ class Workflow:
                 and self.dispatcher.command_policy() != "no"
                 and not state.verify.denied
             ),
-            # An edit after the turn's own verify un-verifies it: the gate
-            # judged a tree that no longer exists.
-            verified_this_turn=(
-                (turn.verify_just_passed or turn.verify_just_failed)
-                and not turn.edit_since_verify_pass
-            ),
+            # The verdict the run holds over the tree AS IT STANDS -- this
+            # turn's own verify or a standing one nothing has edited since.
+            # A red tree nothing touched is not re-judged (the finish reports
+            # the red), and its one red is counted once, not twice.
+            tree_judged=state.verify.judged_and_untouched,
             changed_this_turn=turn.edit_since_verify_pass,
             finishing=ending
             or (turn.finish_signal is not None and turn.finish_kind == "finish_session"),
-            green_and_untouched=state.verify.green_and_untouched,
         )
         if why is None:
             return None

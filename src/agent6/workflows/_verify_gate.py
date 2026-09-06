@@ -27,17 +27,22 @@ def harness_verify_due(
     *,
     when: VerifyWhen,
     gate_present: bool,
-    verified_this_turn: bool,
+    tree_judged: bool,
     changed_this_turn: bool,
     finishing: bool,
-    green_and_untouched: bool,
 ) -> HarnessVerifyWhy | None:
     """Why the harness runs the gate after this turn, or None: `step` after a
-    turn that changed the tree, `finish` when finish_session arrived over a
-    tree no green run covers; never on top of the model's own run."""
-    if when == "never" or not gate_present or verified_this_turn:
+    turn that changed the tree, `finish` when a run ends over a tree no verify
+    covers; never on top of a verdict the run already holds for this tree.
+
+    `tree_judged` is that verdict, green OR red: the model's own
+    run_verify_command this turn, or a standing verdict from an earlier turn
+    with nothing edited since. A red tree nothing has touched needs no re-run
+    (the finish reports the red it already knows); an edit since the verdict
+    clears it and the gate runs again."""
+    if when == "never" or not gate_present or tree_judged:
         return None
-    if finishing and not green_and_untouched:
+    if finishing:
         return "finish"
     if when == "step" and changed_this_turn:
         return "step"

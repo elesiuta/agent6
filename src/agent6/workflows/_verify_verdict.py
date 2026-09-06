@@ -63,9 +63,12 @@ class VerifyVerdict:
 
     def note_fail(self, signature: str) -> None:
         """A red verify: extend the streak when the failure looks the same,
-        restart it when the signature changed (a NEW stuck point)."""
+        restart it when the signature changed (a NEW stuck point). Like a
+        green, it judges the tree AS OF NOW -- the harness must not re-run the
+        gate on a red tree nothing has touched, nor count that red twice."""
         self.last_ok = False
         self.ever_failed = True
+        self.edited_since = False
         if signature == self.fail_signature:
             self.fail_streak += 1
         else:
@@ -80,3 +83,10 @@ class VerifyVerdict:
         """The finish gate's question: verified green, and nothing edited
         since that verify."""
         return self.last_ok is True and not self.edited_since
+
+    @property
+    def judged_and_untouched(self) -> bool:
+        """A verdict (green OR red) covers the tree as it stands: nothing has
+        moved since it was reached. The harness gate skips a tree it already
+        has a verdict for, whichever colour."""
+        return self.last_ok is not None and not self.edited_since
