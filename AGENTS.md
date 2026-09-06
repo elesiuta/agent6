@@ -137,6 +137,7 @@ The shortest version that still carries the point wins.
 - Bench workspaces live on a real disk, never `/tmp`: tmpfs is RAM-backed and an OOM there kills the session scope.
 - One live single-instance smoke precedes every fleet launch, and any mechanism with two enforcement sites gets one even after unit-green: unit fixtures can pass vacuously.
 - Benchmarks: unmodified official scorers, dev/eval split registered before tuning, report split + n verbatim, replicate small effects before shipping them.
+- An arm's finding lands on master, whether it shipped or not: a null is a finding, and it states the mechanism it measured, so a reader needs neither the branch nor the wheel that ran it.
 
 ### Git and commit practices
 
