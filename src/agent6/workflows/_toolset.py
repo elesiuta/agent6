@@ -14,7 +14,15 @@ from typing import Any, Literal
 from agent6.providers import ToolDefinition
 from agent6.tools.dispatch import ToolDispatcher, ToolError
 from agent6.tools.results import ToolResult
-from agent6.tools.schema import RunMetricInput, UseSkillInput, mode_tools, wire_schema
+from agent6.tools.schema import (
+    DagAddTaskInput,
+    DagListTasksInput,
+    DagUpdateTaskInput,
+    RunMetricInput,
+    UseSkillInput,
+    mode_tools,
+    wire_schema,
+)
 from agent6.types import session_kind
 from agent6.workflows._review import ReviewDispatch
 
@@ -30,6 +38,10 @@ READONLY_REVIEW_TOOLS = frozenset(
         "find_references",
     }
 )
+
+
+# The task-graph tools, offered only where a curator backs them.
+DAG_TOOLS = (DagAddTaskInput, DagUpdateTaskInput, DagListTasksInput)
 
 
 def tool_definitions(
@@ -51,6 +63,9 @@ def tool_definitions(
             # though they're not in ALL_TOOLS.
             continue
         if dispatcher.tool_is_withheld(cls.TOOL_NAME):
+            continue
+        if cls in DAG_TOOLS and not dispatcher.dag_available:
+            # No curator (a machine agent state): every DAG call errors.
             continue
         if cls.TOOL_NAME == RunMetricInput.TOOL_NAME and not dispatcher.metric_configured():
             # No [workflow.metric]: the tool can only answer "no metric

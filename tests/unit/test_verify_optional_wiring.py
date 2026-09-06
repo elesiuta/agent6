@@ -615,3 +615,36 @@ def test_hardened_rule_renders_only_where_the_jail_carries_protect_paths(tmp_pat
         config=cfg, repo=repo, mode="run", skills=None, isolation="hardened", protected_paths=True
     )
     assert "cannot CREATE new" in carved
+
+
+def test_the_dag_block_and_tools_follow_the_curator(tmp_path: Path) -> None:
+    """A run built without a curator (a machine agent state in run mode) was
+    taught add_task / update_task / list_tasks and offered them, and every
+    call errored "DAG curator not available"; with decompose on, the block's
+    first instruction was unsatisfiable."""
+    from agent6.tools.dispatch import ToolDispatcher
+    from agent6.workflows._toolset import tool_definitions
+
+    repo = _repo(tmp_path)
+    cfg = Config.model_validate({"prompt": {"decompose": "on"}})
+    with_dag = build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
+    without = build_system_prompt(
+        config=cfg, repo=repo, mode="run", skills=None, dag_available=False
+    )
+    assert "<decompose-first>" in with_dag and "add_task" in with_dag
+    assert "<decompose-first>" not in without and "add_task" not in without
+    names = {
+        t.name for t in tool_definitions(ToolDispatcher(root=tmp_path, config=cfg), mode="run")
+    }
+    assert not {"add_task", "update_task", "list_tasks"} & names
+
+
+def test_the_stale_gate_sentence_is_run_mode_only(tmp_path: Path) -> None:
+    """The verify block's fixed part named `finish_session`'s stale_gate field
+    in plan and ask prompts too; plan has finish_planning and ask no finish
+    tool at all."""
+    repo = _repo(tmp_path)
+    cfg = _cfg(verify=True)
+    assert "stale_gate" in build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
+    assert "stale_gate" not in build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)
+    assert "stale_gate" not in build_system_prompt(config=cfg, repo=repo, mode="ask", skills=None)

@@ -52,6 +52,8 @@ class _StubDispatcher:
     provider stubs ignore the list -- and a policy that withholds nothing.
     """
 
+    dag_available = True
+
     def available_tool_names(self) -> tuple[str, ...]:
         return ()
 

@@ -91,8 +91,9 @@ HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE 
 # model needs neither, which is why this is opt-in (measured per model).
 DAG_RULES_OPTIONAL = """<dag-rules>
 add_task / update_task / list_tasks keep a persistent task breakdown.
-depends_on orders subtasks; a task surfaces once its dependencies
-pass. Statuses: in_progress is the current focus, passed records a finish
+depends_on orders subtasks; a task surfaces once its dependencies are
+settled (passed, skipped or obsolete). Statuses: in_progress is the
+current focus, passed records a finish
 the verify confirmed, or one you checked yourself when the run has no gate.
 </dag-rules>"""
 
@@ -107,7 +108,8 @@ task at a time.
   imperative, `acceptance` the verifiable condition the task is done;
   what must be understood before coding is an investigate phase, ordered
   first. `depends_on` declares a task that cannot start before another
-  lands; the harness surfaces a task only once its dependencies passed.
+  lands; the harness surfaces a task only once its dependencies are settled
+  (passed, skipped or obsolete).
 - The work: the harness surfaces the current task each turn as a
   `[harness focus]` banner. An investigate task ends with its finding
   carried forward; a coding task with the edit and `run_verify_command`.
@@ -116,8 +118,8 @@ task at a time.
 - A task that turns out larger than its line gets child subtasks
   (`parent_id=<its id>`) at the point of most context, then those run.
 - New work found along the way is an `add_task`; a subtask no longer
-  needed is `obsolete` or `skipped`. `finish_session` is refused while a
-  subtask is open.
+  needed is `obsolete` or `skipped`. `finish_session` returns while a
+  subtask is open, three times, then stands.
 </decompose-first>"""
 
 
@@ -230,23 +232,26 @@ This run's verify_command (run via `run_verify_command`):
   argv: {argv}
   timeout: {timeout_s}s
 
-Returncode 0 passes. {when}
-finish_session's stale_gate field records a replacement-gate proposal
-for the operator; the gate itself does not move.
+Returncode 0 passes. {when}{stale}
 </verify-command>
 """
+
+# Run mode only: plan has finish_planning and ask no finish tool at all.
+V2_STALE_GATE = """
+finish_session's stale_gate field records a replacement-gate proposal
+for the operator; the gate itself does not move."""
 
 # The `[workflow].verify_when` fact for the block above, by mode; {retries}
 # is `verify_retries`.
 V2_VERIFY_WHEN = {
     "finish": (
-        "The harness runs it when finish_session is called and the tree changed"
-        " since the last passing run; a red result returns to you {retries}"
+        "The harness runs it when finish_session is called over a tree no"
+        " verify verdict covers; a red result returns to you {retries}"
         " time(s) with its output, then the run ends red."
     ),
     "step": (
         "The harness runs it after every turn that edits the tree, and when"
-        " finish_session is called over a tree no passing run covers; a red"
+        " finish_session is called over a tree no verdict covers; a red"
         " finish returns to you {retries} time(s) with its output, then the run"
         " ends red."
     ),

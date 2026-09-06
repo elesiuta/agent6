@@ -36,6 +36,7 @@ from agent6.prompts.loop import (
     V2_METRIC_BLOCK_TEMPLATE,
     V2_NO_VERIFY_BLOCK,
     V2_REPO_BLOCK_TEMPLATE,
+    V2_STALE_GATE,
     V2_VERIFY_BLOCK_TEMPLATE,
     V2_VERIFY_WHEN,
     dag_rules_block,
@@ -259,6 +260,7 @@ def build_system_prompt(
     isolation: IsolationLevel = "strict",
     commands_allowed: bool | None = None,
     protected_paths: bool = False,
+    dag_available: bool = True,
 ) -> str:
     """Assemble the system prompt from static blocks + run-specific context.
 
@@ -294,7 +296,9 @@ def build_system_prompt(
     # "auto" is pinned to on/off by the CLI (resolve_decompose) before the
     # workflow starts; an unresolved "auto" reaching here (bench/embedders)
     # conservatively renders the optional block.
-    base = base.replace("__DAG_RULES_BLOCK__", dag_rules_block(config.prompt.decompose == "on"))
+    # A run with no curator (a machine agent state) has no DAG tools to teach.
+    dag_block = dag_rules_block(config.prompt.decompose == "on") if dag_available else ""
+    base = base.replace("__DAG_RULES_BLOCK__", dag_block)
     # The hardened filesystem caveat is real only under hardened with protect
     # paths to carve around (`protected_paths`); elsewhere stating it would
     # misdirect the model.
@@ -363,10 +367,11 @@ def build_system_prompt(
                 argv=json.dumps(verify_argv),
                 timeout_s=config.workflow.verify_timeout_s,
                 # The harness runs the gate in run mode only; plan and ask
-                # leave every run to the model.
+                # leave every run to the model, and have no finish_session.
                 when=V2_VERIFY_WHEN[
                     config.workflow.verify_when if mode == "run" else "never"
                 ].format(retries=config.workflow.verify_retries),
+                stale=V2_STALE_GATE if mode == "run" else "",
             )
         )
     else:

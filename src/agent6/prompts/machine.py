@@ -174,8 +174,9 @@ data. So:
     enough: `urllib.request` makes real API calls — you do NOT need `requests`.
   - Pass NON-secret config (an endpoint, a user id) as an operator var spliced
     into `command`, e.g. `["python3", "scripts/fetch.py", "{{ feed_url }}"]`.
-  - A jailed tool sees only `LANG`, `LC_ALL`, `TERM`, `CI`, `PATH`, `HOME` and
-    `AGENT6_MACHINE_DATA_DIR`: the operator's exported secrets do NOT reach it.
+  - A jailed tool sees only `LANG`, `LC_ALL`, `TERM`, `CI`, `PATH`, `HOME`,
+    `PYTHONDONTWRITEBYTECODE`, `UV_NO_SYNC` and `AGENT6_MACHINE_DATA_DIR`: the
+    operator's exported secrets do NOT reach it.
     Never hard-code a secret in a script or the `.asm.toml`; a state that needs
     one says so in its comment, so the operator arranges it.
   - A tool that touches the network MUST set `network = "host"` on its

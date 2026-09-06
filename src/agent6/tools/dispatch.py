@@ -343,6 +343,9 @@ class ToolDispatcher:
         # surface. When wired, the dispatcher exposes add_task /
         # update_task / list_tasks.
         self._curator = curator
+        # Read by the tool list: the three DAG tools answer "no curator" for
+        # a run built without one (a machine agent state).
+        self.dag_available = curator is not None
         self._run_root_node_id = run_root_node_id
         # Optional MCP (Model Context Protocol) manager. When
         # set, `dispatch` routes any tool name starting with the MCP
