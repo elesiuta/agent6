@@ -459,9 +459,10 @@ def apply_patch(
                 write_contained(sp, new_content)
                 if index is not None:
                     index.mark_changed(sp.abs_path)
-        except OSError as exc:
+        except (OSError, ToolError) as exc:
+            detail = (exc.strerror or str(exc)) if isinstance(exc, OSError) else str(exc)
             changed = f"; already changed: {', '.join(landed)}" if landed else ""
-            raise ToolError(f"apply_patch: {sp.rel_path}: {exc.strerror or exc}{changed}") from exc
+            raise ToolError(f"apply_patch: {sp.rel_path}: {detail}{changed}") from exc
         landed.append(str(sp.rel_path))
     rows = tuple(
         (str(sp.rel_path), len(new.encode("utf-8"))) for sp, _t, new in staged if new is not None

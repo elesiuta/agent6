@@ -2288,3 +2288,24 @@ def test_the_argument_preview_clips_at_every_depth() -> None:
     clipped = out["edits"][0]["new_string"]
     assert len(clipped) < 300 and clipped.endswith("… (5000 chars)")
     assert out["path"] == "a.py"
+
+
+def test_a_patch_refused_by_path_safety_part_way_names_what_changed(tmp_path: Path) -> None:
+    """The write loop reported what it had already changed for an OSError
+    alone; a path-safety refusal (`open_contained`'s ToolError: a file where
+    a directory must be) walked past the report, and the model re-planned
+    over a tree it did not know had changed."""
+    cfg = _config(tmp_path)
+    (tmp_path / "a.txt").write_text("original a\n", encoding="utf-8")
+    (tmp_path / "blocker.txt").write_text("a file, not a dir\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=cfg)
+    patch = (
+        "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
+        "@@ -1,1 +1,1 @@\n-original a\n+PATCHED A\n"
+        "diff --git a/blocker.txt/new.txt b/blocker.txt/new.txt\n"
+        "--- /dev/null\n+++ b/blocker.txt/new.txt\n"
+        "@@ -0,0 +1,1 @@\n+new under a file\n"
+    )
+    with pytest.raises(ToolError, match=r"blocker\.txt/new\.txt.*already changed: a\.txt"):
+        d.dispatch("apply_patch", {"patch": patch})
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "PATCHED A\n"
