@@ -158,7 +158,8 @@ class ModelsConfig(BaseModel):
     reviewer: RoleModel | None = Field(
         default=None,
         description=(
-            "Drives `agent6 review` and the in-loop review panel. Unset falls back to `worker`."
+            "Drives `agent6 review`, the in-loop review panel, the context summariser and"
+            " gister, and the prompt reviser. Unset falls back to `worker`."
         ),
     )
     planner: RoleModel | None = Field(
