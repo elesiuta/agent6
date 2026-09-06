@@ -107,9 +107,6 @@ def verify_git_identity(path: Path, identity: CommitIdentity) -> tuple[str, str]
     return name, email
 
 
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
-
-
 def _git() -> str:
     git = shutil.which("git")
     if git is None:
@@ -1011,6 +1008,11 @@ def worktree_matches(path: Path, ref: str, paths: Collection[str]) -> bool:
     return res.returncode == 0
 
 
+def _tree_sha(path: Path, rev: str) -> str:
+    """The tree sha of the commit-ish *rev*."""
+    return _run(path, "rev-parse", f"{rev}^{{tree}}").stdout.strip()
+
+
 def chain_dirty(
     path: Path, ref: str, fallback_parent: str | None, *, exclude: Collection[str] = ()
 ) -> bool:
@@ -1019,7 +1021,7 @@ def chain_dirty(
     unborn repo). Raises GitError outside a repo -- callers treat that as
     clean."""
     base = chain_tip(path, ref) or fallback_parent
-    base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else EMPTY_TREE
+    base_tree = _tree_sha(path, base) if base else EMPTY_TREE
     return base_tree != worktree_tree(path, base, exclude)
 
 
@@ -1035,7 +1037,7 @@ def chain_dirty_paths(
     tip's tree, capped at *limit* (an unborn chain diffs against the empty
     tree)."""
     base = chain_tip(path, ref) or fallback_parent
-    base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else EMPTY_TREE
+    base_tree = _tree_sha(path, base) if base else EMPTY_TREE
     return tree_diff_paths(path, base_tree, worktree_tree(path, base, exclude))[:limit]
 
 
@@ -1084,7 +1086,7 @@ def chain_commit(
     tree = worktree_tree(path, parent, exclude)
     parent_args: list[str] = []
     if parent is not None:
-        if _run(path, "rev-parse", f"{parent}^{{tree}}").stdout.strip() == tree:
+        if _tree_sha(path, parent) == tree:
             return None
         parent_args = ["-p", parent]
     sha = _run(
@@ -1296,12 +1298,12 @@ def plumb_merge(
         sha = theirs
     else:
         if ff_able:
-            tree = _run(path, "rev-parse", f"{theirs}^{{tree}}").stdout.strip()
+            tree = _tree_sha(path, theirs)
         else:
             tree, conflicts = _merge_tree(path, ours, theirs, merge_base)
             if conflicts:
                 return MergeResult("", True, conflicts)
-        if tree == _run(path, "rev-parse", f"{ours}^{{tree}}").stdout.strip():
+        if tree == _tree_sha(path, ours):
             return MergeResult(ours, False, ())  # content-identical: nothing to land
         text = message or f"Merge {merge_rev}"
         trailer = identity.trailer if identity else None
@@ -1583,17 +1585,3 @@ def commit_diff(path: Path, sha: str, *, max_bytes: int = 16384) -> str:
     if not res.ok:
         return ""
     return res.stdout[:max_bytes]
-
-
-def show_commit(path: Path, sha: str, *, max_bytes: int = 16_384) -> str:
-    """Return `git show --stat --patch <sha>` truncated to *max_bytes* for telemetry.
-
-    Best-effort: returns empty string on error rather than raising.
-    """
-    res = _run(path, "show", "--stat", "--patch", sha, check=False)
-    if not res.ok:
-        return ""
-    out = res.stdout
-    if len(out) > max_bytes:
-        return out[:max_bytes] + f"\n... [truncated, full size {len(out)} bytes]"
-    return out
