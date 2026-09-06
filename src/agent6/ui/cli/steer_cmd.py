@@ -15,9 +15,10 @@ from pathlib import Path
 from agent6.sessions.id import SessionIdError
 from agent6.sessions.ipc import submit_steer, worker_is_alive
 from agent6.ui.cli._common import resolve_session_layout
+from agent6.viewmodel.listing import summarize_session_dir
 
 
-def _cmd_steer(target: str, text: str) -> int:
+def _cmd_steer(target: str, text: str, *, now: bool = False) -> int:
     try:
         layout = resolve_session_layout(Path.cwd(), target)
     except SessionIdError as exc:
@@ -31,9 +32,20 @@ def _cmd_steer(target: str, text: str) -> int:
             file=sys.stderr,
         )
         return 2
-    submit_steer(layout.session_dir, text)
-    print(
-        f"steer queued for {layout.session_id}: a streaming model call is"
-        " interrupted to take it; otherwise it lands at the next step boundary."
+    submit_steer(layout.session_dir, text, now=now)
+    picked = (
+        "an in-flight model call is interrupted to take it"
+        if now
+        else "it lands at the next step boundary (--now interrupts the in-flight call)"
     )
+    print(f"steer queued for {layout.session_id}: {picked}.")
+    summary = summarize_session_dir(layout.session_dir)
+    if summary.status == "waiting" and summary.reason:
+        # Parked on an operator prompt: no boundaries arrive and no steer
+        # (--now included) can break that wait; only the answer can.
+        print(
+            f"note: the run is waiting on an unanswered {summary.reason.split()[0]};"
+            f" the steer stays queued until it is answered:"
+            f" agent6 attach {layout.session_id}"
+        )
     return 0

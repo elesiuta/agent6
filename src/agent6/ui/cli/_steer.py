@@ -28,6 +28,7 @@ from agent6.sessions.ipc import (
     frontend_is_live,
     read_steer_answer,
     steer_answer_is_abort,
+    steer_interrupt_pending,
     steer_request_pending,
     take_steer_answer,
     write_steer_answer,
@@ -314,9 +315,10 @@ def install_steer_sigint(  # noqa: PLR0915 - a closure factory over one shared s
 
     def interrupt() -> bool:
         # A double Ctrl-C aborts the in-flight call; so does a front-end steer
-        # (the instruction is already typed, injecting it beats finishing a
-        # step it may contradict).
-        return state["stage"] >= 2 or steer_request_pending(session_dir)
+        # carrying the `now` urgency (`steer --now`). A plain steer waits for
+        # the boundary: aborting wastes the streamed tokens and the step's
+        # partial work.
+        return state["stage"] >= 2 or steer_interrupt_pending(session_dir)
 
     def clear() -> None:
         state["stage"] = 0

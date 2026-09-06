@@ -32,11 +32,21 @@ def test_steer_queues_for_a_live_run(
     assert main(["steer", "tiny-run", "land your best patch now"]) == 0
     out = capsys.readouterr().out
     assert "steer queued for tiny-run-AAAA11" in out
-    assert "interrupted to take it" in out  # mid-stream pickup is the contract
+    assert "next step boundary" in out  # the ruled default: no in-flight abort
     # The one shared channel: request marker + answer, exactly what the
-    # composers write and the loop consumes.
+    # composers write and the loop consumes. A plain steer never carries the
+    # interrupt urgency; --now writes it into the marker.
+    from agent6.sessions.ipc import steer_interrupt_pending
+
     assert steer_request_pending(d)
+    assert not steer_interrupt_pending(d)
     assert take_steer_answer(d) == "land your best patch now"
+
+    assert main(["steer", "tiny-run", "wrap up", "--now"]) == 0
+    out = capsys.readouterr().out
+    assert "interrupted to take it" in out
+    assert steer_interrupt_pending(d)
+    assert take_steer_answer(d) == "wrap up"
 
 
 def test_steer_refuses_a_session_that_is_not_running(
@@ -63,3 +73,31 @@ def test_steer_reports_an_unknown_id(
     monkeypatch.chdir(tmp_path)
     assert main(["steer", "nonesuch", "hello"]) == 2
     assert "ERROR" in capsys.readouterr().err
+
+
+def test_steer_notes_an_unanswered_prompt_park(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run parked on an approval has no boundaries and no interrupt can
+    break the wait; the verb says so honestly instead of implying delivery."""
+    import json
+
+    monkeypatch.setenv("AGENT6_STATE_HOME", str(tmp_path / ".state"))
+    monkeypatch.chdir(tmp_path)
+    d = _run_session(tmp_path, "tiny-run-CCCC33")
+    write_worker_pid(d, os.getpid())
+    events = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {
+            "type": "approval.prompt",
+            "id": "approval-1",
+            "prompt": "Allow fetch: x",
+            "ts": "2026-08-24T00:00:00+00:00",
+        },
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+
+    assert main(["steer", "tiny-run-CCCC33", "hello"]) == 0
+    out = capsys.readouterr().out
+    assert "waiting on an unanswered approval" in out
+    assert "agent6 attach tiny-run-CCCC33" in out

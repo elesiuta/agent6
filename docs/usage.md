@@ -68,7 +68,7 @@ The verify command is the success gate.
 
 ```sh
 agent6 attach                 # follow the conversation live; --raw, --tui, --json
-agent6 steer ID "wrap up now" # queue a steering instruction for a live run (cron-friendly)
+agent6 steer ID "focus on X"  # steer a live run at its next step boundary (--now interrupts the in-flight call)
 agent6 sessions show          # status, iteration, elapsed, cost, where the changes are; --json to script
 agent6 sessions diff          # the git diff the run produced
 agent6 sessions commits       # the run's per-step commits

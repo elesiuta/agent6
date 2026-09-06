@@ -345,7 +345,7 @@ def _dispatch_attach(args: argparse.Namespace) -> int:
 def _dispatch_steer(args: argparse.Namespace) -> int:
     from agent6.ui.cli.steer_cmd import _cmd_steer  # noqa: PLC0415
 
-    return _cmd_steer(args.target, args.text)
+    return _cmd_steer(args.target, args.text, now=args.now)
 
 
 def _resolve_target(target: str) -> SessionLayout | None:

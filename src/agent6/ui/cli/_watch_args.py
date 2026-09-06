@@ -126,6 +126,15 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     steer_target = steer_p.add_argument("target", help="Session id (exact or unique prefix).")
     steer_target.completer = _complete_session_ids  # type: ignore[attr-defined]
     steer_p.add_argument("text", help="The instruction; rides verbatim.")
+    steer_p.add_argument(
+        "--now",
+        action="store_true",
+        help=(
+            "Interrupt the in-flight model call to take the steer immediately"
+            " (the default waits for the next step boundary; an approval or"
+            " question wait cannot be interrupted either way)."
+        ),
+    )
 
 
 def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:

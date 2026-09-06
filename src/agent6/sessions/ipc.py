@@ -698,22 +698,34 @@ def steer_answer_is_abort(session_dir: Path) -> bool:
 STEER_REQUEST_FILE = "steer.request"
 
 
-def request_steer(session_dir: Path) -> None:
-    """TUI-initiated steer: drop a marker the session polls at its next boundary."""
+def request_steer(session_dir: Path, *, now: bool = False) -> None:
+    """Drop the steer marker the session polls. The default is consumed at
+    the next step boundary; `now=True` writes the urgency into the marker and
+    the loop aborts the in-flight model call to take it."""
     with contextlib.suppress(OSError):
-        (session_dir / STEER_REQUEST_FILE).write_text("", encoding="utf-8")
+        (session_dir / STEER_REQUEST_FILE).write_text("now" if now else "", encoding="utf-8")
 
 
 def steer_request_pending(session_dir: Path) -> bool:
     return (session_dir / STEER_REQUEST_FILE).exists()
 
 
-def submit_steer(session_dir: Path, text: str) -> None:
+def steer_interrupt_pending(session_dir: Path) -> bool:
+    """A pending steer whose marker carries the `now` urgency: only this
+    aborts an in-flight model call; a plain steer waits for the boundary
+    (aborting wastes the streamed tokens and the step's partial work)."""
+    try:
+        return (session_dir / STEER_REQUEST_FILE).read_text(encoding="utf-8").strip() == "now"
+    except OSError:
+        return False
+
+
+def submit_steer(session_dir: Path, text: str, *, now: bool = False) -> None:
     """Queue *text* as the session's next steer (a front-end composer, a
     `--steer` seed): the answer lands before the request marker, so the loop
     finds it the moment it notices the request and never waits on a modal."""
     write_steer_answer(session_dir, text)
-    request_steer(session_dir)
+    request_steer(session_dir, now=now)
 
 
 def clear_steer_request(session_dir: Path) -> None:

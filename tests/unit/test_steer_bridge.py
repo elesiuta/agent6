@@ -32,10 +32,20 @@ def test_prompt_consumes_bridged_answer(tmp_path: Path) -> None:
     write_steer_answer(tmp_path, "focus on the tests")
     request_steer(tmp_path)
     assert steer.requested() is True
-    assert steer.interrupt() is True  # a typed front-end steer injects now
+    # The ruled default: a plain steer waits for the step boundary (aborting
+    # the in-flight call wastes the streamed tokens); only the `now` urgency
+    # (`steer --now`) interrupts.
+    assert steer.interrupt() is False
     assert steer.prompt() == "focus on the tests"
     steer.clear()
     assert steer.requested() is False
+
+    write_steer_answer(tmp_path, "wrap up")
+    request_steer(tmp_path, now=True)
+    assert steer.requested() is True
+    assert steer.interrupt() is True
+    assert steer.prompt() == "wrap up"
+    steer.clear()
 
 
 def test_prompt_without_answer_clears_request(

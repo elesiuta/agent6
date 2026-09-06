@@ -17,6 +17,7 @@ from agent6.sessions.ipc import (
     clear_steer_request,
     read_steer_answer,
     steer_answer_is_abort,
+    steer_interrupt_pending,
     steer_request_pending,
 )
 
@@ -73,6 +74,6 @@ def file_bridge_steer(session_dir: Path) -> SteerState:
         prompt=prompt,
         restore=lambda: None,
         abort_pending=lambda: steer_answer_is_abort(session_dir),
-        interrupt=lambda: steer_request_pending(session_dir),
+        interrupt=lambda: steer_interrupt_pending(session_dir),
         reset_stage=lambda: None,  # no SIGINT stage on the file bridge
     )
