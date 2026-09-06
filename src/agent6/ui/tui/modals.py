@@ -114,7 +114,7 @@ class ApprovalModal(ModalScreen[str]):
 
 
 class ConfirmModal(ModalScreen[bool]):
-    """A generic yes/no confirmation (title + body). y confirms; n / Esc cancels.
+    """A generic yes/no confirmation (title + body). y confirms; n / Esc / q cancel.
     No backdrop-click dismissal, matching the other consequential modals. Defaults
     focus to Cancel so an accidental Enter is safe."""
 
@@ -139,6 +139,8 @@ class ConfirmModal(ModalScreen[bool]):
         Binding("n", "cancel", "No", show=True),
         Binding("N", "cancel", "No", show=False),
         Binding("escape", "cancel", "No", show=False),
+        # The footer under the modal reads "Esc/q Back" on every page that opens one.
+        Binding("q", "cancel", "No", show=False),
     ]
 
     def __init__(self, title: str, body: str, *, confirm_label: str = "Confirm") -> None:

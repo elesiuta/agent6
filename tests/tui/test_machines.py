@@ -875,3 +875,32 @@ def test_watch_screen_stop_on_a_parked_machine_says_why(
             assert not (instance / "stop").exists()
 
     asyncio.run(scenario())
+
+
+def test_machine_run_confirm_backs_out_on_q(tmp_path: Path, monkeypatch: object) -> None:
+    """The footer under the confirm reads "Esc/q Back": q backs out like Esc."""
+    _write(tmp_path / "m.asm.toml")
+    captured: list[list[str]] = []
+
+    def _fake_spawn(argv: list[str], cwd: Path, **_k: object) -> str:
+        captured.append(list(argv))
+        return ""
+
+    monkeypatch.setattr(machmod, "spawn_and_confirm", _fake_spawn)  # type: ignore[attr-defined]
+
+    async def scenario() -> None:
+        app = _Host(tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            table = app.screen.query_one("#machines", DataTable)
+            table.focus()
+            table.move_cursor(row=0)
+            await pilot.press("r")
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmModal)
+            await pilot.press("q")
+            await pilot.pause()
+            assert not isinstance(app.screen, ConfirmModal), "q did not back out"
+            assert captured == []
+
+    asyncio.run(scenario())
