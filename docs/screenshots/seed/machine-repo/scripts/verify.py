@@ -35,7 +35,7 @@ def main() -> int:
     sys.path.insert(0, str(Path.cwd()))
     try:
         module = importlib.import_module("stats")
-    except Exception as exc:
+    except (ImportError, SyntaxError) as exc:
         return _emit(False, f"could not import stats: {exc}")
     median: Any = getattr(module, "median", None)
     if not callable(median):
@@ -43,7 +43,7 @@ def main() -> int:
     for xs, want in CASES:
         try:
             got = median(list(xs))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the candidate may raise anything
             return _emit(False, f"median({xs}) raised {exc!r}")
         if got != want:
             return _emit(False, f"median({xs}) = {got!r}, want {want!r}")
