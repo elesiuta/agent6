@@ -280,3 +280,56 @@ def test_byte_offsets_map_onto_the_decoded_line_past_a_byte_that_is_not_utf8() -
     assert line.decode("utf-8", "replace")[start:end] == "NEEDLE"
     start, end = _char_span(line, line.index(b"more"), line.index(b"more") + 4)
     assert line.decode("utf-8", "replace")[start:end] == "more"
+
+
+def test_a_scoped_search_names_the_session_it_searched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`history search TERM --session ID` searches one session dir, but its
+    empty result named the whole state dir, under which the term did exist."""
+    import shutil
+
+    from agent6.paths import state_dir
+    from agent6.sessions.layout import bucket_dir
+    from agent6.ui.cli import main
+
+    if shutil.which("rg") is None:
+        pytest.skip("ripgrep is not installed")
+    monkeypatch.chdir(tmp_path)
+    runs = bucket_dir(state_dir(tmp_path), "runs")
+    for sid, text in (("quiet-run-AAAAAA", "nothing here"), ("other-run-BBBBBB", "UNIQUETERM123")):
+        (runs / sid).mkdir(parents=True)
+        (runs / sid / "logs.jsonl").write_text(
+            json.dumps({"type": "session.start", "user_task": text}) + "\n", encoding="utf-8"
+        )
+    assert main(["history", "search", "UNIQUETERM123", "--session", "quiet-run-AAAAAA"]) == 1
+    out = capsys.readouterr().out
+    assert "no matches under" in out and "quiet-run-AAAAAA" in out
+
+
+def test_an_unscoped_no_match_names_the_sessions_root_it_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bare `history search` reads `<state>/sessions`, so an empty result
+    names that, not the whole state dir, which also holds memory/ the search
+    never reads: it claimed the term was absent from a file that had it."""
+    import shutil
+
+    from agent6 import memory
+    from agent6.paths import state_dir
+    from agent6.sessions.layout import bucket_dir
+    from agent6.ui.cli import main
+
+    if shutil.which("rg") is None:
+        pytest.skip("ripgrep is not installed")
+    monkeypatch.chdir(tmp_path)
+    state = state_dir(tmp_path)
+    run_dir = bucket_dir(state, "runs") / "quiet-run-AAAAAA"
+    run_dir.mkdir(parents=True)
+    (run_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "user_task": "nothing here"}) + "\n",
+        encoding="utf-8",
+    )
+    memory.add(state, "rounding-rule", "UNIQUETERM123 is banker's rounding.")
+    assert main(["history", "search", "UNIQUETERM123"]) == 1
+    assert f"no matches under {state / 'sessions'}." in capsys.readouterr().out

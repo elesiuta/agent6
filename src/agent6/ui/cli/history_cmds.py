@@ -16,7 +16,7 @@ from pathlib import Path
 from agent6.graph.storage import load_graph
 from agent6.paths import state_dir
 from agent6.sessions.id import SessionIdError
-from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SessionLayout
+from agent6.sessions.layout import LOGS_NAME, SESSION_BUCKETS, SESSIONS_ROOT, SessionLayout
 from agent6.ui.cli._common import (
     all_session_dirs,
     error,
@@ -30,6 +30,7 @@ from agent6.viewmodel.transcript_render import (
     fold_conversation,
     load_transcripts,
     render_markdown,
+    transcript_seq,
 )
 
 
@@ -65,7 +66,7 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
         sys.stderr.write(completed.stderr)
         return completed.returncode
     hits = _parse_rg_matches(completed.stdout)
-    _render_history_hits(hits, state_dir(cwd))
+    _render_history_hits(hits, targets[0] if session_id else state_dir(cwd) / SESSIONS_ROOT)
     return 0 if hits else 1
 
 
@@ -455,7 +456,7 @@ def _cmd_history_transcript(
     if as_json:
         if window is not None:
             lo, hi = window
-            transcripts = [t for t in transcripts if lo <= int(t.get("seq", 0)) <= hi]
+            transcripts = [t for t in transcripts if lo <= transcript_seq(t) <= hi]
         print(json.dumps(transcripts, indent=2, ensure_ascii=False))
         return 0
 

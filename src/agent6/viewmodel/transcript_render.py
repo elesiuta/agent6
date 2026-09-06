@@ -63,6 +63,14 @@ class Turn:
 CONVERSATION_SEATS = frozenset({"worker", "planner"})
 
 
+def transcript_seq(t: dict[str, Any]) -> int:
+    """A transcript's run-global seq, 0 when the record carries no integer one:
+    the one owner of that coercion for the sort, the `(seq N)` label and the
+    `--seq` window, which a hand-edited or corrupt `seq` crashed."""
+    seq = t.get("seq", 0)
+    return seq if isinstance(seq, int) else 0
+
+
 def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
     """Every transcript JSON object under a session's transcripts/ dir, in seq
     order -- ALL seats. The raw list is `sessions transcript --json`'s output, the
@@ -78,7 +86,7 @@ def load_transcripts(transcripts_dir: Path) -> list[dict[str, Any]]:
             continue
         if isinstance(obj, dict):
             out.append(obj)
-    out.sort(key=lambda t: t.get("seq", 0))
+    out.sort(key=transcript_seq)
     return out
 
 
@@ -373,7 +381,11 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Turn]:
     pending_response = False  # the prior transcript's response yielded turns
     prev_output: list[Any] = []  # a Responses call's output items, echoed by the next request
     for t in transcripts:
-        seq = int(t.get("seq", 0))
+        seq = t.get("seq", 0)
+        if not isinstance(seq, int):
+            # Unplaceable in this walk; `--json` still hands the record over raw.
+            turns.append(Turn(role="marker", text=f"unreadable seq {seq!r}: call skipped"))
+            continue
         req = _as_dict(_as_dict(t.get("request")).get("body"))
         resp = _as_dict(_as_dict(t.get("response")).get("body"))
         shape = _shape(req, resp)

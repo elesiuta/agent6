@@ -779,3 +779,26 @@ def test_a_replayed_message_stripped_of_its_id_is_not_printed_twice() -> None:
         ("assistant", 2),
     ]
     assert render_markdown(turns, session_id="s").count("working on it") == 1
+
+
+def test_a_transcript_whose_seq_is_not_a_number_is_kept_and_marked(tmp_path: Path) -> None:
+    """A `seq` that is not an integer crashed the sort, the fold and the
+    `--seq` window (a bare TypeError, then a ValueError). It orders as 0, the
+    record still reaches `sessions transcript --json` verbatim, and the fold
+    says what it could not place."""
+    from agent6.viewmodel.transcript_render import fold_conversation, load_transcripts
+
+    tdir = tmp_path / "transcripts"
+    tdir.mkdir()
+    (tdir / "0000001.json").write_text(
+        json.dumps({"seq": "notanumber", "seat": "worker", "request": {}, "response": {}}),
+        encoding="utf-8",
+    )
+    (tdir / "0000002.json").write_text(
+        json.dumps({"seq": 2, "seat": "worker", "request": {}, "response": {}}),
+        encoding="utf-8",
+    )
+    loaded = load_transcripts(tdir)
+    assert [t["seq"] for t in loaded] == ["notanumber", 2]
+    marks = [t.text for t in fold_conversation(loaded) if t.role == "marker"]
+    assert any("unreadable seq 'notanumber'" in m for m in marks)
