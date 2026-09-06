@@ -193,10 +193,7 @@ def _cmd_machine_graph(path: Path, *, fmt: str) -> int:
     try:
         spec = load_machine(path)
     except MachineError as exc:
-        print(f"FAIL: {path}", file=sys.stderr)
-        for problem in exc.problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
+        return _fail(path, exc.problems)
     render_fmt: Literal["mermaid", "dot"] = "dot" if fmt == "dot" else "mermaid"
     print(render(spec, render_fmt), end="")
     return 0

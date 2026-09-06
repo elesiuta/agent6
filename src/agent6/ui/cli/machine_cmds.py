@@ -24,9 +24,7 @@ from agent6.app.machine import (
     machine_network_refusal,
     machine_spend,
 )
-from agent6.app.machine.create import create_machine
 from agent6.app.machine.listing import machine_rows
-from agent6.app.machine.run import run_machine
 from agent6.app.reporter import STDIO_REPORTER
 from agent6.config import (
     Config,
@@ -56,7 +54,7 @@ from agent6.sessions.ipc import read_worker_pid, worker_is_alive
 from agent6.sessions.layout import machines_root
 from agent6.types import IsolationLevel
 from agent6.ui.cli._common import error, plural, refuse, styled_status
-from agent6.ui.cli.machine_check import _cmd_machine_test
+from agent6.ui.cli.machine_check import _cmd_machine_test, _fail
 from agent6.ui.cli.plan_watch import format_plain_event
 from agent6.ui.notify import desktop_notify
 from agent6.viewmodel import (
@@ -246,26 +244,6 @@ def _no_instance_hint(machine_id: str, cwd: Path) -> str:
     return f" Did you mean {close[0]!r}?" if close else ""
 
 
-def _cmd_machine_run(
-    path: Path,
-    *,
-    config_path: Path | None = None,
-    exit_on_wait: bool = False,
-    disable_sandbox: bool = False,
-    auto_approve: bool = False,
-    no_commands: bool = False,
-) -> int:
-    return run_machine(
-        path,
-        _machine_frontend(),
-        config_path=config_path,
-        exit_on_wait=exit_on_wait,
-        disable_sandbox=disable_sandbox,
-        auto_approve=auto_approve,
-        no_commands=no_commands,
-    )
-
-
 def _cmd_machine_replay(machine_id: str) -> int:
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
@@ -276,10 +254,7 @@ def _cmd_machine_replay(machine_id: str) -> int:
     try:
         spec = load_machine(source_path)
     except MachineError as exc:
-        print(f"FAIL: {source_path}", file=sys.stderr)
-        for problem in exc.problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
+        return _fail(source_path, exc.problems)
     journal = MachineJournal(root)
     try:
         result = drive(spec, journal, None, live=False)
@@ -303,7 +278,7 @@ def _read_pending_wait_tolerant(journal: MachineJournal) -> tuple[PendingWait | 
         return None, str(exc)
 
 
-def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
+def _cmd_machine_status(machine_id: str) -> int:
     cwd = Path.cwd()
     root = machines_root(resolved_state_dir(cwd)) / machine_id
     if not root.is_dir():
@@ -313,10 +288,7 @@ def _cmd_machine_status(machine_id: str) -> int:  # noqa: PLR0912
     try:
         spec = load_machine(source_path)
     except MachineError as exc:
-        print(f"FAIL: {source_path}", file=sys.stderr)
-        for problem in exc.problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
+        return _fail(source_path, exc.problems)
     journal = MachineJournal(root)
     try:
         result = drive(spec, journal, None, live=False)
@@ -477,7 +449,7 @@ def _watch_liveness_exit(root: Path, machine_id: str, ms: MachineState) -> int |
     return None
 
 
-def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR0915
+def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     """Follow a running machine: the state overview, each transition as it lands,
     and the current agent state's live reasoning (its per-state logs.jsonl). Exits
     when the worker is dead (parked or crashed), when the instance ended, or on
@@ -491,10 +463,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912, PLR09
     try:
         spec = load_machine(source)
     except MachineError as exc:
-        print(f"FAIL: {source}", file=sys.stderr)
-        for problem in exc.problems:
-            print(f"  - {problem}", file=sys.stderr)
-        return 1
+        return _fail(source, exc.problems)
     journal = MachineJournal(root)
     try:
         ms = fold_machine(spec, journal.read())
@@ -566,11 +535,3 @@ def _machine_frontend() -> MachineFrontend:
     the interactive network-refusal resolver (needs a TTY, so it stays cli-side;
     `create_machine` uses only the reporter)."""
     return MachineFrontend(reporter=STDIO_REPORTER, resolve_network_fix=_resolve_network_refusal)
-
-
-def _cmd_machine_create(
-    task: str, *, output: Path | None, max_attempts: int, config_path: Path | None
-) -> int:
-    return create_machine(
-        task, _machine_frontend(), output=output, max_attempts=max_attempts, config_path=config_path
-    )

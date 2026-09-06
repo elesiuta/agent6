@@ -736,19 +736,20 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
 
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
+    from agent6.app.machine.create import create_machine  # noqa: PLC0415
+    from agent6.app.machine.run import run_machine  # noqa: PLC0415
     from agent6.ui.cli.machine_check import (  # noqa: PLC0415
         _cmd_machine_check,
         _cmd_machine_graph,
         _cmd_machine_test,
     )
     from agent6.ui.cli.machine_cmds import (  # noqa: PLC0415
-        _cmd_machine_create,
         _cmd_machine_list,
         _cmd_machine_poke,
         _cmd_machine_replay,
-        _cmd_machine_run,
         _cmd_machine_status,
         _cmd_machine_stop,
+        _machine_frontend,
     )
 
     if args.machine_command == "list":
@@ -760,8 +761,9 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.machine_command == "graph":
         return _cmd_machine_graph(args.file, fmt=args.format)
     if args.machine_command == "run":
-        return _cmd_machine_run(
+        return run_machine(
             args.file,
+            _machine_frontend(),
             config_path=args.config,
             exit_on_wait=args.exit_on_wait,
             disable_sandbox=args.dangerously_disable_sandbox,
@@ -777,8 +779,12 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     if args.machine_command == "replay":
         return _cmd_machine_replay(args.machine_id)
     if args.machine_command == "create":
-        return _cmd_machine_create(
-            args.task, output=args.output, max_attempts=args.max_attempts, config_path=args.config
+        return create_machine(
+            args.task,
+            _machine_frontend(),
+            output=args.output,
+            max_attempts=args.max_attempts,
+            config_path=args.config,
         )
     raise AssertionError("unreachable")  # pragma: no cover -- machine subparser is required
 
