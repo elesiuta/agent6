@@ -32,3 +32,16 @@ def test_paint_run_reads_no_free_id() -> None:
 def test_the_step_picker_fetches_with_the_cards_own_id() -> None:
     body = _paint_run_body()
     assert body.count("encodeURIComponent(cards._id)") >= 2
+
+
+def test_the_machine_watch_gates_on_the_shared_refusals() -> None:
+    """A live machine blocked on an approval reads status "waiting", so gating
+    the prompt boxes on the status word hid the box the machine was blocked on
+    from the page that had claimed it as answer front-end."""
+    from agent6.ui.web.page import CLIENT_JS as js
+
+    start = js.index("function paintMachine(")
+    body = js[start : js.index("\nfunction ", start + 1)]
+    assert "m.refusals" in body, "the machine watch derives its own gating"
+    assert "notRunning" not in body
+    assert "canAnswer ? (data.reasoning || {}) : {}" in body

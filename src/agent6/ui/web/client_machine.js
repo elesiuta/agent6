@@ -108,12 +108,19 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // Track which per-state dir this frame rendered so prompt answers + steer route
   // to that exact state (ids reset per state; the machine may advance meanwhile).
   cards._state = (data.reasoning || {}).state_dir || '';
-  // A machine that is not running takes no input: ended, parked (waiting) and
-  // stopped instances all have a finished agent state whose loop polls no
-  // marker, so painting {} reconciles any approval/question boxes away,
-  // matching the Steer disable below (the server refuses the POST anyway).
-  const notRunning = !!m.ended || !!m.worker_lost || (m.status ? m.status !== 'running' : false);
-  paintPrompts(cards, notRunning ? {} : (data.reasoning || {}));
+  // What each verb can reach, decided once server-side (`machine_verb_refusals`,
+  // the same reading the CLI and the TUI gate on). A machine whose answer verb
+  // is refused takes no prompt: painting {} reconciles the boxes away. The
+  // status word cannot stand in for this -- a LIVE machine blocked on an
+  // approval reads "waiting", and gating on the word hid the box it was
+  // blocked on from the page that had claimed the instance.
+  const refusals = m.refusals || {};
+  const canAnswer = !refusals.answer;
+  // A stop is refused exactly when the instance has ended or its worker is
+  // gone, so "" there is this machine's liveness.
+  const current = (m.states || []).filter((s) => s.is_current)[0];
+  const agentLive = !refusals.stop && (!current || current.kind !== 'wait');
+  paintPrompts(cards, canAnswer ? (data.reasoning || {}) : {});
   machineNotify(ctx, m);
   if (m.worker_lost && !ctx.endedNotified) {
     // Supervisor loss, not a journaled end: the instance is resumable.
@@ -161,36 +168,33 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // additionally needs a RUNNING worker (a parked or stopped machine's newest
   // state is finished; nothing polls the marker) and an agent state to inject
   // into. A poke is the exception: waking a waiting machine is its purpose.
-  const ended = !!m.ended || !!m.worker_lost;
   if (cards._steer_btn) {
-    cards._steer_btn.disabled = notRunning || !cards._state;
-    cards._steer_btn.title = ended ? 'the machine has ended'
-      : notRunning ? 'machine is not running; poke it to wake a waiting machine'
-      : !cards._state ? 'no agent state is active to steer'
-      : 'inject into the current agent state at its next safe boundary';
+    cards._steer_btn.disabled = !!refusals.steer || !cards._state;
+    cards._steer_btn.title = refusals.steer
+      || (!cards._state ? 'no agent state is active to steer'
+        : 'inject into the current agent state at its next safe boundary');
   }
   if (cards._msg_btn) {
-    cards._msg_btn.disabled = ended;
-    cards._msg_btn.title = ended ? 'the machine has ended'
-      : 'wake a waiting machine; its next tool reads the message';
+    cards._msg_btn.disabled = !!refusals.poke;
+    cards._msg_btn.title = refusals.poke || 'wake a waiting machine; its next tool reads the message';
   }
 
   // The current state's conversation: live turn from this frame, completed
   // turns re-folded on a debounce. A live-but-silent state ticks the heartbeat.
   const r = data.reasoning || {};
-  // Gate on the machine's DIR liveness (notRunning), not the reasoning fold's
+  // Gate on the machine's own liveness (agentLive), not the reasoning fold's
   // `finished`: an agent-state per-state log carries no session.end, so the dir-less
   // fold's `finished` is STRUCTURALLY always false -- a parked/ended/stopped
   // machine would otherwise show its last (finished) turn as live and tick
   // "agent working…" forever. Matches the TUI, which gates on worker liveness.
-  cards._conv.setLive(notRunning ? { finished: true } : r);
+  cards._conv.setLive(agentLive ? r : { finished: true });
   cards._conv.poke();
   const streaming = r.last_role && (r.last_role.streamed_thinking || r.last_role.streamed_text);
   hbState = {
-    // notRunning quiets the beat for a not-running machine; operator_blocked
-    // still quiets a RUNNING state blocked on an approval/question (the run
-    // pane's rule; the machine snapshot is dir-less, so it reads the fold).
-    active: !notRunning && !!r.last_role && !streaming && !r.operator_blocked,
+    // agentLive quiets the beat for a machine that is not working;
+    // operator_blocked still quiets a RUNNING state blocked on an
+    // approval/question (the run pane's rule).
+    active: agentLive && !!r.last_role && !streaming && !r.operator_blocked,
     role: (r.last_role && r.last_role.role) || 'agent',
     // Server-computed age, as the run pane uses: anchoring to this frame's
     // ARRIVAL showed a state wedged for forty minutes as "working… 3s".

@@ -283,20 +283,25 @@ def machine_files(cwd: Path) -> list[Path]:
 MachineVerb = Literal["stop", "poke", "steer", "answer"]
 
 
-def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str:
-    """Why *verb* cannot reach machine *name* now, or "" when it can. One
+def machine_verb_refusals(machine_dir: Path, name: str) -> dict[MachineVerb, str]:
+    """Why each verb cannot reach machine *name* now, "" where it can. ONE
     reading of the instance (its dir, the journal's end, the worker, a wait
-    state) and one wording per state and verb, for the CLI, the TUI, and the
-    web: an unknown machine is named as unknown (not as stopped); an ended
-    one consumes no signal; a stopped one has no state polling a marker (a
-    poke still wakes it); a live one in a wait state reads no steer (a poke
-    wakes it) but takes a stop and an answer."""
+    state) and one wording per state and verb, for the CLI, the TUI and the
+    web: an unknown machine is named as unknown (not as stopped); an ended one
+    consumes no signal; a stopped one has no state polling a marker (a poke
+    still wakes it); a live one in a wait state reads no steer (a poke wakes
+    it) but takes a stop and an answer.
+
+    A front-end paints every verb at once, so it asks once; the CLI asks for
+    the one verb it is about to run through :func:`machine_verb_refusal`.
+    """
+    verbs: tuple[MachineVerb, ...] = ("stop", "poke", "steer", "answer")
     if not machine_dir.is_dir():
-        return f"no machine {name!r}"
+        return dict.fromkeys(verbs, f"no machine {name!r}")
     try:
         events = MachineJournal(machine_dir).read()
     except JournalError as exc:
-        return f"machine {name!r}: {exc}"
+        return dict.fromkeys(verbs, f"machine {name!r}: {exc}")
     end = events[-1] if events and isinstance(events[-1], MachineEnd) else None
     if end is not None:
         ended = f"machine {name!r} already ended in {end.state!r} ({end.status}: {end.reason})"
@@ -305,8 +310,8 @@ def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str
             "poke": f"{ended}; a poke would never be consumed",
             "steer": f"{ended}; there is no state to steer",
             "answer": f"{ended}; the prompt is closed",
-        }[verb]
-    if verb != "poke" and not worker_is_alive(machine_dir):
+        }
+    if not worker_is_alive(machine_dir):
         return {
             "stop": (
                 f"machine {name!r} is not running; nothing to stop (a parked instance resumes"
@@ -317,10 +322,20 @@ def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str
                 " (poke it to wake a waiting machine)"
             ),
             "answer": f"machine {name!r} is not running; poke it to wake a waiting machine",
-        }[verb]
-    if verb == "steer" and _in_wait_state(machine_dir, events):
-        return f"machine {name!r} is waiting; a wait state reads no steer (poke it to wake it)"
-    return ""
+            "poke": "",  # waking a waiting machine is what a poke is for
+        }
+    waiting = (
+        f"machine {name!r} is waiting; a wait state reads no steer (poke it to wake it)"
+        if _in_wait_state(machine_dir, events)
+        else ""
+    )
+    return {"stop": "", "poke": "", "answer": "", "steer": waiting}
+
+
+def machine_verb_refusal(machine_dir: Path, name: str, verb: MachineVerb) -> str:
+    """Why *verb* cannot reach machine *name* now, or "" when it can
+    (:func:`machine_verb_refusals` for the whole set)."""
+    return machine_verb_refusals(machine_dir, name)[verb]
 
 
 def _in_wait_state(machine_dir: Path, events: Sequence[object]) -> bool:
@@ -462,4 +477,9 @@ def machine_state_as_dict(ms: MachineState, machine_dir: Path | None = None) -> 
     d = asdict(ms)
     if machine_dir is not None:
         d["status"] = machine_word_for_dir(ms, machine_dir)
+        # Every verb's refusal, so a front-end gates and labels its buttons from
+        # the one decision the CLI and the TUI already use instead of deriving
+        # its own from the status word (which conflates parked, in-a-wait-state
+        # and live-but-blocked).
+        d["refusals"] = machine_verb_refusals(machine_dir, machine_dir.name)
     return d

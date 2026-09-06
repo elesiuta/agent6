@@ -159,6 +159,26 @@ def test_machine_state_as_dict_stamps_the_dir_word(tmp_path: Path) -> None:
     assert "status" not in machine_state_as_dict(live)
 
 
+def test_the_wire_form_carries_every_verb_refusal(tmp_path: Path) -> None:
+    """A front-end paints all four verbs, so it asks once. Deriving them from
+    the status word instead read a LIVE machine blocked on an approval (word:
+    "waiting") as not running, and the web hid the box it was blocked on."""
+    spec = _spec(tmp_path)
+    live = fold_machine(spec, [])
+    d = tmp_path / "inst"
+    d.mkdir()
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    refusals = machine_state_as_dict(live, d)["refusals"]
+
+    assert refusals == {"stop": "", "poke": "", "steer": "", "answer": ""}
+    MachineJournal(d).write_pending_wait(PendingWait(state="w", wake_epoch=None))
+    parked = machine_state_as_dict(live, d)
+    assert parked["status"] == "waiting"
+    assert parked["refusals"]["answer"] == "", "a live machine still takes its answer"
+    assert "reads no steer" in parked["refusals"]["steer"]
+
+
 def test_a_corrupt_wait_file_counts_as_parked(tmp_path: Path) -> None:
     # Better to render "waiting" than to guess "stopped"/close the stream over
     # an unreadable wait record; the one rule every surface shares.
