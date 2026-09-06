@@ -18,7 +18,6 @@ from pathlib import Path
 
 from agent6.app.confine import check_network_support
 from agent6.app.finalize import hook_env, run_notify_hook
-from agent6.app.machine._bundle import is_inside
 from agent6.config import Config
 from agent6.machine import ToolState
 from agent6.types import IsolationLevel
@@ -85,7 +84,7 @@ def machine_protect_paths(machine_path: Path, cwd: Path) -> tuple[Path, ...]:
     out: list[Path] = []
     for p in (machine_path, machine_path.parent / "scripts"):
         rp = p.resolve()
-        if rp.exists() and is_inside(rp, cwd_r):
+        if rp.exists() and rp.is_relative_to(cwd_r):
             out.append(rp)
     return tuple(out)
 

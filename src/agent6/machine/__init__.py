@@ -36,7 +36,7 @@ from agent6.machine.engine import (
     World,
     drive,
 )
-from agent6.machine.graph import GraphFormat, render, render_dot, render_mermaid
+from agent6.machine.graph import render_dot, render_mermaid
 from agent6.machine.journal import (
     AgentFact,
     AttemptSpend,
@@ -81,7 +81,6 @@ __all__ = [
     "DryRunReport",
     "EngineError",
     "FieldSpec",
-    "GraphFormat",
     "JournalError",
     "LiveWorld",
     "MachineBegin",
@@ -110,7 +109,6 @@ __all__ = [
     "load_machine",
     "machine_lock",
     "read_source",
-    "render",
     "render_dot",
     "render_mermaid",
     "stop_requested",

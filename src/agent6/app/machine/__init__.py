@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from agent6.app.machine._bundle import (
     MachineFileSummary,
-    is_inside,
     summarize_machine_file,
     validate_bundle,
 )
@@ -47,7 +46,6 @@ __all__ = [
     "available_tools",
     "book_crashed_attempt",
     "build_machine_notify_hook",
-    "is_inside",
     "lint_and_typecheck",
     "machine_network_refusal",
     "machine_protect_paths",

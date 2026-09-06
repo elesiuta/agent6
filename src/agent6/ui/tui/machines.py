@@ -39,7 +39,7 @@ from agent6.machine import (
     MachineJournal,
     MachineSpec,
     load_machine,
-    render,
+    render_mermaid,
     validate_semantics,
     write_stop_request,
 )
@@ -480,7 +480,7 @@ def machine_detail_text(path: Path) -> str:
         lines.extend(f"  - {p}" for p in problems)
     else:
         lines.append("semantics: OK  (`agent6 machine check` also lints the bundle's scripts)")
-    lines += ["", "graph (mermaid):", render(spec, "mermaid")]
+    lines += ["", "graph (mermaid):", render_mermaid(spec)]
     return "\n".join(lines)
 
 

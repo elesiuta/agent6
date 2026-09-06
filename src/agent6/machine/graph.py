@@ -10,20 +10,9 @@ render of a machine that has already passed `machine check`.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from agent6.machine.model import MachineSpec, TerminalState, edges
 
-__all__ = ["GraphFormat", "render", "render_dot", "render_mermaid"]
-
-GraphFormat = Literal["mermaid", "dot"]
-
-
-def render(spec: MachineSpec, fmt: GraphFormat = "mermaid") -> str:
-    """Render *spec* in the requested format."""
-    if fmt == "dot":
-        return render_dot(spec)
-    return render_mermaid(spec)
+__all__ = ["render_dot", "render_mermaid"]
 
 
 def _terminals(spec: MachineSpec) -> list[str]:

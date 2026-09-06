@@ -11,7 +11,7 @@ import shutil
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from agent6.app._setup import detect_env
 from agent6.app.machine import lint_and_typecheck, run_offline_tests, validate_bundle
@@ -26,7 +26,8 @@ from agent6.machine import (
     dry_run,
     fixture_problems,
     load_machine,
-    render,
+    render_dot,
+    render_mermaid,
 )
 from agent6.sandbox._tool_paths import jail_search_path
 from agent6.ui.cli._common import plural
@@ -194,6 +195,5 @@ def _cmd_machine_graph(path: Path, *, fmt: str) -> int:
         spec = load_machine(path)
     except MachineError as exc:
         return _fail(path, exc.problems)
-    render_fmt: Literal["mermaid", "dot"] = "dot" if fmt == "dot" else "mermaid"
-    print(render(spec, render_fmt), end="")
+    print((render_dot if fmt == "dot" else render_mermaid)(spec), end="")
     return 0

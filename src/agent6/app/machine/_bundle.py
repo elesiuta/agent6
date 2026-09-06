@@ -19,15 +19,6 @@ from pathlib import Path
 from agent6.machine import MachineError, MachineSpec, ToolState, load_machine, validate_semantics
 
 
-def is_inside(path: Path, root: Path) -> bool:
-    """True iff *path* is *root* or lives beneath it (both already resolved)."""
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
 def _bundle_script_ref(element: str) -> str | None:
     """Return the relative script path a static command element names, else None.
 
@@ -61,7 +52,7 @@ def _check_scripts_dir(scripts_dir: Path, bundle: Path) -> list[str]:
         except (OSError, RuntimeError) as exc:  # RuntimeError: circular symlink (<3.14)
             problems.append(f"scripts/{rel}: {exc}")
             continue
-        if not is_inside(resolved, bundle):
+        if not resolved.is_relative_to(bundle):
             problems.append(f"scripts/{rel} resolves outside the bundle ({resolved}); refused")
     return problems
 
@@ -81,7 +72,7 @@ def _check_command_scripts(name: str, state: ToolState, bundle: Path) -> list[st
         except (OSError, RuntimeError) as exc:  # RuntimeError: circular symlink
             problems.append(f"state {name!r}: script {element!r}: {exc}")
             continue
-        if not is_inside(resolved, bundle):
+        if not resolved.is_relative_to(bundle):
             problems.append(f"state {name!r}: script {element!r} escapes the bundle")
         elif not target.exists():
             problems.append(f"state {name!r}: script {element!r} not found in bundle")
