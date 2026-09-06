@@ -157,7 +157,7 @@ Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpe
 
 - **Written by:** machine/{engine, journal}
 - **Read by:** app/machine/{_spend, run}, machine/{__init__, dryrun}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{machine_state, snapshot}
-- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (8 test files exercise it)
+- **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (10 test files exercise it)
 
 ## TaskNode
 
@@ -188,7 +188,7 @@ The persistent task-graph models: nodes plus the LLM-emitted curator intents tha
 
 - **Written by:** graph/{curator, storage}
 - **Read by:** graph/{order, replay}, tools/{_dag_tools, schema}, ui/cli/_task_tree, workflows/{_dag_focus, _parallel_dispatch, loop}
-- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (11 test files exercise it)
+- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (12 test files exercise it)
 
 ## Run/machine wire snapshot
 
