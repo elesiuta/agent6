@@ -317,34 +317,6 @@ def _error_about(err: ErrorDetails, key: str, value: object) -> str | None:
     return f"{key}: {detail}"
 
 
-def _section_is_broken(head: str, leaves: dict[str, Any]) -> bool:
-    """Whether *head*'s section already fails its own rules with just *leaves*
-    (the file's, minus what this edit wrote). Nested keys walk down from the
-    top-level section, as `written_value_error` builds them."""
-    if not head or not leaves:
-        # Nothing of this section predates the edit, so nothing in it can.
-        return False
-    parts = head.split(".")
-    nested: dict[str, Any] = {}
-    cur = nested
-    for part in parts[:-1]:
-        child: dict[str, Any] = {}
-        cur[part] = child
-        cur = child
-    cur[parts[-1]] = leaves
-    try:
-        Config.model_validate(nested)
-    except ValidationError as exc:
-        # A section without this edit's leaves is PARTIAL, not broken: a
-        # missing child only means the container is filled in over several
-        # writes (the rule `written_value_error` applies to the same case), and
-        # an unknown key is this edit's own doing.
-        return any(err["type"] not in ("missing", "extra_forbidden") for err in exc.errors())
-    except ConfigError:
-        return True
-    return False
-
-
 def revalidate_write(
     repo_root: Path,
     target: Path,
@@ -380,7 +352,6 @@ def revalidate_write(
         # read. Rolled back here, because a raise would escape the rollback
         # this function exists for.
         return keep_or_rollback(target, prior, str(exc), held=held)
-    mine = {k for k, _v in written}
     for wkey, wvalue in written:
         section = _section_leaves(doc, wkey)
         value_err = written_value_error(wkey, wvalue, section=section)
@@ -389,12 +360,10 @@ def revalidate_write(
         # The section context is the file as it now stands, so a rule spanning
         # two leaves fires over a sibling that was ALREADY wrong -- and pydantic
         # reports a section rule at the section, which reads as this leaf's
-        # fault. Blame this edit only when the section without its own leaves
-        # was fine; otherwise the merged check below decides, and its "broken
-        # before this edit" rule keeps the write.
-        head = wkey.rsplit(".", 1)[0]
-        before = {leaf: v for leaf, v in section.items() if f"{head}.{leaf}" not in mine}
-        if not _section_is_broken(head, before):
+        # fault. The value on its own settles whose fault it is: bad alone, it
+        # is this edit's; fine alone, the merged check below decides, and its
+        # "broken before this edit" rule keeps the write.
+        if written_value_error(wkey, wvalue) is not None:
             return keep_or_rollback(target, prior, value_err, held=held)
     err = merged_config_error(repo_root)
     if err is None:
@@ -416,11 +385,12 @@ def _models_at(model: type[BaseModel], part: str) -> tuple[type[BaseModel], ...]
     if field is None:
         return None
     annotation = field.annotation
-    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-        return (annotation,)
     if get_origin(annotation) is dict:
         return _model_members(get_args(annotation)[1]) or None
-    return None
+    # An optional section (`models.worker`, `workflow.metric`) is a section:
+    # read as a leaf it was written inline under a `[models]` header of its
+    # own, which collides with the `[models.worker]` table already there.
+    return _model_members(annotation) or None
 
 
 def _model_members(annotation: object) -> tuple[type[BaseModel], ...]:

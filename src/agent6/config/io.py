@@ -203,11 +203,15 @@ def upsert_toml_leaf(path: Path, dotted_key: str, value: object) -> None:
             if owner := undeclared_table_ancestor(path, dotted_key):
                 raise ConfigError(
                     f"{dotted_key} lives inside {owner}, which is not a plain [table]"
-                    " (an inline table, a dotted key, or an array-of-tables), so it"
-                    f" cannot be set on its own. Set {owner} as a whole, or edit {path}"
-                    " by hand."
+                    " (a value, an inline table, a dotted key, or an array-of-tables),"
+                    f" so it cannot be set on its own. Set {owner} as a whole, or edit"
+                    f" {path} by hand."
                 )
             lines = _drop_top_region_key(lines, table.split(".", 1)[0])
+            # The other shape this key can already have: its own `[table.leaf]`
+            # block. Left in place, the inline value written below declares the
+            # same key twice and the file no longer parses.
+            lines, _ = _drop_table_lines(lines, dotted_key)
             start = _header_line(lines, table)
             if start is None:
                 text = "\n".join(lines) + "\n" if lines else ""
@@ -505,10 +509,11 @@ def read_toml_file(path: Path) -> dict[str, Any]:
 
 def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
     """The outermost ancestor of *dotted_key* the leaf surgery can't write under
-    -- an inline table, a dotted key, or an array-of-tables (`[[x]]`) -- else
-    None. The surgery only knows `[table]` headers, so writing under one emits
-    a header that collides with it ("Cannot declare ... twice"); the caller names
-    the owning value instead of leaking the parser's complaint.
+    -- a plain value, an inline table, a dotted key, or an array-of-tables
+    (`[[x]]`) -- else None. The surgery only knows `[table]` headers, so writing
+    under one emits a header that collides with it ("Cannot declare ... twice");
+    the caller names the owning value instead of leaking the parser's complaint
+    about a file it discarded.
     """
     if not path.is_file():
         return None
@@ -522,9 +527,16 @@ def undeclared_table_ancestor(path: Path, dotted_key: str) -> str | None:
     for i in range(1, len(parts)):  # proper ancestors, outermost first
         prefix = ".".join(parts[:i])
         val = read_toml_leaf(data, prefix)
+        if val is None:
+            continue  # absent: the surgery declares the [table] itself
         if isinstance(val, list):
             return prefix  # an array-of-tables: a leaf can't be set on it
         if not isinstance(val, dict):
+            # A scalar where a table belongs. A bare top-level key is replaced
+            # by the write itself (`_drop_top_region_key`); one inside a table
+            # is not, and the header written under it declares it twice.
+            if "." in prefix:
+                return prefix
             continue
         if any(h == prefix or h.startswith(f"{prefix}.") for h in headers):
             continue  # a real [table] header declares it

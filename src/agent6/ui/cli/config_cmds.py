@@ -290,8 +290,8 @@ def _warn_if_still_broken() -> None:
     breaks it and the operator should hear which one, not a false success."""
     if (after := merged_config_error(Path.cwd())) is not None:
         print(
-            "WARNING: the config is still invalid because of a value in another layer;"
-            f" fix that one on its own:\n{after}",
+            "WARNING: the config is still invalid because of a value this edit did not"
+            f" write; fix that one on its own:\n{after}",
             file=sys.stderr,
         )
 

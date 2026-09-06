@@ -786,6 +786,53 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
     assert 'run_commands = "bogus_value"' in text
 
 
+def test_an_optional_section_is_written_leaf_by_leaf(repo: Path) -> None:
+    """`models.worker` and `workflow.metric` are `[table]`s whose type is
+    optional; read as leaves they were written inline under a `[models]` header
+    of their own, which declares the same key the existing `[models.worker]`
+    block does -- refused as "invalid TOML", blaming a file that parses."""
+    rcfg = repo_config_path_for(repo)
+    rcfg.write_text(
+        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-5"\n', encoding="utf-8"
+    )
+
+    assert set_config_value(repo, "models.worker", '{ model = "gpt-y" }', to_repo=True) is None
+
+    text = rcfg.read_text(encoding="utf-8")
+    assert "[models.worker]" in text
+    assert 'model = "gpt-y"' in text
+    assert 'provider = "anthropic"' in text, "a section's other leaves survive"
+
+
+def test_a_table_valued_leaf_replaces_the_block_it_already_has(repo: Path) -> None:
+    """A dict-typed leaf is one value, written whole -- and the other shape it
+    can already have on disk is its own `[table.leaf]` block, which the inline
+    write must replace rather than declare twice."""
+    rcfg = repo_config_path_for(repo)
+    rcfg.write_text('[skills.state]\nalpha = "enabled"\n', encoding="utf-8")
+
+    assert set_config_value(repo, "skills.state", '{ gamma = "always" }', to_repo=True) is None
+
+    text = rcfg.read_text(encoding="utf-8")
+    assert "gamma" in text and "alpha" not in text, text
+    assert load_effective(repo).config.skills.state == {"gamma": "always"}
+
+
+def test_an_invalid_value_is_refused_even_where_its_section_was_broken(repo: Path) -> None:
+    """A section rule that a SIBLING breaks is not this edit's fault, and the
+    write stands. This edit's own value being invalid is, whatever else in the
+    section was already wrong -- it landed with a warning that blamed a value
+    "in another layer" and exit 0."""
+    rcfg = repo_config_path_for(repo)
+    before = '[web]\nhost = "0.0.0.0"\n'  # already invalid: non-loopback, not opted in
+    rcfg.write_text(before, encoding="utf-8")
+
+    err = set_config_value(repo, "web.port", "abc", to_repo=True)
+
+    assert err is not None and "valid integer" in err
+    assert rcfg.read_text(encoding="utf-8") == before
+
+
 def test_set_config_leaves_refuses_a_headerless_ancestor(
     repo: Path,
 ) -> None:

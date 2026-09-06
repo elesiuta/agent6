@@ -364,7 +364,7 @@ def test_set_warns_when_another_layer_is_still_broken(
     (iso / "g" / "config.toml").write_text('[cli]\ninput = "x"\n', encoding="utf-8")
     rc = _run(["config", "set", "--repo", "sandbox.protect_git", "false"])
     assert rc == 0
-    assert "another layer" in capsys.readouterr().err
+    assert "a value this edit did not write" in capsys.readouterr().err
 
 
 def test_get_honours_the_global_config_flag(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
