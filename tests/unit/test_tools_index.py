@@ -404,3 +404,23 @@ def test_symbol_is_frozen_dataclass() -> None:
     s = Symbol(name="x", kind="function", path=Path("/tmp/x.py"), line=0, col=0)
     with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
         s.name = "y"  # type: ignore[misc]
+
+
+def test_outline_names_why_it_has_no_symbols(tmp_path: Path) -> None:
+    """A file no grammar covers, or one outside the indexed workspace (a
+    granted read path), answered `symbols: []`: the one thing the model acts
+    on, stated wrongly. Each is refused with its cause."""
+    from agent6.config import Config
+    from agent6.tools.dispatch import ToolDispatcher, ToolError
+
+    (tmp_path / "notes.md").write_text("# heading\n", encoding="utf-8")
+    d = ToolDispatcher(root=tmp_path, config=Config())
+    with pytest.raises(ToolError, match=r"no parser for \.md"):
+        d.dispatch("outline", {"path": "notes.md"})
+    granted = tmp_path.parent / (tmp_path.name + "-granted")
+    granted.mkdir()
+    (granted / "g.py").write_text("def gamma():\n    pass\n", encoding="utf-8")
+    cfg = Config.model_validate({"sandbox": {"extra_read_paths": [str(granted)]}})
+    d2 = ToolDispatcher(root=tmp_path, config=cfg)
+    with pytest.raises(ToolError, match="outside the indexed workspace"):
+        d2.dispatch("outline", {"path": str(granted / "g.py")})

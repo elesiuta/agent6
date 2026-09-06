@@ -34,7 +34,14 @@ def outline(
     sp = ws.resolve_read(args.path)
     if not sp.abs_path.is_file():
         raise ToolError(f"Not a file: {args.path}")
-    syms = ensure_index().outline(sp.abs_path)
+    index = ensure_index()
+    # An empty answer over a file full of symbols is the one thing the model
+    # acts on, wrongly: name the cause instead.
+    if index.language_of(sp.abs_path) is None:
+        raise ToolError(f"outline: no parser for {sp.abs_path.suffix or 'a file without a suffix'}")
+    if not index.indexes(sp.abs_path):
+        raise ToolError(f"outline: {args.path} is outside the indexed workspace")
+    syms = index.outline(sp.abs_path)
     out = [{"name": s.name, "kind": s.kind, "line": s.line, "col": s.col} for s in syms]
     truncated = len(out) > INDEX_RESULT_CAP
     return OutlineResult(symbols=tuple(out[:INDEX_RESULT_CAP]), truncated=truncated)

@@ -578,6 +578,15 @@ class SymbolIndex:
         except OSError:
             self._stamps.pop(p, None)
 
+    def language_of(self, path: Path) -> str | None:
+        """The grammar that parses *path*, by suffix; None when none does."""
+        return self._lang_for(path)
+
+    def indexes(self, path: Path) -> bool:
+        """Whether *path* is inside the indexed workspace: under the root,
+        outside the excluded directories, and not hidden by the boundary."""
+        return self._included_rel(path.resolve()) is not None
+
     def _included_rel(self, p: Path) -> Path | None:
         """The path relative to root, or None when *p* lies outside it, under
         an excluded directory, or hidden by the workspace boundary. One answer
