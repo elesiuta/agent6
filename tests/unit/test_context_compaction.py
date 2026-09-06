@@ -136,6 +136,27 @@ def test_compact_skips_tool_result_smaller_than_placeholder() -> None:
     assert len(tiny) < len(PLACEHOLDER)  # the premise the skip guards
 
 
+def test_an_operator_answer_is_never_elided() -> None:
+    """An `ask_user` result is the operator's binding ruling and exists nowhere
+    else in the model's context. Elided, it took the answer with it and told
+    the model to "re-run it with a narrower scope" -- which for this tool means
+    interrupting the operator to re-ask a question they already answered."""
+    # Long enough that eliding it would actually free bytes: a result smaller
+    # than the placeholder is skipped for a different reason.
+    answer = '{"answers": ["' + "use the v2 table only. " * 300 + '"]}'
+    big = "y" * 5000
+    conv = Conversation()
+    _add_exchange(conv, ("ask_user", {"questions": [{"question": "which table?"}]}, answer))
+    _add_exchange(conv, ("grep", {}, big), ("grep", {}, big))
+    _add_exchange(conv, ("grep", {}, big), ("grep", {}, big))
+
+    compact_old_tool_results(conv, max_total_bytes=100, keep_recent=2)
+
+    contents = _result_contents(conv)
+    assert contents[0] == answer
+    assert any("elided" in c for c in contents), "the rest still compacts"
+
+
 def test_compact_noop_when_under_threshold() -> None:
     conv = Conversation()
     _reads(conv, "small")

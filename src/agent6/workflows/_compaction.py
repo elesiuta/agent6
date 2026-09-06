@@ -27,6 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from agent6.tools.schema import AskUserInput
 from agent6.workflows._conversation import (
     AssistantTurn,
     Conversation,
@@ -37,6 +38,7 @@ from agent6.workflows._conversation import (
 
 # Stable prefix shared by every placeholder variant: idempotency checks and
 # tests key on it.
+ASK_USER_TOOL = AskUserInput.TOOL_NAME
 ELISION_PREFIX = "<elided by context compaction"
 
 ELISION_PLACEHOLDER = (
@@ -579,7 +581,7 @@ def compact_old_tool_results(
     # fresh results, and the delivering provider call runs after this compaction.
     # Exempt that whole turn.
     last_tool_result_idx = max(turn_idx for turn_idx, _, _ in pointers)
-    candidates = pointers[:-keep_recent]
+    candidates = [c for c in pointers[:-keep_recent] if not _is_operator_answer(conversation, c)]
     if protect_paths:
         # Protected reads go last, each group staying oldest-first.
         candidates = [c for c in candidates if not _is_protected(c[0], c[1])] + [
@@ -609,6 +611,16 @@ def compact_old_tool_results(
         demoted_paths=tuple(walk.demoted_paths),
         deduped_calls=deduped_calls,
     )
+
+
+def _is_operator_answer(conversation: Conversation, pointer: tuple[int, int, int]) -> bool:
+    """Whether this result is the operator's answer to an `ask_user`.
+
+    Exempt from elision: it is a binding ruling that exists nowhere else in the
+    model's context, and the placeholder's advice ("re-run it") means
+    interrupting the operator to re-ask a question they have already answered.
+    A handful of answers costs less than the re-ask."""
+    return _result_at(conversation, pointer[0], pointer[1]).for_call.name == ASK_USER_TOOL
 
 
 def _result_at(conversation: Conversation, turn_idx: int, item_idx: int) -> ToolResultItem:
