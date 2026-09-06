@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Literal
 
 from agent6.config import Config
+from agent6.memory import decisions_path, decisions_text, memory_dir
 from agent6.memory import index_text as memory_index_text
-from agent6.memory import memory_dir
 from agent6.providers import ToolDefinition
 from agent6.sandbox.detect import IsolationUnavailableError, detect, resolve_isolation
 from agent6.skills import ResolvedSkills
@@ -63,6 +63,8 @@ def system_prompt_for(
         mode=mode,
         memory_index=memory_index_text(recall) if recall is not None else "",
         memory_dir_path=str(memory_dir(recall)) if recall is not None else "",
+        decisions=decisions_text(recall) if recall is not None else "",
+        decisions_path=str(decisions_path(recall)) if recall is not None else "",
         skills=_installed_skills(root, config, mode),
         isolation=_shown_isolation(config),
     )
