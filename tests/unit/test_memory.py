@@ -335,3 +335,62 @@ def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: Path) -> No
     assert outside.read_text(encoding="utf-8") == "outside\n"
     assert merged == MemoryMerge()
     assert not (memory_dir(origin) / "Bad Name.md").exists() and not held.exists()
+
+
+def test_merge_memory_lands_an_edit_whose_index_line_the_lane_lost(tmp_path: Path) -> None:
+    """A lane that edits a fact and rewrites MEMORY.md without its line (a
+    model tidying the index) crashed the import on a bare assert. The edit
+    lands and the origin's own index line stays."""
+    origin = tmp_path / "origin"
+    add(origin, "a-fact", "A first.")
+    lane = _seeded_lane(tmp_path, origin)
+    (memory_dir(lane) / "a-fact.md").write_text("A second.\n", encoding="utf-8")
+    index_path(lane).write_text("", encoding="utf-8")
+    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge(
+        updated=("a-fact",)
+    )
+    assert show(origin, "a-fact") == "A second.\n"
+    assert index_text(origin) == "- a-fact: A first."
+
+
+def test_merge_memory_deletes_over_an_origin_with_no_index(tmp_path: Path) -> None:
+    """The origin's MEMORY.md gone (an operator's rm): a lane's deletion of an
+    untouched fact raised FileNotFoundError out of the import instead of
+    removing the file."""
+    origin = tmp_path / "origin"
+    add(origin, "a-fact", "A first.")
+    lane = _seeded_lane(tmp_path, origin)
+    remove(lane, "a-fact")
+    index_path(origin).unlink()
+    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge(
+        deleted=("a-fact",)
+    )
+    assert not (memory_dir(origin) / "a-fact.md").exists()
+
+
+def test_seed_store_keeps_the_digests_of_an_earlier_seeding(tmp_path: Path) -> None:
+    """A second seeding into the same lane store rewrote the manifest with the
+    files it copied this time alone, so every earlier copy read as new at
+    import and was held back."""
+    origin = tmp_path / "origin"
+    add(origin, "a-fact", "A first.")
+    lane = _seeded_lane(tmp_path, origin)
+    add(origin, "b-fact", "B first.")
+    seed_store(origin, lane)
+    assert sorted(json.loads(seed_path(lane).read_text(encoding="utf-8"))) == ["a-fact", "b-fact"]
+    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge()
+
+
+def test_a_seed_manifest_that_is_not_an_object_reads_as_no_seeds(tmp_path: Path) -> None:
+    """A hand-edited manifest holding a JSON array raised TypeError out of
+    seed_store and AttributeError out of merge_memory; one reader owns the
+    manifest's shape and reads anything else as empty."""
+    origin = tmp_path / "origin"
+    add(origin, "a-fact", "A first.")
+    lane = _seeded_lane(tmp_path, origin)
+    seed_path(lane).write_text("[]\n", encoding="utf-8")
+    add(origin, "b-fact", "B first.")
+    seed_store(origin, lane)
+    assert sorted(json.loads(seed_path(lane).read_text(encoding="utf-8"))) == ["b-fact"]
+    seed_path(lane).write_text("[]\n", encoding="utf-8")
+    assert merge_memory(lane, origin, held_dir=tmp_path / "held") == MemoryMerge()

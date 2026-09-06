@@ -53,6 +53,18 @@ def index_path(state_dir: Path) -> Path:
     return memory_dir(state_dir) / INDEX_NAME
 
 
+def seed_digests(state_dir: Path) -> dict[str, str]:
+    """The seed manifest's `name -> sha256` map; a missing, unreadable or
+    misshapen manifest reads as empty (every file then reads as the lane's)."""
+    try:
+        raw = json.loads(seed_path(state_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in raw.items() if isinstance(k, str) and isinstance(v, str)}
+
+
 def seed_path(state_dir: Path) -> Path:
     return state_dir / SEED_NAME
 
@@ -148,19 +160,19 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
     back (the lane's version kept under *held_dir*) and named. A new name
     lands with its index line, or is held when the origin holds that name with
     other content (two lanes invented it); a file the lane's own index does
-    not list is left where it is. The rulings have `merge_decisions`."""
+    not list is left where it is. The index line follows the file: an edit
+    lands with the lane's line when it has one and keeps the origin's
+    otherwise, and a hook edited alone does not travel. The rulings have
+    `merge_decisions`."""
     src = memory_dir(src_state_dir)
     if not src.is_dir():
         return MemoryMerge()
     dst = memory_dir(dst_state_dir)
     dst.mkdir(parents=True, exist_ok=True)
-    try:
-        seeds: dict[str, str] = json.loads(seed_path(src_state_dir).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        seeds = {}
+    seeds = seed_digests(src_state_dir)
     src_index = index_text(src_state_dir).splitlines()
     lane = {p.stem: p for p in src.glob("*.md") if p.name not in (INDEX_NAME, DECISIONS_NAME)}
-    landed: dict[str, list[str]] = {"carry": [], "update": [], "delete": [], "hold": []}
+    landed: dict[str, list[str]] = {"carried": [], "updated": [], "deleted": [], "held": []}
     for name in sorted(seeds.keys() | lane.keys()):
         if not _NAME_RE.match(name):
             continue  # not a memory name (`_check_name`): names no path in either store
@@ -174,27 +186,30 @@ def merge_memory(src_state_dir: Path, dst_state_dir: Path, *, held_dir: Path) ->
         fate = _fate(seed, theirs, ours, hook=hook, taken=taken)
         if fate == "skip":
             continue
-        if fate == "delete":
+        if fate == "deleted":
             _drop_index_line(dst_state_dir, name)
             origin.unlink()
-        elif fate == "hold":
+        elif fate == "held":
             if path is not None:
                 held_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(path, held_dir / path.name)
-        else:
-            assert path is not None and hook is not None  # a carry or update has a file and a line
+        elif path is not None:  # carried or updated: the lane has the file
             shutil.copyfile(path, origin)
-            if fate == "carry":
-                _append_index_line(dst_state_dir, name, hook)
-            else:
-                _replace_index_line(dst_state_dir, name, hook)
+            if hook is not None:
+                line = _append_index_line if fate == "carried" else _replace_index_line
+                line(dst_state_dir, name, hook)
         landed[fate].append(name)
-    return MemoryMerge(*(tuple(landed[k]) for k in ("carry", "update", "delete", "hold")))
+    return MemoryMerge(
+        carried=tuple(landed["carried"]),
+        updated=tuple(landed["updated"]),
+        deleted=tuple(landed["deleted"]),
+        held=tuple(landed["held"]),
+    )
 
 
 def _fate(
     seed: str | None, theirs: str | None, ours: str | None, *, hook: str | None, taken: bool
-) -> Literal["skip", "carry", "update", "delete", "hold"]:
+) -> Literal["skip", "carried", "updated", "deleted", "held"]:
     """One name's fate at import, from the digests of the seeded copy, the
     lane's file and the origin's file (None: absent), whether the lane's index
     lists it (*hook*) and whether the origin already uses the name (*taken*)."""
@@ -203,10 +218,10 @@ def _fate(
     if seed is None:  # new in the lane
         if hook is None:
             return "skip"  # unindexed there: invisible there, and stays so
-        return "hold" if taken else "carry"
+        return "held" if taken else "carried"
     if ours != seed:
-        return "hold"  # changed on both sides
-    return "delete" if theirs is None else "update"
+        return "held"  # changed on both sides
+    return "deleted" if theirs is None else "updated"
 
 
 def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
@@ -235,7 +250,8 @@ def seed_store(src_state_dir: Path, dst_state_dir: Path) -> int:
         copied += 1
         if path.suffix == ".md" and path.name not in (INDEX_NAME, DECISIONS_NAME):
             digests[path.stem] = _sha256(target)
-    atomic_write(seed_path(dst_state_dir), json.dumps(digests, indent=1) + "\n")
+    earlier = seed_digests(dst_state_dir)
+    atomic_write(seed_path(dst_state_dir), json.dumps(earlier | digests, indent=1) + "\n")
     return copied
 
 
@@ -297,8 +313,11 @@ def _drop_index_line(state_dir: Path, name: str) -> None:
     lines the operator wrote."""
     idx = index_path(state_dir)
     pattern = _index_pattern(name)
-    kept = [ln for ln in idx.read_bytes().split(b"\n") if not pattern.match(ln)]
-    atomic_write(idx, b"\n".join(kept))
+    try:
+        lines = idx.read_bytes().split(b"\n")
+    except OSError:
+        return  # no index, nothing to drop
+    atomic_write(idx, b"\n".join(ln for ln in lines if not pattern.match(ln)))
 
 
 def _replace_index_line(state_dir: Path, name: str, hook: str) -> None:

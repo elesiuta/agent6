@@ -29,6 +29,7 @@ from agent6.app.parallel import (
     build_lane_specs,
     run_parallel,
 )
+from agent6.app.reporter import STDIO_REPORTER
 from agent6.config import Config
 from agent6.directive import DirectiveError
 from agent6.git_ops import branch_exists, commit_all, create_branch
@@ -1236,7 +1237,11 @@ def test_await_uses_real_run_dir_not_symlink(
 
 
 def test_run_lane_to_completion_imports_and_stamps(
-    origin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: LaneRuntime
+    origin: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime: LaneRuntime,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """One lane fully: spawn (fake), symlink it live into the origin's runs/,
     await to terminal, import its branch + run dir into the origin, and stamp
@@ -1249,6 +1254,9 @@ def test_run_lane_to_completion_imports_and_stamps(
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1")
     spec = LaneSpec(
         lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", model=None
+    )
+    memory.add(
+        state_dir(spec.workdir, cfg.agent6.state_dir), "lane-fact", "The flaky test is test_clock."
     )
 
     # The await polls summarize_session_dir; observe the origin link state then -- it
@@ -1279,6 +1287,10 @@ def test_run_lane_to_completion_imports_and_stamps(
     assert res.ok
     assert seen["symlink_during_life"] is True  # a hub could see + answer the lane
     assert branch_exists(origin, "agent6/co-p1-l1")
+    # The lane's memory came back before its state dir went (the coordinator
+    # path cleaned up with no carry at all).
+    assert "The flaky test is test_clock." in memory.show(origin_state, "lane-fact")
+    assert "lane 1: memory 1 carried" in capsys.readouterr().err
     imported = origin_state / "sessions" / "runs" / "co-p1-l1"
     assert imported.is_dir() and not imported.is_symlink()  # replaced by the real dir
     assert res.session_dir == imported
@@ -1967,3 +1979,23 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     assert (swept, kept) == (0, 0)
     assert (theirs / "draft.txt").read_text(encoding="utf-8") == "uncommitted\n"
     assert (notes / "todo.md").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
+    origin: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A held-back deletion keeps nothing, so a note pointing at memory-held/
+    named a directory that did not exist."""
+    from agent6.config.layer import resolved_state_dir
+
+    origin_state = resolved_state_dir(origin)
+    memory.add(origin_state, "d-fact", "D first.")
+    lane_state = tmp_path / "lane-state"
+    memory.seed_store(origin_state, lane_state)
+    memory.remove(lane_state, "d-fact")
+    (memory.memory_dir(origin_state) / "d-fact.md").write_text("D per the origin.\n")
+    dest = tmp_path / "dest"
+    parallel.carry_back(lane_state, origin_state, dest, lane=2, reporter=STDIO_REPORTER)
+    err = capsys.readouterr().err
+    assert "lane 2: memory held back (changed here too, or the name is taken): d-fact" in err
+    assert "kept at" not in err and not (dest / "memory-held").exists()

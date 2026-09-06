@@ -480,6 +480,13 @@ def run_lane_to_completion(
         return LaneResult(
             spec=spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
         )
+    carry_back(
+        state_dir(spec.workdir, cfg.agent6.state_dir),
+        origin_state,
+        dest,
+        lane=spec.lane,
+        reporter=reporter,
+    )
     # The module contract ("clones + lane state are torn down after import")
     # applies to this path too; the fan-out's teardown lives in run_parallel.
     # Success only: the early ok=False returns above keep everything, since an
@@ -717,6 +724,37 @@ def _stamp_compare_outcomes(
             reporter.note(f"lane [{session_id}]: imported, but the compare stamp failed: {err}")
 
 
+def carry_back(
+    lane_state: Path, origin_state: Path, dest: Path, *, lane: int, reporter: Reporter
+) -> None:
+    """A lane's operator rulings and memories outlive its state dir (torn
+    down after import): the harness nudges a lane to write memory like any
+    run, so what it wrote lands in the origin's store, held-back files under
+    the imported run dir *dest*, and the note says what did."""
+    carried, known = merge_decisions(lane_state, origin_state)
+    if carried or known:
+        already = f", {known} already recorded" if known else ""
+        reporter.note(f"lane {lane}: {carried} recorded decision(s) carried over{already}")
+    held_dir = dest / "memory-held"
+    merge = merge_memory(lane_state, origin_state, held_dir=held_dir)
+    parts = [
+        f"{len(names)} {word}"
+        for word, names in (
+            ("carried", merge.carried),
+            ("updated", merge.updated),
+            ("deleted", merge.deleted),
+        )
+        if names
+    ]
+    if merge.held:
+        kept = f", kept at {held_dir}" if held_dir.is_dir() else ""
+        parts.append(
+            f"held back (changed here too, or the name is taken): {', '.join(merge.held)}{kept}"
+        )
+    if parts:
+        reporter.note(f"lane {lane}: memory {', '.join(parts)}")
+
+
 def _import_lanes(
     results: list[LaneResult],
     *,
@@ -724,7 +762,6 @@ def _import_lanes(
     origin_state: Path,
     state_base: str | None,
     base_sha: str,
-    fanout_id: str,
     task: str,
     reporter: Reporter = STDIO_REPORTER,
 ) -> tuple[list[CandidateBrief], list[tuple[LaneResult, str]], list[LaneSpec]]:
@@ -767,34 +804,13 @@ def _import_lanes(
             failed.append((res, str(exc)))
             continue
         imported.append(res.spec)
-        # A lane's operator rulings and memories outlive its state dir (torn
-        # down after import); the harness nudges a lane to write memory like
-        # any run, so what it wrote must land somewhere that survives.
-        lane_state = state_dir(res.spec.workdir, state_base)
-        carried, known = merge_decisions(lane_state, origin_state)
-        if carried or known:
-            already = f", {known} already recorded" if known else ""
-            reporter.note(
-                f"lane {res.spec.lane}: {carried} recorded decision(s) carried over{already}"
-            )
-        held_dir = dest / "memory-held"
-        merge = merge_memory(lane_state, origin_state, held_dir=held_dir)
-        parts = [
-            f"{len(names)} {word}"
-            for word, names in (
-                ("carried", merge.carried),
-                ("updated", merge.updated),
-                ("deleted", merge.deleted),
-            )
-            if names
-        ]
-        if merge.held:
-            parts.append(
-                "held back (changed here too, or the name is taken):"
-                f" {', '.join(merge.held)}, kept at {held_dir}"
-            )
-        if parts:
-            reporter.note(f"lane {res.spec.lane}: memory {', '.join(parts)}")
+        carry_back(
+            state_dir(res.spec.workdir, state_base),
+            origin_state,
+            dest,
+            lane=res.spec.lane,
+            reporter=reporter,
+        )
         summary = summarize_session_dir(dest)
         if not produced_result(summary.status):
             # Imported (its branch is safe in the origin) but not a candidate:
@@ -961,7 +977,6 @@ def run_parallel(
         origin_state=origin_state,
         state_base=cfg.agent6.state_dir,
         base_sha=base_sha,
-        fanout_id=fanout_id,
         task=task,
         reporter=reporter,
     )
