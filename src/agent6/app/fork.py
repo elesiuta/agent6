@@ -83,7 +83,6 @@ from agent6.graph.storage import (
     load_graph,
     read_cursor,
     write_cursor,
-    write_dot,
     write_node,
 )
 from agent6.portable import atomic_write
@@ -115,7 +114,7 @@ from agent6.workflows._session_state import SessionSnapshot, load_session_snapsh
 
 # Curator-owned DAG artifacts copied verbatim into the fork; each is a
 # top-level entry under the run dir (`graph/` is a directory).
-_DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "graph.dot", "cursor.json")
+_DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "cursor.json")
 
 
 def _lineage_entry(*, child: str, parent: str, turn: int, sha: str, ts: str) -> dict[str, object]:
@@ -179,7 +178,6 @@ def _copy_dag(src: SessionLayout, dst: SessionLayout, *, graph_version: int) -> 
     for node in replayed.nodes.values():
         write_node(dst, replayed.nodes, node)
     write_cursor(dst, replayed.cursor)
-    write_dot(dst, replayed.nodes)
     # The journal prefix, so the fork's curator resumes numbering from the
     # version it actually holds instead of the source's later one.
     kept = journal_prefix(journal, graph_version)

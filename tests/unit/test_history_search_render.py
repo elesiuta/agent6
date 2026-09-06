@@ -121,7 +121,7 @@ def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # One task string is stored many ways: the session.start event, manifest.json,
-    # the graph's dot label, a per-call transcript body. A search for a word in
+    # a per-call transcript body. A search for a word in
     # it must print ONE line per run (the timestamped event) with a count,
     # not the same content in every storage encoding (raw JSON fragments
     # included). The syntax BEFORE the match differs per encoding; the
@@ -132,8 +132,6 @@ def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     lines.append(_rg_match("/s/runs/r1/logs.jsonl", event, event.index("Improve")))
     manifest = json.dumps({"version": 2, "user_task": task})
     lines.append(_rg_match("/s/runs/r1/manifest.json", manifest, manifest.index("Improve")))
-    dot = f'"01KX" [label="{task}... [pending]", style=filled]'
-    lines.append(_rg_match("/s/runs/r1/graph/graph.dot", dot, dot.index("Improve")))
     body = f'"content": [{{"type": "text", "text": "TASK: {task}"}}]'
     lines.append(_rg_match("/s/runs/r1/transcripts/0003.json", body, body.index("Improve")))
 
@@ -142,8 +140,8 @@ def test_one_task_in_many_encodings_collapses_to_the_readable_one(
     _render_history_hits(hits, Path("/s/runs"))
     out = capsys.readouterr().out
     assert out.count("Improve the wording") == 1  # one representative line
-    assert "(x4)" in out  # all four encodings counted
-    assert "manifest.json" not in out and "graph.dot" not in out  # internals lose
+    assert "(x3)" in out  # all three encodings counted
+    assert "manifest.json" not in out  # internals lose
     assert "session.start" in out  # the timestamped event wins
 
 

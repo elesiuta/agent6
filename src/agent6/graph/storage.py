@@ -12,7 +12,6 @@ tree: a node with children has a sibling directory of the same id.
       graph/<root>/<child>.md
       graph/<root>/<child>/<grandchild>.md
       graph.jsonl          # append-only journal of every mutation
-      graph.dot            # derived; rebuilt on every mutation
       cursor.json          # which node is currently in_progress; for resume
 
 All replacement writes go through `agent6.portable.atomic_write`, which writes a
@@ -397,28 +396,3 @@ def list_checkpoint_turns(layout: SessionLayout) -> list[int]:
         except ValueError:
             continue  # a non-numeric stray file is not a checkpoint
     return sorted(turns)
-
-
-def write_dot(layout: SessionLayout, nodes: dict[str, TaskNode]) -> None:
-    """Render the graph to Graphviz DOT for visual debugging."""
-    lines: list[str] = ["digraph agent6 {", "  rankdir=LR;"]
-    for n in nodes.values():
-        label = n.title.replace('"', "'")[:60]
-        color = {
-            "pending": "lightgray",
-            "in_progress": "khaki",
-            "passed": "palegreen",
-            "failed": "salmon",
-            "skipped": "lightblue",
-            "obsolete": "gray60",
-        }.get(n.status, "white")
-        lines.append(
-            f'  "{n.id}" [label="{label}\\n[{n.status}]", style=filled, fillcolor={color}];'
-        )
-    for n in nodes.values():
-        for child_id in n.children:
-            lines.append(f'  "{n.id}" -> "{child_id}";')
-        for dep in n.depends_on:
-            lines.append(f'  "{dep}" -> "{n.id}" [style=dashed, color=blue];')
-    lines.append("}")
-    atomic_write(layout.dot_path, "\n".join(lines) + "\n")

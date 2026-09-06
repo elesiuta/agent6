@@ -98,10 +98,10 @@ def _normalize(text: str) -> str:
 def _match_core(text: str, start: int, end: int) -> str:
     """A hit's content identity: the matched text plus a little FOLLOWING
     context, decoded and reduced to lowercase alphanumerics. One task string is
-    stored in many encodings (the session.start event, manifest.json, the graph's
-    dot labels, per-call transcripts); they differ in the syntax BEFORE the
-    match ('"user_task": "' vs 'label="'), while the text after it is the same
-    content everywhere, so a suffix-only key sees through the encodings.
+    stored in many encodings (the session.start event, manifest.json, per-call
+    transcripts); they differ in the syntax BEFORE the match ('"user_task": "'
+    vs '"text": "TASK: '), while the text after it is the same content
+    everywhere, so a suffix-only key sees through the encodings.
     Empty when the following context adds nothing beyond the match itself --
     the caller must then key on the snippet instead of merging."""
     hi = min(len(text), end + _CORE_TAIL)
@@ -189,7 +189,7 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
 def _kind_rank(hit: _SearchHit) -> int:
     """Readability order when the same content collapses across encodings: a
     timestamped event line beats the transcript record, which beats a rendered
-    .md, which beats raw internals (manifest.json, graph.dot, per-call JSON)."""
+    .md, which beats raw internals (manifest.json, per-call JSON)."""
     if hit.when:
         return 0
     if hit.kind == "transcript":

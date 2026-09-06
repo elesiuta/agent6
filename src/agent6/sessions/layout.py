@@ -74,10 +74,6 @@ class SessionLayout:
         return self.session_dir / "graph.jsonl"
 
     @property
-    def dot_path(self) -> Path:
-        return self.session_dir / "graph.dot"
-
-    @property
     def cursor_path(self) -> Path:
         return self.session_dir / "cursor.json"
 

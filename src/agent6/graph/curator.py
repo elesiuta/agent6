@@ -14,7 +14,6 @@ Mutations are validated structurally, then applied as:
      version this mutation will journal (nodes are the content authority)
   3. append the entry to `graph.jsonl` (the journal, append-only audit log)
      and commit the `graph_version` bump
-  4. (if topology changed) atomically regenerate `graph.dot`
 
 The flock around every mutation prevents interleaved file writes from
 accidental parallel curator instances (which we explicitly forbid). It does
@@ -62,7 +61,6 @@ from agent6.graph.storage import (
     load_graph,
     read_cursor,
     write_cursor,
-    write_dot,
     write_journal,
     write_node,
 )
@@ -359,16 +357,14 @@ class GraphCurator:
             if intent.id is not None and intent.id not in self._nodes:
                 raise CuratorError(f"set_cursor: unknown node {intent.id!r}")
             write_cursor(self._layout, intent.id)
-            self._post_mutation(SetCursorJournal(id=intent.id), regen_dot=False)
+            self._post_mutation(SetCursorJournal(id=intent.id))
 
     # ---- internals --------------------------------------------------------
 
-    def _post_mutation(self, entry: JournalEntry, *, regen_dot: bool = True) -> None:
+    def _post_mutation(self, entry: JournalEntry) -> None:
         self._graph_version += 1
         stamped = entry.model_copy(update={"graph_version": self._graph_version})
         write_journal(self._layout, stamped.model_dump(mode="json"))
-        if regen_dot:
-            write_dot(self._layout, self._nodes)
 
     def _iter_recent_journal(self) -> list[dict[str, object]]:
         path = self._layout.journal_path

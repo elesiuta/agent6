@@ -109,7 +109,7 @@ def main() -> None:
             continue
         dst = OUT / session_id
         (dst / "transcripts").mkdir(parents=True)
-        for name in ("manifest.json", "graph.jsonl", "graph.dot"):
+        for name in ("manifest.json", "graph.jsonl"):
             if (src / name).is_file():
                 copy_scrubbed(src / name, dst / name)
         n = (
