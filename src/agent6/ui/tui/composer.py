@@ -60,7 +60,7 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
     if mode == "start":
         offered = {c: h for c, h in STEER_COMMANDS.items() if c == "/parallel"}
     elif mode == "resume":
-        offered = {c: h for c, h in STEER_COMMANDS.items() if c not in ("/compact", "/btw")}
+        offered = {c: h for c, h in STEER_COMMANDS.items() if c not in ("/compact", "/btw", "/now")}
     else:
         offered = STEER_COMMANDS
     return [(c, h) for c, h in offered.items() if c.startswith(text)]

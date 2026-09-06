@@ -14,7 +14,8 @@ def test_composer_intercepts_ctrl_r_only() -> None:
     assert "e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey" in CLIENT_JS
     # That chord is the ONLY ctrlKey site: no document-level hook, so the
     # browser keeps its reload everywhere outside the composer.
-    assert CLIENT_JS.count("ctrlKey") == 1
+    # ... plus the composer's own Ctrl+Enter (`/now`), inside the same keydown.
+    assert CLIENT_JS.count("ctrlKey") == 2
     assert "openHistorySearch" in CLIENT_JS
 
 

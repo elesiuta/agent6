@@ -122,7 +122,7 @@ A red finish certification returns to the model with the gate's output `verify_r
 - tier 2, `summarise_at_chars`: the elided history is summarised by the `reviewer` model; the conversation restarts from task + summary
 - the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
 - compaction is visible: events carry the elisions and the restart summary, every view marks them in place, `/status` shows counts
-- `/compact [focus]` compacts on demand; `/pin <text>` survives every restart verbatim (4000-char total cap, loud refusal over it) and persists in the snapshot
+- `/now <text>` steers at once, aborting the call in flight (the CLI's `steer --now`); `/compact [focus]` compacts on demand; `/pin <text>` survives every restart verbatim (4000-char total cap, loud refusal over it) and persists in the snapshot
 
 **Repo memory**: one fact per markdown file under `<state-dir>/<repo-id>/memory/`, plus a one-line-per-entry `MEMORY.md` index.
 Beside it, `DECISIONS.md` holds the operator's rulings: the harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time; the model reads it first (a `<decisions>` block, re-shown after a compaction restart), never writes it (`agent6 memory decisions` prints it), and a finish-time check reports any ruling missing from the file.

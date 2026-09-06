@@ -268,3 +268,14 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
     assert steer_problem("/pin keep the API stable") is None
     assert steer_problem("/parallel 2 try the other design") is None
     assert steer_problem("focus on the parser") is None
+
+
+def test_parse_now_carries_the_steer_and_the_urgency() -> None:
+    """`steer --now` was a CLI-only word; the composers say `/now <text>`."""
+    from agent6.directive import STEER_COMMANDS, parse_now
+
+    assert parse_now("/now focus on the tests") == "focus on the tests"
+    assert parse_now("  /now\tstop touching config") == "stop touching config"
+    assert parse_now("/now") == ""  # bare: nothing to steer with, the caller says so
+    assert parse_now("/nowhere") is None and parse_now("now please") is None
+    assert "/now" in STEER_COMMANDS

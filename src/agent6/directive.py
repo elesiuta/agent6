@@ -147,6 +147,21 @@ def parse_btw(text: str) -> str | None:
     return text[m.end() :].strip()
 
 
+# A leading `/now` token: the urgency the CLI spells `steer --now`. Parsed by
+# the composers (web/TUI), never by the loop: the request marker carries it.
+_NOW_TOKEN = re.compile(r"\A\s*/now(?=\s|\Z)")
+
+
+def parse_now(text: str) -> str | None:
+    """The steer a `/now` composer message carries, to be taken by aborting the
+    in-flight model call, or `None` when *text* is not a now directive. A bare
+    `/now` carries "": there is nothing to steer with, and the caller says so."""
+    m = _NOW_TOKEN.match(text)
+    if m is None:
+        return None
+    return text[m.end() :].strip()
+
+
 # The spec token of a `/parallel` directive still being typed: the message
 # is `/parallel <token>` with nothing after it yet (a following space = task
 # text has begun, so stop suggesting).
@@ -254,5 +269,6 @@ STEER_COMMANDS: dict[str, str] = {
     "/restate": "restate the conversation since your last message (local, no model call)",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
+    "/now": "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",
     "/shells": "background commands this run started, and how they ended",
 }

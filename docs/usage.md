@@ -68,7 +68,7 @@ The verify command is the success gate.
 
 ```sh
 agent6 attach                 # follow the conversation live; --raw, --tui, --json
-agent6 steer ID "focus on X"  # steer a live run at its next step boundary (--now interrupts the in-flight call)
+agent6 steer ID "focus on X"  # steer a live run at its next step boundary (--now interrupts the in-flight call; the TUI and web composers say /now <text>)
 agent6 answer ID "yes"        # answer a live run's ask_user question (bare: print the question)
 agent6 sessions show          # status, iteration, elapsed, cost, where the changes are; --json to script
 agent6 sessions diff          # the git diff the run produced

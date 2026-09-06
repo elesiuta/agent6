@@ -37,6 +37,7 @@ from textual.screen import Screen
 from textual.timer import Timer
 from textual.widgets import Footer, Static, TextArea
 
+from agent6.directive import parse_now
 from agent6.sessions.ipc import submit_steer, write_answer
 from agent6.tools.background import shells_text
 from agent6.ui.tui import clipboard
@@ -797,8 +798,12 @@ class ConversationScreen(ScreenChrome, Screen[None]):
             )
             return
         if self._live:
-            submit_steer(self._logs_path.parent, message.text)
-            self.notify("steering this session…")
+            urgent = parse_now(message.text)
+            if urgent == "":
+                self.notify("/now needs the instruction: /now <text>", severity="warning")
+                return
+            submit_steer(self._logs_path.parent, urgent or message.text, now=urgent is not None)
+            self.notify("steering this session now…" if urgent else "steering this session…")
 
     def action_history_search(self) -> None:
         open_history_search(self, self.query_one("#conv-input", SteerInput), self._logs_path)

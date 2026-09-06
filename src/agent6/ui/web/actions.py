@@ -21,7 +21,7 @@ from typing import Any
 from agent6.app.fork import undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import resolved_state_dir
-from agent6.directive import parse_btw, parse_compact
+from agent6.directive import parse_btw, parse_compact, parse_now
 from agent6.machine import (
     JournalError,
     MachineError,
@@ -174,8 +174,14 @@ def steer(cwd: Path, session_id: str, text: str) -> tuple[bool, str]:
         if not request_compact(session_dir, focus=focus):
             return False, "could not write the compaction request"
         return True, "compaction requested"
-    submit_steer(session_dir, text)
-    return True, "steer requested"
+    urgent = parse_now(text)  # `/now <text>`: the CLI's `steer --now`
+    if urgent != "":
+        submit_steer(session_dir, urgent or text, now=urgent is not None)
+    return urgent != "", (
+        "/now needs the instruction: /now <text>"
+        if urgent == ""
+        else ("steer requested now" if urgent else "steer requested")
+    )
 
 
 def undo_session(cwd: Path, session_id: str) -> tuple[dict[str, str] | None, str]:

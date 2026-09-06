@@ -636,6 +636,7 @@ const STEER_COMMANDS = [
   ['/restate', 'restate the conversation since your last message (local, no model call)'],
   ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],
   ['/btw', 'ask a question beside the run: /btw <question> (answers inline, later)'],
+  ['/now', 'steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)'],
   ['/shells', 'background commands this run started, and how they ended'],
 ];
 // Slash-command completion for a session composer: while the FIRST word is
@@ -656,7 +657,7 @@ function attachCommandSuggest(ta, root, liveNow) {
   const render = () => {
     const w = word();
     if (w === null) { close(); return; }
-    items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw')) && c.startsWith(w));
+    items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw' && c !== '/now')) && c.startsWith(w));
     if (!items.length) { close(); return; }
     if (active >= items.length) active = -1;
     if (!box) { box = el('div', 'ac-pop'); root.appendChild(box); }
@@ -795,7 +796,7 @@ function makeComposer(id) {
       hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages';
     } else {
       ta.placeholder = 'steer this session… (/pin pins an instruction, /compact [focus] compacts)';
-      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Shift+Enter newline · Ctrl-R past messages';
+      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl-R past messages';
     }
   };
   const resume = async (text) => {
@@ -843,7 +844,9 @@ function makeComposer(id) {
     if (e.key !== 'Enter' || e.shiftKey) return;
     e.preventDefault();
     if (finished === null || busy) return;
-    const text = ta.value.trim();
+    // Ctrl+Enter is the `/now` directive: the steer aborts the call in flight.
+    const typed = ta.value.trim();
+    const text = e.ctrlKey && !finished && typed && !typed.startsWith('/') ? '/now ' + typed : typed;
     if (text === '/restate') {
       // Local and free: rendered from the journal, nothing reaches the model.
       getJSON('/api/session/' + encodeURIComponent(id) + '/restate')

@@ -45,7 +45,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6.app.fork import create_fork, undo_fork
 from agent6.app.reporter import Reporter
 from agent6.config.layer import available_preset_names
-from agent6.directive import parse_btw, parse_compact
+from agent6.directive import parse_btw, parse_compact, parse_now
 from agent6.sessions.ipc import (
     register_frontend,
     request_compact,
@@ -482,8 +482,12 @@ class Agent6TUI(PlainNotify, MuxPointerShapes, App[int]):
                 else:
                     self.notify("could not write the compaction request", severity="warning")
                 return
-            submit_steer(self.session_dir, text)
-            self.notify("steering this session…")
+            urgent = parse_now(text)
+            if urgent == "":
+                self.notify("/now needs the instruction: /now <text>", severity="warning")
+                return
+            submit_steer(self.session_dir, urgent or text, now=urgent is not None)
+            self.notify("steering this session now…" if urgent else "steering this session…")
         else:
             self.resume_with_instruction(text)
 

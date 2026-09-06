@@ -490,3 +490,27 @@ def test_prune_carries_the_squash_opt_in_only_when_asked(
     assert captured[-1][1:] == ["sessions", "prune"]
     actions.prune_sessions(tmp_path, delete_squashed=True)
     assert captured[-1][1:] == ["sessions", "prune", "--delete-squashed"]
+
+
+def test_a_now_steer_writes_the_urgent_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`/now <text>` on the web composer is the CLI's `steer --now`: the answer
+    is the text alone and the request marker carries the urgency."""
+    import os
+
+    from agent6.config.layer import resolved_state_dir
+    from agent6.sessions.ipc import STEER_ANSWER_FILE, STEER_REQUEST_FILE, write_worker_pid
+    from agent6.ui.web import actions
+
+    monkeypatch.chdir(tmp_path)
+    d = resolved_state_dir(tmp_path) / "sessions" / "runs" / "live-one-AAAAAA"
+    d.mkdir(parents=True)
+    (d / "logs.jsonl").write_text('{"type": "session.start", "mode": "run"}\n', encoding="utf-8")
+    write_worker_pid(d, os.getpid())
+    ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/now stop and report")
+    assert ok and msg == "steer requested now"
+    assert (d / STEER_REQUEST_FILE).read_text(encoding="utf-8") == "now"
+    assert (d / STEER_ANSWER_FILE).read_text(encoding="utf-8") == "stop and report"
+    ok, msg = actions.steer(tmp_path, "live-one-AAAAAA", "/now")
+    assert not ok and "needs the instruction" in msg
