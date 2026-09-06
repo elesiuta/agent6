@@ -79,6 +79,27 @@ def test_import_run_lands_branch_and_moves_run_dir(tmp_path: Path) -> None:
     assert branch_exists(origin, branch)
 
 
+def test_import_run_lands_a_lane_that_never_committed(tmp_path: Path) -> None:
+    """A lane stopped before its first commit has no branch to land. Reported
+    as a failed fetch, every lane of a fleet stopped by an expired key read
+    "couldn't find remote ref", and the reason stayed in a session dir the
+    operator could no longer reach."""
+    origin = tmp_path / "origin"
+    _init_repo(origin)
+    lane_repo = tmp_path / "lane-1"
+    clone_workspace(origin, lane_repo)
+    lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01DEAD"
+    lane_session_dir.mkdir(parents=True)
+    (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    imported = import_run(
+        origin, lane_repo, "agent6/lane-1", lane_session_dir, tmp_path / "origin-state"
+    )
+
+    assert (imported / "manifest.json").is_file()
+    assert not branch_exists(origin, "agent6/lane-1")
+
+
 def test_import_run_refuses_existing_branch(tmp_path: Path) -> None:
     origin = tmp_path / "origin"
     _init_repo(origin)

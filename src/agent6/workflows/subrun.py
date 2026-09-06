@@ -109,16 +109,22 @@ def import_run(
     Refuses (SubrunError) to overwrite an existing branch in *origin* or an
     existing run dir at the destination -- checked before either the fetch or
     the move, so a refusal touches neither.
+
+    A lane that never committed has no branch to land, and its record imports
+    all the same: reported as a failed fetch, every lane of a fleet stopped by
+    an expired key read "couldn't find remote ref" and the reason stayed in a
+    session dir the operator could no longer reach.
     """
     if branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")
     dest_session_dir = bucket_dir(origin_state, "runs") / lane_session_dir.name
     if dest_session_dir.exists():
         raise SubrunError(f"run dir already exists: {dest_session_dir}")
-    try:
-        fetch_branch(origin, lane_repo, f"{branch}:{branch}")
-    except GitError as exc:
-        raise SubrunError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
+    if branch_exists(lane_repo, branch):
+        try:
+            fetch_branch(origin, lane_repo, f"{branch}:{branch}")
+        except GitError as exc:
+            raise SubrunError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
     dest_session_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(lane_session_dir), str(dest_session_dir))
     return dest_session_dir
