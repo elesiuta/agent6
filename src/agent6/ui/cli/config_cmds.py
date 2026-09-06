@@ -372,6 +372,9 @@ def _cmd_config_unset(
     if err := _reject_machine_protected(key, machine):
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
+    if effective_leaf(load_effective(Path.cwd(), config_path), key) is None:
+        print(f"ERROR: {key!r} is not a config leaf (see `agent6 config show`).", file=sys.stderr)
+        return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     if not target.is_file():
         print(f"ERROR: {target} does not exist; nothing to unset.", file=sys.stderr)

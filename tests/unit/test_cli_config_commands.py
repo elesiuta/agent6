@@ -72,6 +72,15 @@ def test_machine_get_on_malformed_toml_is_clean_error(
     assert "report this" not in err
 
 
+def test_unset_refuses_a_key_that_is_not_a_leaf(
+    iso: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`config unset nope.nope` refuses like get and set do; "nothing to unset"
+    with exit 0 read as a no-op on a key that never existed."""
+    assert _run(["config", "unset", "nope.nope"]) == 2
+    assert "is not a config leaf" in capsys.readouterr().err
+
+
 def test_unset_reverts_to_default(iso: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _run(["config", "set", "sandbox.protect_git", "false"])
     assert _run(["config", "unset", "sandbox.protect_git"]) == 0
