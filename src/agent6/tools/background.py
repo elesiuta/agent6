@@ -102,6 +102,11 @@ class _Shell:
     stop_error: str = ""
 
 
+def _seq_of(name: str) -> int:
+    """The N in a `bg<N>` directory name, 0 for any other name."""
+    return int(name[2:]) if name.startswith("bg") and name[2:].isdigit() else 0
+
+
 def _highest_shell_seq(root: Path) -> int:
     """The largest `bg<N>` already recorded under *root*, or 0.
 
@@ -113,9 +118,7 @@ def _highest_shell_seq(root: Path) -> int:
     for directory in (root, root / _LOG_ROOT):
         with contextlib.suppress(OSError):
             for entry in directory.iterdir():
-                name = entry.name
-                if name.startswith("bg") and name[2:].isdigit():
-                    highest = max(highest, int(name[2:]))
+                highest = max(highest, _seq_of(entry.name))
     return highest
 
 
@@ -385,7 +388,8 @@ def roster_from_dir(root: Path) -> list[str]:
     if not root.is_dir():
         return []
     lines: list[str] = []
-    for d in sorted(root.iterdir()):
+    # By sequence: as text, bg10 sorts ahead of bg2.
+    for d in sorted(root.iterdir(), key=lambda p: (_seq_of(p.name), p.name)):
         if not d.is_dir():
             continue
         try:

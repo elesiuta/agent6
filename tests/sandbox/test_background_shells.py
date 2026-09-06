@@ -670,3 +670,19 @@ def test_stopping_an_already_exited_command_still_reads_exited(tmp_path: Path) -
     assert (stopped.state, stopped.returncode) == ("exited", 7), stopped
     assert [v.state for v in shells.roster()] == ["exited"]
     assert any(f"[{view.id}] exited 7" in line for line in roster_from_dir(tmp_path / "shells"))
+
+
+def test_the_disk_roster_is_in_start_order(tmp_path: Path) -> None:
+    """`/shells`, the TUI modal and the dashboard card read this list, and a
+    run's eleventh background command follows its tenth: sorted as text, bg10
+    and bg11 came ahead of bg2."""
+    shells = BackgroundShells(tmp_path / "shells")
+    try:
+        started = [
+            shells.start(("/bin/sh", "-c", "exit 0"), _policy_for(tmp_path, "none")).id
+            for _ in range(11)
+        ]
+        listed = [line.split("]")[0].lstrip("[") for line in roster_from_dir(tmp_path / "shells")]
+        assert listed == started, listed
+    finally:
+        shells.stop_all()
