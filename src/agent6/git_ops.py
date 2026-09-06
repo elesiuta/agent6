@@ -1081,14 +1081,19 @@ def chain_merge(
 
 
 def sync_worktree(path: Path, from_rev: str, to_rev: str) -> None:
-    """Update worktree files from *from_rev*'s tree to *to_rev*'s via a temp
-    index (two-tree `read-tree -m -u`); HEAD and the shared index stay
-    untouched. The worktree must currently match *from_rev*'s tree -- the
-    chain invariant after a chain commit."""
+    """Update worktree files from *from_rev*'s tree to *to_rev*'s (both
+    tree-ish) via a temp index (two-tree `read-tree -m -u`); HEAD and the
+    shared index stay untouched. The worktree must currently match
+    *from_rev*'s tree -- the chain invariant after a chain commit.
+
+    The temp index is refreshed before the merge: `read-tree` records no stat
+    data, and the two-tree merge touches only entries it can prove up to
+    date."""
     tmp = Path(tempfile.mkdtemp(prefix="agent6-chain-"))
     env = {"GIT_INDEX_FILE": str(tmp / "index")}
     try:
         _run(path, "read-tree", from_rev, env_extra=env)
+        _run(path, "update-index", "--refresh", env_extra=env, check=False)
         _run(path, "read-tree", "-m", "-u", from_rev, to_rev, env_extra=env)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

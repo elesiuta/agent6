@@ -1320,6 +1320,27 @@ def test_chain_merge_records_the_lane_and_syncs_the_worktree(tmp_path: Path) -> 
     assert chain_merge(tmp_path, head0, "again", ref="refs/agent6/t3") == merged
 
 
+def test_chain_merge_syncs_a_file_the_lane_modified(tmp_path: Path) -> None:
+    """A lane that edits an EXISTING file merges and the edit lands in the
+    worktree. The temp index `sync_worktree` builds carries no stat data, and
+    `read-tree -m -u` refused to touch any entry it could not prove up to date
+    ("Entry 'README.md' not uptodate. Cannot merge."), so every lane that
+    changed a file the coordinator already had failed to join."""
+    from agent6.git_ops import chain_commit, chain_merge
+
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "b.txt").write_text("two\n", encoding="utf-8")
+    s1 = chain_commit(tmp_path, "agent6 iter 1", ref="refs/agent6/t5", fallback_parent=head0)
+    assert s1 is not None
+    lane = _lane_commit(tmp_path, head0, "README.md", "hi\nlane edit\n")
+
+    merged = chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t5")
+    assert merged is not None
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\nlane edit\n"
+    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "two\n"
+
+
 def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: Path) -> None:
     """A textual conflict returns None: the ref keeps its tip and no file in
     the worktree is rewritten (the coordinator reports, the model resolves)."""
