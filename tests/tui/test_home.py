@@ -224,6 +224,105 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
     asyncio.run(scenario())
 
 
+def test_a_start_whose_screen_was_left_still_opens_the_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker read `self.app` from its thread, where the screen it belongs
+    to may already be popped: the located session then died in the thread and
+    the hub never opened it. The worker reaches the app it was handed on the
+    UI thread."""
+    import asyncio
+    import threading
+
+    from agent6.ui.tui import new_work
+    from agent6.ui.tui.composer import SteerInput
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.new_work import NewWorkScreen
+
+    a6 = tmp_path / ".agent6"
+    entered = threading.Event()
+    gate = threading.Event()
+
+    def _spawn(cwd: Path, mode: str, task: str, *, preset: str = "", config_path: object = None):
+        entered.set()
+        if not gate.wait(timeout=5.0):
+            return None, "the test never released the spawn"
+        return tmp_path / "located", ""
+
+    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(NewWorkScreen(tmp_path))
+            await pilot.pause()
+            bar = app.screen.query_one("#draft-input", SteerInput)
+            bar.focus()
+            await pilot.pause()
+            await pilot.press("f", "i", "x", "enter")
+            await pilot.pause()
+            assert entered.wait(2.0), "the spawn never ran"
+            app.pop_screen()  # Esc while the start is still locating
+            await pilot.pause()
+            gate.set()
+            deadline = time.monotonic() + 10
+            while app.return_value is None and time.monotonic() < deadline:
+                await pilot.pause(0.05)
+            assert app.return_value == tmp_path / "located"
+
+    asyncio.run(scenario())
+
+
+def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refusal branch wrote into the composer's notice widget, which a
+    popped screen no longer has: the query raised inside the cancelled worker
+    and the refusal reached nobody. Without a composer it toasts."""
+    import asyncio
+    import threading
+
+    from agent6.ui.tui import new_work
+    from agent6.ui.tui.composer import SteerInput
+    from agent6.ui.tui.home import Agent6HomeApp
+    from agent6.ui.tui.new_work import NewWorkScreen
+
+    a6 = tmp_path / ".agent6"
+    entered = threading.Event()
+    gate = threading.Event()
+
+    def _spawn(cwd: Path, mode: str, task: str, *, preset: str = "", config_path: object = None):
+        entered.set()
+        gate.wait(timeout=5.0)
+        return None, "REFUSING: the tree is dirty"
+
+    monkeypatch.setattr(new_work, "spawn_new_work", _spawn)
+
+    async def scenario() -> None:
+        app = Agent6HomeApp(a6, tmp_path)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.push_screen(NewWorkScreen(tmp_path))
+            await pilot.pause()
+            app.screen.query_one("#draft-input", SteerInput).focus()
+            await pilot.pause()
+            await pilot.press("f", "i", "x", "enter")
+            await pilot.pause()
+            assert entered.wait(2.0), "the spawn never ran"
+            app.pop_screen()  # Esc while the start is still locating
+            await pilot.pause()
+            gate.set()
+            deadline = time.monotonic() + 10
+            toasts: list[tuple[str, str]] = []
+            while not toasts and time.monotonic() < deadline:
+                await pilot.pause(0.05)
+                toasts = [(str(n.message), n.severity) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert ("REFUSING: the tree is dirty", "error") in toasts, toasts
+
+    asyncio.run(scenario())
+
+
 def test_new_task_view_keeps_the_text_on_a_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

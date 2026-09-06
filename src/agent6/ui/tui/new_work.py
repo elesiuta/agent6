@@ -18,7 +18,7 @@ from typing import ClassVar
 
 from rich.text import Text
 from textual import on, work
-from textual.app import ComposeResult
+from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
@@ -179,21 +179,26 @@ class NewWorkScreen(ScreenChrome, Screen[None]):
         preset = str(self.query_one("#draft-preset", Select).value)
         self._starting = True
         self._notice(Text(f"starting the {mode}…", style="bold cyan"))
-        self._start(mode, message.text, preset)
+        self._start(self.app, mode, message.text, preset)
 
     @work(thread=True, exclusive=True)
-    def _start(self, mode: str, task: str, preset: str) -> None:
+    def _start(self, app: App[object], mode: str, task: str, preset: str) -> None:
         """Spawn detached and locate the session, off the UI thread: the locate
-        waits for the run's first event, which can take seconds."""
+        waits for the run's first event, which can take seconds. *app* is bound
+        on the UI thread: a screen dismissed mid-spawn has no parent to reach it
+        through."""
         session_dir, err = spawn_new_work(
             self.repo_cwd, mode, task, preset=preset, config_path=self.config_path
         )
-        self.app.call_from_thread(self._started, session_dir, err, task)
+        app.call_from_thread(self._started, session_dir, err, task)
 
     def _started(self, session_dir: Path | None, err: str, task: str) -> None:
         self._starting = False
         if session_dir is not None:
             self.app.exit(session_dir)
+            return
+        if not self.is_attached:  # left mid-spawn: no composer to hand the text back to
+            self.app.notify(err or "could not start", severity="error", timeout=8.0)
             return
         # The refusal is the conversation so far: selectable, and above the
         # text it refused, which is back in the composer to fix and resend.
