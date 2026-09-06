@@ -46,11 +46,11 @@ import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 import agent6
 from agent6.budget import BudgetTracker, PlanUsage
-from agent6.portable import atomic_write
+from agent6.portable import atomic_write, drain_stderr, stderr_tail
 from agent6.providers._claude_code_wire import (
     CLAUDE_CODE_PERSIST_BYTES,
     CLAUDE_CODE_RESULT_CAP_CHARS,
@@ -88,7 +88,6 @@ from agent6.sandbox.jail import die_with_parent
 
 EMAIL_PLACEHOLDER = "<operator-email>"
 _MAX_LINE_BYTES = 8 * 1024 * 1024
-_STDERR_KEEP_BYTES = 8192
 # The CLI emits a reading when a window's rounded percent or reset time
 # changes, within milliseconds of message_stop (4 ms measured on 2.1.251): one
 # tick covers it. A process's first round is always followed by one; none
@@ -158,15 +157,6 @@ def _reap(proc: subprocess.Popen[bytes], private_dir: Path) -> None:
                 os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
     shutil.rmtree(private_dir, ignore_errors=True)
-
-
-def _drain_stderr(pipe: IO[bytes], keep: list[bytes]) -> None:
-    with contextlib.suppress(OSError, ValueError):
-        while chunk := pipe.read(4096):
-            keep.append(chunk)
-            while len(keep) > 2:
-                keep.pop(0)
-    pipe.close()
 
 
 @dataclass(slots=True)
@@ -372,11 +362,6 @@ def _write(s: _Session, obj: dict[str, Any], *, log: bool = True) -> None:
         s.stdin_log.append(obj)
 
 
-def _stderr_tail(s: _Session) -> str:
-    text = b"".join(s.stderr_tail)[-_STDERR_KEEP_BYTES:].decode(errors="replace").strip()
-    return text[-400:]
-
-
 def _email_prefix_len(email: str, text: str) -> int:
     """The longest proper prefix of *email* that ends *text*; 0 when none."""
     return next((k for k in range(len(email) - 1, 0, -1) if text.endswith(email[:k])), 0)
@@ -560,7 +545,11 @@ class ClaudeCodeProvider:
         assert proc.stderr is not None
         tail: list[bytes] = []
         drain = threading.Thread(
-            target=_drain_stderr, args=(proc.stderr, tail), name="agent6-claude-stderr", daemon=True
+            target=drain_stderr,
+            args=(proc.stderr, tail),
+            kwargs={"close": True},
+            name="agent6-claude-stderr",
+            daemon=True,
         )
         s = _Session(
             proc=proc,
@@ -748,7 +737,7 @@ class ClaudeCodeProvider:
                 # The drain reaches EOF once the child is gone; a tail read
                 # before it gets there misses the child's last words.
                 s.stderr_drain.join(timeout=_KILL_GRACE_S)
-                tail = self._scrub(s, _stderr_tail(s)) or "no stderr"
+                tail = self._scrub(s, stderr_tail(s.stderr_tail)) or "no stderr"
                 raise ProviderError(f"claude exited {rc}: {tail}")
             if line.get("type") == "_agent6_error":
                 raise ProviderError(str(line.get("text")))

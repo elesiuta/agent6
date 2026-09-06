@@ -319,3 +319,16 @@ def test_locked_file_reports_acquisition(tmp_path: Path, monkeypatch: pytest.Mon
         assert held is False
         with portable_mod.locked_file(target) as inner:
             assert inner is False
+
+
+def test_a_cut_stderr_tail_says_it_was_cut() -> None:
+    """The claude_code provider's copy cut a diagnostic at 400 chars with no
+    marker, so a partial failure read as a complete one; the MCP client's
+    version marks the cut and starts at a line, and is now the one owner."""
+    from agent6.portable import stderr_tail
+
+    keep = [(f"line {i}: " + "x" * 60 + "\n").encode() for i in range(20)]
+    tail = stderr_tail(keep, limit=200)
+    assert tail.startswith("…[agent6: ") and "earlier chars cut]" in tail
+    assert tail.endswith("x" * 60)
+    assert stderr_tail([b"short\n"]) == "short"

@@ -524,16 +524,16 @@ def test_a_dying_childs_stderr_reaches_the_error_when_the_drain_lags(
     binary, _ = _install(
         tmp_path, {"die_in_round": 1, "die_message": "boom late", "turns": [[_round(text="x")]]}
     )
-    real = module._drain_stderr  # pyright: ignore[reportPrivateUsage]
+    real = module.drain_stderr
 
-    def lagging(pipe: IO[bytes], keep: list[bytes]) -> None:
+    def lagging(pipe: IO[bytes], keep: list[bytes], *, close: bool = False) -> None:
         # Scheduled out AFTER the child has written: wait for its stderr to
         # become readable, then sleep well inside the exit path's join cap.
         select.select([pipe], [], [], 5.0)
         time.sleep(0.2)
-        real(pipe, keep)
+        real(pipe, keep, close=close)
 
-    monkeypatch.setattr(module, "_drain_stderr", lagging)
+    monkeypatch.setattr(module, "drain_stderr", lagging)
     with pytest.raises(ProviderError, match="exited 3: boom late"):
         _provider(binary).call(system="s", messages=USER0, tools=None)
 

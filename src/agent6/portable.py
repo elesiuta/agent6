@@ -19,6 +19,7 @@ import tempfile
 import threading
 from collections.abc import Generator
 from pathlib import Path
+from typing import IO
 
 if sys.platform == "win32":
     import msvcrt
@@ -291,3 +292,38 @@ def _existing_mode(path: Path) -> int | None:
         return path.stat().st_mode & 0o777
     except OSError:
         return None
+
+
+# A child's stderr, bounded because the writer is third-party code: capturing
+# it to a file let a hostile MCP server write 1.8 GB in three seconds.
+STDERR_KEEP_BYTES = 8192
+
+
+def drain_stderr(pipe: IO[bytes], keep: list[bytes], *, close: bool = False) -> None:
+    """Read a child's stderr forever, keeping only the tail.
+
+    Forever, because a pipe nobody reads stops the writer at 64 KB (a child
+    that logs would wedge itself). Only the tail, because the writer has no
+    reason to be polite about volume."""
+    with contextlib.suppress(OSError, ValueError):
+        while chunk := pipe.read(4096):
+            keep.append(chunk)
+            while len(keep) > 2:
+                keep.pop(0)
+    if close:
+        pipe.close()
+
+
+def stderr_tail(keep: list[bytes], limit: int = 400) -> str:
+    """The last of what a child said, for a failure message: at most *limit*
+    chars, cut at a line start, and marked when anything was dropped, so a
+    partial diagnostic never reads as a complete one. Best-effort: a
+    diagnostic must never raise over the failure it is describing."""
+    text = b"".join(keep)[-STDERR_KEEP_BYTES:].decode(errors="replace").strip()
+    if len(text) <= limit:
+        return text
+    tail = text[-limit:]
+    nl = tail.find("\n")
+    if 0 <= nl < len(tail) - 1:
+        tail = tail[nl + 1 :]
+    return f"…[agent6: {len(text) - len(tail)} earlier chars cut]\n{tail.strip()}"

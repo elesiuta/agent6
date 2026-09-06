@@ -49,10 +49,11 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import IO, Any
+from typing import Any
 
 from agent6 import __version__
 from agent6.child_env import curated_env
+from agent6.portable import drain_stderr, stderr_tail
 from agent6.sandbox.jail import (
     JailedProcess,
     JailUnavailableError,
@@ -191,12 +192,6 @@ class MCPStartFailure:
     error: str
 
 
-# What we keep of a server's stderr. Enough for a traceback or a launcher
-# setup failure, bounded because the writer is third-party code: capturing it
-# to a file let a hostile server write 1.8 GB in three seconds.
-_STDERR_KEEP_BYTES = 8192
-
-
 def _spawn_server(
     command: tuple[str, ...],
     policy: JailPolicy | None,
@@ -248,35 +243,6 @@ def _spawn_server(
             preexec_fn=die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
         )
     )
-
-
-def _drain_stderr(pipe: IO[bytes], keep: list[bytes]) -> None:
-    """Read a server's stderr forever, keeping only the tail.
-
-    Forever, because a pipe nobody reads stops the writer at 64 KB -- a server
-    that logs would wedge itself. Only the tail, because the writer is
-    third-party code with no reason to be polite about volume.
-    """
-    with contextlib.suppress(OSError, ValueError):
-        while chunk := pipe.read(4096):
-            keep.append(chunk)
-            while len(keep) > 2:
-                keep.pop(0)
-
-
-def _stderr_tail(keep: list[bytes], limit: int = 400) -> str:
-    """The last of what the server (or the launcher) said, for a failure
-    message: at most *limit* chars, cut at a line start, and marked when
-    anything was dropped. Best-effort: a diagnostic must never raise over
-    the failure it is describing."""
-    text = b"".join(keep)[-_STDERR_KEEP_BYTES:].decode(errors="replace").strip()
-    if len(text) <= limit:
-        return text
-    tail = text[-limit:]
-    nl = tail.find("\n")
-    if 0 <= nl < len(tail) - 1:
-        tail = tail[nl + 1 :]
-    return f"…[agent6: {len(text) - len(tail)} earlier chars cut]\n{tail.strip()}"
 
 
 def _result_of(response: dict[str, Any], *, name: str, method: str) -> Any:
@@ -395,7 +361,7 @@ class _MCPServer:
         self._reader.start()
         if self._proc.stderr is not None:
             threading.Thread(
-                target=_drain_stderr,
+                target=drain_stderr,
                 args=(self._proc.stderr, self._errors),
                 name=f"mcp-stderr[{self.name}]",
                 daemon=True,
@@ -664,7 +630,7 @@ class _MCPServer:
                         # first arm below reports them: a server that logs its
                         # reason and then waits on stdin (the common shape) was
                         # a bare timeout pointing at the sandbox grants.
-                        said = self._redact_secrets(_stderr_tail(self._errors))
+                        said = self._redact_secrets(stderr_tail(self._errors))
                         detail = f": {said}" if said else ""
                         raise MCPTimeout(
                             f"server {self.name!r} timed out after"
@@ -676,7 +642,7 @@ class _MCPServer:
                         # Its own words if it left any: a command that does not
                         # exist, a refused grant, the launcher's setup failure
                         # all read the same from out here otherwise.
-                        said = self._redact_secrets(_stderr_tail(self._errors))
+                        said = self._redact_secrets(stderr_tail(self._errors))
                         detail = f": {said}" if said else ""
                         raise MCPError(
                             f"server {self.name!r} died before responding to {method}{detail}"

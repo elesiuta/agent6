@@ -199,11 +199,8 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) 
     Drained, capped, and the tail still says what happened."""
     import threading
 
-    from agent6.tools.mcp_client import (
-        _drain_stderr,  # pyright: ignore[reportPrivateUsage]
-        _spawn_server,  # pyright: ignore[reportPrivateUsage]
-        _stderr_tail,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.portable import drain_stderr, stderr_tail
+    from agent6.tools.mcp_client import _spawn_server  # pyright: ignore[reportPrivateUsage]
 
     flood = (
         "import sys\n"
@@ -217,13 +214,13 @@ def test_a_flooding_server_cannot_fill_the_disk_or_wedge_itself(tmp_path: Path) 
     ).popen
     keep: list[bytes] = []
     assert proc.stderr is not None
-    threading.Thread(target=_drain_stderr, args=(proc.stderr, keep), daemon=True).start()
+    threading.Thread(target=drain_stderr, args=(proc.stderr, keep), daemon=True).start()
     try:
         time.sleep(2.0)
         held = sum(len(chunk) for chunk in keep)
         assert held <= 16384, f"the capture is unbounded: {held} bytes held"
         assert proc.poll() is None, "the server wedged on its own stderr"
-        assert _stderr_tail(keep), "nothing was kept to explain a failure with"
+        assert stderr_tail(keep), "nothing was kept to explain a failure with"
     finally:
         proc.kill()
         proc.wait(timeout=10)
