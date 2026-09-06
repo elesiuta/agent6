@@ -93,7 +93,6 @@ depends_on = ["agent6.commit_message",
   "agent6.ui.spawn",
   "agent6.ui.notify",
   "agent6.viewmodel",
-  "agent6.graph.models",
   "agent6.graph.storage",
   "agent6.sessions.id",
   "agent6.sessions.layout",
@@ -555,7 +554,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.sessions.layout"
-depends_on = []
+depends_on = ["agent6.portable"]
 
 [[modules]]
 # The single manifest.json reader (the writer is app.manifest). A pure leaf:

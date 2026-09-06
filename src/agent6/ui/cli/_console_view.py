@@ -22,7 +22,7 @@ from collections.abc import Callable, Generator
 from threading import Event, RLock, Thread
 from typing import Any, TextIO
 
-from agent6.ui.cli._task_tree import tree_lines_from_event_nodes
+from agent6.ui.cli._task_tree import task_tree_lines
 from agent6.viewmodel.events import event_epoch
 from agent6.viewmodel.format import spinner_frame
 from agent6.viewmodel.listing import task_snippet
@@ -264,7 +264,7 @@ class ConsoleView:
             return
         self._plan_count = len(nodes)
         cursor = event.get("cursor")
-        lines = tree_lines_from_event_nodes(nodes, cursor if isinstance(cursor, str) else None)
+        lines = task_tree_lines(nodes, cursor if isinstance(cursor, str) else None)
         if not lines:
             return
         self._end_block()

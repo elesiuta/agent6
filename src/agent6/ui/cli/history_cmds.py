@@ -386,7 +386,7 @@ def _cmd_history_graph(session_id: str) -> int:
 
     print(f"Session id: {target_id}")
     print()
-    for line in task_tree_lines(nodes, show_commit=True):
+    for line in task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)}):
         print(line)
     return 0
 

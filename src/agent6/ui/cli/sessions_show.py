@@ -312,7 +312,7 @@ def _print_task_tree(session_dir: Path) -> None:
         nodes = load_graph(layout)
         if len(nodes) <= 1:
             return
-        lines = task_tree_lines(nodes, show_commit=True)
+        lines = task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
         if lines:
             print("\nplan:")
             for line in lines:
