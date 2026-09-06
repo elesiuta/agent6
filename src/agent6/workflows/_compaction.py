@@ -626,11 +626,12 @@ def _dedupe_identical_results(
     """History-wide identical-result dedup, the tier-1 pass's first step.
 
     When the same call (name + input) produced byte-identical content more
-    than once, every copy but the newest becomes a short pointer placeholder:
-    lossless (the content survives in the newest copy), local, and running
-    only here — where history is being rewritten anyway — so it adds no new
-    cache-invalidation points. Claude Code dedupes the same way; pi, which
-    only ever compacts at the context edge, has no tier this could live in.
+    than once, every copy but the newest becomes a short placeholder. It runs
+    only here, where history is being rewritten anyway, so it adds no new
+    cache-invalidation points. The placeholder points at no other
+    block, because the elision pass below can take the newest copy in the same
+    call. Claude Code dedupes the same way; pi, which only ever compacts at the
+    context edge, has no tier this could live in.
 
     The undelivered final batch, the `keep_recent` newest results,
     already-elided placeholders, and sub-`_DEDUP_MIN_CHARS` results are
@@ -663,7 +664,8 @@ def _dedupe_identical_results(
                 turn_idx,
                 item_idx,
                 f"{ELISION_PREFIX} (duplicate): {label} returned byte-identical"
-                " content again later in this conversation; see the newer result.>",
+                " content again later in this conversation. If you still need it,"
+                " re-read only the part you need; do not re-issue the identical call.>",
             )
             n += 1
             labels.append(label)

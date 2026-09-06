@@ -489,6 +489,36 @@ def test_tier1_dedupes_identical_results_keeping_the_newest() -> None:
     assert stats.deduped_calls == ("read_file a.py", "read_file a.py")
 
 
+def test_a_duplicate_marker_claims_no_copy_the_same_pass_elides() -> None:
+    """The duplicate marker sent the model to "the newer result", which the
+    elision pass in the same call can replace with a bare marker: a pointer to
+    content nothing holds any more."""
+    from agent6.workflows._compaction import ELISION_PREFIX, compact_old_tool_results
+    from agent6.workflows._conversation import AssistantTurn
+
+    payload = "x" * 4_000
+    conv = Conversation()
+    conv.notice("task")
+    calls = [("t1", "read_file", {"path": "a.py"}), ("t2", "read_file", {"path": "a.py"})]
+    calls += [(f"c{i}", "run_command", {"command": f"echo {i}"}) for i in range(3)]
+    for tid, name, args in calls:
+        conv.assistant([{"type": "tool_use", "id": tid, "name": name, "input": args}])
+        last = conv.turns[-1]
+        assert isinstance(last, AssistantTurn)
+        conv.results([ToolResultItem(tool_use_id=tid, content=payload, for_call=last.tool_uses[0])])
+    # The duplicated read is older than the kept tail, so its newest copy is a
+    # candidate for elision in the same pass that deduped the older one.
+    compact_old_tool_results(conv, max_total_bytes=9_000, keep_recent=2)
+
+    result_turns = [t for t in conv.turns if isinstance(t, UserTurn) and t.items]
+    contents = [
+        item.content for t in result_turns for item in t.items if isinstance(item, ToolResultItem)
+    ]
+    assert any(c.startswith(f"{ELISION_PREFIX} (duplicate)") for c in contents)
+    assert payload not in contents[:2], "the deduped read still holds a full copy"
+    assert not any("newer result" in c for c in contents)
+
+
 def test_tier1_dedup_alone_can_satisfy_the_budget() -> None:
     """When freeing duplicates gets the total under the threshold, nothing
     real is elided."""
