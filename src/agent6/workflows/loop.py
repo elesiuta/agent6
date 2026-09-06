@@ -33,7 +33,9 @@ from agent6.git_ops import (
     commit_diff,
     conventional_commit_subject,
     diff_since,
+    tree_diff_paths,
     worktree_name_status,
+    worktree_tree,
 )
 from agent6.git_ops import status as git_status
 from agent6.graph.curator import GraphCurator
@@ -177,8 +179,10 @@ from agent6.workflows._nudges import (
     VERIFY_SETTLED_STOP_AFTER,
     VERIFY_UNADOPTED_NOTICE,
     ends_with_question,
+    is_test_path,
     standing_fruitless_nudge,
     standing_resume_nudge,
+    test_only_green_notice,
     tool_error_signature,
     unrunnable_signature,
     verify_did_not_run,
@@ -1251,6 +1255,12 @@ class Workflow:
             turn.verify_just_passed = True
             if verdict.last_ok is False:
                 turn.verify_flipped_green = True
+                if paths := self._test_only_paths_since_red(verdict.red_tree):
+                    turn.tool_results.append(Notice(test_only_green_notice(paths)))
+                    self._log(f"  verify flipped green over test-only edits: {' '.join(paths)}")
+                    self._emit(
+                        "loop.test_only_green.notice", iteration=turn.iteration, paths=list(paths)
+                    )
             # This verify validated the current tree; any earlier
             # edit is now covered.
             turn.edit_since_verify_pass = False
@@ -1303,6 +1313,7 @@ class Workflow:
             state.no_progress_nudges_used = 0
             return
         verdict.note_fail(verify_failure_signature(result.stdout, result.stderr))
+        verdict.red_tree = self._worktree_tree_sha()
         if verdict.fail_streak == 1:
             # A NEW stuck point: the nudge allowance starts over with it.
             state.no_progress_nudges_used = 0
@@ -3230,6 +3241,33 @@ class Workflow:
             return not git_status(self.root, exclude=self.untracked_at_start).is_clean
         except (GitError, OSError):
             return False
+
+    def _worktree_tree_sha(self) -> str:
+        """Tree sha of the worktree's content (minus untracked_at_start),
+        seeded on the chain tip like a chain commit; "" when git cannot say."""
+        try:
+            seed = self._chain_tip_sha() or self.chain_fallback_parent
+            return worktree_tree(self.root, seed, self.untracked_at_start)
+        except (GitError, OSError):
+            return ""
+
+    def _test_only_paths_since_red(self, red_tree: str) -> tuple[str, ...]:
+        """Paths whose content differs between *red_tree* (the tree at the
+        last red verify) and the current tree, when every one is a test file;
+        () when either tree is unknown, nothing changed, or a non-test file did.
+        Asked of git, so a run_command edit counts like an apply_edit."""
+        if not red_tree:
+            return ()
+        tree = self._worktree_tree_sha()
+        if not tree:
+            return ()
+        try:
+            paths = tree_diff_paths(self.root, red_tree, tree)
+        except (GitError, OSError):
+            return ()
+        if paths and all(is_test_path(p) for p in paths):
+            return tuple(sorted(paths))
+        return ()
 
     def _dirty_tree_note(self) -> str:
         """Summary suffix naming an uncommitted worktree, or "" when clean.

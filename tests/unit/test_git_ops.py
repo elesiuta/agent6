@@ -38,9 +38,11 @@ from agent6.git_ops import (
     set_repo_hook_policy,
     stash_tracked_changes,
     status,
+    tree_diff_paths,
     unignored,
     untracked_paths,
     verify_git_identity,
+    worktree_tree,
 )
 
 
@@ -1449,3 +1451,20 @@ def test_diff_since_leaves_the_real_index_untouched(tmp_path: Path) -> None:
     porcelain = _run_git(tmp_path, "status", "--porcelain")
     assert "?? new-work.py" in porcelain
     assert "A  new-work.py" not in porcelain and " A new-work.py" not in porcelain
+
+
+def test_tree_diff_paths_names_what_changed_between_two_worktree_trees(tmp_path: Path) -> None:
+    """worktree_tree stages the worktree into a temp index (the shared index
+    untouched) and tree_diff_paths names what differs between two such
+    trees: the flip-green notice's question, asked of git."""
+    _init_repo(tmp_path)
+    before = worktree_tree(tmp_path, "HEAD", ())
+    (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
+    (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")
+    after = worktree_tree(tmp_path, "HEAD", ())
+    assert tree_diff_paths(tmp_path, before, after) == ["README.md", "new.txt"]
+    assert tree_diff_paths(tmp_path, before, before) == []
+    staged = subprocess.run(
+        ["git", "-C", str(tmp_path), "diff", "--cached", "--quiet"], check=False
+    )
+    assert staged.returncode == 0  # nothing reached the shared index

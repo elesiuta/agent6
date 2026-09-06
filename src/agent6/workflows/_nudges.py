@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Sequence
 
 # No-progress spiral guard (run mode): N consecutive verify failures sharing
 # ONE normalized signature. A green verify or a DIFFERENT failure (progress
@@ -313,4 +314,34 @@ def standing_resume_nudge(reason: str, task_id: str, title: str) -> str:
         " (ordinary tasks always run first), and write decisions down rather"
         " than asking questions. The run ends on its budget or an operator"
         " stop."
+    )
+
+
+def is_test_path(path: str) -> bool:
+    """Path names a test file by the common Python conventions: a
+    test_*.py / *_test.py basename, or any tests/test directory segment
+    (conftest.py included via its directory)."""
+    parts = path.replace("\\", "/").split("/")
+    name = parts[-1]
+    return (
+        (name.startswith("test_") and name.endswith(".py"))
+        or name.endswith("_test.py")
+        or any(p in ("tests", "test") for p in parts[:-1])
+    )
+
+
+# Paths the test-only flip notice lists before counting the rest.
+TEST_ONLY_LIST_CAP = 12
+
+
+def test_only_green_notice(paths: Sequence[str]) -> str:
+    """The gate was red at the last verify and green at this one, and every
+    file changed in between is a test file: the flip alone renders as an
+    ordinary success, so the notice names them (world state, no advice)."""
+    shown = sorted(paths)[:TEST_ONLY_LIST_CAP]
+    more = len(paths) - len(shown)
+    listed = ", ".join(shown) + (f" (+{more} more)" if more else "")
+    return (
+        "[harness verify] The gate was red at the last verify and green at this one;"
+        f" every file changed in between is a test file: {listed}."
     )

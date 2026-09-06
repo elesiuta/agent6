@@ -894,7 +894,7 @@ def chain_tip(path: Path, ref: str) -> str | None:
     return sha if res.returncode == 0 and sha else None
 
 
-def _worktree_tree(path: Path, seed: str | None, exclude: Collection[str]) -> str:
+def worktree_tree(path: Path, seed: str | None, exclude: Collection[str]) -> str:
     """Tree sha of the worktree's CURRENT content, staged into a temp index;
     the shared index is never read or written.
 
@@ -956,7 +956,7 @@ def chain_dirty(
     clean."""
     base = chain_tip(path, ref) or fallback_parent
     base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
-    return base_tree != _worktree_tree(path, base, exclude)
+    return base_tree != worktree_tree(path, base, exclude)
 
 
 def chain_dirty_paths(
@@ -972,9 +972,13 @@ def chain_dirty_paths(
     tree)."""
     base = chain_tip(path, ref) or fallback_parent
     base_tree = _run(path, "rev-parse", f"{base}^{{tree}}").stdout.strip() if base else _EMPTY_TREE
-    tree = _worktree_tree(path, base, exclude)
-    out = _run(path, "diff-tree", "-r", "--name-only", base_tree, tree).stdout
-    return [line for line in out.splitlines() if line][:limit]
+    return tree_diff_paths(path, base_tree, worktree_tree(path, base, exclude))[:limit]
+
+
+def tree_diff_paths(path: Path, old_tree: str, new_tree: str) -> list[str]:
+    """Paths whose content differs between two tree shas."""
+    out = _run(path, "diff-tree", "-r", "--name-only", old_tree, new_tree).stdout
+    return [line for line in out.splitlines() if line]
 
 
 def chain_commit(
@@ -1003,7 +1007,7 @@ def chain_commit(
     to record).
     """
     parent = chain_tip(path, ref) or fallback_parent
-    tree = _worktree_tree(path, parent, exclude)
+    tree = worktree_tree(path, parent, exclude)
     parent_args: list[str] = []
     if parent is not None:
         if _run(path, "rev-parse", f"{parent}^{{tree}}").stdout.strip() == tree:

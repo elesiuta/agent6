@@ -18,7 +18,7 @@ The loop-owned conversation: typed turns over the provider wire.
 
 - **Written by:** workflows/loop
 - **Read by:** workflows/{_compaction, _loop_state}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (13 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (14 test files exercise it)
 
 ## SessionManifest
 
@@ -108,7 +108,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 - **Written by:** tools/{_control_tools, _dag_tools, _edit_diag, _fs_tools, _memory_tools, _nav_tools}
 - **Read by:** tools/{_skill_tools, dispatch}, workflows/{_review, _toolset, _verify_gate, loop}
-- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (20 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (21 test files exercise it)
 
 ## Event union
 

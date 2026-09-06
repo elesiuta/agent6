@@ -37,6 +37,9 @@ class VerifyVerdict:
     # The full gate overran verify_timeout_s: harness gates run scoped
     # (command + tests nearest the run's diff) until a full run passes.
     scoped: bool = False
+    # Tree sha of the worktree at the last red verify ("" when git could not
+    # say): the flip-green notice diffs it against the green tree.
+    red_tree: str = ""
     baseline_ok: bool | None = None
     last_tail: str = ""
     fail_signature: str = ""
