@@ -34,6 +34,7 @@ depends_on = [
   "agent6.graph.replay",
   "agent6.graph.storage",
   "agent6.machine",
+  "agent6.memory",
   "agent6.models.cache",
   "agent6.models.pricing",
   "agent6.models.registry",

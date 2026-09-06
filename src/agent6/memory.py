@@ -65,6 +65,23 @@ def record_decision(
     return entry
 
 
+def merge_decisions(src_state_dir: Path, dst_state_dir: Path) -> int:
+    """Append every ruling recorded under *src_state_dir* to *dst_state_dir*'s
+    decisions file (a fan-out lane's answers outlive its state dir). Returns
+    the number of entries appended; 0 when the source recorded none."""
+    try:
+        text = decisions_path(src_state_dir).read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    if not text.strip():
+        return 0
+    path = decisions_path(dst_state_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(text if text.endswith("\n") else text + "\n")
+    return sum(1 for line in text.splitlines() if line.startswith("- "))
+
+
 def decisions_text(state_dir: Path) -> str:
     """The decisions file for injection: whole when it fits the cap, else
     its newest tail behind a pointer; "" when nothing is recorded."""

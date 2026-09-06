@@ -8,7 +8,18 @@ from pathlib import Path
 
 import pytest
 
-from agent6.memory import MemoryStoreError, add, index_path, index_text, memory_dir, remove, show
+from agent6.memory import (
+    MemoryStoreError,
+    add,
+    decisions_path,
+    index_path,
+    index_text,
+    memory_dir,
+    merge_decisions,
+    record_decision,
+    remove,
+    show,
+)
 
 
 def test_add_writes_file_and_index_line(tmp_path: Path) -> None:
@@ -113,3 +124,17 @@ def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(tmp_p
         "y" * 40
     )
     assert "q199" in clipped and "Keep the modal" not in clipped
+
+
+def test_merge_decisions_appends_a_lanes_rulings(tmp_path: Path) -> None:
+    """A fan-out lane's rulings land in the coordinator's DECISIONS.md after its
+    own; a lane that recorded none writes nothing."""
+    lane, origin = tmp_path / "lane", tmp_path / "origin"
+    assert merge_decisions(lane, origin) == 0
+    assert not decisions_path(origin).exists()
+    record_decision(origin, question="q0?", answer="a0", session="run")
+    record_decision(lane, question="q1?", answer="a1", session="l1")
+    assert merge_decisions(lane, origin) == 1
+    text = decisions_path(origin).read_text(encoding="utf-8")
+    assert text.index("Q: q0?") < text.index("Q: q1?")
+    assert "[l1]" in text
