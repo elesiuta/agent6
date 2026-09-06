@@ -411,7 +411,7 @@ def apply_patch(
         # preview says the same thing, so it is refused there too.
         count = sum(1 for path in seen_paths if path == dupe)
         raise ToolError(
-            f"apply_patch: {dupe.name} appears in {count} sections of one patch;"
+            f"apply_patch: {dupe} appears in {count} sections of one patch;"
             " a section reads the file as it is on disk, so only the last would"
             " land. Send one section per file, with every hunk for it inside."
         )

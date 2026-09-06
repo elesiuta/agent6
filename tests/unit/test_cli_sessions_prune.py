@@ -920,6 +920,29 @@ def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
     assert "no commit has" in out
 
 
+def test_rm_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The record is the only thing that names a fork's worktree. `rm` deleted
+    it first and kept the worktree second, so the work it kept was left with
+    nothing that could find it -- `rm` had no record to re-run against and
+    `prune` never sees a worktree no manifest names."""
+    monkeypatch.chdir(tmp_path)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    worktree = _fork_with_worktree(tmp_path, "fork-hold111", merged=True)
+    (worktree / "notes.md").write_text("hours of untracked notes\n", encoding="utf-8")
+
+    assert main(["sessions", "rm", "fork-hold111"]) == 2
+
+    err = capsys.readouterr().err
+    assert "notes.md" in err and str(worktree) in err
+    assert (worktree / "notes.md").exists()
+    assert (resolved_state_dir(tmp_path) / "sessions" / "runs" / "fork-hold111").is_dir()
+
+
 def test_prune_removes_a_worktree_whose_content_the_run_committed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -989,3 +1012,6 @@ def test_delete_squashed_keeps_a_chain_ref_whose_base_is_gone(
         "the run's only anchor was deleted over a base that no longer exists"
     )
     assert "deleted refs/agent6" not in out
+    # And the count says why it stayed: "squash-merged" reads as an invitation
+    # to run the flag the operator just ran.
+    assert "1 base feature is gone" in out

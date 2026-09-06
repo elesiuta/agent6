@@ -2195,3 +2195,14 @@ def test_two_patch_sections_over_one_file_are_refused(tmp_path: Path) -> None:
     three = patch + ("diff --git a/o.py b/o.py\n--- /dev/null\n+++ b/o.py\n@@ -0,0 +1 @@\n+O = 1\n")
     with pytest.raises(ToolError, match=r"m\.py appears in 2 sections"):
         d.dispatch("apply_patch", {"patch": three})
+
+    # By its repo path: two `m.py` under different directories are two files,
+    # and a basename cannot tell the model which one it repeated.
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "m.py").write_text("A = 1\nB = 2\nC = 3\n", encoding="utf-8")
+    nested = (
+        "diff --git a/pkg/m.py b/pkg/m.py\n--- a/pkg/m.py\n+++ b/pkg/m.py\n"
+        "@@ -1,3 +1,3 @@\n A = 1\n-B = 2\n+B = 22\n C = 3\n"
+    ) * 2
+    with pytest.raises(ToolError, match=r"pkg/m\.py appears in 2 sections"):
+        d.dispatch("apply_patch", {"patch": nested})

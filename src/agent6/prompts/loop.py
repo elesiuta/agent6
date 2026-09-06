@@ -31,13 +31,6 @@ __DAG_RULES_BLOCK__
 """
 )
 
-# The `__DAG_RULES_BLOCK__` sentinel in SYSTEM_PROMPT_BASE is replaced at assembly
-# by one of these two blocks (run mode only), keyed on `[prompt].decompose`.
-# Default (False) keeps the DAG optional. True front-loads decomposition: the
-# worker lays the whole task out as ordered subtasks first, then the existing
-# surface-current-task + finish-gate machinery walks it one focused task at a
-# time. Aimed at small/open models that lose track of multi-part tasks; a capable
-# model needs neither, which is why this is opt-in (measured per model).
 # Rendered into plan mode's __PLAN_VERIFY_RULE__ sentinel when a gate exists.
 # Without one the block would tell the model to call a tool the same prompt's
 # `<no-verify-command>` says it does not have.
@@ -83,6 +76,13 @@ HARDENED_FS_RULE = """- Under hardened isolation, jailed commands cannot CREATE 
   placeholder like `target/.keep` for a directory. Then rerun the command.
 """
 
+# The `__DAG_RULES_BLOCK__` sentinel in SYSTEM_PROMPT_BASE is replaced at assembly
+# by one of these two blocks (run mode only), keyed on `[prompt].decompose`.
+# Default (False) keeps the DAG optional. True front-loads decomposition: the
+# worker lays the whole task out as ordered subtasks first, then the existing
+# surface-current-task + finish-gate machinery walks it one focused task at a
+# time. Aimed at small/open models that lose track of multi-part tasks; a capable
+# model needs neither, which is why this is opt-in (measured per model).
 DAG_RULES_OPTIONAL = """<dag-rules>
 add_task / update_task / list_tasks keep a persistent task breakdown.
 depends_on orders subtasks; a task surfaces once its dependencies

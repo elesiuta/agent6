@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent6.app.fork import remove_fork_worktree, worktree_owners
+from agent6.app.fork import remove_fork_worktree, uncommitted_in_worktree, worktree_owners
 from agent6.app.resume import covering_stamp
 from agent6.config.layer import resolved_state_dir
 from agent6.git_ops import (
@@ -473,6 +473,27 @@ def _rm_asks(cwd: Path, session_id: str) -> int:
     return 0
 
 
+def _rm_refusal(layout: SessionLayout, worktree: Path | None, tips: tuple[str, ...]) -> str:
+    """Why this record cannot be deleted, or "". *worktree* is the fork's own
+    (None when another session shares it, and keeps it).
+
+    The record is the only thing that names a fork's worktree, so a delete that
+    left one holding work no commit has left it with nothing to find it by,
+    let alone remove it."""
+    if session_is_live(layout.session_dir):
+        return (
+            f"{layout.session_id} is still live; stop it first"
+            f" (agent6 sessions stop {layout.session_id})."
+        )
+    if worktree is None or not (dirt := uncommitted_in_worktree(worktree, tips)):
+        return ""
+    return (
+        f"{layout.session_id}'s worktree {dirt} ({worktree}); deleting the record"
+        f" would leave it with nothing naming it. Keep that work, then:"
+        f" git -C {worktree} status"
+    )
+
+
 def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     """Delete run history from the state dir, plus the run's hidden chain ref
     (`refs/agent6/<id>/head`, the gc anchor -- meaningless once the record is gone,
@@ -496,13 +517,6 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
     if layout is None:
         print_nothing_yet()
         return 2
-    if session_is_live(layout.session_dir):
-        print(
-            f"REFUSING: {layout.session_id} is still live; stop it first"
-            f" (agent6 sessions stop {layout.session_id}).",
-            file=sys.stderr,
-        )
-        return 2
     worktree: Path | None = None
     with contextlib.suppress(ManifestError):
         worktree = read_manifest(layout.session_dir).worktree
@@ -515,6 +529,11 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         if worktree is not None
         else []
     )
+    landed = chain_tip(cwd, chain_ref_for(layout.session_id)) or ""
+    tips = (landed,) if landed else ()
+    if reason := _rm_refusal(layout, worktree if not sharing else None, tips):
+        print(f"REFUSING: {reason}", file=sys.stderr)
+        return 2
     try:
         shutil.rmtree(layout.session_dir)
     except OSError as exc:
@@ -528,8 +547,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool) -> int:
         verb = "names" if len(sharing) == 1 else "name"
         stays = f"; its worktree stays: {', '.join(sharing)} still {verb} it"
     elif worktree is not None:
-        landed = chain_tip(cwd, chain_ref_for(layout.session_id)) or ""
-        gone, left = remove_fork_worktree(cwd, worktree, (landed,) if landed else ())
+        gone, left = remove_fork_worktree(cwd, worktree, tips)
         if gone:
             went.append("its worktree" + (f" ({left})" if left else ""))
         elif left:

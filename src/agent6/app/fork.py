@@ -705,7 +705,7 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
     The dirty check is git's own rule for `worktree remove`: prune and rm land
     on a merged fork, and the tree can still carry an uncommitted edit or a
     file that was never added. `rmtree` took both with no way back."""
-    dirt = _uncommitted_in(worktree, tips)
+    dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
     state_dir = resolved_state_dir(worktree)
@@ -714,7 +714,7 @@ def remove_fork_worktree(repo: Path, worktree: Path, tips: tuple[str, ...]) -> t
     return True, _drop_checkout_lock(state_dir)
 
 
-def _uncommitted_in(worktree: Path, tips: tuple[str, ...]) -> str:
+def uncommitted_in_worktree(worktree: Path, tips: tuple[str, ...]) -> str:
     """What *worktree* holds that none of *tips* does, as one phrase for a keep
     line; "" when a tip covers it or it is unreadable (a missing dir is not
     dirt).

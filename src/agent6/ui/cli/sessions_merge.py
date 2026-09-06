@@ -468,15 +468,16 @@ def _prune_chain_refs(
             continue
         into = manifest.merged.into
         ref = chain_ref_for(sid)
-        if branch_exists(cwd, into) and is_ancestor(cwd, sha, into):
+        if not branch_exists(cwd, into):
+            # The stamp is only evidence while the branch it names still holds
+            # the content; without it the ref is the run's only anchor.
+            kept[f"base {into} is gone"] += 1
+            continue
+        if is_ancestor(cwd, sha, into):
             delete_ref(cwd, ref)
             refs_deleted += 1
             print(f"[agent6] deleted {ref} (merged into {into})")
-        elif delete_squashed and branch_exists(cwd, into) and manifest.merged.tip == sha:
-            # The branch path above requires the base to still exist before it
-            # trusts a squash stamp; so does this one. A chain ref gets no
-            # reflog, so deleting it over a base the operator has since removed
-            # strands the run's only anchor.
+        elif delete_squashed and manifest.merged.tip == sha:
             delete_ref(cwd, ref)
             refs_deleted += 1
             print(f"[agent6] deleted {ref} (squash-merged into {into})")
