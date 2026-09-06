@@ -86,7 +86,7 @@ Uses a ChatGPT plan (Plus/Pro/Business) instead of an API key, over the Codex Re
 
 ```bash
 agent6 connect chatgpt      # browser sign-in (paste fallback when headless)
-agent6 model worker chatgpt gpt-5-codex
+agent6 model worker chatgpt gpt-5.6-sol
 ```
 
 - `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`, a constant, not config) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
